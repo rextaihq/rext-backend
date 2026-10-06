@@ -2,13 +2,16 @@
 # PreToolUse hook for Bash, Read, Edit, Write and Grep: keeps the contents of the env files (.env, .env.local,
 # .env.dev, .env.stage, .envrc and every other .env name except *.example) out of the session. The Read deny
 # rules in settings.json cover the usual names and the shell readers Claude Code recognises; this covers every
-# name and any program (python -c, node -e, awk, a redirect, a substitution, a glob such as .e*). On an env file a
-# command may only test, list or count: test, [, ls, stat, wc (not --files0-from), and grep with -c, -q, -l or -L.
-# For git and gh, only an env file given as a path counts (git diff --no-index, gh gist create); a commit message or
-# a pull request body that mentions one does not. Exit 2 blocks the call; stderr is the reason Claude is shown.
+# name and any program (python -c, node -e, awk, a redirect, a substitution, a glob such as .e*, a brace expansion
+# such as .env.{local,dev}), wherever a cd leads. On an env file a command may only test, list or count: test, [, ls,
+# stat, wc (not --files0-from), and grep with -c, -q, -l or -L. For git and gh, only an env file given as a path counts
+# (git diff --no-index, gh gist create); a commit message or a pull request body that mentions one does not. It reads
+# the command as text, so it stops mistakes, not a program written to get round it. Exit 2 blocks the call; stderr is
+# the reason Claude is shown.
 #   Check: echo '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' | bash .claude/hooks/guard-env.sh; echo $?
 input=$(cat)
-case "$input" in *.env*|*.e*|*'*'*|*'?'*|*'['*) ;; *) exit 0 ;; esac
+# Quotes and backslashes are dropped first (.'e'nv is .env to the shell).
+case "${input//[\'\"\\]/}" in *.e*|*'*'*|*'?'*|*'['*|*'.{'*|*'.,'*|*'.}'*|*glob*|*GLOBIGNORE*) ;; *) exit 0 ;; esac
 reason="an env file holds secrets and is not read in a session: check one with test -s .env or grep -c NAME .env; .env.example lists the names"
 
 if ! command -v python3 > /dev/null 2>&1; then
@@ -24,7 +27,7 @@ if ! command -v python3 > /dev/null 2>&1; then
 fi
 
 REASON="$reason" python3 -c '
-import fnmatch, glob, json, os, re, shlex, sys
+import json, os, re, shlex, sys
 
 REASON = os.environ["REASON"]
 SEPARATORS = set(";&|()")
@@ -32,42 +35,46 @@ ENV_REF = re.compile(r"(?:^|[^\w.-])(\.env(?:rc)?(?:[.-][\w-]+)*)(?=$|[^\w.-])")
 ALLOWED = {"test", "[", "[[", "ls", "stat", "wc"}
 PATHS_ONLY = {"git", "gh"}
 # Options whose value is text, not a path, for the subcommands that have them (--body-file and -F read a file, so
-# they are not here; -b and -t mean something else to git).
-GIT_MESSAGE_COMMANDS = {"commit", "tag", "merge", "notes", "stash"}
+# they are not here; -b and -t mean something else to git, and to gh attestation -b is a file).
+GIT_MESSAGE_COMMANDS = {("commit",), ("tag",), ("merge",), ("notes",), ("stash",)}
 GIT_MESSAGE_OPTIONS = {"-m", "--message"}
-GH_MESSAGE_OPTIONS = {"-b", "--body", "-t", "--title", "-n", "--notes"}
+GH_MESSAGE_COMMANDS = {("pr", "create"), ("pr", "edit"), ("pr", "comment"), ("pr", "review"), ("pr", "merge"),
+                       ("issue", "create"), ("issue", "edit"), ("issue", "comment"), ("release", "create"),
+                       ("release", "edit")}
+GH_MESSAGE_OPTIONS = {"-b", "--body", "-t", "--title", "--subject", "-n", "--notes"}
+VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "-R", "--repo"}
+# Shell options that let a pattern reach a dot file without a leading dot, or ignore case.
+GLOB_OPTIONS = re.compile(r"\b(dotglob|nocaseglob|extglob|GLOBIGNORE)\b")
+LOOSE = False
+BRACE = re.compile(r"(?<!\$)\{([^{}]*)\}")
+
+def command_words(words, count):
+    # The first count words that are not options (git -C dir commit: commit), skipping the values of global options.
+    found, i = [], 1
+    while i < len(words) and len(found) < count:
+        if words[i] in VALUE_OPTIONS:
+            i += 2
+            continue
+        if not words[i].startswith("-"):
+            found.append(words[i])
+        i += 1
+    return tuple(found)
 
 def message_values(name, words):
     # The positions in words that hold a message, up to a "--" (after it everything is a path).
     if name == "git":
-        sub = None
-        i = 1
-        while i < len(words):
-            w = words[i]
-            if w in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"):
-                i += 2
-            elif w.startswith("-"):
-                i += 1
-            else:
-                sub = w
-                break
-        options = GIT_MESSAGE_OPTIONS if sub in GIT_MESSAGE_COMMANDS else set()
+        options = GIT_MESSAGE_OPTIONS if command_words(words, 1) in GIT_MESSAGE_COMMANDS else set()
     else:
-        options = GH_MESSAGE_OPTIONS
+        options = GH_MESSAGE_OPTIONS if command_words(words, 2) in GH_MESSAGE_COMMANDS else set()
     found = set()
     for i, w in enumerate(words):
         if w == "--":
             break
         if w in options and i + 1 < len(words):
             found.add(i + 1)
-        elif any(w.startswith(o + "=") for o in options if o.startswith("--")):
-            found.add(i)
-        elif name == "git" and "-m" in options and re.fullmatch(r"-m.+", w):
+        elif any(w.startswith(o + "=") if o.startswith("--") else len(w) > 2 and w.startswith(o) for o in options):
             found.add(i)
     return found
-# Names a glob is tried against: the usual env files.
-LIKELY = [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.dev", ".env.stage", ".envrc",
-          ".env.backup", ".env.bak"]
 
 def block():
     print(REASON, file=sys.stderr)
@@ -83,23 +90,52 @@ def env_name(path):
 def refs(text):
     return [m.group(1) for m in ENV_REF.finditer(text) if secret(m.group(1))]
 
-CWD = "."
+def brace_parts(inner):
+    # The alternatives of one brace group, or None when it is not an expansion (the {} of find, a lone {x}). A number
+    # range counts as its first number: digits spell no name.
+    seq = re.fullmatch(r"(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.-?\d+)?", inner)
+    if seq:
+        a, b = seq.group(1), seq.group(2)
+        if a.isalpha() and b.isalpha():
+            lo, hi = sorted((ord(a), ord(b)))
+            return [chr(c) for c in range(lo, hi + 1)]
+        return None if a.isalpha() or b.isalpha() else [a]
+    return inner.split(",") if "," in inner else None
 
-def globbed(token):
-    # A pattern the shell may expand to an env file, such as .e* or .[e]nv.secret: tried against the usual
-    # names and against the files it matches where the command runs.
-    base = os.path.basename(token)
-    if not any(c in base for c in "*?["):
+def expanded(word):
+    # The words brace expansion makes of word: .env.{local,dev} is .env.local and .env.dev. At most 1024.
+    out, todo = [], [word]
+    while todo and len(out) + len(todo) <= 1024:
+        w = todo.pop()
+        for m in BRACE.finditer(w):
+            parts = brace_parts(m.group(1))
+            if parts is not None:
+                todo += [w[:m.start()] + p + w[m.end():] for p in parts]
+                break
+        else:
+            out.append(w)
+    return out + todo
+
+def globbed(word):
+    # A pattern the shell may expand to an env file, such as .e* or .[e]nv.secret, wherever the command runs. A
+    # pattern reaches a dot file only from a literal leading dot, so it can reach an env file only when the text
+    # before its first wildcard could begin ".env"; with dotglob or nocaseglob any start can.
+    base = os.path.basename(word)
+    cuts = [base.index(c) for c in "*?[" if c in base]
+    if not cuts or base.endswith(".example"):
         return False
-    if any(fnmatch.fnmatchcase(name, base) for name in LIKELY):
-        return True
-    try:
-        return any(env_name(found) for found in glob.glob(os.path.join(CWD, token)))
-    except Exception:
-        return True
+    lead = base[:min(cuts)]
+    if LOOSE:
+        lead = lead.lower()
+    elif not lead.startswith("."):
+        return False
+    return ".env".startswith(lead) or lead.startswith(".env")
 
 def touches(token):
-    return bool(refs(token)) or globbed(token)
+    return any(refs(w) or globbed(w) for w in expanded(token))
+
+def as_path(word):
+    return not re.search(r"\s", word) or any(env_name(w) or globbed(w) for w in expanded(word))
 
 def grep_counts_only(args):
     for a in args:
@@ -123,8 +159,7 @@ def check_segment(segment):
     if name in PATHS_ONLY:
         # A path names the file itself (HEAD:.env, some dir/.env.local); the value of a message option only mentions one.
         messages = message_values(name, words)
-        if any(i not in messages and touches(w) and (not re.search(r"\s", w) or env_name(w) or globbed(w))
-               for i, w in enumerate(words)):
+        if any(i not in messages and touches(w) and as_path(w) for i, w in enumerate(words)):
             block()
         return
     if name == "wc" and any(t.startswith("--files0-from") for t in words[1:]):
@@ -149,9 +184,12 @@ def check_command(text):
 data = json.loads(sys.stdin.read() or "{}")
 tool = data.get("tool_name") or ""
 args = data.get("tool_input") or {}
-CWD = data.get("cwd") or os.getcwd()
 if tool == "Bash":
     command = args.get("command") or ""
+    LOOSE = bool(GLOB_OPTIONS.search(command))
+    # With extglob on, @(.e)nv and the like are patterns the word split below would not see.
+    if LOOSE and re.search(r"[?*+@!]\(", command):
+        block()
     try:
         check_command(command)
     except ValueError:
@@ -161,6 +199,6 @@ elif tool in ("Read", "Edit", "MultiEdit", "Write", "NotebookEdit"):
     if env_name(args.get("file_path") or args.get("notebook_path")):
         block()
 elif tool == "Grep":
-    if env_name(args.get("path")) or refs(" " + (args.get("glob") or "")):
+    if env_name(args.get("path")) or any(refs(" " + g) or globbed(g) for g in expanded(args.get("glob") or "")):
         block()
 ' <<< "$input"
