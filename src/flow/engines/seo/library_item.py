@@ -120,14 +120,8 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
     intent = [i for i in (seo_state.get("intent") or []) if i]
     main_intent = intent[0] if intent else "informational"
 
-    # A Library start costs what any article costs (coordinator, founder-delegated,
-    # rext-control#368): the SERP stage, which it runs again, and the title step,
-    # through the same charge points as the keyword analysis.
-    from src.flow.engines.seo.fetch_dataforseo_backlinks import charge_serp_seo
-    from src.flow.engines.seo.keyword_recomendation import charge_title_generation
-
-    await charge_serp_seo(serp_payload.get("user_id"), serp_payload.get("workspace_id"))
-    await charge_title_generation(serp_payload)
+    # Charged once its fresh SERP has results (charge_library_start), as the
+    # keyword analysis is: a start whose search finds nothing costs nothing.
     await _announce_start(owner, workspace_id, query)
 
     return {
@@ -157,6 +151,23 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
             },
         },
     }
+
+
+async def charge_library_start(state: REXT) -> Dict[str, Any]:
+    """A Library start's charges, once its fresh SERP has organic results.
+
+    It costs what any article costs (coordinator, founder-delegated,
+    rext-control#368): the SERP stage, which it runs again, and the title step,
+    through the same charge points as the keyword analysis. They come after the
+    SERP, as there: a search that finds nothing ends at no_serp_data uncharged.
+    """
+    from src.flow.engines.seo.fetch_dataforseo_backlinks import charge_serp_seo
+    from src.flow.engines.seo.keyword_recomendation import charge_title_generation
+
+    serp_payload = state.get("serp_payload") or {}
+    await charge_serp_seo(serp_payload.get("user_id"), serp_payload.get("workspace_id"))
+    await charge_title_generation(serp_payload)
+    return {}
 
 
 def library_item_router(state: REXT) -> str:

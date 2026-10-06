@@ -236,3 +236,34 @@ async def test_a_viewer_can_neither_start_nor_resume_a_run(role, value):
         await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
 
     assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("workspace_id", [OTHER, WORKSPACE])
+async def test_a_threads_workspace_cannot_be_changed(workspace_id):
+    # Runs are checked against the thread's metadata; the run works on its
+    # checkpointed workspace. Renaming it would borrow another workspace's role.
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.a_threads_workspace_is_fixed(
+            _ctx("threads", "update"),
+            {"thread_id": "t", "metadata": {"workspace_id": workspace_id}},
+        )
+
+    assert exc.value.status_code == 403
+
+
+async def test_other_thread_updates_stay_with_the_callers_threads():
+    value = {"thread_id": "t", "metadata": {"owner": OTHER, "title": "Draft"}}
+
+    filters = await langgraph_auth.a_threads_workspace_is_fixed(_ctx("threads", "update"), value)
+
+    assert value["metadata"] == {"owner": USER, "title": "Draft"}
+    assert filters == {"owner": USER}
+    assert await langgraph_auth.a_threads_workspace_is_fixed(
+        _ctx("threads", "update"), {"thread_id": "t"}
+    ) == {"owner": USER}
+
+
+def test_thread_updates_go_through_the_workspace_rule():
+    handlers = langgraph_auth.auth._handlers[("threads", "update")]
+
+    assert handlers == [langgraph_auth.a_threads_workspace_is_fixed]

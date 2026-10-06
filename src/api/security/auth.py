@@ -90,6 +90,29 @@ async def new_threads_name_their_workspace(
     return {"owner": ctx.user.identity}
 
 
+WORKSPACE_FIXED = "A thread's workspace is set when it is created and can't be changed"
+
+
+@auth.on.threads.update
+async def a_threads_workspace_is_fixed(
+    ctx: Auth.types.AuthContext, value: dict
+) -> Auth.types.FilterType:
+    """The caller's own threads, with the workspace they were created in.
+
+    Runs are checked against the workspace in the thread's metadata
+    (runs_need_content_create), while the run itself works on the workspace in
+    its checkpointed state. Letting the owner rename it would let someone who
+    lost content.create in one workspace resume there under another's role.
+    """
+    metadata = value.get("metadata") or {}
+    if "workspace_id" in metadata:
+        raise _forbidden(WORKSPACE_FIXED)
+    owner = {"owner": ctx.user.identity}
+    if value.get("metadata") is not None:
+        value["metadata"].update(owner)
+    return owner
+
+
 @auth.on.threads.create_run
 async def runs_need_content_create(
     ctx: Auth.types.AuthContext, value: dict
