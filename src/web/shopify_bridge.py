@@ -67,29 +67,6 @@ def extract_store_handle(store_url: str) -> str:
     return host.replace(".myshopify.com", "", 1)
 
 
-def build_admin_app_launch_url(
-    store_handle: str,
-    app_slug: str,
-    entry_path: str = "/app/blogpost",
-) -> str:
-    """Build Shopify Admin app launch URL."""
-    handle = (store_handle or "").strip().lower()
-    slug = (app_slug or "").strip().strip("/")
-    path = (entry_path or "/app/blogpost").strip()
-
-    if not handle:
-        raise RextValidationException(message="store handle is required.")
-    if not STORE_DOMAIN_RE.match(handle):
-        raise RextValidationException(message="Invalid store handle.")
-    if not slug:
-        raise RextValidationException(message="SHOPIFY_APP_SLUG is required.")
-
-    if not path.startswith("/"):
-        path = f"/{path}"
-
-    return f"https://admin.shopify.com/store/{handle}/apps/{slug}{path}"
-
-
 def _normalize_endpoint(endpoint: str) -> str:
     endpoint = (endpoint or "").strip()
     if not endpoint:
