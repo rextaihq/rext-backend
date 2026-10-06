@@ -1,0 +1,112 @@
+"""Integration addresses never lead the API to a private or reserved network."""
+
+import httpx
+import pytest
+
+from src.api.middleware.exceptions import RextExternalServiceException, RextValidationException
+from src.services.integration_services import IntegrationService
+from src.utils.integration_urls import PRIVATE_ADDRESS_MESSAGE, ensure_public_site_urls
+from src.utils.url_validator import (
+    SSRFValidationError,
+    refuse_private_addresses,
+    validate_url_for_ssrf,
+)
+from src.web.shopify import ShopifyConnector
+from src.web.wordpress import WordPressPublisher
+
+PRIVATE = [
+    "http://127.0.0.1:8791/wp-json/rext-ai/v1",
+    "http://localhost/",
+    "http://10.0.0.5/",
+    "http://169.254.169.254/latest/meta-data/",
+    "https://[::1]/",
+]
+PUBLIC = "http://93.184.216.34/"
+
+
+def _client(sent: list[str], handler=None) -> httpx.AsyncClient:
+    def respond(request: httpx.Request) -> httpx.Response:
+        sent.append(str(request.url))
+        return handler(request) if handler else httpx.Response(200, json={})
+
+    return httpx.AsyncClient(
+        transport=httpx.MockTransport(respond),
+        event_hooks={"request": [refuse_private_addresses()]},
+    )
+
+
+@pytest.mark.parametrize("url", PRIVATE)
+async def test_the_hook_refuses_a_private_address_before_sending(url):
+    sent: list[str] = []
+    async with _client(sent) as client:
+        with pytest.raises(SSRFValidationError):
+            await client.get(url)
+
+    assert sent == []
+
+
+async def test_the_hook_lets_a_public_address_through():
+    sent: list[str] = []
+    async with _client(sent) as client:
+        response = await client.get(PUBLIC)
+
+    assert response.status_code == 200
+    assert sent == [PUBLIC]
+
+
+async def test_the_hook_refuses_a_redirect_to_a_private_address():
+    sent: list[str] = []
+
+    def redirect(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"Location": "http://169.254.169.254/"})
+
+    async with _client(sent, redirect) as client:
+        with pytest.raises(SSRFValidationError):
+            await client.get(PUBLIC, follow_redirects=True)
+
+    assert sent == [PUBLIC]
+
+
+@pytest.mark.parametrize("url", PRIVATE)
+async def test_connect_and_update_refuse_a_private_site_url(url):
+    with pytest.raises(RextValidationException) as exc:
+        await ensure_public_site_urls(url)
+
+    assert exc.value.message == PRIVATE_ADDRESS_MESSAGE
+
+
+async def test_connect_and_update_accept_public_and_empty_values():
+    await ensure_public_site_urls(PUBLIC, None, "")
+
+
+@pytest.mark.parametrize("url", PRIVATE)
+async def test_a_stored_wordpress_connection_at_a_private_address_sends_nothing(url):
+    # validate_plugin is the first call of connect; publish, scheduled publish and
+    # the status sync use the same client, so the same hook refuses them.
+    async with WordPressPublisher(site_url=url, api_key="key", env_fallback=False) as publisher:
+        with pytest.raises(RextExternalServiceException) as exc:
+            await publisher.validate_plugin()
+
+    # Refused by the check, not by a failed connection.
+    assert "blocked" in exc.value.message
+
+
+@pytest.mark.parametrize(
+    "url", ["http://127.0.0.1/", "http://localhost/", "http://169.254.169.254/"]
+)
+def test_a_blocked_address_is_reported_as_blocked(url):
+    with pytest.raises(SSRFValidationError, match="blocked"):
+        validate_url_for_ssrf(url)
+
+
+async def test_the_shopify_client_refuses_a_private_store_address():
+    async with ShopifyConnector(store_url="127.0.0.1:8443", access_token="token") as connector:
+        with pytest.raises(RextExternalServiceException):
+            await connector.test_connection()
+
+
+async def test_a_shopify_connection_test_refuses_a_private_store_with_a_validation_error():
+    with pytest.raises(RextValidationException) as exc:
+        await IntegrationService(db=None).test_shopify_connection("10.0.0.5", "token")
+
+    assert exc.value.message == PRIVATE_ADDRESS_MESSAGE
