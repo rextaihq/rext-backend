@@ -131,10 +131,20 @@ def _check_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None
     Raises:
         SSRFValidationError: If the IP is in a blocked range.
     """
-    if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+    # Only globally reachable addresses pass: is_global is also false for the
+    # special-use ranges the flags below miss, such as shared address space
+    # (100.64.0.0/10) and benchmarking (198.18.0.0/15).
+    if (
+        not ip.is_global
+        or ip.is_private
+        or ip.is_reserved
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+    ):
         raise SSRFValidationError(
             f"URL resolves to blocked IP address: {ip} "
-            f"(private={ip.is_private}, reserved={ip.is_reserved}, "
+            f"(global={ip.is_global}, private={ip.is_private}, reserved={ip.is_reserved}, "
             f"loopback={ip.is_loopback}, link_local={ip.is_link_local})"
         )
 
