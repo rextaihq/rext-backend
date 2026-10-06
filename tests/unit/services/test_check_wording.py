@@ -221,8 +221,9 @@ def test_every_cause_marker_is_the_checks_own_wording():
     markers = [m for cases in _ONE_CAUSE.values() for m, _ in cases]
     markers += [m for _, cases in _SEVERAL_CAUSES.values() for m, _ in cases]
     for marker in markers:
-        # A field name is written into the detail from a variable: its bare name is in the source.
-        assert marker.strip("`") in VALIDATION_SOURCE, f"{marker!r} is no longer in validation.py"
+        # The title check writes the field's name in from a variable.
+        source_form = re.sub(r"`(meta_)?title`", "`{field}`", marker)
+        assert source_form in VALIDATION_SOURCE, f"{marker!r} is no longer in validation.py"
 
 
 @pytest.mark.parametrize(
@@ -332,3 +333,13 @@ def test_the_line_names_the_cause_the_check_found(name, detail, line):
 @pytest.mark.parametrize("name", sorted({*_ONE_CAUSE, *_SEVERAL_CAUSES}))
 def test_a_detail_naming_no_known_cause_gets_the_neutral_line(name):
     assert user_detail(name, "Something this check said in other words.") == USER_WORDING[name]
+
+
+def test_a_section_name_that_looks_like_a_cause_is_not_read_as_one():
+    detail = (
+        "1 planned section(s) are out of the approved order: 'Missing features'; "
+        "'Never embedded tips'. Move each to that position."
+    )
+    assert user_detail("required_sections", detail) == (
+        "Sections: some are out of the outline's order."
+    )

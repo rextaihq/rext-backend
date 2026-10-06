@@ -63,25 +63,32 @@ def _meta_length(detail: str) -> str:
     return "The meta description is too long: search results cut it off."
 
 
-# A check that reports one of several causes gets the line for the cause its detail names
-# (the marker is the check's own wording in validation.py; a test holds them together).
-# When the detail names none of them, the neutral line in USER_WORDING says less rather
-# than guess.
+# A check that reports one of several causes gets the line for the cause its detail names.
+# Each marker is the check's fixed diagnostic wording in validation.py, never a part that
+# carries a section name, a link or a title (a section called "Missing features" must not
+# read as a missing section); a test holds the markers to the source. When the detail names
+# none of them, the neutral line in USER_WORDING says less rather than guess.
 _ONE_CAUSE: dict[str, list[tuple[str, str]]] = {
     "brand_prominence": [
-        ("SUBTLE", "Your brand is mentioned more often than the one subtle mention you chose."),
         (
-            "PROMINENT",
+            "The user chose a SUBTLE mention",
+            "Your brand is mentioned more often than the one subtle mention you chose.",
+        ),
+        (
+            "The user chose a PROMINENT mention",
             "Your brand isn't named in the closing, though you chose a prominent mention.",
         ),
     ],
     "selected_title_preserved": [
-        ("`meta_title`", "The search title differs from the title you picked."),
-        ("`title`", "The title differs from the one you picked."),
+        ("`meta_title` was changed", "The search title differs from the title you picked."),
+        ("`title` was changed", "The title differs from the one you picked."),
     ],
     "brand_url_accuracy": [
-        ("no hyperlink", "Your brand isn't linked to your site."),
-        ("hyperlinked to", "The link on your brand goes to another address than your site's."),
+        ("Brand mention has no hyperlink", "Your brand isn't linked to your site."),
+        (
+            "Brand mention is hyperlinked to",
+            "The link on your brand goes to another address than your site's.",
+        ),
     ],
 }
 
@@ -90,17 +97,24 @@ _SEVERAL_CAUSES: dict[str, tuple[str, list[tuple[str, str]]]] = {
     "required_sections": (
         "Sections",
         [
-            ("Missing", "some the outline planned are missing"),
-            ("out of the approved order", "some are out of the outline's order"),
+            ("section(s) the approved", "some the outline planned are missing"),
+            ("REQUIRED section(s)", "some the outline planned are missing"),
+            (
+                "planned section(s) are out of the approved order",
+                "some are out of the outline's order",
+            ),
         ],
     ),
     "internal_links_integration": (
         "Internal links",
         [
-            ("never embedded", "some you approved are missing"),
-            ("bolted-on", "some sit on a line of their own instead of in a sentence"),
-            ("possibly misplaced", "some sit in sentences about something else"),
-            ("low topical overlap", "some were left out as off-topic"),
+            ("approved link(s) never embedded", "some you approved are missing"),
+            (
+                "only present as a bolted-on line",
+                "some sit on a line of their own instead of in a sentence",
+            ),
+            ("present but possibly misplaced", "some sit in sentences about something else"),
+            ("approved link(s) skipped, low topical overlap", "some were left out as off-topic"),
         ],
     ),
     "facts_and_external_links": (
@@ -110,14 +124,20 @@ _SEVERAL_CAUSES: dict[str, tuple[str, list[tuple[str, str]]]] = {
                 "provenance unverifiable",
                 "this run's research wasn't recorded, so they can't be checked",
             ),
-            ("not traceable", "some can't be traced to this run's research"),
             (
-                "never woven into the prose",
+                "citation(s) not traceable to any search_tool result",
+                "some can't be traced to this run's research",
+            ),
+            (
+                "sourced fact(s)/link(s) never woven into the prose",
                 "some sourced facts or links aren't woven into the text",
             ),
-            ("more than recommended", "there are more citations than this kind of article needs"),
             (
-                "doesn't clearly match its cited source",
+                "external citations is more than recommended",
+                "there are more citations than this kind of article needs",
+            ),
+            (
+                "fact(s) wording doesn't clearly match its cited source",
                 "some facts don't clearly match their source",
             ),
         ],
@@ -136,7 +156,7 @@ def _several_causes(name: str, detail: str) -> str:
     subject, cases = _SEVERAL_CAUSES[name]
     if detail.startswith(f"{subject}: "):
         return detail
-    found = [clause for marker, clause in cases if marker in detail]
+    found = list(dict.fromkeys(clause for marker, clause in cases if marker in detail))
     return f"{subject}: {'; '.join(found)}." if found else USER_WORDING[name]
 
 
