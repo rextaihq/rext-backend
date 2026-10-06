@@ -12,6 +12,7 @@ from src.utils.url_validator import (
     validate_url_for_ssrf,
 )
 from src.web.shopify import ShopifyConnector
+from src.web.shopify_bridge import ShopifyAppBridge
 from src.web.wordpress import WordPressPublisher
 
 PRIVATE = [
@@ -110,3 +111,51 @@ async def test_a_shopify_connection_test_refuses_a_private_store_with_a_validati
         await IntegrationService(db=None).test_shopify_connection("10.0.0.5", "token")
 
     assert exc.value.message == PRIVATE_ADDRESS_MESSAGE
+
+
+def _bridge_publish(bridge, config_json):
+    return bridge.publish_blog_post(
+        store_url="demo-store.myshopify.com",
+        title="T",
+        body="<p>B</p>",
+        published=False,
+        tags=None,
+        handle=None,
+        feature_image_url=None,
+        content_id="c1",
+        workspace_id="w1",
+        config_json=config_json,
+    )
+
+
+async def test_a_private_bridge_publish_override_is_refused_before_sending(monkeypatch):
+    sent: list[str] = []
+
+    async def post(self, url, **kwargs):
+        sent.append(str(url))
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    bridge = ShopifyAppBridge(shared_secret="secret")
+
+    with pytest.raises(RextValidationException) as exc:
+        await _bridge_publish(bridge, {"bridge_publish_url": "http://169.254.169.254/latest"})
+
+    assert exc.value.message == PRIVATE_ADDRESS_MESSAGE
+    assert sent == []
+
+
+async def test_the_operators_bridge_address_is_not_checked(monkeypatch):
+    # The configured bridge base URL may be an internal service by design.
+    sent: list[str] = []
+
+    async def post(self, url, **kwargs):
+        sent.append(str(url))
+        return httpx.Response(200, json={"article": {"id": 1}}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    bridge = ShopifyAppBridge(shared_secret="secret", base_url="http://rext-shopify-app:3000")
+
+    await _bridge_publish(bridge, {})
+
+    assert sent == ["http://rext-shopify-app:3000/app/api/rext/publish"]
