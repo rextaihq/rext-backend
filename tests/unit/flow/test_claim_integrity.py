@@ -479,6 +479,7 @@ def test_humanizer_is_told_not_to_add_facts():
         "'lab-tested.' Our picks lean toward agencies that publish weekly.",
         "We haven't tested every plan ourselves, so read these prices as a guide.",
         "We have not personally benchmarked these tools; treat the ratings as a starting point.",
+        "The marketing copy was explicit. (It said \u201clab-tested.\u201d) Our picks favor agencies.",
     ],
 )
 def test_a_hedged_or_framing_sentence_is_not_a_testing_claim(text):
@@ -494,6 +495,7 @@ def test_a_hedged_or_framing_sentence_is_not_a_testing_claim(text):
         ("We haven't tested every product, but we tested the top five ourselves.", "tested"),
         ("We never guessed; we tested every tool for a month.", "tested"),
         ("Without hesitation, we tested every tool for a month.", "tested"),
+        ("We never rank products without hands-on testing.", "hands-on testing"),
     ],
 )
 def test_a_real_testing_claim_is_still_caught(text, span):
