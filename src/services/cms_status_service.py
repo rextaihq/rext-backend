@@ -149,6 +149,8 @@ class CMSStatusService:
 
         # --- 4. Concurrent HTTP sync per site ---
         synced = failed = skipped = 0
+        # Records whose check failed this run keep a status nobody confirmed: kept out of step 5.
+        unconfirmed: set[uuid.UUID] = set()
         sem = asyncio.Semaphore(_SYNC_CONCURRENCY)
 
         async def _sync_one(rec: ContentPublishingResult, integration: WorkspaceIntegration):
@@ -172,10 +174,12 @@ class CMSStatusService:
                         skipped += 1
                     else:
                         logger.warning(f"[BulkSync] Failed {rec.id}: {e}")
+                        unconfirmed.add(rec.id)
                         failed += 1
                 except Exception as e:
                     logger.error(f"[BulkSync] Failed {rec.id}: {e}")
                     rec.sync_error = str(e)
+                    unconfirmed.add(rec.id)
                     failed += 1
 
         tasks = []
@@ -193,7 +197,8 @@ class CMSStatusService:
         await asyncio.gather(*tasks)
 
         # --- 5. Propagate CMS status → content.status ---
-        await self._propagate_cms_status_to_content(rows)
+        # A failed check's kept status is stale, so it can't move its article either.
+        await self._propagate_cms_status_to_content([r for r in rows if r.id not in unconfirmed])
 
         # --- 6. Single batch flush ---
         await self.db.flush()
