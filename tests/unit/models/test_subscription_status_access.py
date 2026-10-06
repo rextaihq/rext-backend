@@ -868,3 +868,32 @@ async def test_a_failure_delivered_after_its_renewal_was_paid_changes_nothing(se
     assert task is None
     assert row.status == SubscriptionStatus.ACTIVE
     assert row.payment_failed_at is None
+
+
+@pytest.mark.asyncio
+async def test_an_unpaid_checkout_replacing_a_paid_plan_keeps_its_credits(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
+
+    user, plan, paid = await _subscription(session, SubscriptionStatus.ACTIVE, credits=640)
+    plan.lemonsqueezy_variant_id_monthly = "var-replace-paid"
+    await session.flush()
+    payload = _subscription_payload(
+        "ls-sub-replace-paid",
+        status="past_due",
+        variant_id="var-replace-paid",
+        user_email=user.email,
+        updated_at=T1.isoformat(),
+    )
+    payload["custom_data"] = {"user_id": str(user.id)}
+
+    await handle_subscription_updated(payload, _event("subscription_updated"), session)
+    created = (
+        await session.execute(
+            select(UserSubscription).where(
+                UserSubscription.lemonsqueezy_subscription_id == "ls-sub-replace-paid"
+            )
+        )
+    ).scalar_one()
+
+    # Not paid yet, so no new month; the paid plan's balance isn't lost either.
+    assert created.current_credits == 640

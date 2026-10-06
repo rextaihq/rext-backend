@@ -163,29 +163,23 @@ def _still_paid_through(subscription: UserSubscription) -> bool:
     return end > datetime.now(timezone.utc)
 
 
-def _left_on_trials(subscriptions) -> int:
-    """The credits left on the trials a new subscription replaces."""
-    return max(
-        (
-            sub.current_credits or 0
-            for sub in subscriptions
-            if sub.status == SubscriptionStatus.TRIAL or sub.trial_end_date is not None
-        ),
-        default=0,
-    )
+def _left_on_replaced(subscriptions) -> int:
+    """The most credits left on the subscriptions a new one replaces (trial or paid)."""
+    return max((sub.current_credits or 0 for sub in subscriptions), default=0)
 
 
 def _opening_credits(
-    plan: SubscriptionPlan, status: SubscriptionStatus, left_on_trials: int = 0
+    plan: SubscriptionPlan, status: SubscriptionStatus, left_on_replaced: int = 0
 ) -> int:
     """A new subscription's credits: the plan's month once it is paid (ACTIVE).
 
     Credits come with a payment; one on trial or with a failed first payment
     gets them from subscription_payment_success. Until then it keeps what is left
-    of the signup trial it replaces, so a paid checkout on trial doesn't empty it.
+    on the subscription it replaces, a signup trial or a paid plan, so a checkout
+    that isn't paid yet doesn't empty the account.
     """
     if status != SubscriptionStatus.ACTIVE:
-        return left_on_trials
+        return left_on_replaced
     return plan.credits_per_month or 0
 
 
@@ -390,7 +384,7 @@ async def handle_subscription_created(
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
-        left_on_trials = _left_on_trials(existing_active_subs)
+        left_on_replaced = _left_on_replaced(existing_active_subs)
 
         for old_sub in existing_active_subs:
             was_trial = (
@@ -477,7 +471,7 @@ async def handle_subscription_created(
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=parse_provider_datetime(renews_at),
             current_api_calls=0,
-            current_credits=_opening_credits(plan, internal_status, left_on_trials),
+            current_credits=_opening_credits(plan, internal_status, left_on_replaced),
             provider_updated_at=_provider_time(sub_data.get("updated_at")),
             # `renews_at` from the provider is the authoritative period end;
             # fall back to a calendar month only when it is absent.
@@ -732,7 +726,7 @@ async def handle_subscription_updated(
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
-        left_on_trials = _left_on_trials(existing_active_subs)
+        left_on_replaced = _left_on_replaced(existing_active_subs)
 
         for old_sub in existing_active_subs:
             logger.info(
@@ -769,7 +763,7 @@ async def handle_subscription_updated(
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=parse_provider_datetime(renews_at),
             current_api_calls=0,
-            current_credits=_opening_credits(plan, internal_status, left_on_trials),
+            current_credits=_opening_credits(plan, internal_status, left_on_replaced),
             provider_updated_at=_provider_time(sub_data.get("updated_at")),
             # `renews_at` from the provider is the authoritative period end;
             # fall back to a calendar month only when it is absent.

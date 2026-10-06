@@ -138,6 +138,23 @@ async def test_an_event_that_can_t_be_stored_is_refused_so_it_comes_again():
 
 
 @pytest.mark.asyncio
+async def test_a_storing_failure_logs_no_part_of_the_payload():
+    # A database error's text holds the INSERT's parameters: the whole payload.
+    from src.api.routes.subscriptions import webhook_routes
+
+    leak = "(psycopg.errors.Foo) ... [parameters: {'user_email': 'ana@example.com'}]"
+    with patch.object(webhook_routes.logger, "error") as logged:
+        with pytest.raises(HTTPException) as refused:
+            await _post(AsyncMock(side_effect=RuntimeError(leak)))
+
+    assert refused.value.status_code == 503
+    assert refused.value.__cause__ is None and refused.value.__suppress_context__
+    message = logged.call_args.args[0]
+    assert message.endswith("could not be stored: RuntimeError")
+    assert "ana@example.com" not in message and "exc_info" not in logged.call_args.kwargs
+
+
+@pytest.mark.asyncio
 async def test_a_duplicate_is_acknowledged_without_processing():
     record = AsyncMock(
         return_value={"event_id": "wh_1", "event_type": "subscription_updated", "duplicate": True}

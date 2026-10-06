@@ -331,11 +331,13 @@ async def handle_lemonsqueezy_webhook(
     except WebhookParsingError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"LemonSqueezy webhook could not be stored: {e}", exc_info=True)
+        # Only the error's type: a database error's text holds the INSERT's parameters,
+        # which are the whole payload (the customer's name, email and address).
+        logger.error(f"LemonSqueezy webhook could not be stored: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Webhook could not be stored; send it again",
-        ) from e
+        ) from None
 
     if recorded["duplicate"]:
         return {"status": "duplicate", "message": "Webhook already received"}
