@@ -156,16 +156,18 @@ async def update_profile(
 
     logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
 
-    # Schedule notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user_id),
-        background_tasks=background_tasks,
-        pref_flag="in_app_notifications",
-        message="Your profile has been successfully updated.",
-        payload={"user_id": str(user_id), "updated_fields": updated_fields},
-        workspace_id=None,
-    )
+    # The dashboard saves the browser's timezone by itself, unasked, so a save of the timezone
+    # alone is no news to the person: only a profile edit is announced (D17).
+    if updated_fields != ["timezone"]:
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Your profile has been successfully updated.",
+            payload={"user_id": str(user_id), "updated_fields": updated_fields},
+            workspace_id=None,
+        )
 
     return success(
         data={"profile": profile_response, "updated_fields": updated_fields},
