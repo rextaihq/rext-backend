@@ -533,6 +533,19 @@ class LemonSqueezyProvider(PaymentProvider):
             metadata=metadata or {},
         )
 
+    async def get_subscription_attributes(self, subscription_id: str) -> Dict[str, Any]:
+        """
+        Lemon Squeezy's own attributes for a subscription, as its webhooks carry them.
+
+        The reconciler applies these with the webhook handlers' rules, so it needs
+        the raw fields (status, ends_at, renews_at, updated_at, variant_id), not
+        the provider-neutral SubscriptionData.
+        """
+        response = await self._make_request(
+            method="GET", endpoint=f"/subscriptions/{subscription_id}"
+        )
+        return dict((response.get("data") or {}).get("attributes") or {})
+
     async def get_subscription(self, subscription_id: str) -> SubscriptionData:
         """
         Get subscription details from LemonSqueezy.
