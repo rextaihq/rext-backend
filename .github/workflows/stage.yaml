@@ -26,6 +26,13 @@ concurrency:
   group: stage-${{ github.ref }}
   cancel-in-progress: true
 
+# What publishing and deploying each component depends on: the changes job's two
+# filters below, as regular expressions for the stale-run check. A newer commit
+# touching one of them started a run that deploys that component.
+env:
+  BACKEND_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|docker-compose\.yml$)'
+  SHOPIFY_PATHS: '^rext/'
+
 # ──────────────────────────────────────────────
 # Detect which parts of the repo changed
 # ──────────────────────────────────────────────
@@ -84,26 +91,50 @@ jobs:
       - name: Refuse a stale run
         # Publishing or deploying an older commit after a newer one would silently
         # roll staging back: a re-run keeps its original commit, and GitHub doesn't
-        # guarantee runs start in push order. Refused when stage has a newer commit
-        # touching what this workflow deploys (DEPLOY_PATHS mirrors the push paths
-        # above); a later commit outside them started no run, so it doesn't count.
+        # guarantee runs start in push order. Each component counts on its own: one
+        # is left out when stage has a newer commit touching it (its run deploys it),
+        # and a newer commit touching only the other doesn't stop it, since that run
+        # won't deploy this one (paths-filter reads one push at a time). The step
+        # fails when nothing it was asked for is left.
         env:
           GH_TOKEN: ${{ github.token }}
-          DEPLOY_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|rext/|docker-compose\.yml$|\.github/workflows/(stage|ci-quality)\.yaml$)'
+          WANT_BACKEND: 'true'
+          WANT_SHOPIFY: 'false'
         run: |
           COMPARE=$(gh api "repos/${{ github.repository }}/compare/${{ github.sha }}...stage")
           STATUS=$(echo "$COMPARE" | jq -r .status)
           case "$STATUS" in
-            identical) echo "stage is at ${{ github.sha }}"; exit 0 ;;
-            ahead) ;;
+            identical) NEWER_FILES="" ;;
+            ahead)
+              # A comparison lists at most 300 files: past that, a newer change to a
+              # component can't be ruled out, so nothing is published or deployed.
+              if [ "$(echo "$COMPARE" | jq '.files | length')" -ge 300 ]; then
+                echo "::error::stage is 300 or more files ahead of ${{ github.sha }}, more than a comparison lists: refusing to publish or deploy"
+                exit 1
+              fi
+              NEWER_FILES=$(echo "$COMPARE" | jq -r '.files[] | .filename, (.previous_filename // empty)') ;;
             *) echo "::error::stage is $STATUS from ${{ github.sha }}: refusing to publish or deploy"; exit 1 ;;
           esac
-          NEWER=$(echo "$COMPARE" | jq -r '.files[].filename' | grep -E "$DEPLOY_PATHS" | head -5 | tr '\n' ' ')
-          if [ -n "$NEWER" ]; then
-            echo "::error::stage has newer commits touching what this deploys ($NEWER): refusing to publish or deploy ${{ github.sha }}"
+          LEFT=""
+          SKIPPED=""
+          for COMPONENT in backend shopify; do
+            if [ "$COMPONENT" = backend ]; then WANT=$WANT_BACKEND; PATHS=$BACKEND_PATHS; else WANT=$WANT_SHOPIFY; PATHS=$SHOPIFY_PATHS; fi
+            [ "$WANT" = true ] || continue
+            NEWER=$( (printf '%s\n' "$NEWER_FILES" | grep -E "$PATHS" || true) | head -5 | tr '\n' ' ')
+            if [ -n "$NEWER" ]; then
+              echo "::error::stage has newer commits touching the $COMPONENT ($NEWER): their run deploys it, not this one"
+              SKIPPED="$SKIPPED $COMPONENT"
+            else
+              echo "$COMPONENT=true" >> "$GITHUB_OUTPUT"
+              LEFT="$LEFT $COMPONENT"
+            fi
+          done
+          echo "skipped=${SKIPPED# }" >> "$GITHUB_OUTPUT"
+          if [ -z "$LEFT" ]; then
+            echo "::error::nothing left to publish or deploy from ${{ github.sha }}"
             exit 1
           fi
-          echo "Newer commits on stage touch nothing this workflow deploys"
+          echo "Publishing or deploying${LEFT} from ${{ github.sha }}"
 
       - name: Cleanup Runner (Pre-build)
         run: |
@@ -167,26 +198,50 @@ jobs:
       - name: Refuse a stale run
         # Publishing or deploying an older commit after a newer one would silently
         # roll staging back: a re-run keeps its original commit, and GitHub doesn't
-        # guarantee runs start in push order. Refused when stage has a newer commit
-        # touching what this workflow deploys (DEPLOY_PATHS mirrors the push paths
-        # above); a later commit outside them started no run, so it doesn't count.
+        # guarantee runs start in push order. Each component counts on its own: one
+        # is left out when stage has a newer commit touching it (its run deploys it),
+        # and a newer commit touching only the other doesn't stop it, since that run
+        # won't deploy this one (paths-filter reads one push at a time). The step
+        # fails when nothing it was asked for is left.
         env:
           GH_TOKEN: ${{ github.token }}
-          DEPLOY_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|rext/|docker-compose\.yml$|\.github/workflows/(stage|ci-quality)\.yaml$)'
+          WANT_BACKEND: 'false'
+          WANT_SHOPIFY: 'true'
         run: |
           COMPARE=$(gh api "repos/${{ github.repository }}/compare/${{ github.sha }}...stage")
           STATUS=$(echo "$COMPARE" | jq -r .status)
           case "$STATUS" in
-            identical) echo "stage is at ${{ github.sha }}"; exit 0 ;;
-            ahead) ;;
+            identical) NEWER_FILES="" ;;
+            ahead)
+              # A comparison lists at most 300 files: past that, a newer change to a
+              # component can't be ruled out, so nothing is published or deployed.
+              if [ "$(echo "$COMPARE" | jq '.files | length')" -ge 300 ]; then
+                echo "::error::stage is 300 or more files ahead of ${{ github.sha }}, more than a comparison lists: refusing to publish or deploy"
+                exit 1
+              fi
+              NEWER_FILES=$(echo "$COMPARE" | jq -r '.files[] | .filename, (.previous_filename // empty)') ;;
             *) echo "::error::stage is $STATUS from ${{ github.sha }}: refusing to publish or deploy"; exit 1 ;;
           esac
-          NEWER=$(echo "$COMPARE" | jq -r '.files[].filename' | grep -E "$DEPLOY_PATHS" | head -5 | tr '\n' ' ')
-          if [ -n "$NEWER" ]; then
-            echo "::error::stage has newer commits touching what this deploys ($NEWER): refusing to publish or deploy ${{ github.sha }}"
+          LEFT=""
+          SKIPPED=""
+          for COMPONENT in backend shopify; do
+            if [ "$COMPONENT" = backend ]; then WANT=$WANT_BACKEND; PATHS=$BACKEND_PATHS; else WANT=$WANT_SHOPIFY; PATHS=$SHOPIFY_PATHS; fi
+            [ "$WANT" = true ] || continue
+            NEWER=$( (printf '%s\n' "$NEWER_FILES" | grep -E "$PATHS" || true) | head -5 | tr '\n' ' ')
+            if [ -n "$NEWER" ]; then
+              echo "::error::stage has newer commits touching the $COMPONENT ($NEWER): their run deploys it, not this one"
+              SKIPPED="$SKIPPED $COMPONENT"
+            else
+              echo "$COMPONENT=true" >> "$GITHUB_OUTPUT"
+              LEFT="$LEFT $COMPONENT"
+            fi
+          done
+          echo "skipped=${SKIPPED# }" >> "$GITHUB_OUTPUT"
+          if [ -z "$LEFT" ]; then
+            echo "::error::nothing left to publish or deploy from ${{ github.sha }}"
             exit 1
           fi
-          echo "Newer commits on stage touch nothing this workflow deploys"
+          echo "Publishing or deploying${LEFT} from ${{ github.sha }}"
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -226,31 +281,56 @@ jobs:
 
     steps:
       - name: Refuse a stale run
+        id: fresh
         # Publishing or deploying an older commit after a newer one would silently
         # roll staging back: a re-run keeps its original commit, and GitHub doesn't
-        # guarantee runs start in push order. Refused when stage has a newer commit
-        # touching what this workflow deploys (DEPLOY_PATHS mirrors the push paths
-        # above); a later commit outside them started no run, so it doesn't count.
+        # guarantee runs start in push order. Each component counts on its own: one
+        # is left out when stage has a newer commit touching it (its run deploys it),
+        # and a newer commit touching only the other doesn't stop it, since that run
+        # won't deploy this one (paths-filter reads one push at a time). The step
+        # fails when nothing it was asked for is left.
         env:
           GH_TOKEN: ${{ github.token }}
-          DEPLOY_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|rext/|docker-compose\.yml$|\.github/workflows/(stage|ci-quality)\.yaml$)'
+          WANT_BACKEND: ${{ needs.docker_job.result == 'success' }}
+          WANT_SHOPIFY: ${{ needs.docker_shopify.result == 'success' }}
         run: |
           COMPARE=$(gh api "repos/${{ github.repository }}/compare/${{ github.sha }}...stage")
           STATUS=$(echo "$COMPARE" | jq -r .status)
           case "$STATUS" in
-            identical) echo "stage is at ${{ github.sha }}"; exit 0 ;;
-            ahead) ;;
+            identical) NEWER_FILES="" ;;
+            ahead)
+              # A comparison lists at most 300 files: past that, a newer change to a
+              # component can't be ruled out, so nothing is published or deployed.
+              if [ "$(echo "$COMPARE" | jq '.files | length')" -ge 300 ]; then
+                echo "::error::stage is 300 or more files ahead of ${{ github.sha }}, more than a comparison lists: refusing to publish or deploy"
+                exit 1
+              fi
+              NEWER_FILES=$(echo "$COMPARE" | jq -r '.files[] | .filename, (.previous_filename // empty)') ;;
             *) echo "::error::stage is $STATUS from ${{ github.sha }}: refusing to publish or deploy"; exit 1 ;;
           esac
-          NEWER=$(echo "$COMPARE" | jq -r '.files[].filename' | grep -E "$DEPLOY_PATHS" | head -5 | tr '\n' ' ')
-          if [ -n "$NEWER" ]; then
-            echo "::error::stage has newer commits touching what this deploys ($NEWER): refusing to publish or deploy ${{ github.sha }}"
+          LEFT=""
+          SKIPPED=""
+          for COMPONENT in backend shopify; do
+            if [ "$COMPONENT" = backend ]; then WANT=$WANT_BACKEND; PATHS=$BACKEND_PATHS; else WANT=$WANT_SHOPIFY; PATHS=$SHOPIFY_PATHS; fi
+            [ "$WANT" = true ] || continue
+            NEWER=$( (printf '%s\n' "$NEWER_FILES" | grep -E "$PATHS" || true) | head -5 | tr '\n' ' ')
+            if [ -n "$NEWER" ]; then
+              echo "::error::stage has newer commits touching the $COMPONENT ($NEWER): their run deploys it, not this one"
+              SKIPPED="$SKIPPED $COMPONENT"
+            else
+              echo "$COMPONENT=true" >> "$GITHUB_OUTPUT"
+              LEFT="$LEFT $COMPONENT"
+            fi
+          done
+          echo "skipped=${SKIPPED# }" >> "$GITHUB_OUTPUT"
+          if [ -z "$LEFT" ]; then
+            echo "::error::nothing left to publish or deploy from ${{ github.sha }}"
             exit 1
           fi
-          echo "Newer commits on stage touch nothing this workflow deploys"
+          echo "Publishing or deploying${LEFT} from ${{ github.sha }}"
 
       - name: Wait for GHCR tag propagation (backend)
-        if: needs.changes.outputs.backend == 'true'
+        if: steps.fresh.outputs.backend == 'true'
         env:
           EXPECTED: ${{ needs.docker_job.outputs.pushed_digest }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -280,7 +360,7 @@ jobs:
           exit 1
 
       - name: Restart the staging backend with the new image
-        if: needs.changes.outputs.backend == 'true'
+        if: steps.fresh.outputs.backend == 'true'
         run: |
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
@@ -307,7 +387,7 @@ jobs:
           echo "✅ Backend restart queued"
 
       - name: Wait for staging to run this commit
-        if: needs.changes.outputs.backend == 'true'
+        if: steps.fresh.outputs.backend == 'true'
         timeout-minutes: 17
         env:
           HEALTH_URL: https://staging-api.rext.ai/health/live
@@ -333,7 +413,7 @@ jobs:
           exit 1
 
       - name: Trigger Coolify Deployment — Shopify App
-        if: needs.changes.outputs.shopify == 'true'
+        if: steps.fresh.outputs.shopify == 'true'
         run: |
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
@@ -354,6 +434,12 @@ jobs:
             exit 1
           fi
           echo "✅ Shopify app deployment triggered"
+
+      - name: Report what a newer run deploys instead
+        if: steps.fresh.outputs.skipped != ''
+        run: |
+          echo "::error::Not deployed by this run, since newer commits on stage touch it: ${{ steps.fresh.outputs.skipped }}"
+          exit 1
 
   # ──────────────────────────────────────────────
   # 📢 Stage 4 — Notification Summary
