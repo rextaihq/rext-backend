@@ -16,6 +16,8 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_outline_structure,
 )
 from src.flow.engines.content.review.outline_edits import (
+    MAX_ADDED_SECTIONS,
+    addable_lists,
     apply_section_edits,
     editable_sections,
 )
@@ -230,3 +232,190 @@ def test_approval_with_sections_writes_the_order_and_refreshes_the_display(monke
     rendered = repr(outline["_render"])
     assert "Heel drop, explained simply" in rendered
     assert "Cushioning and support" not in rendered
+
+
+# --- adding a section ----------------------------------------------------------
+
+
+def _best_tools_outline():
+    return {
+        "title": "Best running apps",
+        "tools": [
+            {"name": "Strava", "summary": "Social"},
+            {"name": "Runkeeper", "summary": "Simple"},
+        ],
+    }
+
+
+def test_only_lists_of_headed_sections_take_additions():
+    assert addable_lists(_blog_outline(), "blog") == ["structure.sections"]
+    assert addable_lists(_best_tools_outline(), "best-tools") == []
+
+
+def test_an_added_section_goes_where_the_reviewer_put_it():
+    rows = [
+        {"id": BLOG_IDS[0]},
+        {"new": True, "list": "structure.sections", "heading": "  Caring for your shoes "},
+        {"id": BLOG_IDS[1]},
+        {"id": BLOG_IDS[2]},
+        {"id": BLOG_IDS[3]},
+    ]
+
+    edited = apply_section_edits(_blog_outline(), "blog", rows)
+
+    assert _headings(edited) == [
+        "Why the right shoe matters",
+        "Caring for your shoes",
+        "Cushioning and support",
+        "Heel drop explained",
+        "How to get fitted",
+    ]
+    added = edited["structure"]["sections"][1]
+    # its neighbours' level and word budget, and no invented plan
+    assert added == {
+        "heading": "Caring for your shoes",
+        "description": "",
+        "key_points": [],
+        "heading_level": "H2",
+        "suggested_word_count": 200,
+    }
+
+
+def test_an_added_subsection_keeps_its_level():
+    rows = [
+        {"id": BLOG_IDS[0]},
+        {
+            "new": True,
+            "list": "structure.sections",
+            "heading": "Trail shoes",
+            "heading_level": "H3",
+        },
+        *({"id": row_id} for row_id in BLOG_IDS[1:]),
+    ]
+
+    edited = apply_section_edits(_blog_outline(), "blog", rows)
+
+    assert edited["structure"]["sections"][1]["heading_level"] == "H3"
+
+
+def test_rows_that_only_add_keep_the_list():
+    edited = apply_section_edits(
+        _blog_outline(),
+        "blog",
+        [{"new": True, "list": "structure.sections", "heading": "Caring for your shoes"}],
+    )
+
+    assert _headings(edited) == [*_headings(_blog_outline()), "Caring for your shoes"]
+
+
+def test_additions_that_cannot_be_taken_are_ignored():
+    outline = _best_tools_outline()
+    for rows in (
+        [{"new": True, "list": "tools", "heading": "Nike Run Club"}],  # a list of entries
+        [{"new": True, "list": "nowhere", "heading": "Lost"}],
+        [{"new": True, "heading": "No list"}],
+    ):
+        assert apply_section_edits(outline, "best-tools", rows) == outline
+
+    blank = [{"id": row_id} for row_id in BLOG_IDS]
+    blank.append({"new": True, "list": "structure.sections", "heading": "   "})
+    assert _headings(apply_section_edits(_blog_outline(), "blog", blank)) == _headings(
+        _blog_outline()
+    )
+
+
+def test_additions_are_capped():
+    rows = [{"id": row_id} for row_id in BLOG_IDS]
+    rows += [
+        {"new": True, "list": "structure.sections", "heading": f"Extra {n}"}
+        for n in range(MAX_ADDED_SECTIONS + 3)
+    ]
+
+    edited = apply_section_edits(_blog_outline(), "blog", rows)
+
+    assert len(_headings(edited)) == len(BLOG_IDS) + MAX_ADDED_SECTIONS
+
+
+def test_the_writer_and_the_validator_expect_an_added_section():
+    rows = [
+        {"id": BLOG_IDS[0]},
+        {"new": True, "list": "structure.sections", "heading": "Caring for your shoes"},
+        {"id": BLOG_IDS[3]},
+    ]
+    edited = apply_section_edits(_blog_outline(), "blog", rows)
+
+    expected = resolve_expected_headings(resolve_outline_structure(edited, "blog"))
+    assert expected == ["Why the right shoe matters", "Caring for your shoes", "How to get fitted"]
+    assert "Caring for your shoes" in _format_outline_for_generation(edited, "blog")
+
+
+# --- what the gate shows as the outline's sources ------------------------------
+
+
+def _gate_payload(monkeypatch, serp_normalized):
+    payloads = []
+
+    def _interrupt(payload):
+        payloads.append(payload)
+        return {"action": "approve"}
+
+    monkeypatch.setattr(review_module, "interrupt", _interrupt)
+    review_module.review_outline(
+        {
+            "content": {"outline": _blog_outline(), "content_type": "blog"},
+            "serp_normalized": serp_normalized,
+        }
+    )
+    return payloads[0]
+
+
+def test_gate_payload_carries_additions_and_the_search_evidence(monkeypatch):
+    payload = _gate_payload(
+        monkeypatch,
+        {
+            "normalize_results": [
+                {
+                    "position": 1,
+                    "title": "Best shoes",
+                    "domain": "a.test",
+                    "url": "https://a.test/",
+                },
+                {
+                    "position": 2,
+                    "title": "Shoe guide",
+                    "domain": "b.test",
+                    "url": "https://b.test/",
+                },
+            ],
+            "questions": ["How often?", "how often?", None, "  ", "Which brand?"],
+            "related_topics": ["running shoes", "trail shoes"],
+        },
+    )
+
+    assert payload["section_additions"] == ["structure.sections"]
+    assert [result["url"] for result in payload["serp_titles"]] == [
+        "https://a.test/",
+        "https://b.test/",
+    ]
+    assert payload["serp_questions"] == ["How often?", "Which brand?"]
+    assert payload["related_searches"] == ["running shoes", "trail shoes"]
+
+
+def test_gate_payload_without_a_serp_has_empty_sources(monkeypatch):
+    payload = _gate_payload(monkeypatch, None)
+
+    assert payload["serp_titles"] == []
+    assert payload["serp_questions"] == []
+    assert payload["related_searches"] == []
+
+
+def test_approval_with_an_added_section_writes_it(monkeypatch):
+    rows = [
+        {"id": BLOG_IDS[0]},
+        {"new": True, "list": "structure.sections", "heading": "Caring for your shoes"},
+    ]
+
+    _, outline = _approve(monkeypatch, {"action": "approve", "sections": rows})
+
+    assert _headings(outline) == ["Why the right shoe matters", "Caring for your shoes"]
+    assert "Caring for your shoes" in repr(outline["_render"])
