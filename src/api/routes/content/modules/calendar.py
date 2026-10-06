@@ -1,6 +1,5 @@
-from calendar import monthrange
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -12,6 +11,8 @@ from src.api.models.content_models.content import Content
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.cms_status_service import CMSStatusService
+from src.services.user_service import UserService
+from src.utils.datetime_utils import account_zone
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
@@ -35,15 +36,22 @@ async def content_calendar(
 
     Each day key maps to a list of content items with their publishing details.
     Covers both WordPress (wordpress_published_at) and Shopify (shopify_published_at) dates.
+    The month and its days are the caller's account timezone's, the one scheduling
+    reads a picked time in, so an item sits on the day it was scheduled for.
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     await CMSStatusService(db).bulk_sync_workspace(workspace.id)
 
-    last_day = monthrange(year, month)[1]
-    month_start = datetime(year, month, 1, tzinfo=timezone.utc)
-    month_end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+    user_row = await UserService(db).get_user_by_id(UUID(user_id))
+    user_timezone = user_row.timezone or "UTC"
+    tz = account_zone(user_timezone)
+    month_start = datetime(year, month, 1, tzinfo=tz)
+    month_end = datetime(year + month // 12, month % 12 + 1, 1, tzinfo=tz)
+
+    def in_month(when: Optional[datetime]) -> bool:
+        return when is not None and month_start <= when < month_end
 
     stmt = (
         select(Content)
@@ -52,8 +60,10 @@ async def content_calendar(
             Content.deleted_at.is_(None),
             Content.status.in_(["published", "scheduled"]),
             or_(
-                Content.wordpress_published_at.between(month_start, month_end),
-                Content.shopify_published_at.between(month_start, month_end),
+                (Content.wordpress_published_at >= month_start)
+                & (Content.wordpress_published_at < month_end),
+                (Content.shopify_published_at >= month_start)
+                & (Content.shopify_published_at < month_end),
             ),
         )
         .order_by(Content.wordpress_published_at, Content.shopify_published_at)
@@ -67,7 +77,7 @@ async def content_calendar(
     for c in rows:
         entries = []
 
-        if c.wordpress_published_at and month_start <= c.wordpress_published_at <= month_end:
+        if in_month(c.wordpress_published_at):
             entries.append(
                 {
                     "id": str(c.id),
@@ -77,11 +87,11 @@ async def content_calendar(
                     "platform": "wordpress",
                     "url": c.wordpress_url,
                     "date": c.wordpress_published_at.isoformat(),
-                    "day_key": c.wordpress_published_at.date().isoformat(),
+                    "day_key": c.wordpress_published_at.astimezone(tz).date().isoformat(),
                 }
             )
 
-        if c.shopify_published_at and month_start <= c.shopify_published_at <= month_end:
+        if in_month(c.shopify_published_at):
             entries.append(
                 {
                     "id": str(c.id),
@@ -91,7 +101,7 @@ async def content_calendar(
                     "platform": "shopify",
                     "url": c.shopify_article_url,
                     "date": c.shopify_published_at.isoformat(),
-                    "day_key": c.shopify_published_at.date().isoformat(),
+                    "day_key": c.shopify_published_at.astimezone(tz).date().isoformat(),
                 }
             )
 
@@ -103,6 +113,7 @@ async def content_calendar(
         data={
             "year": year,
             "month": month,
+            "timezone": user_timezone,
             "total_items": sum(len(v) for v in calendar.values()),
             "calendar": calendar,
         },
