@@ -88,8 +88,10 @@ def keyphrase_fits_a_title(keyphrase: Any) -> bool:
     Every title must contain the keyphrase and stay within TITLE_MAX_CHARS, so
     such a keyphrase can produce no title at all: the keyword gate does not
     charge for titles then, and the topic step ends the run without a model call.
+    It is measured as contains_keyphrase matches it (case, quotes and other
+    punctuation flattened), so a keyword some title could hold is never refused.
     """
-    return len(_WHITESPACE_RE.sub(" ", str(keyphrase or "")).strip()) <= TITLE_MAX_CHARS
+    return len(_normalize_for_match(keyphrase).strip()) <= TITLE_MAX_CHARS
 
 
 def title_violations(title: Any, keyphrase: Any = "") -> list[str]:

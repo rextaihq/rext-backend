@@ -22,6 +22,7 @@ from src.flow.engines.content.generation.focus_keyword import (
     FOCUS_KEYWORD_STATE_KEY,
     resolve_focus_keyword,
 )
+from src.flow.engines.content.generation.seo_title_rules import keyphrase_fits_a_title
 from src.flow.engines.content.generation.topic_generation import (
     KEYWORD_TOO_LONG_MESSAGE,
     TOPICS_FAILED_CODE,
@@ -125,14 +126,27 @@ async def test_a_shorter_keyword_chosen_after_the_message_is_the_one_used(monkey
     failed = await topic_module.topic_generation(
         {"serp_normalized": {"query": long_keyword}, "serp_payload": {"query": long_keyword}}
     )
-    assert FOCUS_KEYWORD_STATE_KEY not in failed["content"]
+    assert failed["content"][FOCUS_KEYWORD_STATE_KEY] is None
 
+    # A thread whose earlier failed attempt pinned the long keyword recovers too.
+    earlier = {"content_type": "blog", FOCUS_KEYWORD_STATE_KEY: long_keyword}
     retry = {
-        "content": deep_merge_dicts({"content_type": "blog"}, failed["content"]),
+        "content": deep_merge_dicts(earlier, failed["content"]),
         "seo_result": {"keyword_recommendations": {"selected_keyword": "content marketing roi"}},
         "serp_payload": {"query": "content marketing roi"},
     }
     assert resolve_focus_keyword(retry) == "content marketing roi"
+
+
+def test_a_keyword_is_measured_as_titles_match_it():
+    # 58 characters: quotes or doubled punctuation around it don't count, because
+    # a title contains the phrase without them (contains_keyphrase).
+    keyword = "content marketing roi measurement for small local business"
+    assert len(keyword) == 58
+    assert keyphrase_fits_a_title(keyword)
+    assert keyphrase_fits_a_title(f'"{keyword}"')
+    assert keyphrase_fits_a_title(f"{keyword} --")
+    assert not keyphrase_fits_a_title(keyword + " uk")
 
 
 async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatch):
