@@ -24,7 +24,9 @@ from src.api.database.async_database import get_async_db
 from src.api.database.base import Base
 from src.api.middleware.exceptions import DuplicateResourceException
 from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
     SubscriptionStatus,
@@ -54,6 +56,8 @@ async def session():
                     Users.__table__,
                     SubscriptionPlan.__table__,
                     UserSubscription.__table__,
+                    Promotion.__table__,  # the balance counts credit grants
+                    CreditGrant.__table__,
                     WorkspaceModel.__table__,  # audit_logs refers to it
                     AuditLog.__table__,  # cancel() and the handlers record themselves
                 ],

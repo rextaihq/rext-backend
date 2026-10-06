@@ -5,6 +5,7 @@ import asyncio
 from scripts.seeds.seed_api_usage_state import seed_api_usage_state
 from scripts.seeds.seed_email_templates import seed_email_templates
 from scripts.seeds.seed_permissions import seed_permissions
+from scripts.seeds.seed_promotions import seed_promotions
 from scripts.seeds.seed_subscription_plans import seed_subscription_plans
 from scripts.seeds.seed_super_admin import seed_super_admin
 
@@ -19,6 +20,7 @@ async def run_all_seeds():
     await seed_permissions()
     await seed_email_templates()
     await seed_subscription_plans()
+    await seed_promotions()
     await seed_super_admin()
     await seed_api_usage_state()
 

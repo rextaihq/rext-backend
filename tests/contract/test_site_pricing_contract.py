@@ -20,8 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts.seeds.seed_promotions import PROMOTIONS
 from scripts.seeds.seed_subscription_plans import PLANS
-from src.config.plan_rules import OFFERS
 from src.services.plan_catalog import build_plan_catalog
 from src.utils.credit_manager import STAGE_CREDITS
 
@@ -166,9 +166,9 @@ def test_site_campaign_is_an_offer_the_backend_knows():
 
     start = match.start(1)
     site = _fields(campaign_ts[start : _closing(campaign_ts, start) + 1])
-    offers = {offer.id: offer for offer in OFFERS}
+    promotions = {p["code"]: p for p in PROMOTIONS}
 
-    assert site["id"] in offers, "the site announces an offer the backend does not define"
-    offer = offers[site["id"]]
-    assert datetime.fromisoformat(site["start"].replace("Z", "+00:00")) == offer.starts_at
-    assert datetime.fromisoformat(site["end"].replace("Z", "+00:00")) == offer.ends_at
+    assert site["id"] in promotions, "the site announces an offer the backend does not seed"
+    promotion = promotions[site["id"]]
+    assert datetime.fromisoformat(site["start"].replace("Z", "+00:00")) == promotion["starts_at"]
+    assert datetime.fromisoformat(site["end"].replace("Z", "+00:00")) == promotion["ends_at"]

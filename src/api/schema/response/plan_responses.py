@@ -118,11 +118,13 @@ class CatalogCredits(BaseModel):
 
 
 class CatalogOffer(BaseModel):
-    """An offer on subscriptions started inside its window, announced only once it is granted."""
+    """The promotion on subscriptions started now (the `promotions` table)."""
 
     id: str
+    label: str
     kind: str
-    credit_multiplier: int
+    credit_multiplier: Optional[int] = None
+    bonus_credits: Optional[int] = None
     starts_at: datetime
     ends_at: datetime
 

@@ -14,7 +14,9 @@ from sqlalchemy.pool import NullPool
 
 from src.api.database.async_database import get_async_db
 from src.api.database.base import Base
+from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.security.dependencies import get_current_user
@@ -29,7 +31,13 @@ async def session():
         await connection.run_sync(
             lambda sync: Base.metadata.create_all(
                 sync,
-                tables=[Users.__table__, SubscriptionPlan.__table__, UserSubscription.__table__],
+                tables=[
+                    Users.__table__,
+                    SubscriptionPlan.__table__,
+                    UserSubscription.__table__,
+                    Promotion.__table__,  # the balance counts credit grants
+                    CreditGrant.__table__,
+                ],
                 checkfirst=True,
             )
         )

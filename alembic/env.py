@@ -46,10 +46,12 @@ from src.api.models.knowledge_models.knowledge_model import (  # noqa: E402, F40
 from src.api.models.knowledge_models.persona_model import Persona  # noqa: E402, F401
 from src.api.models.notification.notification_model import Notification  # noqa: E402, F401
 from src.api.models.subscription_models import (  # noqa: E402, F401
+    CreditGrant,
     DiscountUsage,
     License,
     LicenseActivation,
     PaymentMethod,
+    Promotion,
     Refund,
     SubscriptionPlan,
     TrialConversion,

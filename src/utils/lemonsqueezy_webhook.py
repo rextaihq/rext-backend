@@ -214,6 +214,12 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "user_name": attributes.get("user_name", ""),
             "card_brand": attributes.get("card_brand"),
             "card_last_four": attributes.get("card_last_four") or attributes.get("card_last4"),
+            # When the subscription (or, on an invoice, the invoice) was created,
+            # and why an invoice was raised ("initial" for the first payment).
+            "created_at": attributes.get("created_at"),
+            "billing_reason": attributes.get("billing_reason"),
+            # The order that started a subscription (subscription payloads only).
+            "order_id": str(attributes["order_id"]) if attributes.get("order_id") else None,
         }
 
     except Exception as e:
