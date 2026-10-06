@@ -205,10 +205,8 @@ class WordPressPublisher:
         elif self.username and self.app_password:
             auth = httpx.BasicAuth(self.username, self.app_password)
         else:
-            logger.warning(
-                "WordPress connection has no API key or application password: %s",
-                self.site_url,
-            )
+            # No address in the log: a site URL can carry userinfo or a token.
+            logger.warning("WordPress connection has no API key or application password")
 
         # Every request goes to a customer-given address, with their credentials:
         # none may reach a private or reserved network (the API's own, Redis,
