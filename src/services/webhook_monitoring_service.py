@@ -41,6 +41,26 @@ def _mask_email(email: str) -> str:
     return f"{local[:2]}***@{domain}"
 
 
+async def _send_post_commit_tasks(handler_result) -> None:
+    """The emails and in-app notices a handler asked for, sent once its work is committed.
+
+    The same as the live webhook path, so a retried event (a payment that arrived
+    before its subscription, say) still sends its receipt.
+    """
+    if not (isinstance(handler_result, dict) and handler_result.get("send_email")):
+        return
+    from src.api.routes.subscriptions.webhook_routes import (
+        _send_webhook_email,
+        _send_webhook_notification,
+    )
+
+    try:
+        await _send_webhook_email(handler_result, None)
+    except Exception as e:  # noqa: BLE001 - an email must not fail the retry
+        logger.error(f"Failed to send post-retry email: {e}")
+    await _send_webhook_notification(handler_result)
+
+
 class WebhookMonitoringService:
     """Service for monitoring and managing webhook events."""
 
@@ -337,16 +357,18 @@ class WebhookMonitoringService:
 
         # Reprocess the stored payload in a dedicated transaction with the full
         # handler registry so a partial failure cannot corrupt the request tx.
+        handler_result = None
         processing_db = AsyncSessionLocal()
         try:
             webhook_service = LemonSqueezyWebhookService(processing_db)
             register_default_handlers(webhook_service)
 
             reprocess_target = await processing_db.get(WebhookEvent, event_db_id)
-            await webhook_service.reprocess_event(webhook_event=reprocess_target)
+            reprocessed = await webhook_service.reprocess_event(webhook_event=reprocess_target)
             await processing_db.commit()
             success_result = True
             error_message: Optional[str] = None
+            handler_result = reprocessed.get("handler_result")
         except Exception as process_error:  # noqa: BLE001 - result surfaced to admin
             await processing_db.rollback()
             success_result = False
@@ -379,6 +401,7 @@ class WebhookMonitoringService:
 
         if success_result:
             logger.info(f"Successfully retried webhook: {webhook_id}")
+            await _send_post_commit_tasks(handler_result)
             return {
                 "success": True,
                 "message": "Webhook reprocessed successfully",

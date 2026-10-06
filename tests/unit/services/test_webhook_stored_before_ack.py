@@ -147,3 +147,63 @@ async def test_a_duplicate_is_acknowledged_without_processing():
 
     assert response["status"] == "duplicate"
     assert tasks.tasks == []
+
+
+@pytest.mark.asyncio
+async def test_the_losing_insert_of_a_double_delivery_is_a_duplicate():
+    svc = LemonSqueezyWebhookService(AsyncMock())
+    svc._check_idempotency = AsyncMock(return_value=False)  # both deliveries passed the check
+    stored_by_the_other = WebhookEvent(id=uuid4(), event_id="wh_1", event_name="x")
+    stored_by_the_other._inserted_here = False
+    svc._log_webhook = AsyncMock(return_value=stored_by_the_other)
+
+    assert (await svc.record_webhook(PAYLOAD))["duplicate"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_failing_handler_releases_its_claim_before_marking_the_row():
+    event = WebhookEvent(
+        id=uuid4(), event_id="wh_3", event_name="subscription_updated", payload={}, processed=False
+    )
+    svc = _service_with_stored(event)
+    order = []
+    svc.db.rollback = AsyncMock(side_effect=lambda: order.append("rollback"))
+    svc._route_event = AsyncMock(side_effect=ValueError("boom"))
+    svc._mark_failed = AsyncMock(side_effect=lambda *_a: order.append("mark_failed"))
+
+    with pytest.raises(WebhookProcessingError):
+        await svc.process_recorded("wh_3")
+    # _mark_failed writes the row from its own session, so the claim goes first.
+    assert order == ["rollback", "mark_failed"]
+
+
+@pytest.mark.asyncio
+async def test_reprocessing_returns_the_handler_s_emails():
+    event = WebhookEvent(
+        id=uuid4(), event_id="wh_4", event_name="subscription_payment_success", payload={}
+    )
+    svc = LemonSqueezyWebhookService(AsyncMock())
+    svc._route_event = AsyncMock(
+        return_value={"send_email": True, "email_type": "payment_succeeded"}
+    )
+
+    result = await svc.reprocess_event(event)
+
+    assert result["handler_result"]["email_type"] == "payment_succeeded"
+
+
+@pytest.mark.asyncio
+async def test_a_retried_event_sends_its_emails_after_the_commit():
+    from src.services import webhook_monitoring_service as monitoring
+
+    email, notice = AsyncMock(), AsyncMock()
+    with (
+        patch("src.api.routes.subscriptions.webhook_routes._send_webhook_email", email),
+        patch("src.api.routes.subscriptions.webhook_routes._send_webhook_notification", notice),
+    ):
+        await monitoring._send_post_commit_tasks({"send_email": True, "email_type": "x"})
+        await monitoring._send_post_commit_tasks({"send_email": False})
+        await monitoring._send_post_commit_tasks(None)
+
+    email.assert_awaited_once()
+    notice.assert_awaited_once()
