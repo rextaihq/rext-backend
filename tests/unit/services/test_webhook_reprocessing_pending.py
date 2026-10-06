@@ -40,14 +40,14 @@ async def session():
     await engine.dispose()
 
 
-def _event(db, *, minutes_ago, processed=False, error=None):
+def _event(db, *, minutes_ago, processed=False, error=None, retries=0):
     row = WebhookEvent(
         event_id=f"wh-{uuid4().hex[:8]}",
         event_name="subscription_updated",
         payload={},
         processed=processed,
         error_message=error,
-        retry_count=0,
+        retry_count=retries,
         created_at=NOW - timedelta(minutes=minutes_ago),
         updated_at=NOW - timedelta(minutes=minutes_ago),
     )
@@ -61,6 +61,11 @@ async def test_an_interrupted_event_is_recovered_once_it_has_waited(session):
     failed = _event(session, minutes_ago=30, error="boom")
     in_flight = _event(session, minutes_ago=1)  # its own background task may still run
     _event(session, minutes_ago=30, processed=True)
+    # Older than the lookback: one never attempted (the service was down for days)
+    # is still recovered; one that failed and was retried has had its chances.
+    days_ago = 60 * 24 * 5
+    never_attempted = _event(session, minutes_ago=days_ago)
+    gave_up = _event(session, minutes_ago=days_ago, error="boom", retries=1)
     await session.flush()
 
     @asynccontextmanager
@@ -79,6 +84,7 @@ async def test_an_interrupted_event_is_recovered_once_it_has_waited(session):
     ):
         stats = await task.run_webhook_reprocessing_task()
 
-    assert set(retried) == {stuck.id, failed.id}
+    assert set(retried) == {stuck.id, failed.id, never_attempted.id}
     assert in_flight.id not in retried
-    assert stats["succeeded"] == 2
+    assert gave_up.id not in retried
+    assert stats["succeeded"] == 3
