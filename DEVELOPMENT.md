@@ -41,8 +41,10 @@ To undo before step 6: set `DATABASE_URI` back to the application database and r
 
 ## Deploys
 
-A merge into `stage` deploys staging, and a push to `main` deploys production (`.github/workflows/stage.yaml`, `production.yaml`). The backend is a Coolify Service, which `/api/v1/deploy` only starts with the images it already has. So the workflows restart it with `POST /api/v1/services/{uuid}/restart?latest=true`, which pulls the new image first. The job then waits until the running server reports the commit it built.
+A merge into `stage` deploys staging, and a push to `main` deploys production (`.github/workflows/stage.yaml`, `production.yaml`). The backend is a Coolify Service, and `/api/v1/deploy` only starts a Service with the images it already has. So staging restarts it with `POST /api/v1/services/{uuid}/restart?latest=true`, which pulls the new image first. The job then waits until the running server reports the commit it built.
 
+- **Production** still calls `/api/v1/deploy`. A restart with `latest=true` pulls every image in the Service, and `edoburu/pgbouncer` and `minio-mirror` float on `:latest` there. Once both are pinned to exact tags in Coolify, production switches to the same restart (founder, 2026-10-06; #378). Until then, after a release, check `/health/live` and restart the production service with "pull latest" by hand if it still reports the old commit.
 - **What a server runs:** `curl -s https://staging-api.rext.ai/health/live` (or `https://api.rext.ai/health/live`). `commit` is the SHA the image was built from; `unknown` means an image built before this check, or outside CI.
-- **A deploy job that fails on "did not run <sha>":** the image is in GHCR, but the server didn't pick it up within 15 minutes. Look at the service in Coolify (its logs, whether the pull failed) before restarting it by hand with "pull latest".
+- **A staging deploy that fails on "did not run <sha>":** the image is in GHCR, but the server didn't pick it up within 15 minutes. Look at the service in Coolify (its logs, whether the pull failed) before restarting it by hand with "pull latest".
+- **A run refused as stale:** a newer commit (on `stage`, one touching what the workflow deploys) is already on the branch, so publishing this one would roll the server back. Re-run the newest run instead, or roll back on purpose.
 - **The Shopify app** keeps `/api/v1/deploy`. Its Coolify resource isn't visible to the workflows' token, so whether it's a Service or an Application is still to be confirmed.

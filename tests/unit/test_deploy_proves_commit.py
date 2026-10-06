@@ -59,23 +59,30 @@ def test_ci_records_the_commit_before_building(name: str) -> None:
     assert record < text.index("langgraph build")
 
 
-@pytest.mark.parametrize(
-    ("name", "uuid"),
-    [("stage.yaml", "COOLIFY_UUID_STAGE"), ("production.yaml", "COOLIFY_UUID_PROD")],
-)
-def test_backend_deploy_restarts_with_the_latest_images(name: str, uuid: str) -> None:
-    text = _workflow(name)
-    assert f"/api/v1/services/${{{{ secrets.{uuid} }}}}/restart" in text
+def test_staging_restarts_with_the_latest_images() -> None:
+    text = _workflow("stage.yaml")
+    assert "/api/v1/services/${{ secrets.COOLIFY_UUID_STAGE }}/restart" in text
     assert '--url-query "latest=true"' in text
     # /api/v1/deploy only starts a Service with the images it already has.
     assert not re.search(
-        rf"api/v1/deploy\"[^\n]*\n[^\n]*uuid=\$\{{\{{ secrets\.{uuid} \}}\}}", text
+        r"api/v1/deploy\"[^\n]*\n[^\n]*uuid=\$\{\{ secrets\.COOLIFY_UUID_STAGE \}\}", text
     )
 
 
-@pytest.mark.parametrize("name", ["stage.yaml", "production.yaml"])
-def test_deploy_waits_for_the_running_commit(name: str) -> None:
-    text = _workflow(name)
+def test_production_keeps_its_deploy_call_until_the_images_are_pinned() -> None:
+    # A restart with latest=true pulls every image in the Service; production's
+    # pgbouncer and minio-mirror float on :latest until they're pinned (#378).
+    runs = "\n".join(
+        step.get("run", "")
+        for step in yaml.safe_load(_workflow("production.yaml"))["jobs"]["deploy"]["steps"]
+    )
+    assert "/restart" not in runs
+    assert "latest=true" not in runs
+    assert "uuid=${{ secrets.COOLIFY_UUID_PROD }}" in runs
+
+
+def test_staging_waits_for_the_running_commit() -> None:
+    text = _workflow("stage.yaml")
     assert "/health/live" in text
     assert "EXPECTED: ${{ github.sha }}" in text
     assert "jq -r '.commit" in text
@@ -98,16 +105,38 @@ def test_only_the_branch_publishes_or_deploys(name: str, branch: str, job: str) 
 
 @pytest.mark.parametrize(("name", "branch"), BRANCHES)
 @pytest.mark.parametrize("job", PUBLISHING_JOBS)
-def test_a_stale_rerun_is_refused_first(name: str, branch: str, job: str) -> None:
-    # A re-run keeps its old commit; publishing or deploying it would roll the server back.
+def test_a_stale_run_is_refused_first(name: str, branch: str, job: str) -> None:
+    # A re-run keeps its commit and runs can start out of push order: on every
+    # attempt, an older commit must not publish or deploy over a newer one.
     first = _jobs(name)[job]["steps"][0]
-    assert first["if"] == "github.run_attempt != '1'"
-    assert f"commits/{branch}" in first["run"]
-    assert '"$HEAD" != "${{ github.sha }}"' in first["run"]
+    assert first["name"] == "Refuse a stale run"
+    assert "if" not in first
+    if branch == "main":
+        assert 'commits/main" --jq .sha' in first["run"]
+        assert '"$HEAD" != "${{ github.sha }}"' in first["run"]
+    else:
+        assert "compare/${{ github.sha }}...stage" in first["run"]
+        assert 'grep -E "$DEPLOY_PATHS"' in first["run"]
 
 
-@pytest.mark.parametrize("name", ["stage.yaml", "production.yaml"])
-def test_the_wait_has_a_wall_clock_deadline(name: str) -> None:
-    (wait,) = [s for s in _jobs(name)["deploy"]["steps"] if "/health/live" in str(s.get("env"))]
+def _sample(glob: str) -> str:
+    """A file the push filter's glob matches."""
+    return glob.replace("**", "a/b.py").replace("*", "x")
+
+
+def test_the_stale_check_covers_every_path_staging_deploys_on() -> None:
+    config = yaml.safe_load(_workflow("stage.yaml"))
+    paths = config[True]["push"]["paths"]  # PyYAML reads the "on" key as True
+    pattern = re.compile(_jobs("stage.yaml")["deploy"]["steps"][0]["env"]["DEPLOY_PATHS"])
+    for glob in paths:
+        assert pattern.search(_sample(glob)), glob
+    assert not pattern.search("docs/notes.md")
+    assert not pattern.search("README.md")
+
+
+def test_the_wait_has_a_wall_clock_deadline() -> None:
+    (wait,) = [
+        s for s in _jobs("stage.yaml")["deploy"]["steps"] if "/health/live" in str(s.get("env"))
+    ]
     assert "DEADLINE=$((SECONDS + 900))" in wait["run"]
     assert wait["timeout-minutes"] <= 20

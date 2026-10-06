@@ -81,21 +81,29 @@ jobs:
       pushed_digest: ${{ steps.push.outputs.digest }}
 
     steps:
-      - name: Refuse a stale re-run
-        # A re-run keeps its original commit: publishing or deploying it after a
-        # newer one would silently roll staging back. Roll back on purpose instead.
-        # A first attempt is always for the push that started it (a newer pending
-        # run cancels an older one), and the path filter means stage's head may
-        # be a later commit that started no run, so only re-runs are checked.
-        if: github.run_attempt != '1'
+      - name: Refuse a stale run
+        # Publishing or deploying an older commit after a newer one would silently
+        # roll staging back: a re-run keeps its original commit, and GitHub doesn't
+        # guarantee runs start in push order. Refused when stage has a newer commit
+        # touching what this workflow deploys (DEPLOY_PATHS mirrors the push paths
+        # above); a later commit outside them started no run, so it doesn't count.
         env:
           GH_TOKEN: ${{ github.token }}
+          DEPLOY_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|rext/|docker-compose\.yml$|\.github/workflows/(stage|ci-quality)\.yaml$)'
         run: |
-          HEAD=$(gh api "repos/${{ github.repository }}/commits/stage" --jq .sha)
-          if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::This re-run is for ${{ github.sha }}, but stage is at $HEAD: refusing to publish or deploy an older commit"
+          COMPARE=$(gh api "repos/${{ github.repository }}/compare/${{ github.sha }}...stage")
+          STATUS=$(echo "$COMPARE" | jq -r .status)
+          case "$STATUS" in
+            identical) echo "stage is at ${{ github.sha }}"; exit 0 ;;
+            ahead) ;;
+            *) echo "::error::stage is $STATUS from ${{ github.sha }}: refusing to publish or deploy"; exit 1 ;;
+          esac
+          NEWER=$(echo "$COMPARE" | jq -r '.files[].filename' | grep -E "$DEPLOY_PATHS" | head -5 | tr '\n' ' ')
+          if [ -n "$NEWER" ]; then
+            echo "::error::stage has newer commits touching what this deploys ($NEWER): refusing to publish or deploy ${{ github.sha }}"
             exit 1
           fi
+          echo "Newer commits on stage touch nothing this workflow deploys"
 
       - name: Cleanup Runner (Pre-build)
         run: |
@@ -156,21 +164,29 @@ jobs:
       packages: write
 
     steps:
-      - name: Refuse a stale re-run
-        # A re-run keeps its original commit: publishing or deploying it after a
-        # newer one would silently roll staging back. Roll back on purpose instead.
-        # A first attempt is always for the push that started it (a newer pending
-        # run cancels an older one), and the path filter means stage's head may
-        # be a later commit that started no run, so only re-runs are checked.
-        if: github.run_attempt != '1'
+      - name: Refuse a stale run
+        # Publishing or deploying an older commit after a newer one would silently
+        # roll staging back: a re-run keeps its original commit, and GitHub doesn't
+        # guarantee runs start in push order. Refused when stage has a newer commit
+        # touching what this workflow deploys (DEPLOY_PATHS mirrors the push paths
+        # above); a later commit outside them started no run, so it doesn't count.
         env:
           GH_TOKEN: ${{ github.token }}
+          DEPLOY_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|rext/|docker-compose\.yml$|\.github/workflows/(stage|ci-quality)\.yaml$)'
         run: |
-          HEAD=$(gh api "repos/${{ github.repository }}/commits/stage" --jq .sha)
-          if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::This re-run is for ${{ github.sha }}, but stage is at $HEAD: refusing to publish or deploy an older commit"
+          COMPARE=$(gh api "repos/${{ github.repository }}/compare/${{ github.sha }}...stage")
+          STATUS=$(echo "$COMPARE" | jq -r .status)
+          case "$STATUS" in
+            identical) echo "stage is at ${{ github.sha }}"; exit 0 ;;
+            ahead) ;;
+            *) echo "::error::stage is $STATUS from ${{ github.sha }}: refusing to publish or deploy"; exit 1 ;;
+          esac
+          NEWER=$(echo "$COMPARE" | jq -r '.files[].filename' | grep -E "$DEPLOY_PATHS" | head -5 | tr '\n' ' ')
+          if [ -n "$NEWER" ]; then
+            echo "::error::stage has newer commits touching what this deploys ($NEWER): refusing to publish or deploy ${{ github.sha }}"
             exit 1
           fi
+          echo "Newer commits on stage touch nothing this workflow deploys"
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -209,21 +225,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Refuse a stale re-run
-        # A re-run keeps its original commit: publishing or deploying it after a
-        # newer one would silently roll staging back. Roll back on purpose instead.
-        # A first attempt is always for the push that started it (a newer pending
-        # run cancels an older one), and the path filter means stage's head may
-        # be a later commit that started no run, so only re-runs are checked.
-        if: github.run_attempt != '1'
+      - name: Refuse a stale run
+        # Publishing or deploying an older commit after a newer one would silently
+        # roll staging back: a re-run keeps its original commit, and GitHub doesn't
+        # guarantee runs start in push order. Refused when stage has a newer commit
+        # touching what this workflow deploys (DEPLOY_PATHS mirrors the push paths
+        # above); a later commit outside them started no run, so it doesn't count.
         env:
           GH_TOKEN: ${{ github.token }}
+          DEPLOY_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|rext/|docker-compose\.yml$|\.github/workflows/(stage|ci-quality)\.yaml$)'
         run: |
-          HEAD=$(gh api "repos/${{ github.repository }}/commits/stage" --jq .sha)
-          if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::This re-run is for ${{ github.sha }}, but stage is at $HEAD: refusing to publish or deploy an older commit"
+          COMPARE=$(gh api "repos/${{ github.repository }}/compare/${{ github.sha }}...stage")
+          STATUS=$(echo "$COMPARE" | jq -r .status)
+          case "$STATUS" in
+            identical) echo "stage is at ${{ github.sha }}"; exit 0 ;;
+            ahead) ;;
+            *) echo "::error::stage is $STATUS from ${{ github.sha }}: refusing to publish or deploy"; exit 1 ;;
+          esac
+          NEWER=$(echo "$COMPARE" | jq -r '.files[].filename' | grep -E "$DEPLOY_PATHS" | head -5 | tr '\n' ' ')
+          if [ -n "$NEWER" ]; then
+            echo "::error::stage has newer commits touching what this deploys ($NEWER): refusing to publish or deploy ${{ github.sha }}"
             exit 1
           fi
+          echo "Newer commits on stage touch nothing this workflow deploys"
 
       - name: Wait for GHCR tag propagation (backend)
         if: needs.changes.outputs.backend == 'true'
