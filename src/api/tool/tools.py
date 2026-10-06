@@ -332,10 +332,12 @@ HOSTNAME = re.compile(rf"(?=.{{1,253}}$){HOST_LABEL}(?:\.{HOST_LABEL})*\.?", re.
 
 
 def absolute_url(url: str) -> bool:
-    """Whether url is a full http or https address: a valid host name or IP, no spaces."""
+    """Whether url is a full http or https address: a valid host name or IP, a valid port if any,
+    no spaces."""
     try:
         parsed = urlparse(url.strip())
         host = parsed.hostname or ""
+        parsed.port  # raises for a port that isn't a number from 0 to 65535
     except ValueError:
         return False
     if parsed.scheme not in ("http", "https") or re.search(r"\s", url.strip()):

@@ -142,7 +142,16 @@ async def test_hreflang_takes_only_the_iso_codes_google_supports():
     assert "'zz' is not a region code" in warnings
 
 
-@pytest.mark.parametrize("url", ["not a url", "https://exa mple.com/x", "https://exa_mple.com/"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "not a url",
+        "https://exa mple.com/x",
+        "https://exa_mple.com/",
+        "https://example.com:abc/",
+        "https://example.com:99999/",
+    ],
+)
 def test_a_canonical_address_must_be_a_full_web_address(url):
     res = client.post("/api/v1/tools/canonical-tag-generator", json={"url": url})
     assert res.status_code == 400
@@ -165,3 +174,13 @@ async def test_hreflang_leaves_out_what_is_not_a_full_address():
     warnings = " | ".join(result["warnings"])
     assert "'not a url' is not a full address" in warnings
     assert "'also not a url' is not a full address (https://...): no x-default." in warnings
+
+
+def test_an_address_with_a_valid_port_is_kept():
+    res = client.post(
+        "/api/v1/tools/canonical-tag-generator", json={"url": "http://localhost:3000/a/"}
+    )
+    assert (
+        res.json()["data"]["canonical_tag"]
+        == '<link rel="canonical" href="https://localhost:3000/a" />'
+    )
