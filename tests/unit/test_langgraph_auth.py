@@ -171,15 +171,37 @@ WORKSPACE = "33333333-3333-3333-3333-333333333333"
 
 @pytest.fixture
 def role(monkeypatch, fake_db):
-    """The caller holds content.create in WORKSPACE only."""
+    """The caller is an active member of WORKSPACE and holds content.create there only."""
     asked = []
 
     async def _check_permission(db, user_id, permission, workspace_id):
         asked.append((str(user_id), permission, str(workspace_id)))
         return permission == "content.create" and str(workspace_id) == WORKSPACE
 
+    async def _active(db, user_id, workspace_id):
+        return str(workspace_id) == WORKSPACE
+
     monkeypatch.setattr("src.utils.rbac_utils.check_permission", _check_permission)
+    monkeypatch.setattr(langgraph_auth, "_active_in_workspace", _active)
     return asked
+
+
+async def test_an_inactive_member_keeps_no_access_through_their_role(role, monkeypatch):
+    # Marking a member inactive leaves their role assignment in place; the role
+    # alone must not let them start or resume a generation.
+    async def _inactive(db, user_id, workspace_id):
+        return False
+
+    monkeypatch.setattr(langgraph_auth, "_active_in_workspace", _inactive)
+
+    assert not await langgraph_auth._may_create_content(USER, WORKSPACE)
+    assert role == []  # refused before the role is even consulted
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(
+            _ctx("threads", "create_run"),
+            {"kwargs": {"command": {"resume": "approve"}}, "metadata": {"workspace_id": WORKSPACE}},
+        )
+    assert exc.value.status_code == 403
 
 
 async def test_a_new_thread_names_a_workspace_where_its_creator_may_create(role):
