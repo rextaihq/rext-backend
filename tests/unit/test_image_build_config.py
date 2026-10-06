@@ -1,8 +1,9 @@
 """The image's LangGraph server version is set in one place: langgraph.json's "api_version".
 
 It picks the base image the server comes from. The dev group pins the same langgraph-api for
-`langgraph dev`, the committed Dockerfile is generated from langgraph.json, and the CI workflows
-and build scripts that still pass --api-version must name the same version.
+`langgraph dev`, and the committed Dockerfile is generated from langgraph.json. The CI workflows run
+`langgraph build` without --api-version, so they read it from there too; the manual build scripts that
+still pass one must name the same version.
 """
 
 import json
@@ -61,12 +62,19 @@ def test_dockerfile_is_generated_from_langgraph_json() -> None:
     assert committed.startswith(f"FROM langchain/langgraph-api:{_config()['api_version']}-")
 
 
-def test_build_commands_name_the_same_server_version() -> None:
-    files = sorted((ROOT / ".github" / "workflows").glob("*.y*ml")) + sorted(ROOT.glob("*.sh"))
+def test_ci_builds_take_the_server_version_from_langgraph_json() -> None:
+    workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
+    passing = [p.name for p in workflows if "--api-version" in p.read_text(encoding="utf-8")]
+    assert not passing, (
+        f"these pass --api-version; langgraph.json's api_version is the one place: {passing}"
+    )
+
+
+def test_build_scripts_name_the_same_server_version() -> None:
     pattern = re.compile(r'--api-version[ =]"?([0-9][\w.\-]*)|API_VERSION="([^"$]+)"')
     found = {
         f"{path.name}: {a or b}"
-        for path in files
+        for path in sorted(ROOT.glob("*.sh"))
         for a, b in pattern.findall(path.read_text(encoding="utf-8"))
     }
     wrong = sorted(f for f in found if not f.endswith(f": {_config()['api_version']}"))

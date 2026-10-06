@@ -57,7 +57,7 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build --api-version 0.12.6 -t ghcr.io/${{ github.repository_owner }}/rext-backend:latest
+        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:latest
 
       - name: Tag with commit SHA for rollback
         run: |
