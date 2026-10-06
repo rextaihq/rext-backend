@@ -94,25 +94,33 @@ class _Recorder:
     """Stands in for the real network backend: records where it was asked to connect,
     and fails to connect to the addresses in `unreachable`."""
 
-    def __init__(self, unreachable: tuple[str, ...] = ()) -> None:
+    def __init__(self, unreachable: tuple[str, ...] = (), silent: tuple[str, ...] = ()) -> None:
         self.connected: list[tuple[str, int]] = []
+        self.timeouts: list[float | None] = []
         self.unreachable = unreachable
+        self.silent = silent
 
-    async def connect_tcp(self, host, port, **_):
+    async def connect_tcp(self, host, port, timeout=None, **_):
         self.connected.append((host, port))
+        self.timeouts.append(timeout)
         if host in self.unreachable:
             raise httpcore.ConnectError(f"{host} unreachable")
+        if host in self.silent:  # never answers: the attempt runs out its time
+            raise httpcore.ConnectTimeout(f"{host} did not answer")
         return object()
 
 
 def _backend(
-    monkeypatch, *answers: list[str], unreachable: tuple[str, ...] = ()
+    monkeypatch,
+    *answers: list[str],
+    unreachable: tuple[str, ...] = (),
+    silent: tuple[str, ...] = (),
 ) -> tuple[_PublicOnlyNetworkBackend, _Recorder]:
     """A checking backend whose name lookups answer `answers`, one per lookup."""
     queue = list(answers)
     monkeypatch.setattr(url_validator, "_resolve_hostname", lambda host: queue.pop(0))
     backend = _PublicOnlyNetworkBackend()
-    recorder = _Recorder(unreachable)
+    recorder = _Recorder(unreachable, silent)
     backend._backend = recorder
     return backend, recorder
 
@@ -168,6 +176,21 @@ async def test_an_unreachable_address_falls_through_to_the_next_checked_one(monk
     assert recorder.connected == [("2606:2800:220:1::248", 443), ("93.184.216.34", 443)]
 
 
+async def test_an_address_that_never_answers_leaves_time_for_the_next(monkeypatch):
+    backend, recorder = _backend(
+        monkeypatch,
+        ["2606:2800:220:1::248", "93.184.216.34"],
+        silent=("2606:2800:220:1::248",),
+    )
+
+    await backend.connect_tcp("images.example.com", 443, timeout=10)
+
+    assert recorder.connected == [("2606:2800:220:1::248", 443), ("93.184.216.34", 443)]
+    # The first attempt gets its share (about half), the last what is left.
+    assert recorder.timeouts[0] < 5.01
+    assert recorder.timeouts[1] > 9
+
+
 async def test_every_address_unreachable_is_a_connection_error(monkeypatch):
     backend, _ = _backend(monkeypatch, ["93.184.216.34"], unreachable=("93.184.216.34",))
 
@@ -197,6 +220,21 @@ async def test_a_name_that_does_not_resolve_is_a_connection_error_not_a_refusal(
         await backend.connect_tcp("no-such-host.example", 80)
 
     assert recorder.connected == []
+
+
+async def test_the_hooks_lookup_counts_against_the_connect_timeout(monkeypatch):
+    def slow(host):
+        time.sleep(0.5)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(url_validator, "_resolve_hostname", slow)
+    hook = url_validator.refuse_private_addresses()
+    request = httpx.Request(
+        "GET", "http://slow.example/", extensions={"timeout": {"connect": 0.05}}
+    )
+
+    with pytest.raises(httpx.ConnectTimeout):
+        await hook(request)
 
 
 async def test_the_hook_leaves_an_unresolvable_name_to_the_connection(monkeypatch):
