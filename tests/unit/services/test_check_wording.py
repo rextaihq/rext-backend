@@ -66,6 +66,7 @@ FROM_DETAIL = {
     "unsupported_claims",
     "meta_description_length",
     "brand_prominence",
+    "selected_title_preserved",
     "brand_url_accuracy",
     "required_sections",
     "internal_links_integration",
@@ -220,7 +221,8 @@ def test_every_cause_marker_is_the_checks_own_wording():
     markers = [m for cases in _ONE_CAUSE.values() for m, _ in cases]
     markers += [m for _, cases in _SEVERAL_CAUSES.values() for m, _ in cases]
     for marker in markers:
-        assert marker in VALIDATION_SOURCE, f"{marker!r} is no longer in validation.py"
+        # A field name is written into the detail from a variable: its bare name is in the source.
+        assert marker.strip("`") in VALIDATION_SOURCE, f"{marker!r} is no longer in validation.py"
 
 
 @pytest.mark.parametrize(
@@ -237,6 +239,18 @@ def test_every_cause_marker_is_the_checks_own_wording():
             "The user chose a PROMINENT mention: 'Rext' must also be named in the closing call to "
             "action, in a full sentence with the value it brings, but the closing part does not.",
             "Your brand isn't named in the closing, though you chose a prominent mention.",
+        ),
+        (
+            "selected_title_preserved",
+            "`meta_title` was changed after selection. Expected the user-selected title 'A' but "
+            "found 'B'. Restore the user-selected title verbatim.",
+            "The search title differs from the title you picked.",
+        ),
+        (
+            "selected_title_preserved",
+            "`title` was changed after selection. Expected the user-selected title 'A' but found "
+            "'B'. Restore the user-selected title verbatim.",
+            "The title differs from the one you picked.",
         ),
         (
             "brand_url_accuracy",
