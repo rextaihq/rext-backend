@@ -495,3 +495,95 @@ async def test_becoming_unpaid_sends_one_email(session):
         "subscription_id": str(subscription.id),
     }
     assert again is None  # already unpaid: no second email
+
+
+# --- event order and credits ------------------------------------------------------
+
+T1, T2, T3 = (datetime(2026, 10, 6, h, 0, tzinfo=timezone.utc) for h in (8, 9, 10))
+
+
+@pytest.mark.asyncio
+async def test_an_older_update_is_ignored_and_a_newer_one_applied(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.ACTIVE, ls_id="ls-sub-order"
+    )
+    subscription.provider_updated_at = T2
+    await session.flush()
+
+    late = _subscription_payload("ls-sub-order", status="past_due", updated_at=T1.isoformat())
+    await handle_subscription_updated(late, _event("subscription_updated"), session)
+    assert (await _row(session, subscription)).status == SubscriptionStatus.ACTIVE
+
+    newer = _subscription_payload("ls-sub-order", status="unpaid", updated_at=T3.isoformat())
+    await handle_subscription_updated(newer, _event("subscription_updated"), session)
+    await session.refresh(subscription)
+    assert subscription.status == SubscriptionStatus.UNPAID
+    assert subscription.provider_updated_at == T3
+
+
+@pytest.mark.asyncio
+async def test_an_older_cancellation_is_ignored(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_cancelled,
+    )
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.ACTIVE, ls_id="ls-sub-old-cancel"
+    )
+    subscription.provider_updated_at = T2
+    await session.flush()
+
+    await handle_subscription_cancelled(
+        _subscription_payload(
+            "ls-sub-old-cancel", ends_at=LATER.isoformat(), updated_at=T1.isoformat()
+        ),
+        _event("subscription_cancelled"),
+        session,
+    )
+
+    assert (await _row(session, subscription)).status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.parametrize(
+    ("provider_status", "credits"), [("active", 1000), ("on_trial", 0), ("past_due", 0)]
+)
+@pytest.mark.asyncio
+async def test_a_new_subscription_gets_credits_only_once_paid(session, provider_status, credits):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
+
+    user, plan, _ = await _subscription(session, SubscriptionStatus.EXPIRED)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{provider_status}"
+    await session.flush()
+    ls_id = f"ls-sub-new-{provider_status}"
+    payload = _subscription_payload(
+        ls_id,
+        status=provider_status,
+        variant_id=f"var-{provider_status}",
+        user_email=user.email,
+        updated_at=T1.isoformat(),
+    )
+    payload["custom_data"] = {"user_id": str(user.id)}
+
+    await handle_subscription_updated(payload, _event("subscription_updated"), session)
+    created = (
+        await session.execute(
+            select(UserSubscription).where(UserSubscription.lemonsqueezy_subscription_id == ls_id)
+        )
+    ).scalar_one()
+
+    assert created.current_credits == credits
+    assert created.provider_updated_at == T1
+
+
+@pytest.mark.asyncio
+async def test_a_payment_for_an_unknown_subscription_fails_to_be_retried(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_success,
+    )
+
+    with pytest.raises(ValueError, match="not found in payment_success"):
+        await handle_subscription_payment_success(
+            _invoice_payload("ls-sub-not-yet"), _event("subscription_payment_success"), session
+        )

@@ -17,7 +17,7 @@ from src.services.webhook_handlers import (
     register_default_handlers,
 )
 from src.services.webhook_security_monitor import webhook_security_monitor
-from src.utils.lemonsqueezy_webhook import verify_webhook_signature
+from src.utils.lemonsqueezy_webhook import WebhookParsingError, verify_webhook_signature
 from src.utils.logger import logger
 
 router = APIRouter(prefix="/subscriptions/webhooks", tags=["subscriptions", "webhooks"])
@@ -32,19 +32,19 @@ def _register_all_handlers(webhook_service: LemonSqueezyWebhookService) -> None:
     register_default_handlers(webhook_service)
 
 
-async def _process_webhook_in_background(body: bytes, signature: str) -> None:
+async def _process_webhook_in_background(event_id: str, event_name: str = "unknown") -> None:
     """
-    Process webhook event in a background task with its own DB session.
+    Process a stored webhook event in a background task with its own DB session.
 
-    This runs after the 200 response has been sent to LemonSqueezy,
-    preventing timeout-induced retries.
+    The route stored the event (record_webhook) before answering Lemon Squeezy,
+    so a failure here leaves an unprocessed row for the reprocessing job.
     """
     async with AsyncSessionLocal() as db:
         try:
             webhook_service = LemonSqueezyWebhookService(db)
             _register_all_handlers(webhook_service)
 
-            result = await webhook_service.process_webhook(body, signature)
+            result = await webhook_service.process_recorded(event_id)
 
             # Commit changes BEFORE sending emails
             await db.commit()
@@ -85,16 +85,6 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
             # (log_webhook_processed). The webhook_events row already carries the
             # error via LemonSqueezyWebhookService._mark_failed; this makes the
             # failure visible in the audit stream too.
-            event_id = "unknown"
-            event_name = "unknown"
-            try:
-                _payload = json.loads(body)
-                _meta = _payload.get("meta", {}) or {}
-                event_id = _meta.get("event_id") or _payload.get("id") or "unknown"
-                event_name = _meta.get("event_name", "unknown")
-            except Exception:
-                pass
-
             try:
                 await audit_logger.log_webhook_failed(
                     event_id=str(event_id),
@@ -332,6 +322,26 @@ async def handle_lemonsqueezy_webhook(
     except Exception:
         logger.warning("Failed to emit webhook_received audit event", exc_info=True)
 
-    background_tasks.add_task(_process_webhook_in_background, body, signature)
+    # Store the event before acknowledging it: Lemon Squeezy sends an event again
+    # only when it gets no 2xx (three times), so an event that can't be stored is
+    # answered with an error, never with a 200 it would then lose.
+    try:
+        async with AsyncSessionLocal() as record_db:
+            recorded = await LemonSqueezyWebhookService(record_db).record_webhook(body)
+    except WebhookParsingError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"LemonSqueezy webhook could not be stored: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook could not be stored; send it again",
+        ) from e
+
+    if recorded["duplicate"]:
+        return {"status": "duplicate", "message": "Webhook already received"}
+
+    background_tasks.add_task(
+        _process_webhook_in_background, recorded["event_id"], recorded["event_type"] or "unknown"
+    )
 
     return {"status": "accepted", "message": "Webhook received, processing in background"}
