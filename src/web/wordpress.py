@@ -1198,8 +1198,9 @@ class WordPressPublisher:
             reason = (
                 "The image's address leads to a private or reserved network; it was not downloaded"
             )
+            # The host only: the URL's netloc can carry a username and password.
             logger.warning(
-                "[WordPress Media Upload] refused host=%s reason=%s", parsed_url.netloc, e
+                "[WordPress Media Upload] refused host=%s reason=%s", parsed_url.hostname, e
             )
             raise RextExternalServiceException(message=reason, service_name="WordPress") from e
         except Exception as e:
