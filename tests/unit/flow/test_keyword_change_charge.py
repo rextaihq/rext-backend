@@ -62,9 +62,12 @@ async def _analysis(payload):
 
 
 async def _gate(monkeypatch, state, answer):
+    """The Library save, then the gate answered (two nodes, rext-control#330)."""
     monkeypatch.setattr(recommendation_module, "interrupt", lambda _payload: answer)
     runtime = SimpleNamespace(store=SimpleNamespace(aput=AsyncMock()))
-    return await recommendation_module.keyword_recommendation(state, {}, runtime=runtime)
+    saved = await recommendation_module.save_keyword_research(state, {}, runtime=runtime)
+    state = {**state, "seo_result": {**state["seo_result"], **saved["seo_result"]}}
+    return await recommendation_module.keyword_recommendation(state)
 
 
 async def test_keeping_the_keyword_charges_the_topics_once(monkeypatch, charges):

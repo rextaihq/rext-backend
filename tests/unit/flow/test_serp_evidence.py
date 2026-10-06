@@ -245,7 +245,9 @@ def test_content_type_gate_carries_the_evidence(monkeypatch):
         "seo_result": {"serp_backlinks": {"main_intent": "commercial"}},
     }
 
-    content_type_module.content_type(state)
+    # The pick is made before the gate (rext-control#330); the gate shows it.
+    picked = content_type_module.recommend_content_type(state)
+    content_type_module.content_type({**state, **picked})
 
     evidence = payloads[0]["serp_evidence"]
     assert evidence["dominant_format"]["format"] == "list"

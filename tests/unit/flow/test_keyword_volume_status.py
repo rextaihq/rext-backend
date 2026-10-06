@@ -235,7 +235,10 @@ async def _payload_at_the_gate(monkeypatch, state):
     monkeypatch.setattr(recommendation_module, "interrupt", _interrupt)
     monkeypatch.setattr(credit_module, "consume_stage_credits", AsyncMock())
     runtime = _runtime()
-    await recommendation_module.keyword_recommendation(state, {}, runtime=runtime)
+    # The Library save, then the gate (two nodes, rext-control#330).
+    saved = await recommendation_module.save_keyword_research(state, {}, runtime=runtime)
+    state = {**state, "seo_result": {**state["seo_result"], **saved["seo_result"]}}
+    await recommendation_module.keyword_recommendation(state)
     stored = runtime.store.aput.await_args.kwargs["value"]
     return payloads[0]["seo_state"], stored["seo_state"]
 
@@ -278,12 +281,13 @@ async def test_no_serp_results_skips_the_gate_and_records_why(monkeypatch, serp_
     runtime = _runtime()
     state = _gate_state({"volume_status": "no_data"}, organic=False, serp_status=serp_status)
 
-    result = await recommendation_module.keyword_recommendation(state, {}, runtime=runtime)
+    result = await recommendation_module.save_keyword_research(state, {}, runtime=runtime)
 
     recs = result["seo_result"]["keyword_recommendations"]
     assert recs["error"]
     assert recs["serp_status"] == expected
     runtime.store.aput.assert_not_called()
+    assert recommendation_module.keyword_research_router(result) == "end"
     assert keyword_router(result) == "NO_SERP"
 
 
