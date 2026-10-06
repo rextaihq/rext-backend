@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 
 from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.states.rext import REXT
+from src.services.check_wording import user_detail
 from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,14 @@ def _as_float(value) -> float | None:
 
 
 def _check_rows(checks) -> list[dict]:
+    # The saved detail is the reader's line (check_wording); the check's own detail is
+    # written for the repair step and stays in the run's state.
     return [
-        {"name": c.get("name"), "severity": c.get("severity"), "detail": c.get("detail") or ""}
+        {
+            "name": c.get("name"),
+            "severity": c.get("severity"),
+            "detail": user_detail(c.get("name"), c.get("detail")),
+        }
         for c in checks or []
         if isinstance(c, dict)
     ]

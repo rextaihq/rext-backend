@@ -186,8 +186,15 @@ def test_validation_summary_prefers_the_final_check():
         "passed": False,
         "gave_up": True,
         "stage": "post_humanize",
-        "issues": [{"name": "brand_integration_depth", "severity": "blocking", "detail": "d"}],
-        "warnings": [{"name": "x", "severity": "warning", "detail": ""}],
+        # Each detail is the reader's line (G53), not the check's own repair detail.
+        "issues": [
+            {
+                "name": "brand_integration_depth",
+                "severity": "blocking",
+                "detail": "Your brand is named, but the article doesn't say what it offers.",
+            }
+        ],
+        "warnings": [{"name": "x", "severity": "warning", "detail": "X: this check didn't pass."}],
     }
     assert (
         persist_module._validation_summary({"validation": review["validation"]})["stage"]
