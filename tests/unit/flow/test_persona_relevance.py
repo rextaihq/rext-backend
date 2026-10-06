@@ -2,7 +2,13 @@
 
 import pytest
 
-from src.flow.engines.content.generation.persona_relevance import rank_personas, score_persona
+from src.flow.engines.content.generation.persona_relevance import (
+    TOPIC_FIT_THRESHOLD,
+    persona_fits_topic,
+    rank_personas,
+    score_persona,
+    topic_fit,
+)
 
 
 class _Persona:
@@ -146,3 +152,69 @@ def test_scoring_is_deterministic():
     )
 
     assert [(r.persona_id, r.score) for r in first] == [(r.persona_id, r.score) for r in second]
+
+
+# --- topic fit: may the article speak from the persona's experience (G56, #501) ---------------
+
+FOUNDER_PERSONA = _Persona(
+    "founder-1",
+    "Mobeen Abdullah",
+    professional_title="Founder & Lead Developer at Nextly",
+    areas_of_expertise=["Open-source software", "Next.js", "Content management"],
+    bio="I focus on open-source software, Next.js and content management, especially structured schemas.",
+)
+MARKETER_PERSONA = _Persona(
+    "marketer-1",
+    "Maya Lee",
+    professional_title="Marketing Consultant",
+    areas_of_expertise=["Content marketing", "Email campaigns"],
+    bio="I run email and social campaigns for cafes and small shops.",
+)
+BAKERY_TOPIC = "email marketing ideas for local bakeries"
+BAKERY_TITLE = "Email Marketing Ideas for Local Bakeries"
+
+
+@pytest.mark.unit
+def test_a_persona_outside_the_subject_does_not_fit_it():
+    """E7's proof run: a software founder recommended, as the only persona, for a bakery article."""
+    ranked = rank_personas(
+        [FOUNDER_PERSONA],
+        topic=BAKERY_TOPIC,
+        title=BAKERY_TITLE,
+        search_intent="informational",
+        content_type="blog",
+    )
+
+    assert ranked[0].persona_id == "founder-1"  # still the default: the only persona
+    assert ranked[0].fits_topic is False
+    assert ranked[0].to_dict()["fits_topic"] is False
+
+
+@pytest.mark.unit
+def test_a_persona_who_speaks_the_subject_fits_it():
+    assert persona_fits_topic(MARKETER_PERSONA, topic=BAKERY_TOPIC, title=BAKERY_TITLE)
+    assert persona_fits_topic(
+        FOUNDER_PERSONA, topic="next.js cms", title="The Best CMS for Next.js"
+    )
+    assert persona_fits_topic(
+        SEO_PERSONA, topic="technical seo audit", title="How to Run a Technical SEO Audit"
+    )
+
+
+@pytest.mark.unit
+def test_topic_fit_is_the_subject_alone_not_intent_or_content_type():
+    """Every profile speaks "guide" or "how": those dimensions never make a persona fit a subject."""
+    relevance = score_persona(
+        FOUNDER_PERSONA,
+        topic=BAKERY_TOPIC,
+        title=BAKERY_TITLE,
+        search_intent="informational",
+        content_type="how_to",
+    )
+
+    assert topic_fit(relevance.breakdown) == max(
+        relevance.breakdown["topic"], relevance.breakdown["title"]
+    )
+    assert topic_fit({"topic": 10.0, "title": 0.0, "search_intent": 100.0}) == 10.0
+    assert topic_fit({}) == 0.0
+    assert TOPIC_FIT_THRESHOLD == 30.0
