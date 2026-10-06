@@ -10,10 +10,13 @@ PRIVATE_ADDRESS_MESSAGE = (
 INVALID_ADDRESS_MESSAGE = "The site's address is not a valid URL. Check it and try again."
 
 
-async def ensure_public_site_urls(*urls: str | None) -> None:
+async def ensure_public_site_urls(*urls: object) -> None:
     """Refuse, with an error the dashboard can show, a site URL or API endpoint that
     leads to a private or reserved address (the API's own network, Redis, cloud
-    metadata). Empty values are skipped."""
+    metadata). Empty and blank values are skipped; a value that is not a string
+    (config_json is free-form) is not a valid address."""
+    if any(url is not None and not isinstance(url, str) for url in urls):
+        raise RextValidationException(message=INVALID_ADDRESS_MESSAGE)
     try:
         await ensure_public_urls(*urls)
     except SSRFValidationError as exc:

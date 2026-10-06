@@ -85,6 +85,18 @@ async def test_connect_and_update_accept_public_and_empty_values():
     await ensure_public_site_urls(PUBLIC, None, "")
 
 
+async def test_blank_values_are_skipped():
+    await ensure_public_site_urls("   ", "\t")
+
+
+@pytest.mark.parametrize("value", [123, ["http://10.0.0.5/"], {"url": "x"}])
+async def test_a_value_that_is_not_a_string_is_a_validation_error(value):
+    with pytest.raises(RextValidationException) as exc:
+        await ensure_public_site_urls(value)
+
+    assert exc.value.message == INVALID_ADDRESS_MESSAGE
+
+
 async def test_a_malformed_site_url_is_a_validation_error():
     with pytest.raises(RextValidationException) as exc:
         await ensure_public_site_urls("http://[invalid")
