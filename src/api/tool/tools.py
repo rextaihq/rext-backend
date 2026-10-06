@@ -45,6 +45,7 @@ from src.api.tool.schema.schema import (
     TitleTag,
 )
 from src.flow.model.llm_manager import load_model
+from src.utils.url_validator import refuse_private_addresses
 
 
 def _get_model(tool: str):
@@ -498,9 +499,13 @@ async def generate_hreflang_tags(request):
 
 
 async def broken_link_checker(url):
+    """Whether the address answers 200. A private or reserved address, or a redirect
+    to one, is never fetched and counts as not working."""
     try:
         url_str = str(url)
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(
+            event_hooks={"request": [refuse_private_addresses()]}
+        ) as client:
             response = await client.get(url_str, timeout=5, follow_redirects=True)
             return response.status_code == 200
     except Exception:
