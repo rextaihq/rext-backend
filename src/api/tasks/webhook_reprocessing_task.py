@@ -4,11 +4,12 @@ Failed-Webhook Reprocessing Background Task
 Periodically retries LemonSqueezy webhook events that failed processing, using
 the same retry path as the admin endpoint (``WebhookMonitoringService.retry_webhook``).
 
-An event is eligible when it is unprocessed, is still under the retry cap, was
-received within the lookback window, and its last attempt is older than the
-backoff window. That includes an event with no error: the route stores each
-event before acknowledging it, so a process that stopped after the 200 (a
-deploy, a crash) leaves it unprocessed, and Lemon Squeezy won't send it again.
+An event is eligible when it is unprocessed, is still under the retry cap, and
+its last attempt is older than the backoff window. That includes an event with
+no error: the route stores each event before acknowledging it, so a process that
+stopped after the 200 (a deploy, a crash) leaves it unprocessed, and Lemon
+Squeezy won't send it again. Such an event, never attempted, stays eligible
+however old it is; the lookback window only ends the retries of one that failed.
 
 Usage:
     python -m src.api.tasks.webhook_reprocessing_task
@@ -18,7 +19,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 
 from src.api.database.async_database import get_async_db_context
 from src.api.models.subscription_models.webhooks import WebhookEvent
@@ -42,7 +43,10 @@ async def run_webhook_reprocessing_task() -> Dict[str, Any]:
                 and_(
                     WebhookEvent.processed.is_(False),
                     WebhookEvent.retry_count < cleanup_config.WEBHOOK_REPROCESS_MAX_RETRIES,
-                    WebhookEvent.created_at >= lookback_cutoff,
+                    or_(
+                        WebhookEvent.retry_count == 0,
+                        WebhookEvent.created_at >= lookback_cutoff,
+                    ),
                     WebhookEvent.updated_at <= backoff_cutoff,
                 )
             )
