@@ -215,3 +215,79 @@ def test_a_cta_blocks_supporting_line_is_an_instruction_and_its_label_line_goes(
 def test_an_outline_without_ctas_changes_nothing():
     content = {"body_markdown": "**Primary CTA:** Explore Features"}
     assert strip_cta_labels(content, {"sections": [{"heading": "Intro"}]}) is content
+
+
+def test_a_cta_blocks_list_lines_are_instructions_too():
+    outline = {
+        "cta": {
+            "primary_cta": "Book a demo",
+            "booking_steps": ["Pick a time", "Meet the team"],
+            "friction_notes": ["No credit card"],
+        }
+    }
+    prompt = format_structure_for_prompt(resolve_outline_structure(outline, "demo-page"))
+    assert "Booking Steps:" not in prompt and "Friction Notes:" not in prompt
+    assert "work in its booking steps in your own words (never under a label):" in prompt
+    assert "* Pick a time" in prompt
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["primary_cta: Explore Features", "### Primary CTA: Explore Features", "**cta_text:** Go"],
+)
+def test_raw_field_names_and_heading_labels_are_dropped(line):
+    outline = {**BEST_TOOLS_OUTLINE, "pricing": {"cta_text": "Go"}}
+    labels = outline_cta_labels(outline)
+    assert strip_cta_label_lines(f"Before.\n{line}\nAfter.", labels) == "Before.\nAfter."
+
+
+def test_code_examples_keep_their_cta_lines():
+    body = (
+        "Mark up the button like this:\n\n"
+        "```markdown\n**Primary CTA:** Explore Features\n```\n\n"
+        "Or indented:\n\n    **Primary CTA:** Explore Features\n\n"
+        "**Primary CTA:** Explore Features"
+    )
+    cleaned = strip_cta_label_lines(body, outline_cta_labels(BEST_TOOLS_OUTLINE))
+    assert cleaned.count("**Primary CTA:** Explore Features") == 2
+    assert cleaned.endswith("    **Primary CTA:** Explore Features")
+
+
+async def test_final_validation_strips_the_label_and_then_judges_the_cta(monkeypatch):
+    """The label line is gone from the state the graph keeps, and a CTA that only that
+    line carried fails the final CTA check instead of shipping on the earlier pass."""
+    from src.flow.engines.content.generation import validation
+
+    async def unchanged(content, *args, **kwargs):
+        return content
+
+    monkeypatch.setattr(validation, "enforce_onpage_seo", lambda content, **kwargs: content)
+    monkeypatch.setattr(validation, "enforce_subheadings_for_spec", unchanged)
+    monkeypatch.setattr(validation, "restore_links_for_spec", lambda content, *a, **k: content)
+    monkeypatch.setattr(validation, "apply_density_report", lambda content, spec: content)
+    monkeypatch.setattr(
+        validation,
+        "build_requirements_spec",
+        lambda *a, **k: {"cta_required": True, "outline_cta": {"text": "Explore Features"}},
+    )
+    monkeypatch.setattr(validation, "FINAL_VALIDATE_CHECKS", [validation.check_cta_presence])
+    assert validation.check_cta_presence in validation.FINAL_VALIDATE_CHECKS
+
+    state = {
+        "content": {
+            "outline": BEST_TOOLS_OUTLINE,
+            "content_type": "best-tools",
+            "final_content": {
+                "introduction": "Choosing a tool is hard.",
+                "body_markdown": "## Picks\n\nOur picks.\n\n**Primary CTA:** Explore Features",
+                "cta": {"text": "Explore Features"},
+            },
+        }
+    }
+
+    result = await validation.final_validate_content(state)
+
+    final = result["content"]["final_content"]
+    assert "Primary CTA" not in final["body_markdown"]
+    failed = result["content"]["review"]["final_validation"]["failed_checks"]
+    assert [check["name"] for check in failed] == ["cta_presence"]

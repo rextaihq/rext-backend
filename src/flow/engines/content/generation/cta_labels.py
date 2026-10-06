@@ -30,11 +30,15 @@ _TEXT_FIELDS = ("introduction", "body_markdown", "conclusion")
 
 _MAX_DEPTH = 8
 
-# "**Primary CTA:** Explore Features", "- **Secondary CTA**: Compare Tools", "Primary CTA: X".
+# "**Primary CTA:** Explore Features", "- **Secondary CTA**: Compare Tools",
+# "### Primary CTA: X", "primary_cta: X".
 _LABEL_LINE = re.compile(
-    r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*|__)?[ \t]*(?P<label>[^:*_\n]{1,60}?)[ \t]*"
+    r"^[ \t]{0,3}(?:[-*+][ \t]+)?(?:#{1,6}[ \t]+)?(?:\*\*|__)?[ \t]*(?P<label>[^:*\n]{1,60}?)[ \t]*"
     r"(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*(?P<value>.*?)[ \t]*$"
 )
+# A fenced code block opens and closes with ``` or ~~~; an indented one is four spaces or a tab.
+_FENCE = re.compile(r"^[ \t]{0,3}(```|~~~)")
+_INDENTED_CODE = re.compile(r"^(?: {4}|\t)")
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
 
@@ -57,8 +61,9 @@ def _strings(value: Any, depth: int = 0) -> list[str]:
 
 
 def _labels_for(key: str) -> set[str]:
+    """The ways a field is printed: "Primary CTA", "Primary Call To Action" and the raw `primary_cta`."""
     label = humanize_key(key)
-    return {_norm(label), _norm(re.sub(r"\bCTAs?\b", "Call To Action", label))}
+    return {_norm(label), _norm(re.sub(r"\bCTAs?\b", "Call To Action", label)), _norm(key)}
 
 
 def outline_cta_labels(outline: Any) -> dict[str, set[str]]:
@@ -100,7 +105,20 @@ def strip_cta_label_lines(text: str, labels: dict[str, set[str]]) -> str:
         return bool(values) and _norm(match.group("value")) in values
 
     lines = text.split("\n")
-    kept = [line for line in lines if not is_label_line(line)]
+    kept = []
+    fence = None  # the marker of the fenced code block the line is in
+    for line in lines:
+        opening = _FENCE.match(line)
+        if fence:
+            if opening and opening.group(1) == fence:
+                fence = None
+            kept.append(line)
+        elif opening:
+            fence = opening.group(1)
+            kept.append(line)
+        elif _INDENTED_CODE.match(line) or not is_label_line(line):
+            # Code is an example, never boilerplate: an article teaching CTA markup keeps it.
+            kept.append(line)
     if len(kept) == len(lines):
         return text
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip("\n")
