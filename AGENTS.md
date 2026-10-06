@@ -9,7 +9,7 @@ Codex and Claude Code both read this file (`CLAUDE.md` imports it). Keep it unde
 - **`main` is what production runs.** Never branch from it, target it or push to it: a push to `main` builds the `:latest` image and deploys production (`.github/workflows/production.yaml`).
 - **`stage` is the base branch.** Every branch starts from `origin/stage` and every pull request targets `stage`. **A merge is a deploy:** a push to `stage` that touches the backend's paths builds the `:stage` image and deploys the staging server (`.github/workflows/stage.yaml`).
 - One task, one branch, one pull request, kept small. Rework branches are named `app/<task>-<slug>`, each in a worktree of its own, and are merged by `../rext-control/scripts/app/merge.sh` (rebase and merge), never by hand.
-- The team merges here daily. Rebase on `origin/stage` before your checks and before your merge, push your own branch with `--force-with-lease`, and never rewrite a commit that is not yours.
+- The team merges here daily. Rebase on `origin/stage` before your checks and before your merge, push your own branch with `--force-with-lease`, and never rewrite a commit that is not yours. A rework clone keeps no tracking ref for a task branch, so the bare flag is refused as stale: name the head you last pushed (the pull request shows it), `git push --force-with-lease=<branch>:<that sha> origin <branch>`.
 - For Claude Code sessions, `.claude/settings.json` and the hooks in `.claude/hooks/` refuse reading an env file (every `.env` name and `.envrc` but `*.example`, through any tool or program; `test -s` and `grep -c` stay allowed), `docker push`, `gh workflow run`, a push to `main`, `staging` or `stage` or of every branch, and a forced push other than `--force-with-lease`.
 
 ## Secrets, data and money
@@ -27,8 +27,7 @@ Python 3.11 (`.python-version`) and uv (`uv.lock`).
 
 ```sh
 git config core.hooksPath .githooks                  # once per clone: the import check and ruff on staged files at every commit
-uv sync --frozen                                     # rework worktrees come synced, without the torch and CUDA packages nothing imports
-export UV_NO_SYNC=1                                  # so that `uv run` does not install them again (several GB)
+uv sync --frozen                                     # the environment from uv.lock (rework worktrees come synced)
 uv run ruff check <files> && uv run ruff format --check <files>   # the files you changed; the tree has about 3,700 old findings
 uv run python scripts/check_imports.py --tracked     # import integrity, as CI runs it
 export POSTGRES_URI_CUSTOM="$(../rext-control/scripts/app/db.sh test-url --raw)"   # the test database; never echo it
@@ -47,7 +46,7 @@ Read `ARCHITECTURE.md` before your first change: the server, the graph and its g
 - **The graph** (`src/flow/engines/rext.py`, registered as `agent` in `langgraph.json`): `library_router` → `serp_engine` → `seo_engine` → `content_engine`, with four human gates as `interrupt()` calls (keyword, content type, topic, outline). A gate's payload, the state shapes in `src/flow/states/` and the stream events are a contract with the dashboard: a change names the dashboard task that consumes it, and must not strand runs in flight.
 - **Credits** (`src/utils/credit_manager.py`): every billed stage and its cost, 15 credits per article. Credits are charged only there; a new or changed cost is the founder's decision.
 - **Routes** (`src/api/routes/`, registered in `src/api/registry/routes.py`, all under `/api/v1`): one router per area, request and response models in `src/api/schema/`. A new endpoint gets the auth dependency (`get_current_user`, `src/api/security/dependencies.py`), a permission check (`require_permissions`, `src/api/middleware/permissions.py`), a response model and a test.
-- **Database:** models in `src/api/models/`; sessions in `src/api/database/` (async for routes, sync for graph nodes). The LangGraph runtime's own tables are not Alembic's.
+- **Database:** models in `src/api/models/`; sessions in `src/api/database/` (async for routes, sync for graph nodes). The LangGraph runtime's own tables are not Alembic's (`src/api/database/langgraph_tables.py`).
 - **Prompts** (`src/flow/prompts/`): reviewed like code; no prompt names AI detectors or promises to get past them.
 - **Logging:** structlog (`src/api/lib/logging_config.py`); no personal data and no secret in a log line.
 - Match the code around your change: its naming, its structure, how much it comments; `ruff format` decides the rest.
