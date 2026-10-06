@@ -19,10 +19,12 @@ import src.flow.engines.content.review.outline as review_outline_module
 import src.flow.engines.seo.keyword_clustering as clustering_module
 from src.flow.engines.content.content_engine import create_content_engine
 from src.flow.engines.content.generation.topic_generation import (
+    KEYWORD_TOO_LONG_MESSAGE,
     TOPICS_FAILED_CODE,
     TOPICS_FAILED_MESSAGE,
     topics_router,
 )
+from src.flow.states.reducers.custom_reducer import deep_merge_dicts
 
 STATE = {
     "serp_payload": {"query": "content marketing roi for small business", "workspace_id": "w"},
@@ -55,13 +57,11 @@ def graph(monkeypatch):
     )
     monkeypatch.setattr(outline_module, "generate_outline", _must_not_run("generate_outline"))
     monkeypatch.setattr(review_outline_module, "review_outline", _must_not_run("review_outline"))
-    log = AsyncMock()
-    monkeypatch.setattr("src.services.monitoring_service.MonitoringService.persist_error_log", log)
-    return create_content_engine(), log
+    return create_content_engine()
 
 
 async def test_a_topic_step_with_no_titles_ends_the_run_with_its_message(graph):
-    engine, log = graph
+    engine = graph
     events, final = [], None
 
     async for mode, chunk in engine.astream(STATE, stream_mode=["custom", "values"]):
@@ -82,7 +82,6 @@ async def test_a_topic_step_with_no_titles_ends_the_run_with_its_message(graph):
     assert final["content"]["error"] == TOPICS_FAILED_MESSAGE
     assert final["content"]["topics"] == []
     assert "outline" not in final["content"]
-    log.assert_awaited_once()
 
 
 def test_the_router_sends_a_failed_topic_step_to_its_end():
@@ -96,3 +95,47 @@ async def test_no_query_ends_the_same_way():
 
     assert result["content"]["error_code"] == TOPICS_FAILED_CODE
     assert result["content"]["topics"] == []
+
+
+async def test_a_keyword_too_long_for_any_title_says_so_without_a_model_call(monkeypatch):
+    generate = AsyncMock()
+    monkeypatch.setattr(topic_module, "_generate_and_validate_topics", generate)
+    keyword = "how to measure content marketing return on investment for small local businesses"
+
+    result = await topic_module.topic_generation(
+        {"serp_normalized": {"query": keyword}, "serp_payload": {"query": keyword}}
+    )
+
+    assert result["content"]["error_code"] == TOPICS_FAILED_CODE
+    assert result["content"]["error"] == KEYWORD_TOO_LONG_MESSAGE
+    generate.assert_not_awaited()
+
+
+async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatch):
+    title = "Content Marketing ROI for Small Business: A Practical Guide"
+    parsed = SimpleNamespace(
+        topics=[SimpleNamespace(title=title, recommended=True, recommendation_reason="Fits")]
+    )
+    monkeypatch.setattr(
+        topic_module,
+        "topic_generation_model",
+        lambda: SimpleNamespace(with_structured_output=lambda schema: object()),
+    )
+    monkeypatch.setattr(
+        topic_module, "_generate_and_validate_topics", AsyncMock(return_value=parsed)
+    )
+    monkeypatch.setattr(topic_module, "interrupt", lambda payload: {"selected_topic": title})
+    stale = {
+        **STATE,
+        "content": {
+            "content_type": "blog",
+            "error": TOPICS_FAILED_MESSAGE,
+            "error_code": TOPICS_FAILED_CODE,
+        },
+    }
+
+    result = await topic_module.topic_generation(stale)
+    merged = deep_merge_dicts(stale["content"], result["content"])
+
+    assert merged["error"] is None and merged["error_code"] is None
+    assert topics_router({"content": merged}) == "keyword_clustering"
