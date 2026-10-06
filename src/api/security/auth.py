@@ -160,6 +160,25 @@ async def a_threads_workspace_is_fixed(
     return owner
 
 
+RUN_NEEDS_A_THREAD = "A run needs a thread: its gates are resumed on it"
+RESUME_ONLY = "A run can only resume its gates"
+
+
+def _bind_to_its_user(identity: str, run_input: object) -> None:
+    """The run's user is the token's, whatever its input named.
+
+    The graph charges credits to, records content for and reads the keyword
+    library of the user in its input's serp_payload (and the state's user_id).
+    During impersonation the token's user is the impersonated account.
+    """
+    if not isinstance(run_input, dict):
+        return
+    if "user_id" in run_input:
+        run_input["user_id"] = identity
+    if isinstance(run_input.get("serp_payload"), dict):
+        run_input["serp_payload"]["user_id"] = identity
+
+
 @auth.on.threads.create_run
 async def runs_need_content_create(
     ctx: Auth.types.AuthContext, value: dict
@@ -171,12 +190,22 @@ async def runs_need_content_create(
     own threads in that workspace, so a run can't borrow another workspace's role.
     """
     kwargs = value.get("kwargs") or {}
+    # A stateless run (POST /runs/stream or /runs/wait) has no thread to resume
+    # its gates on; it would only spend credits before stopping at the first.
+    if value.get("thread_id") is None:
+        raise _forbidden(RUN_NEEDS_A_THREAD)
+    # Resuming answers a gate. A command that writes the state or jumps to a node
+    # would run on values this check never saw (another workspace, another user).
+    command = kwargs.get("command") or {}
+    if command.get("update") is not None or command.get("goto"):
+        raise _forbidden(RESUME_ONLY)
     serp_payload = (kwargs.get("input") or {}).get("serp_payload") or {}
     workspace_id = serp_payload.get("workspace_id") or (value.get("metadata") or {}).get(
         "workspace_id"
     )
     if not await _may_create_content(ctx.user.identity, workspace_id):
         raise _forbidden(CONTENT_CREATE_REFUSED)
+    _bind_to_its_user(ctx.user.identity, kwargs.get("input"))
     scope = {"owner": ctx.user.identity, "workspace_id": str(workspace_id)}
     # A run that creates its own thread (if_not_exists="create") stamps it with
     # these, as threads.create does; for any other run they're the run's own.

@@ -199,7 +199,11 @@ async def test_an_inactive_member_keeps_no_access_through_their_role(role, monke
     with pytest.raises(Auth.exceptions.HTTPException) as exc:
         await langgraph_auth.runs_need_content_create(
             _ctx("threads", "create_run"),
-            {"kwargs": {"command": {"resume": "approve"}}, "metadata": {"workspace_id": WORKSPACE}},
+            {
+                "thread_id": "t",
+                "kwargs": {"command": {"resume": "approve"}},
+                "metadata": {"workspace_id": WORKSPACE},
+            },
         )
     assert exc.value.status_code == 403
 
@@ -227,7 +231,10 @@ async def test_a_thread_without_content_create_in_its_workspace_is_refused(role,
 
 
 async def test_a_new_run_needs_content_create_in_its_workspace(role):
-    value = {"kwargs": {"input": {"serp_payload": {"workspace_id": WORKSPACE, "query": "q"}}}}
+    value = {
+        "thread_id": "t",
+        "kwargs": {"input": {"serp_payload": {"workspace_id": WORKSPACE, "query": "q"}}},
+    }
 
     filters = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
 
@@ -237,7 +244,11 @@ async def test_a_new_run_needs_content_create_in_its_workspace(role):
 
 
 async def test_a_resume_names_the_workspace_in_its_metadata(role):
-    value = {"kwargs": {"command": {"resume": "approve"}}, "metadata": {"workspace_id": WORKSPACE}}
+    value = {
+        "thread_id": "t",
+        "kwargs": {"command": {"resume": "approve"}},
+        "metadata": {"workspace_id": WORKSPACE},
+    }
 
     filters = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
 
@@ -248,9 +259,13 @@ async def test_a_resume_names_the_workspace_in_its_metadata(role):
 @pytest.mark.parametrize(
     "value",
     [
-        {"kwargs": {"input": {"serp_payload": {"workspace_id": OTHER}}}},
-        {"kwargs": {"command": {"resume": "approve"}}, "metadata": {"workspace_id": OTHER}},
-        {"kwargs": {"command": {"resume": "approve"}}},
+        {"thread_id": "t", "kwargs": {"input": {"serp_payload": {"workspace_id": OTHER}}}},
+        {
+            "thread_id": "t",
+            "kwargs": {"command": {"resume": "approve"}},
+            "metadata": {"workspace_id": OTHER},
+        },
+        {"thread_id": "t", "kwargs": {"command": {"resume": "approve"}}},
     ],
 )
 async def test_a_viewer_can_neither_start_nor_resume_a_run(role, value):
@@ -302,3 +317,77 @@ def test_thread_updates_go_through_the_workspace_rule():
     handlers = langgraph_auth.auth._handlers[("threads", "update")]
 
     assert handlers == [langgraph_auth.a_threads_workspace_is_fixed]
+
+
+# --- a run is its token's user's, on a thread, resuming only (G24, rext-control#322) ---
+
+
+async def test_a_run_is_its_tokens_user_whatever_its_input_named(role):
+    value = {
+        "thread_id": "t",
+        "kwargs": {
+            "input": {
+                "user_id": OTHER,
+                "serp_payload": {"user_id": OTHER, "workspace_id": WORKSPACE, "query": "q"},
+            }
+        },
+    }
+
+    await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    assert value["kwargs"]["input"]["user_id"] == USER
+    assert value["kwargs"]["input"]["serp_payload"]["user_id"] == USER
+
+
+async def test_a_run_whose_input_names_no_user_gets_the_tokens(role):
+    value = {"thread_id": "t", "kwargs": {"input": {"serp_payload": {"workspace_id": WORKSPACE}}}}
+
+    await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    assert value["kwargs"]["input"]["serp_payload"]["user_id"] == USER
+    assert "user_id" not in value["kwargs"]["input"]  # the state's own field left as it was
+
+
+async def test_during_impersonation_the_run_is_the_impersonated_users(role):
+    # The impersonation token's identity is the impersonated account (the admin is
+    # only original_user_id); a payload naming the admin, the browser's session user, loses.
+    value = {
+        "thread_id": "t",
+        "kwargs": {"input": {"serp_payload": {"user_id": OTHER, "workspace_id": WORKSPACE}}},
+    }
+
+    await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    assert value["kwargs"]["input"]["serp_payload"]["user_id"] == USER
+
+
+async def test_a_stateless_run_is_refused(role):
+    # POST /runs/stream and /runs/wait create runs with no thread to resume the gates on.
+    value = {"thread_id": None, "kwargs": {"input": {"serp_payload": {"workspace_id": WORKSPACE}}}}
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    assert exc.value.status_code == 403
+    assert role == []  # refused before any lookup
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        {"update": {"serp_payload": {"workspace_id": OTHER}}},
+        {"goto": "content_engine"},
+        {"resume": "approve", "update": {"user_id": OTHER}},
+    ],
+)
+async def test_a_run_can_only_resume_its_gates(role, command):
+    value = {
+        "thread_id": "t",
+        "kwargs": {"command": command},
+        "metadata": {"workspace_id": WORKSPACE},
+    }
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    assert exc.value.status_code == 403
