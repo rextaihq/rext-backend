@@ -25,8 +25,10 @@ from src.flow.engines.content.generation.focus_keyword import (
 from src.flow.engines.content.generation.seo_title_rules import keyphrase_fits_a_title
 from src.flow.engines.content.generation.topic_generation import (
     KEYWORD_TOO_LONG_MESSAGE,
+    TOPIC_SET_KEY,
     TOPICS_FAILED_CODE,
     TOPICS_FAILED_MESSAGE,
+    topic_gate_router,
     topics_router,
 )
 from src.flow.states.reducers.custom_reducer import deep_merge_dicts
@@ -47,8 +49,9 @@ def _must_not_run(name):
 
 @pytest.fixture
 def graph(monkeypatch):
-    # The content-type gate passes straight through; the topic node is the
+    # The content-type step passes straight through; the topic step is the
     # real one, with its model step failing the way a refused key makes it.
+    monkeypatch.setattr(content_type_module, "recommend_content_type", lambda state: {})
     monkeypatch.setattr(content_type_module, "content_type", lambda state: {})
     monkeypatch.setattr(
         topic_module,
@@ -91,12 +94,12 @@ async def test_a_topic_step_with_no_titles_ends_the_run_with_its_message(graph):
 
 def test_the_router_sends_a_failed_topic_step_to_its_end():
     assert topics_router({"content": {"error_code": TOPICS_FAILED_CODE}}) == "topics_failed"
-    assert topics_router({"content": {"topics": [{"title": "A"}]}}) == "keyword_clustering"
-    assert topics_router({}) == "keyword_clustering"
+    assert topics_router({"content": {TOPIC_SET_KEY: {"topics": ["A"]}}}) == "topic_generation"
+    assert topics_router({}) == "topic_generation"
 
 
 async def test_no_query_ends_the_same_way():
-    result = await topic_module.topic_generation({"serp_normalized": {}, "serp_payload": {}})
+    result = await topic_module.generate_topics({"serp_normalized": {}, "serp_payload": {}})
 
     assert result["content"]["error_code"] == TOPICS_FAILED_CODE
     assert result["content"]["topics"] == []
@@ -107,7 +110,7 @@ async def test_a_keyword_too_long_for_any_title_says_so_without_a_model_call(mon
     monkeypatch.setattr(topic_module, "_generate_and_validate_topics", generate)
     keyword = "how to measure content marketing return on investment for small local businesses"
 
-    result = await topic_module.topic_generation(
+    result = await topic_module.generate_topics(
         {"serp_normalized": {"query": keyword}, "serp_payload": {"query": keyword}}
     )
 
@@ -123,7 +126,7 @@ async def test_a_shorter_keyword_chosen_after_the_message_is_the_one_used(monkey
     long_keyword = (
         "how to measure content marketing return on investment for small local businesses"
     )
-    failed = await topic_module.topic_generation(
+    failed = await topic_module.generate_topics(
         {"serp_normalized": {"query": long_keyword}, "serp_payload": {"query": long_keyword}}
     )
     assert failed["content"][FOCUS_KEYWORD_STATE_KEY] is None
@@ -151,17 +154,6 @@ def test_a_keyword_is_measured_as_titles_match_it():
 
 async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatch):
     title = "Content Marketing ROI for Small Business: A Practical Guide"
-    parsed = SimpleNamespace(
-        topics=[SimpleNamespace(title=title, recommended=True, recommendation_reason="Fits")]
-    )
-    monkeypatch.setattr(
-        topic_module,
-        "topic_generation_model",
-        lambda: SimpleNamespace(with_structured_output=lambda schema: object()),
-    )
-    monkeypatch.setattr(
-        topic_module, "_generate_and_validate_topics", AsyncMock(return_value=parsed)
-    )
     monkeypatch.setattr(topic_module, "interrupt", lambda payload: {"selected_topic": title})
     stale = {
         **STATE,
@@ -169,6 +161,12 @@ async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatc
             "content_type": "blog",
             "error": TOPICS_FAILED_MESSAGE,
             "error_code": TOPICS_FAILED_CODE,
+            TOPIC_SET_KEY: {
+                "topics": [title],
+                "recommended_topic": title,
+                "recommendation_reason": "Fits",
+                "focus_keyphrase": "content marketing roi for small business",
+            },
         },
     }
 
@@ -176,4 +174,5 @@ async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatc
     merged = deep_merge_dicts(stale["content"], result["content"])
 
     assert merged["error"] is None and merged["error_code"] is None
-    assert topics_router({"content": merged}) == "keyword_clustering"
+    assert topics_router({"content": merged}) == "topic_generation"
+    assert topic_gate_router({"content": merged}) == "keyword_clustering"

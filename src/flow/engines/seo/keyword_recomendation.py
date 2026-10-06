@@ -39,32 +39,27 @@ async def charge_title_generation(serp_payload: dict) -> bool:
     return True
 
 
-async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
-    """
-    Enhanced LangGraph node: Google-like keyword recommendations.
-    Stores each run with a unique key to preserve history.
-    """
+# The Library key of the research save_keyword_research stored for this pass,
+# kept in seo_result for the gate. The store write used to sit in the gate's own
+# node, and LangGraph runs a node again from its start when the user's answer
+# resumes it, so every kept keyword was saved to the Library twice
+# (rext-control#330). None when this pass saved nothing: the gate is skipped.
+KEYWORD_RESEARCH_KEY = "keyword_research_key"
 
+
+def _keyword_gate_inputs(state: REXT) -> dict:
+    """What the keyword gate shows, read from the state (no call, no write)."""
     serp_normalized = state.get("serp_normalized")
-    competitors = state.get("competitors", [])
     seo_result = state.get("seo_result", {})
     serp_backlinks = seo_result.get("serp_backlinks", {})
-    competitors = state.get("competitors", [])
 
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
-
-    logger.info(f"recommendations: {recommendations}")
-    logger.info(f"competitors: {competitors}")
-    logger.info(f"seo_result: {seo_result}")
-    logger.info(f"serp_backlinks: {serp_backlinks}")
 
     # 🔍 REINFORCEMENT: Use both API intent and Competitor consensus
     main_intent = serp_backlinks.get("main_intent", "informational").lower()
     recomended_intent = seo_result.get("intent_type", "informational").lower()
     if main_intent == "unknown":
         main_intent = recomended_intent
-    else:
-        main_intent = main_intent
 
     # The volume is sent only with volume_status "ok"; otherwise it is None and
     # the status says why. Runs started before the status existed carry only
@@ -72,12 +67,68 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     volume_status = serp_backlinks.get("volume_status") or (
         "ok" if serp_backlinks.get("search_volume") is not None else "lookup_failed"
     )
-    volume = serp_backlinks.get("search_volume") if volume_status == "ok" else None
-    keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
-    backlinks = serp_backlinks.get("backlinks", 0)
-    referring_domains = serp_backlinks.get("referring_domains", 0)
 
     serp_payload = state.get("serp_payload")
+    original_query = serp_payload.get("query", "") if serp_payload else ""
+    keyword_clusters = seo_result.get("keyword_clusters", [])
+
+    # Fallback: if no recommendations, derive them from top keyword clusters
+    display_recommendations = list(recommendations)
+    if not display_recommendations and keyword_clusters:
+        seen = set()
+        for cluster in keyword_clusters:
+            for kw in cluster.get("keywords", []):
+                word = kw.get("keyword", "").strip()
+                if word and word.lower() != original_query.lower() and word not in seen:
+                    display_recommendations.append(word)
+                    seen.add(word)
+                    if len(display_recommendations) >= 10:
+                        break
+            if len(display_recommendations) >= 10:
+                break
+
+    # Final fallback: ensure UI always has at least the original query
+    if not display_recommendations and original_query:
+        display_recommendations = [original_query]
+
+    return {
+        "serp_normalized": serp_normalized,
+        "seo_result": seo_result,
+        "serp_backlinks": serp_backlinks,
+        "serp_payload": serp_payload,
+        "recommendations": recommendations,
+        "display_recommendations": display_recommendations,
+        "keyword_clusters": keyword_clusters,
+        "main_intent": main_intent,
+        "original_query": original_query,
+        "original_country": (serp_payload.get("country") or "") if serp_payload else "",
+        "seo_state": {
+            "keyword_difficulty": serp_backlinks.get("keyword_difficulty", 0),
+            "intent": [main_intent, recomended_intent],
+            "volume": serp_backlinks.get("search_volume") if volume_status == "ok" else None,
+            "volume_status": volume_status,
+            "backlinks": serp_backlinks.get("backlinks", 0),
+            "referring_domains": serp_backlinks.get("referring_domains", 0),
+        },
+    }
+
+
+async def save_keyword_research(state: REXT, config, *, runtime) -> Any:
+    """
+    The keyword gate's write, made once before the gate opens: this pass's
+    research saved to the user's keyword Library, with a unique key per run to
+    keep its history.
+    """
+    inputs = _keyword_gate_inputs(state)
+    seo_result = inputs["seo_result"]
+    serp_normalized = inputs["serp_normalized"]
+
+    logger.info(f"recommendations: {inputs['recommendations']}")
+    logger.info(f"competitors: {state.get('competitors', [])}")
+    logger.info(f"seo_result: {seo_result}")
+    logger.info(f"serp_backlinks: {inputs['serp_backlinks']}")
+
+    serp_payload = inputs["serp_payload"]
     store = runtime.store
     user_id = serp_payload.get("user_id") if serp_payload else None
     workspace_id = serp_payload.get("workspace_id") if serp_payload else None
@@ -87,17 +138,16 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
 
     if not user_id or not workspace_id:
         print("❌ Missing user_id or workspace_id")
-        return {"seo_result": seo_result}
+        return {"seo_result": {KEYWORD_RESEARCH_KEY: None}}
 
     # Structured namespace for privacy and better search via prefix
     namespace = ("library", str(user_id), str(workspace_id))
     print(f"   namespace: {namespace}")
 
-    original_query = serp_payload.get("query", "") if serp_payload else ""
-    original_country = (serp_payload.get("country") or "") if serp_payload else ""
+    original_query = inputs["original_query"]
 
     print(f"   original_query: {original_query}")
-    print(f"   recommendations: {recommendations}")
+    print(f"   recommendations: {inputs['recommendations']}")
 
     # No organic results: the search engine has none for this keyword, or the
     # SERP lookup failed. The main graph already ends such a run before this
@@ -111,6 +161,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
         return {
             "seo_result": {
                 **seo_result,
+                KEYWORD_RESEARCH_KEY: None,
                 "keyword_recommendations": {
                     "original_title": "",
                     "recommendations": [],
@@ -148,19 +199,12 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
         data_to_store = {
             "original_query": original_query,
             # The market the research is for: a Library start restores it.
-            "country": original_country,
-            "recommendations": recommendations,
+            "country": inputs["original_country"],
+            "recommendations": inputs["recommendations"],
             "questions": serp_normalized.get("questions", []) if serp_normalized else [],
             "related_topics": serp_normalized.get("related_topics", []) if serp_normalized else [],
             "top_organic_results": top_organic,
-            "seo_state": {
-                "keyword_difficulty": keyword_difficulty,
-                "intent": [main_intent, recomended_intent],
-                "volume": volume,
-                "volume_status": volume_status,
-                "backlinks": backlinks,
-                "referring_domains": referring_domains,
-            },
+            "seo_state": inputs["seo_state"],
             "timestamp": timestamp,  # Include timestamp in value
         }
 
@@ -175,29 +219,32 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     except Exception as e:
         logger.exception(f"Store error: {e}")
         print(f"❌ Store error: {e}")
-        return {"seo_result": seo_result}
+        return {"seo_result": {KEYWORD_RESEARCH_KEY: None}}
 
-    # Interrupt for user selection
-    keyword_clusters = seo_result.get("keyword_clusters", [])
+    return {"seo_result": {KEYWORD_RESEARCH_KEY: unique_key}}
 
-    # Fallback: if no recommendations, derive them from top keyword clusters
-    display_recommendations = list(recommendations)
-    if not display_recommendations and keyword_clusters:
-        seen = set()
-        for cluster in keyword_clusters:
-            for kw in cluster.get("keywords", []):
-                word = kw.get("keyword", "").strip()
-                if word and word.lower() != original_query.lower() and word not in seen:
-                    display_recommendations.append(word)
-                    seen.add(word)
-                    if len(display_recommendations) >= 10:
-                        break
-            if len(display_recommendations) >= 10:
-                break
 
-    # Final fallback: ensure UI always has at least the original query
-    if not display_recommendations and original_query:
-        display_recommendations = [original_query]
+def keyword_research_router(state: REXT) -> str:
+    """After the Library write: the keyword gate, or the end when nothing was saved."""
+    saved = (state.get("seo_result") or {}).get(KEYWORD_RESEARCH_KEY)
+    return "keyword_recommendation" if saved else "end"
+
+
+async def keyword_recommendation(state: REXT) -> Any:
+    """
+    The keyword gate: Google-like keyword recommendations and the user's
+    choice. It makes no call and no write, so the answer that resumes it
+    repeats nothing; the title step's charge is taken here, once, on the answer
+    that keeps the keyword.
+    """
+    inputs = _keyword_gate_inputs(state)
+    seo_result = inputs["seo_result"]
+    serp_backlinks = inputs["serp_backlinks"]
+    serp_payload = inputs["serp_payload"]
+    main_intent = inputs["main_intent"]
+    original_query = inputs["original_query"]
+    original_country = inputs["original_country"]
+    display_recommendations = inputs["display_recommendations"]
 
     user_selection = interrupt(
         {
@@ -206,15 +253,8 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             "Primary Keyword": original_query,
             "Country": original_country,
             "Recommendations": display_recommendations,
-            "Keyword Clusters": keyword_clusters,
-            "seo_state": {
-                "keyword_difficulty": keyword_difficulty,
-                "intent": [main_intent, recomended_intent],
-                "volume": volume,
-                "volume_status": volume_status,
-                "backlinks": backlinks,
-                "referring_domains": referring_domains,
-            },
+            "Keyword Clusters": inputs["keyword_clusters"],
+            "seo_state": inputs["seo_state"],
         }
     )
 
@@ -260,10 +300,6 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     elif not is_changed:
         await charge_title_generation(serp_payload or {})
 
-    # Persist the selected intent
-    if "serp_backlinks" in seo_result:
-        seo_result["serp_backlinks"]["main_intent"] = selected_intent
-
     return {
         "seo_result": {
             **seo_result,
@@ -279,7 +315,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
                 "recommendations": display_recommendations,
                 "error": None,
                 "is_changed": is_changed,
-                "library_key": unique_key,
+                "library_key": seo_result.get(KEYWORD_RESEARCH_KEY),
             },
         },
         "serp_payload": {
