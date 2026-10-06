@@ -4,6 +4,7 @@ from typing import Any
 
 from langgraph.types import interrupt
 
+from src.flow.engines.content.generation.seo_title_rules import keyphrase_fits_a_title
 from src.flow.engines.serp.normalization import has_organic_results
 from src.flow.states.rext import REXT
 
@@ -221,8 +222,12 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     # Deduct title_generation credit once user confirms keyword and proceeds. A
     # changed keyword or country goes back to the analysis (keyword_router), which
     # bills its own SERP pass and asks again; topics are generated, and charged,
-    # only after the answer that keeps the keyword.
-    if not is_changed:
+    # only after the answer that keeps the keyword. A keyword longer than any
+    # title can be gets no titles (the topic step ends the run and says so),
+    # so it is not charged for them.
+    if not is_changed and not keyphrase_fits_a_title(primary_keyword):
+        logger.info("Kept keyword is longer than a title can be: titles not charged")
+    elif not is_changed:
         from src.utils.credit_manager import (
             STAGE_CREDITS,
             InsufficientCreditsError,
