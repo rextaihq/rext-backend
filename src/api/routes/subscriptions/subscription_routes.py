@@ -6,7 +6,7 @@ Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -36,6 +36,7 @@ from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.schema.response.checkout_responses import (
+    BillingActionResponse,
     CheckoutSessionResponse,
     SubscriptionStatusResponse,
     UsageMetricsResponse,
@@ -1592,6 +1593,43 @@ async def create_portal_session(
     )
 
 
+def _billing_action_entry(unfinished: Optional[UserSubscription]) -> Optional[Dict[str, Any]]:
+    """billing_action() for the user's unfinished subscription, with its status and dates."""
+    action = billing_action(unfinished)
+    if not action:
+        return None
+    return {
+        "action": action["action"],
+        "status": unfinished.status.value,
+        "payment_failed_at": unfinished.payment_failed_at,
+        "ends_at": unfinished.end_date,
+    }
+
+
+@router.get("/billing-action", response_model=SuccessResponse[BillingActionResponse])
+@db_transaction_handler("get billing action", auto_commit=False)
+async def get_billing_action(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    What the user does about a subscription that isn't finished, for the dashboard's banner.
+
+    "update_payment_method" for a failed renewal, "resume" for a paused subscription or a
+    cancelled one before its end, null otherwise. It reads only our database, never the
+    payment provider, so the dashboard's shell can ask on every page.
+    """
+    user_id = current_user.get("identity")
+    unfinished = await SubscriptionService(db).unfinished_subscription(user_id)
+
+    return success(
+        data={"billing_action": _billing_action_entry(unfinished)},
+        request=request,
+        message="Billing action retrieved successfully",
+    )
+
+
 @router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse])
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status(
@@ -1610,7 +1648,6 @@ async def get_subscription_status(
     ended_trial = await service.get_ended_trial(user_id)
     usage = await usage_service.get_usage_metrics(user_id)
     unfinished = await service.unfinished_subscription(user_id)
-    action = billing_action(unfinished)
 
     portal_url = await service.get_customer_portal_url(
         user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
@@ -1630,16 +1667,7 @@ async def get_subscription_status(
                 if ended_trial
                 else None
             ),
-            "billing_action": (
-                {
-                    "action": action["action"],
-                    "status": unfinished.status.value,
-                    "payment_failed_at": unfinished.payment_failed_at,
-                    "ends_at": unfinished.end_date,
-                }
-                if action
-                else None
-            ),
+            "billing_action": _billing_action_entry(unfinished),
         },
         request=request,
         message="Subscription status retrieved successfully",
