@@ -46,6 +46,23 @@ class ExpiredTrial(BaseModel):
     ended_at: Optional[datetime] = None
 
 
+class BillingAction(BaseModel):
+    """What the customer does with a subscription that isn't finished, instead of a new checkout."""
+
+    # "update_payment_method" (a failed renewal) or "resume" (paused, or cancelled before its end)
+    action: str
+    status: str
+    # When the failed renewal's episode began (the date the banner names), and a cancelled plan's end.
+    payment_failed_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+
+
+class BillingActionResponse(BaseModel):
+    """GET /subscriptions/billing-action: the action, or null when nothing is unfinished."""
+
+    billing_action: Optional[BillingAction] = None
+
+
 class SubscriptionStatusResponse(BaseModel):
     """Legacy/Legacy-support status response containing subscription, plan, usage, and portal URL."""
 
@@ -58,4 +75,4 @@ class SubscriptionStatusResponse(BaseModel):
     # Set when a subscription isn't finished: "update_payment_method" (a failed
     # renewal) or "resume" (paused, or cancelled before its end), with its status.
     # The dashboard offers that action instead of a new checkout; null otherwise.
-    billing_action: Optional[Dict[str, Any]] = None
+    billing_action: Optional[BillingAction] = None

@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -274,3 +275,28 @@ async def test_status_reports_the_action_for_the_dashboard(session):
     action = response.json()["data"]["billing_action"]
     assert action["action"] == UPDATE_PAYMENT_METHOD
     assert action["status"] == "unpaid"
+
+
+@pytest.mark.asyncio
+async def test_the_banner_s_action_comes_from_the_database_alone(session):
+    from src.api.routes.subscriptions import subscription_routes
+
+    user, _ = await _user_with(session, SubscriptionStatus.PAST_DUE)
+    failed = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+    row = await session.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+    row.payment_failed_at = failed
+    await session.flush()
+    nobody, _ = await _user_with(session)
+
+    portal = AsyncMock(return_value="https://portal.example")
+    with patch.object(subscription_routes.SubscriptionService, "get_customer_portal_url", portal):
+        response = await _call(session, user.id, "GET", "/billing-action")
+        none = await _call(session, nobody.id, "GET", "/billing-action")
+
+    assert response.status_code == 200, response.text
+    action = response.json()["data"]["billing_action"]
+    assert action["action"] == UPDATE_PAYMENT_METHOD
+    assert action["status"] == "past_due"
+    assert datetime.fromisoformat(action["payment_failed_at"]) == failed
+    assert none.json()["data"]["billing_action"] is None
+    portal.assert_not_awaited()  # no provider call: the shell asks on every page
