@@ -8,7 +8,6 @@ a stand-in there: a real upgrade would leave the schema in the test database.
 import threading
 import time
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -202,16 +201,14 @@ def _table_exists(name: str) -> bool:
 
 
 def test_a_migration_short_of_the_head_keeps_nothing():
-    table = f"g32_probe_{uuid4().hex[:8]}"
-
     def upgrade(connection):
-        connection.execute(text(f"CREATE TABLE {table} (x int)"))
+        connection.execute(text("CREATE TABLE g32_probe (x int)"))
         return Outcome("a", "a", "b")
 
     with pytest.raises(MigrationFailed, match="not at the head"):
         migrate(URL, upgrade=upgrade)
 
-    assert not _table_exists(table)  # checked before the commit, so rolled back
+    assert not _table_exists("g32_probe")  # checked before the commit, so rolled back
 
 
 def test_a_failed_migration_says_what_failed_without_the_rows_values():
@@ -225,8 +222,8 @@ def test_a_failed_migration_says_what_failed_without_the_rows_values():
         migrate(URL, upgrade=upgrade)
 
     message = str(failed.value)
-    assert "UniqueViolation" in message and "23505" in message
-    assert "ana@example.com" not in message
+    assert message.endswith("UniqueViolation (SQLSTATE 23505)")
+    assert "ana@example.com" not in message and "g32_people" not in message
     assert failed.value.__cause__ is None and failed.value.__suppress_context__
 
 
