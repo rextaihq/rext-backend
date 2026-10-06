@@ -38,13 +38,13 @@ Error responses use the HTTP status (`400`, `413`, `422`, `429`, `500`) and the 
 
 The tools are public (no login) and bounded per UTC day (`src/api/tool/limits.py`):
 
-- **Per visitor:** each address gets 20 calls a day to each tool that runs a model (meta description, title tags, questions, content ideas, grammar, hooks, SEO blog titles, outline, headline analyzer, paragraph rewriter), and 100 a day to each of the other tools. Past that, the tool answers `429`.
-- **A daily budget for the model tools:** together they spend at most `FREE_TOOLS_DAILY_BUDGET_USD` (US$5 by default). Each call is charged its worst case before it runs. When the budget is used up, every model tool answers `429` ("The free AI tools have reached today's limit. Please try again tomorrow.") until midnight UTC; the other tools go on.
+- **Per visitor:** each address gets 20 calls a day to each tool that runs a model (meta description, title tags, questions, content ideas, grammar, hooks, SEO blog titles, outline, headline analyzer, paragraph rewriter), and 100 a day to each of the other tools. Past that, the tool answers `429`. A request that fails validation (`422`) isn't counted. When the server can't trust the address (`TRUSTED_PROXY_IPS` names no proxy), every caller counts as one visitor.
+- **A daily budget for the model tools:** together they spend at most `FREE_TOOLS_DAILY_BUDGET_USD` (US$5 by default). Each call is charged its worst case before it runs: one token per byte of its body, as many times as its prompt repeats a field, plus its output cap. When the budget is used up, every model tool answers `429` ("The free AI tools have reached today's limit. Please try again tomorrow.") until midnight UTC; the other tools go on.
 - **Input size:** a model tool's request body is at most 20,000 bytes (about 3,000 words); a longer one gets `413`.
-- A `429` carries `Retry-After`: the seconds until midnight UTC.
+- A `429` carries `Retry-After` (readable from the browser): the seconds until midnight UTC.
 - Settings: `FREE_TOOLS_MODEL_CALLS_PER_DAY`, `FREE_TOOLS_CALLS_PER_DAY`, `FREE_TOOLS_DAILY_BUDGET_USD`.
 
-The canonical tag and hreflang generators run no model: Google's rules for both are mechanical.
+The canonical tag and hreflang generators run no model: Google's rules for both are mechanical. An address without a scheme gets `https://`; one without a host is refused (`400`). Hreflang takes the ISO 639-1 languages, ISO 15924 scripts and ISO 3166-1 regions Google supports (`src/api/tool/iso_codes.py`).
 
 ---
 

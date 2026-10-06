@@ -286,7 +286,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=settings.cors_allowed_headers_list,
-    expose_headers=["X-Request-ID", "Content-Type"],
+    expose_headers=["X-Request-ID", "Content-Type", "Retry-After"],
     max_age=3600,
 )
 
