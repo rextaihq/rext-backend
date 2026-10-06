@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 from dotenv import load_dotenv
@@ -41,7 +41,18 @@ async def _do_fetch_serp(
     if not country or country.lower() == "global":
         country = "United States"
 
-    payload = [{"keyword": query, "location_name": country, "language_code": "en"}]
+    payload = [
+        {
+            "keyword": query,
+            "location_name": country,
+            "language_code": "en",
+            # Loads the AI Overviews Google adds after the page, so a SERP
+            # without one has none (G27, rext-control#342). $0.002 extra, and
+            # refunded when no asynchronous overview loads. This planning call
+            # only: the competitor sweep and bulk research stay without it.
+            "load_async_ai_overview": True,
+        }
+    ]
 
     headers = {"Authorization": f"Basic {auth_header}", "Content-Type": "application/json"}
 
@@ -152,10 +163,8 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "people_ask": [],
         "related_searches": [],
         "total_results": 0,
-        # True when DataForSEO returned an "ai_overview" item, None otherwise.
-        # Without load_async_ai_overview a missing item proves nothing: on 9
-        # complete SERPs without one, the paid load found an overview behind 3
-        # (G27, rext-control#342).
+        # True when Google shows an AI Overview, False when it shows none,
+        # None when the lookup failed. See _ai_overview_shown.
         "ai_overview": None,
     }
 
@@ -197,9 +206,9 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
                     serp_state["related_searches"].append(value)
 
         elif item_type == "ai_overview":
-            # A cached overview with its content, or (with
-            # "asynchronous_ai_overview": true and no content) the placeholder
-            # for one Google loads after the page: either way, it is shown.
+            # A cached overview, or one Google loads after the page
+            # ("asynchronous_ai_overview": true; its content too, with the
+            # flag): either way, it is shown.
             serp_state["ai_overview"] = True
 
         # ----------------------------
@@ -222,7 +231,24 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
 
     serp_state["total_results"] = len(serp_state["organic_results"])
     serp_state["serp_status"] = _serp_status(status_code, serp_state["organic_results"])
+    serp_state["ai_overview"] = _ai_overview_shown(serp_state, status_code)
     return serp_state
+
+
+def _ai_overview_shown(serp_state: SERPEngineState, status_code: Any) -> Optional[bool]:
+    """Whether Google shows an AI Overview for the keyword.
+
+    The request sets load_async_ai_overview, so DataForSEO returns the
+    overviews Google loads after the page as well as the cached ones, and a
+    complete SERP without an "ai_overview" item has none. Without the flag a
+    missing item proved nothing: on 9 such SERPs the paid load found an
+    overview behind 3 (G27, rext-control#342). A failed task (even one with
+    some results) or an empty lookup proves nothing, so it stays None.
+    """
+    if serp_state["ai_overview"]:
+        return True
+    complete = status_code == 20000 and serp_state["serp_status"] == "ok"
+    return False if complete else None
 
 
 async def fetch_serp_results(state: REXT, config, *, runtime):
