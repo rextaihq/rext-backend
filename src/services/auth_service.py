@@ -156,7 +156,7 @@ class AuthService:
         Business Rules:
         - Email must be unique
         - Password is hashed before storage
-        - Trial subscription is auto-assigned (14 days)
+        - Trial subscription is auto-assigned (TRIAL_DURATION_DAYS, 7 days)
         - Verification token is generated (valid 24 hours)
 
         Args:

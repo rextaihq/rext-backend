@@ -8,5 +8,6 @@ table; the credits each pipeline stage costs live in
 signup).
 """
 
-# Every new account starts on the trial plan for this many days.
-TRIAL_DURATION_DAYS = 14
+# Every new account starts on the trial plan for this many days (the founder,
+# 2026-10-06: 7 days, as rext.ai says; a trial already running keeps its end).
+TRIAL_DURATION_DAYS = 7

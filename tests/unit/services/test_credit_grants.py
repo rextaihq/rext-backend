@@ -93,7 +93,7 @@ def test_a_yearly_plans_bonus_ends_after_its_first_month():
     bonus = promotion_bonus(LAUNCH, 2400, INSIDE, INSIDE + timedelta(days=365))
 
     assert bonus.amount == 2400
-    assert bonus.expires_at == datetime(2026, 11, INSIDE.day, tzinfo=timezone.utc)
+    assert bonus.expires_at == INSIDE.replace(month=INSIDE.month + 1)  # a month on, not a year
 
 
 def test_a_fixed_bonus_is_that_many_credits():

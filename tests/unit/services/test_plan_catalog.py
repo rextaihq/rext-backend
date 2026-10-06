@@ -98,8 +98,8 @@ def test_trial_rules_come_from_the_trial_plan_and_the_signup_length():
     assert trial == {
         "plan_name": "trial",
         "days": TRIAL_DURATION_DAYS,
-        "credits": 50,
-        "articles": 3,
+        "credits": 60,
+        "articles": 4,
         "credits_renew": False,
         "card_required": False,
         "max_workspaces": 1,
@@ -162,8 +162,8 @@ async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch
         "kind": "first_month_credit_multiplier",
         "credit_multiplier": 2,
         "bonus_credits": None,
-        "starts_at": "2026-10-04T00:00:00+00:00",
-        "ends_at": "2026-10-11T06:59:00+00:00",
+        "starts_at": "2026-10-07T07:00:00+00:00",
+        "ends_at": "2026-10-14T06:59:00+00:00",
     }
     assert after["offer"] is None
     assert inside["plans"] == after["plans"]
