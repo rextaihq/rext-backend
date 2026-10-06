@@ -113,7 +113,8 @@ async def content_calendar(
         data={
             "year": year,
             "month": month,
-            "timezone": user_timezone,
+            # The zone the days were counted in: UTC when the account's isn't known.
+            "timezone": getattr(tz, "key", "UTC"),
             "total_items": sum(len(v) for v in calendar.values()),
             "calendar": calendar,
         },

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -40,6 +40,9 @@ from src.utils.wordpress_status import normalize_wordpress_post_status
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
 router = APIRouter()
+
+# How close to its time a scheduled publish stops taking moves (see reschedule_publish).
+RESCHEDULE_CUTOFF = timedelta(minutes=5)
 
 
 # -------------------------
@@ -569,34 +572,37 @@ async def reschedule_publish(
         raise HTTPException(status_code=400, detail="Content has no pending scheduled publish")
 
     now = datetime.now(timezone.utc)
-    # A record that is already due may be in the scheduled publisher's hands.
+    # The scheduled publisher (every minute, src/tasks/scheduled_tasks.py) reads due records
+    # without a lock, so it could take a record this move is changing: a record that is due,
+    # or nearly, is left to it.
     if any(
-        rec.scheduled_publish_at is None or rec.scheduled_publish_at <= now
+        rec.scheduled_publish_at is None or rec.scheduled_publish_at <= now + RESCHEDULE_CUTOFF
         for rec in scheduled_records
     ):
         raise HTTPException(
-            status_code=409, detail="Content is being published now, so its date can't change"
+            status_code=409,
+            detail="Content publishes within the next few minutes, so its date can't change",
         )
 
     user_row = await UserService(db).get_user_by_id(UUID(user_id))
     user_timezone = user_row.timezone or "UTC"
 
-    moved = {
-        rec.id: moved_to_day(rec.scheduled_publish_at, data.day, user_timezone)
-        for rec in scheduled_records
-    }
+    try:
+        moved = {
+            rec.id: moved_to_day(rec.scheduled_publish_at, data.day, user_timezone)
+            for rec in scheduled_records
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if min(moved.values()) <= now:
         raise HTTPException(status_code=400, detail="The new publish time must be in the future")
 
     for rec in scheduled_records:
         rec.scheduled_publish_at = moved[rec.id]
 
-    # The calendar shows the content on this date.
-    content.wordpress_published_at = (
-        moved_to_day(content.wordpress_published_at, data.day, user_timezone)
-        if content.wordpress_published_at
-        else min(moved.values())
-    )
+    # The calendar shows the content at its first site's time: the records', since a retry
+    # moves a record without the content.
+    content.wordpress_published_at = min(moved.values())
     content.updated_at = now
 
     await db.flush()
