@@ -43,23 +43,6 @@ class AddWorkspaceMemberRequest(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"email": "teammate@example.com"}})
 
 
-class WorkspaceMemberResponse(BaseModel):
-    """Schema for workspace member response"""
-
-    id: UUID = Field(..., description="Membership UUID")
-    workspace_id: UUID = Field(..., description="Workspace UUID")
-    user_id: UUID = Field(..., description="User UUID")
-    email: str = Field(..., description="User email")
-    full_name: Optional[str] = Field(None, description="User full name")
-    role_id: UUID = Field(..., description="Role UUID")
-    role_name: str = Field(..., description="Role name (slug)")
-    role_display_name: str = Field(..., description="Role display name")
-    status: str = Field(..., description="Membership status")
-    joined_at: datetime = Field(..., description="When user joined workspace")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 # FIXED: Removed brand voice fields - only workspace core fields
 class WorkspaceSchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Workspace title")
@@ -167,16 +150,6 @@ class WorkspaceResponseSchema(BaseModel):
     members_count: Optional[int] = Field(0, description="Total members")
     brand_voice: Optional[BrandVoiceResponseSchema] = None
     analytics: Optional[WorkspaceAnalyticsSchema] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class SidebarWorkspaceSchema(BaseModel):
-    """Condensed schema for workspace sidebar selection."""
-
-    id: UUID = Field(..., description="Workspace UUID")
-    name: str = Field(..., description="Workspace title")
-    slug: str = Field(..., description="URL slug")
 
     model_config = ConfigDict(from_attributes=True)
 

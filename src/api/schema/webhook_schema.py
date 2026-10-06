@@ -6,44 +6,9 @@ Based on Resend webhook documentation:
 https://resend.com/docs/api-reference/webhooks/event-types
 """
 
-from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-
-
-class WebhookEmailData(BaseModel):
-    """Email data embedded in webhook payload"""
-
-    from_: EmailStr = Field(..., alias="from")
-    to: list[EmailStr]
-    subject: str
-    created_at: datetime
-
-
-class WebhookEventPayload(BaseModel):
-    """
-    Resend webhook event payload structure.
-
-    Common fields across all event types:
-    - type: Event type (delivered, opened, clicked, etc.)
-    - created_at: When event occurred (ISO 8601 timestamp)
-    - data: Event-specific data
-    """
-
-    type: Literal[
-        "email.sent",
-        "email.delivered",
-        "email.delivery_delayed",
-        "email.bounced",
-        "email.complained",
-        "email.opened",
-        "email.clicked",
-    ] = Field(..., description="Type of email event")
-
-    created_at: str = Field(..., description="ISO 8601 timestamp of event")
-
-    data: Dict[str, Any] = Field(..., description="Event-specific data")
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ResendWebhookRequest(BaseModel):
@@ -80,59 +45,3 @@ class WebhookResponse(BaseModel):
 
 
 # Event-specific payload models for type safety
-
-
-class DeliveredEventData(BaseModel):
-    """Data for email.delivered event"""
-
-    email_id: str = Field(..., description="Resend email ID")
-    from_: EmailStr = Field(..., alias="from")
-    to: list[EmailStr]
-    subject: str
-    created_at: str
-
-
-class BouncedEventData(BaseModel):
-    """Data for email.bounced event"""
-
-    email_id: str
-    from_: EmailStr = Field(..., alias="from")
-    to: list[EmailStr]
-    subject: str
-    created_at: str
-    bounce_type: Optional[str] = None  # "hard" or "soft"
-    bounce_reason: Optional[str] = None
-
-
-class ComplainedEventData(BaseModel):
-    """Data for email.complained event (spam report)"""
-
-    email_id: str
-    from_: EmailStr = Field(..., alias="from")
-    to: list[EmailStr]
-    subject: str
-    created_at: str
-    complaint_feedback_type: Optional[str] = None
-
-
-class OpenedEventData(BaseModel):
-    """Data for email.opened event"""
-
-    email_id: str
-    from_: EmailStr = Field(..., alias="from")
-    to: list[EmailStr]
-    subject: str
-    created_at: str
-    opened_at: Optional[str] = None
-
-
-class ClickedEventData(BaseModel):
-    """Data for email.clicked event"""
-
-    email_id: str
-    from_: EmailStr = Field(..., alias="from")
-    to: list[EmailStr]
-    subject: str
-    created_at: str
-    clicked_at: Optional[str] = None
-    link: Optional[str] = None  # URL that was clicked

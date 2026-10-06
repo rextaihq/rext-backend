@@ -4,7 +4,7 @@ Permission schemas for request validation and response serialization.
 This module defines Pydantic models for permission-related API operations.
 """
 
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -79,36 +79,3 @@ class PermissionUpdate(BaseModel):
             }
         }
     )
-
-
-class RoleSummary(BaseModel):
-    """Minimal role info for permission responses."""
-
-    id: str
-    name: str
-    display_name: str
-    hierarchy_level: int
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class PermissionResponse(BaseModel):
-    """Schema for permission response."""
-
-    id: str
-    name: str
-    display_name: Optional[str]
-    description: Optional[str]
-    resource: Optional[str]
-    action: Optional[str]
-    created_at: str
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class PermissionWithRoles(PermissionResponse):
-    """Schema for permission with associated roles."""
-
-    roles: List[RoleSummary] = []
-
-    model_config = ConfigDict(from_attributes=True)

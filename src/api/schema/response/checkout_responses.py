@@ -15,12 +15,6 @@ class CheckoutSessionResponse(BaseModel):
     checkout_url: str
 
 
-class PortalSessionResponse(BaseModel):
-    """Response schema for customer portal URL."""
-
-    portal_url: str
-
-
 class UsageMetric(BaseModel):
     """Schema for a single resource's usage metrics."""
 

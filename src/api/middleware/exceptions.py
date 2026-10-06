@@ -394,30 +394,6 @@ class DatabaseConnectionException(RextExternalServiceException):
 # ============================================================================
 
 
-class TopicGenerationException(RextBusinessException):
-    """Exception for topic generation specific errors."""
-
-    def __init__(
-        self,
-        message: str = "Topic generation failed",
-        generation_params: Dict[str, Any] = None,
-        **kwargs,
-    ):
-        # Extract context from kwargs to avoid duplicate keyword argument
-        context = kwargs.pop("context", {})
-        if generation_params:
-            context["generation_params"] = generation_params
-
-        super().__init__(
-            message=message,
-            error_code=ErrorCode.TOPIC_GENERATION_FAILED,
-            status_code=422,
-            severity=ErrorSeverity.MEDIUM,
-            context=context,
-            **kwargs,
-        )
-
-
 class WorkspaceNotFoundException(ResourceNotFoundException):
     """Exception for workspace not found errors."""
 
@@ -498,7 +474,6 @@ def create_exception_from_error_code(
         ErrorCode.EXTERNAL_SERVICE_ERROR: RextExternalServiceException,
         ErrorCode.EXTERNAL_SERVICE_TIMEOUT: ExternalServiceTimeoutException,
         ErrorCode.DATABASE_CONNECTION_ERROR: DatabaseConnectionException,
-        ErrorCode.TOPIC_GENERATION_FAILED: TopicGenerationException,
         ErrorCode.KNOWLEDGE_PROCESSING_FAILED: KnowledgeProcessingException,
     }
 

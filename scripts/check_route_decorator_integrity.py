@@ -19,7 +19,6 @@ from pathlib import Path
 # Files to guard. Extend this list if more shared decorators are added.
 TARGETS = [
     Path("src/utils/route_decorators.py"),
-    Path("src/utils/transactional_decorator.py"),
 ]
 
 # Tokens that must never appear in production code.

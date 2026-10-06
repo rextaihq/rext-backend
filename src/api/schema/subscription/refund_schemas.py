@@ -45,19 +45,6 @@ class RefundCreateRequest(BaseModel):
     }
 
 
-class RefundListFilters(BaseModel):
-    """Filters for listing refunds."""
-
-    user_id: Optional[UUID] = None
-    subscription_id: Optional[UUID] = None
-    status: Optional[RefundStatus] = None
-    is_partial: Optional[bool] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    page: int = Field(1, ge=1)
-    per_page: int = Field(50, ge=1, le=200)
-
-
 # ============================================================================
 # RESPONSE SCHEMAS
 # ============================================================================
@@ -133,20 +120,6 @@ class RefundListResponse(BaseModel):
                     "failed_refunds": 2,
                 },
             }
-        }
-    }
-
-
-class RefundCreateResponse(BaseModel):
-    """Response schema for refund creation."""
-
-    success: bool
-    refund: RefundResponse
-    message: str
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {"success": True, "refund": {}, "message": "Refund initiated successfully"}
         }
     }
 

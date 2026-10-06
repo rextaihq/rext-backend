@@ -822,18 +822,6 @@ def ai_content_generation_rate_limit():
     return AIEndpointRateLimiter(description="content generation")
 
 
-def ai_topic_generation_rate_limit():
-    """
-    Rate limiter for AI topic generation endpoint.
-
-    Limits:
-    - Free tier: 10 requests/hour
-    - Pro tier: 50 requests/hour
-    - Enterprise tier: 200 requests/hour
-    """
-    return AIEndpointRateLimiter(description="topic generation")
-
-
 def ai_knowledge_processing_rate_limit():
     """
     Rate limiter for AI knowledge base processing endpoint.
