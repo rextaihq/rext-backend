@@ -31,6 +31,7 @@ Security:
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -424,11 +425,16 @@ class LemonSqueezyWebhookService:
             error_message: Error description
         """
         # Persist the failure in its OWN transaction so it is retained even when
-        # the processing transaction (self.db) is rolled back by the caller.
+        # the processing transaction (self.db) is rolled back by the caller. That
+        # rollback expires the instance, and reading an expired attribute is a query
+        # async code can't make, so the row is found by its identity key and every
+        # value is read from the bookkeeping session's copy.
         now = datetime.now(timezone.utc)
-        new_retry_count = webhook_event.retry_count or 0
+        identity = sa_inspect(webhook_event).identity
+        row_id = identity[0] if identity else webhook_event.id
+        new_retry_count, event_id = None, None
         async with AsyncSessionLocal() as bookkeeping_db:
-            row = await bookkeeping_db.get(WebhookEvent, webhook_event.id)
+            row = await bookkeeping_db.get(WebhookEvent, row_id)
             if row is not None:
                 row.processed = False
                 row.error_message = error_message
@@ -436,20 +442,17 @@ class LemonSqueezyWebhookService:
                 row.processed_at = None
                 row.updated_at = now
                 await bookkeeping_db.commit()
-                new_retry_count = row.retry_count
+                new_retry_count, event_id = row.retry_count, row.event_id
 
         # Reflect on the in-memory instance for callers.
         webhook_event.processed = False
         webhook_event.error_message = error_message
-        webhook_event.retry_count = new_retry_count
+        if new_retry_count is not None:
+            webhook_event.retry_count = new_retry_count
 
         logger.error(
-            f"Marked webhook event as failed (retry {webhook_event.retry_count})",
-            extra={
-                "event_id": webhook_event.event_id,
-                "error": error_message,
-                "retry_count": webhook_event.retry_count,
-            },
+            f"Marked webhook event as failed (retry {new_retry_count})",
+            extra={"event_id": event_id, "error": error_message, "retry_count": new_retry_count},
         )
 
     def register_handler(self, event_type: str, handler: Callable) -> None:
