@@ -6,18 +6,20 @@ Per UTC day:
 - each visitor (by address) has a number of calls per tool: fewer for a tool that calls a model;
 - the tools that call a model share a budget in US dollars (FREE_TOOLS_DAILY_BUDGET_USD). Each
   call is charged its worst case before it runs (its input as often as a prompt can carry it, and
-  its output cap, at the model's list price), so the day's real spending stays under the budget;
+  its output cap, at the model's list price), so the day's real spending stays under the budget
+  while Redis is up. During a Redis outage each process counts for itself, with a budget of its
+  own: a day with an outage can reach a few times the budget, one for Redis and one per process;
 - a model tool's request body is at most MAX_INPUT_BYTES.
 
 A call is counted only once its request is valid (@bounded runs inside the route), and a refused
 call counts nothing. It gets 429 (413 for a body that is too long) with a message the site's tool
 pages show as they are. Refusals stay out of the admin's Error Logs, except the day's first
-refusal for the budget. The counts live in Redis, checked and added in one step; while Redis is
-down, each process counts for itself.
+refusal for the budget. The counts live in Redis, checked and added in one step.
 """
 
 import functools
 import hashlib
+import ipaddress
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -27,7 +29,7 @@ from fastapi import HTTPException, Request, status
 
 from src.api.cache.redis_client import cache
 from src.api.config import get_settings
-from src.utils.ip_allowlist import get_verified_client_ip
+from src.utils.ip_allowlist import proxy_trust_is_spoofable
 from src.utils.logger import logger
 
 
@@ -178,10 +180,21 @@ def _tool(request: Request) -> str:
     return getattr(route, "path", request.url.path).rsplit("/tools/", 1)[-1]
 
 
+def _trusted_address(request: Request) -> Optional[str]:
+    """The client address, when the server can trust it: an IP, and a TRUSTED_PROXY_IPS that names
+    the proxy (with a catch-all, anyone could send it). Logs nothing: the address is personal data."""
+    host = request.client.host if request.client else None
+    try:
+        ipaddress.ip_address(host or "")
+    except ValueError:
+        return None
+    return None if proxy_trust_is_spoofable(get_settings().TRUSTED_PROXY_IPS) else host
+
+
 def _visitor(request: Request) -> str:
-    """The visitor's address, hashed. An address the server can't trust (no proxy named in
-    TRUSTED_PROXY_IPS, so anyone could send it) counts as one visitor: the limit fails closed."""
-    address = get_verified_client_ip(request) or "unverified"
+    """The visitor's address, hashed. An address the server can't trust counts as one visitor: the
+    limit fails closed."""
+    address = _trusted_address(request) or "unverified"
     return hashlib.sha256(address.encode()).hexdigest()[:16]
 
 

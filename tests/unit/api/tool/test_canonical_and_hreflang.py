@@ -140,3 +140,28 @@ async def test_hreflang_takes_only_the_iso_codes_google_supports():
     assert "'eng' is not a language code" in warnings
     assert "'xx' is not a language code" in warnings
     assert "'zz' is not a region code" in warnings
+
+
+@pytest.mark.parametrize("url", ["not a url", "https://exa mple.com/x", "https://exa_mple.com/"])
+def test_a_canonical_address_must_be_a_full_web_address(url):
+    res = client.post("/api/v1/tools/canonical-tag-generator", json={"url": url})
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_hreflang_leaves_out_what_is_not_a_full_address():
+    result = await generate_hreflang_tags(
+        hreflang(
+            [
+                {"url": "not a url", "language": "en", "region": "us"},
+                {"url": "https://example.com/es", "language": "es"},
+            ],
+            default_url="also not a url",
+        )
+    )
+    assert result["hreflang_tags"] == (
+        '<link rel="alternate" hreflang="es" href="https://example.com/es" />'
+    )
+    warnings = " | ".join(result["warnings"])
+    assert "'not a url' is not a full address" in warnings
+    assert "'also not a url' is not a full address (https://...): no x-default." in warnings

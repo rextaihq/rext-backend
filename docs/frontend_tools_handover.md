@@ -44,7 +44,7 @@ The tools are public (no login) and bounded per UTC day (`src/api/tool/limits.py
 - A `429` carries `Retry-After` (readable from the browser): the seconds until midnight UTC.
 - Settings: `FREE_TOOLS_MODEL_CALLS_PER_DAY`, `FREE_TOOLS_CALLS_PER_DAY`, `FREE_TOOLS_DAILY_BUDGET_USD`.
 
-The canonical tag and hreflang generators run no model: Google's rules for both are mechanical. An address without a scheme gets `https://`; one without a host is refused (`400`). Hreflang takes the ISO 639-1 languages, ISO 15924 scripts and ISO 3166-1 regions Google supports (`src/api/tool/iso_codes.py`).
+The canonical tag and hreflang generators run no model: Google's rules for both are mechanical. An address without a scheme gets `https://`; one that isn't a full web address (a valid host name or IP) is refused (`400`), and in hreflang it is left out with a warning. Hreflang takes the ISO 639-1 languages, ISO 15924 scripts and ISO 3166-1 regions Google supports (`src/api/tool/iso_codes.py`).
 
 ---
 
