@@ -234,12 +234,14 @@ async def test_a_first_payment_before_its_subscription_is_retried():
         },
     }
 
-    with pytest.raises(ValueError, match="first payment"):
+    with pytest.raises(ValueError, match="not found in payment_success"):
         await handle_subscription_payment_success(invoice, None, db)
 
 
 @pytest.mark.asyncio
-async def test_a_renewal_before_its_subscription_is_still_skipped():
+async def test_a_renewal_before_its_subscription_is_retried_too():
+    # F11 (revnix/rext-control#336): credits come only with a payment, so no payment
+    # is dropped; the reprocessing job runs it again once the row exists.
     from src.services.webhook_handlers.subscription_handlers import (
         handle_subscription_payment_success,
     )
@@ -254,7 +256,8 @@ async def test_a_renewal_before_its_subscription_is_still_skipped():
         },
     }
 
-    assert await handle_subscription_payment_success(invoice, None, db) is None
+    with pytest.raises(ValueError, match="not found in payment_success"):
+        await handle_subscription_payment_success(invoice, None, db)
 
 
 @pytest.mark.asyncio
@@ -276,6 +279,10 @@ async def test_the_first_payment_judges_the_window_by_the_subscriptions_start(mo
         grace_period_end=None,
         current_api_calls=0,
         lemonsqueezy_order_id="555",
+        # What the ordering checks read (F11): no state stored yet, no payment credited.
+        provider_updated_at=None,
+        subscription_metadata={},
+        end_date=None,
     )
     plan = SimpleNamespace(is_trial_plan=False, credits_per_month=1000, name="growth")
     grant = AsyncMock(return_value=1000)
