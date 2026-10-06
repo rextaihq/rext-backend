@@ -98,7 +98,9 @@ def review_outline(state: REXT):
             # the top results, the questions people also ask, the related searches.
             "serp_titles": build_serp_titles(serp_normalized),
             "serp_questions": _distinct(serp_normalized.get("questions")),
-            "related_searches": _distinct(serp_normalized.get("related_topics")),
+            # Google's own: the normalized related_topics are backfilled with the
+            # model's suggested keywords when the search shows none (competitor.py).
+            "related_searches": _distinct((state.get("serp_result") or {}).get("related_searches")),
             "instruction": (
                 "Please approve the outline, or reject/regenerate it with "
                 "feedback on what should change — your feedback will be "

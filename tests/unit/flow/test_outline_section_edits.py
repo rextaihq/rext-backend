@@ -352,7 +352,7 @@ def test_the_writer_and_the_validator_expect_an_added_section():
 # --- what the gate shows as the outline's sources ------------------------------
 
 
-def _gate_payload(monkeypatch, serp_normalized):
+def _gate_payload(monkeypatch, serp_normalized, serp_result=None):
     payloads = []
 
     def _interrupt(payload):
@@ -364,6 +364,7 @@ def _gate_payload(monkeypatch, serp_normalized):
         {
             "content": {"outline": _blog_outline(), "content_type": "blog"},
             "serp_normalized": serp_normalized,
+            "serp_result": serp_result,
         }
     )
     return payloads[0]
@@ -390,6 +391,7 @@ def test_gate_payload_carries_additions_and_the_search_evidence(monkeypatch):
             "questions": ["How often?", "how often?", None, "  ", "Which brand?"],
             "related_topics": ["running shoes", "trail shoes"],
         },
+        {"related_searches": ["running shoes", "trail shoes", "Running shoes"]},
     )
 
     assert payload["section_additions"] == ["structure.sections"]
@@ -406,6 +408,18 @@ def test_gate_payload_without_a_serp_has_empty_sources(monkeypatch):
 
     assert payload["serp_titles"] == []
     assert payload["serp_questions"] == []
+    assert payload["related_searches"] == []
+
+
+def test_related_searches_are_googles_not_the_models_backfill(monkeypatch):
+    # With no related searches on the page, competitor.py fills related_topics
+    # with the model's suggested keywords; Sources must not show them as Google's.
+    payload = _gate_payload(
+        monkeypatch,
+        {"related_topics": ["suggested keyword one", "suggested keyword two"]},
+        {"related_searches": []},
+    )
+
     assert payload["related_searches"] == []
 
 
