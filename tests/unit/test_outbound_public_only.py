@@ -3,6 +3,7 @@ the image download, the site's security-header check and the site scan refuse a
 redirect there before sending, and a connection goes only to the address that was
 checked, so a name that answers differently the second time (DNS rebinding) is refused."""
 
+import logging
 import threading
 import time
 from unittest.mock import AsyncMock
@@ -11,6 +12,7 @@ import httpcore
 import httpx
 import pytest
 
+from src.api.middleware.exceptions import RextExternalServiceException
 from src.utils import url_validator
 from src.utils.site_compliance import get_security_headers
 from src.utils.site_security_scan import analyze_site_security
@@ -69,6 +71,19 @@ async def test_a_public_image_still_downloads(sent):
 
     assert response.status_code == 200
     assert sent == [f"{PUBLIC}/image.png"]
+
+
+async def test_a_refused_image_logs_its_host_not_its_credentials(sent, caplog):
+    sent.target["redirect_to"] = PRIVATE_REDIRECTS[0]
+
+    with caplog.at_level(logging.WARNING, logger="src.web.wordpress"):
+        async with WordPressPublisher(site_url=PUBLIC, api_key="key") as wp:
+            with pytest.raises(RextExternalServiceException):
+                await wp._upload_featured_image("http://user:s3cret@93.184.216.34/image.png")
+
+    (refused,) = [r.getMessage() for r in caplog.records if "refused host" in r.getMessage()]
+    assert "93.184.216.34" in refused
+    assert "s3cret" not in refused and "user" not in refused
 
 
 @pytest.mark.parametrize("private", PRIVATE_REDIRECTS)
