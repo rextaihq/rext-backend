@@ -464,23 +464,33 @@ _PROMPT_SUPPRESSED_FIELDS = frozenset(
 
 # A call to action is an instruction, never content to copy. Rendered like any other
 # field ("- Primary CTA: Explore Features") the writer printed it into the article
-# as a bold label line, so it is phrased as what to write instead.
+# as a bold label line, so it is phrased as what to write instead: the CTA fields
+# themselves, and the lines a CTA block carries beside them (reassurance text, an
+# urgency message, a context line).
 _CTA_BLOCK_HEADING = "Call to action (a closing paragraph, not a heading of its own)"
 _CTA_GROUP_LINE = (
     "Calls to action, each written as a sentence or a link (never as a labelled line):"
 )
 
 
-def _cta_line(text: Any) -> str:
-    return f'Invite the reader to "{text}" here, in a sentence or a link (never as a labelled line)'
+def _cta_line(key: str, text: Any) -> str:
+    if is_cta_key(key):
+        return f'Invite the reader to "{text}" here, in a sentence or a link (never as a labelled line)'
+    return (
+        f"With the call to action, work in its {humanize_key(key).lower()} in your own words: "
+        f'"{text}" (never as a labelled line)'
+    )
 
 
-def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> None:
+def _render_value(
+    value: Any, lines: list[str], indent: str, depth: int = 0, in_cta: bool = False
+) -> None:
     """Serialize approved values faithfully, by field name.
 
     Deliberately generic: it walks whatever the schema defines instead of
     consulting hand-maintained field-name tables, so a new schema field renders
-    correctly with no registry update.
+    correctly with no registry update. A call to action, and everything a CTA
+    block holds (`in_cta`), is rendered as an instruction instead of a field.
     """
     if depth > _MAX_DEPTH or _is_empty(value):
         return
@@ -495,15 +505,16 @@ def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> 
                 continue
             if _is_empty(sub):
                 continue
-            if is_cta_key(key):
-                if isinstance(sub, (dict, list)):
-                    lines.append(f"{indent}- {_CTA_GROUP_LINE}")
-                    _render_value(sub, lines, indent + "  ", depth + 1)
-                else:
-                    lines.append(f"{indent}- {_cta_line(sub)}")
+            cta = in_cta or is_cta_key(key)
+            if cta and not isinstance(sub, (dict, list)):
+                lines.append(f"{indent}- {_cta_line(key, sub)}")
+            elif is_cta_key(key) and isinstance(sub, list) and all(isinstance(i, str) for i in sub):
+                lines.extend(f"{indent}- {_cta_line(key, item)}" for item in sub if item)
             elif isinstance(sub, (dict, list)):
-                lines.append(f"{indent}- {humanize_key(key)}:")
-                _render_value(sub, lines, indent + "  ", depth + 1)
+                lines.append(
+                    f"{indent}- {_CTA_GROUP_LINE if is_cta_key(key) else humanize_key(key) + ':'}"
+                )
+                _render_value(sub, lines, indent + "  ", depth + 1, in_cta=cta)
             else:
                 lines.append(f"{indent}- {humanize_key(key)}: {sub}")
     elif isinstance(value, list):
@@ -511,7 +522,7 @@ def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> 
             if _is_empty(item):
                 continue
             if isinstance(item, dict):
-                _render_value(item, lines, indent, depth + 1)
+                _render_value(item, lines, indent, depth + 1, in_cta=in_cta)
             else:
                 lines.append(f"{indent}* {item}")
     else:
@@ -532,9 +543,9 @@ def format_structure_for_prompt(blocks: list[OutlineBlock], indent: str = "") ->
                 heading = _CTA_BLOCK_HEADING
             lines.append(f"{indent}## {heading}")
             if is_cta_key(block.key) and not isinstance(data, (dict, list)):
-                lines.append(f"{indent}  - {_cta_line(data)}")
+                lines.append(f"{indent}  - {_cta_line(block.key, data)}")
                 continue
-            _render_value(data, lines, indent + "  ")
+            _render_value(data, lines, indent + "  ", in_cta=is_cta_key(block.key))
     return "\n".join(lines)
 
 
