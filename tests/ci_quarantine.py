@@ -29,7 +29,8 @@ def quarantined() -> set:
 
 def pytest_configure(config):
     config._quarantine = quarantined()
-    config._quarantine_passed = []
+    config._quarantine_passed = []  # quarantined tests whose call passed
+    config._quarantine_failed = set()  # quarantined tests that failed in any phase
     config._quarantine_exit = 0
 
 
@@ -40,6 +41,7 @@ def pytest_runtest_makereport(item, call):
     if item.nodeid not in item.config._quarantine:
         return
     if report.failed:
+        item.config._quarantine_failed.add(item.nodeid)
         report.outcome = "skipped"
         report.wasxfail = REASON
     elif report.when == "call" and report.passed:
@@ -47,7 +49,8 @@ def pytest_runtest_makereport(item, call):
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    passed = config._quarantine_passed
+    # Only once every phase is over: a teardown that fails after a passing call is still a failure.
+    passed = [n for n in config._quarantine_passed if n not in config._quarantine_failed]
     if passed:
         terminalreporter.section(
             "quarantined tests that passed: take them off tests/quarantine.list"
