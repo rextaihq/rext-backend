@@ -5,7 +5,11 @@ workflows restart it with latest=true. CI writes the commit into src/api/build_c
 `langgraph build`; /health/live reports it, and the deploy job waits for it.
 """
 
+import json
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -116,7 +120,7 @@ def test_a_stale_run_is_refused_first(name: str, branch: str, job: str) -> None:
         assert '"$HEAD" != "${{ github.sha }}"' in first["run"]
     else:
         assert "compare/${{ github.sha }}...stage" in first["run"]
-        assert 'grep -E "$DEPLOY_PATHS"' in first["run"]
+        assert 'grep -E "$PATHS"' in first["run"]
 
 
 def _sample(glob: str) -> str:
@@ -124,14 +128,158 @@ def _sample(glob: str) -> str:
     return glob.replace("**", "a/b.py").replace("*", "x")
 
 
-def test_the_stale_check_covers_every_path_staging_deploys_on() -> None:
+def test_each_component_s_stale_paths_are_its_change_filter() -> None:
+    # A newer commit counts against a component when it started a run that deploys
+    # that component: exactly when the changes job's filter for it matched.
     config = yaml.safe_load(_workflow("stage.yaml"))
-    paths = config[True]["push"]["paths"]  # PyYAML reads the "on" key as True
-    pattern = re.compile(_jobs("stage.yaml")["deploy"]["steps"][0]["env"]["DEPLOY_PATHS"])
-    for glob in paths:
-        assert pattern.search(_sample(glob)), glob
-    assert not pattern.search("docs/notes.md")
-    assert not pattern.search("README.md")
+    filters = yaml.safe_load(config["jobs"]["changes"]["steps"][1]["with"]["filters"])
+    for component, env in (("backend", "BACKEND_PATHS"), ("shopify", "SHOPIFY_PATHS")):
+        pattern = re.compile(config["env"][env])
+        for glob in filters[component]:
+            assert pattern.search(_sample(glob)), (component, glob)
+        other = filters["shopify" if component == "backend" else "backend"]
+        for glob in other:
+            assert not pattern.search(_sample(glob)), (component, glob)
+        assert not pattern.search("docs/notes.md")
+        assert not pattern.search(".github/workflows/stage.yaml")
+
+
+@pytest.mark.parametrize(
+    ("job", "backend", "shopify"),
+    [("docker_job", "true", "false"), ("docker_shopify", "false", "true")],
+)
+def test_a_publisher_checks_only_its_own_component(job: str, backend: str, shopify: str) -> None:
+    env = _jobs("stage.yaml")[job]["steps"][0]["env"]
+    assert (env["WANT_BACKEND"], env["WANT_SHOPIFY"]) == (backend, shopify)
+
+
+def test_the_deploy_runs_only_what_the_stale_check_left() -> None:
+    steps = _jobs("stage.yaml")["deploy"]["steps"]
+    check = steps[0]
+    assert check["id"] == "fresh"
+    assert check["env"]["WANT_BACKEND"] == "${{ needs.docker_job.result == 'success' }}"
+    assert check["env"]["WANT_SHOPIFY"] == "${{ needs.docker_shopify.result == 'success' }}"
+    for step in steps[1:]:
+        run = step.get("run", "")
+        if (
+            "COOLIFY_UUID_STAGE" in run
+            or "/health/live" in str(step.get("env"))
+            or "GHCR" in step["name"]
+        ):
+            assert step["if"] == "steps.fresh.outputs.backend == 'true'", step["name"]
+        if "COOLIFY_UUID_SHOPIFY_STAGE" in run:
+            assert step["if"] == "steps.fresh.outputs.shopify == 'true'", step["name"]
+    assert steps[-1]["if"] == "steps.fresh.outputs.skipped != ''"
+
+
+def _run_stale_check(
+    tmp_path: Path, compare: dict, want_backend: str, want_shopify: str
+) -> tuple[int, dict, str]:
+    """The deploy job's stale check, run by bash with a stand-in `gh` that answers the comparison."""
+    config = yaml.safe_load(_workflow("stage.yaml"))
+    script = config["jobs"]["deploy"]["steps"][0]["run"]
+    script = script.replace("${{ github.repository }}", "rextaihq/rext-backend")
+    script = script.replace("${{ github.sha }}", SHA)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (tmp_path / "compare.json").write_text(json.dumps(compare), encoding="utf-8")
+    gh = bin_dir / "gh"
+    gh.write_text(f'#!/bin/sh\ncat "{tmp_path / "compare.json"}"\n', encoding="utf-8")
+    gh.chmod(0o755)
+    output = tmp_path / "github_output"
+    output.write_text("", encoding="utf-8")
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "GITHUB_OUTPUT": str(output),
+        "WANT_BACKEND": want_backend,
+        "WANT_SHOPIFY": want_shopify,
+        "BACKEND_PATHS": config["env"]["BACKEND_PATHS"],
+        "SHOPIFY_PATHS": config["env"]["SHOPIFY_PATHS"],
+    }
+    done = subprocess.run(
+        ["bash", "-e", "-c", script], env=env, capture_output=True, text=True, check=False
+    )
+    outputs = dict(
+        line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines() if line
+    )
+    return done.returncode, outputs, done.stdout
+
+
+def _ahead(*files: dict) -> dict:
+    return {"status": "ahead", "files": list(files)}
+
+
+needs_jq = pytest.mark.skipif(shutil.which("jq") is None, reason="the step uses jq")
+
+
+@needs_jq
+def test_a_newer_backend_commit_leaves_the_shopify_deploy_to_this_run(tmp_path: Path) -> None:
+    # A Shopify run cancelled by a later backend-only push can be re-run: the newer
+    # run's filter saw only its own push, so it won't deploy the Shopify app.
+    code, outputs, _ = _run_stale_check(
+        tmp_path, _ahead({"filename": "src/api/server.py"}), "false", "true"
+    )
+    assert code == 0
+    assert outputs == {"shopify": "true", "skipped": ""}
+
+
+@needs_jq
+def test_a_stale_component_is_skipped_and_the_other_still_deploys(tmp_path: Path) -> None:
+    code, outputs, stdout = _run_stale_check(
+        tmp_path, _ahead({"filename": "src/api/server.py"}), "true", "true"
+    )
+    assert code == 0
+    assert outputs == {"shopify": "true", "skipped": "backend"}
+    assert "touching the backend (src/api/server.py )" in stdout
+
+
+@needs_jq
+def test_nothing_left_is_refused(tmp_path: Path) -> None:
+    code, outputs, _ = _run_stale_check(
+        tmp_path, _ahead({"filename": "rext/app/routes.tsx"}), "false", "true"
+    )
+    assert code == 1
+    assert outputs == {"skipped": "shopify"}
+
+
+@needs_jq
+def test_a_file_moved_out_of_a_component_counts_against_it(tmp_path: Path) -> None:
+    moved = {"filename": "docs/old_service.py", "previous_filename": "src/services/old_service.py"}
+    code, outputs, _ = _run_stale_check(tmp_path, _ahead(moved), "true", "false")
+    assert code == 1
+    assert outputs == {"skipped": "backend"}
+
+
+@needs_jq
+def test_a_comparison_at_the_300_file_limit_is_refused(tmp_path: Path) -> None:
+    # GitHub lists at most 300 files: a newer deployable change could be past the list.
+    files = [{"filename": f"docs/page-{i}.md"} for i in range(300)]
+    code, outputs, stdout = _run_stale_check(tmp_path, _ahead(*files), "true", "true")
+    assert code == 1
+    assert outputs == {}
+    assert "300 or more files" in stdout
+
+
+@needs_jq
+@pytest.mark.parametrize(
+    ("compare", "code", "outputs"),
+    [
+        (
+            {"status": "identical", "files": []},
+            0,
+            {"backend": "true", "shopify": "true", "skipped": ""},
+        ),
+        (
+            _ahead({"filename": "docs/notes.md"}),
+            0,
+            {"backend": "true", "shopify": "true", "skipped": ""},
+        ),
+        ({"status": "diverged", "files": []}, 1, {}),
+        ({"status": "behind", "files": []}, 1, {}),
+    ],
+)
+def test_the_stage_head_decides(tmp_path: Path, compare: dict, code: int, outputs: dict) -> None:
+    assert _run_stale_check(tmp_path, compare, "true", "true")[:2] == (code, outputs)
 
 
 def test_the_wait_has_a_wall_clock_deadline() -> None:
