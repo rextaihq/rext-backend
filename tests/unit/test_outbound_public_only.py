@@ -3,6 +3,7 @@ the image download, the site's security-header check and the site scan refuse a
 redirect there before sending, and a connection goes only to the address that was
 checked, so a name that answers differently the second time (DNS rebinding) is refused."""
 
+import threading
 import time
 
 import httpcore
@@ -235,6 +236,45 @@ async def test_the_hooks_lookup_counts_against_the_connect_timeout(monkeypatch):
 
     with pytest.raises(httpx.ConnectTimeout):
         await hook(request)
+
+
+async def test_the_connection_gets_what_the_hooks_lookup_left_of_the_timeout(monkeypatch):
+    # One deadline for both lookups: a slow first lookup shortens the second's time.
+    def slow(host):
+        time.sleep(0.3)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(url_validator, "_resolve_hostname", slow)
+    hook = url_validator.refuse_private_addresses()
+    request = httpx.Request(
+        "GET", "http://slow.example/", extensions={"timeout": {"connect": 2.0, "read": 5.0}}
+    )
+
+    await hook(request)
+
+    timeouts = request.extensions["timeout"]
+    assert 0 < timeouts["connect"] <= 1.7
+    assert timeouts["read"] == 5.0
+
+
+async def test_lookups_run_on_threads_of_their_own(monkeypatch):
+    # A stalled lookup holds one of these threads, never the event loop's shared executor.
+    threads = []
+
+    def record(host):
+        threads.append(threading.current_thread().name)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(url_validator, "_resolve_hostname", record)
+    backend = _PublicOnlyNetworkBackend()
+    backend._backend = _Recorder()
+
+    await url_validator.refuse_private_addresses()(httpx.Request("GET", "http://a.example/"))
+    await backend.connect_tcp("b.example", 80)
+    await url_validator.ensure_public_urls("http://c.example/")
+
+    assert len(threads) == 3
+    assert all(name.startswith("public-dns") for name in threads)
 
 
 async def test_the_hook_leaves_an_unresolvable_name_to_the_connection(monkeypatch):
