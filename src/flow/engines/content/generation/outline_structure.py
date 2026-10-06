@@ -482,6 +482,13 @@ def _cta_line(key: str, text: Any) -> str:
     )
 
 
+def _cta_list_line(key: str) -> str:
+    return (
+        f"With the call to action, work in its {humanize_key(key).lower()} in your own words "
+        "(never under a label):"
+    )
+
+
 def _render_value(
     value: Any, lines: list[str], indent: str, depth: int = 0, in_cta: bool = False
 ) -> None:
@@ -508,8 +515,12 @@ def _render_value(
             cta = in_cta or is_cta_key(key)
             if cta and not isinstance(sub, (dict, list)):
                 lines.append(f"{indent}- {_cta_line(key, sub)}")
-            elif is_cta_key(key) and isinstance(sub, list) and all(isinstance(i, str) for i in sub):
-                lines.extend(f"{indent}- {_cta_line(key, item)}" for item in sub if item)
+            elif cta and isinstance(sub, list) and all(isinstance(i, str) for i in sub):
+                if is_cta_key(key):
+                    lines.extend(f"{indent}- {_cta_line(key, item)}" for item in sub if item)
+                else:
+                    lines.append(f"{indent}- {_cta_list_line(key)}")
+                    lines.extend(f"{indent}  * {item}" for item in sub if item)
             elif isinstance(sub, (dict, list)):
                 lines.append(
                     f"{indent}- {_CTA_GROUP_LINE if is_cta_key(key) else humanize_key(key) + ':'}"

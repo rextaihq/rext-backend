@@ -27,6 +27,7 @@ from src.flow.engines.content.generation.claim_integrity import (
     describe_unsupported_claims,
     find_unsupported_claims,
 )
+from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
 from src.flow.engines.content.generation.keyword_density import (
     analyze_keyword_density,
@@ -1896,6 +1897,9 @@ FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     # Humanization is told to keep every link, but nothing verified it: a
     # dropped verified citation previously shipped with zero failed checks.
     check_links_preserved,
+    # The CTA passed pre-humanize, but a rewrite can drop it, and a label line
+    # ("Primary CTA: ...") that carried it is removed just before these checks.
+    check_cta_presence,
 ]
 
 # Link-loss regressions worth one targeted repair pass after humanization. The
@@ -2120,6 +2124,9 @@ async def final_validate_content(state: REXT) -> dict:
     )
     final_content = restore_links_for_spec(final_content, spec, stage="final_validate_content")
     final_content = apply_density_report(final_content, spec)
+    # A label line printing an outline CTA field never ships, and the CTA check
+    # below judges the article without it.
+    final_content = strip_cta_labels(final_content, outline, stage="final_validate_content")
     checks = [fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS]
 
     # Brand and focus-keyphrase regressions are repaired in ONE pass rather than
