@@ -11,6 +11,31 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 
+async def charge_title_generation(serp_payload: dict) -> None:
+    """The title step's charge, taken when the keyword is kept.
+
+    The one place it is charged: the keyword gate's answer that keeps the
+    keyword, and a start from the keyword Library (library_item.py), whose
+    keyword is kept by starting from it.
+    """
+    from src.utils.credit_manager import (
+        STAGE_CREDITS,
+        InsufficientCreditsError,
+        _emit_credit_event,
+        consume_stage_credits,
+    )
+
+    try:
+        await consume_stage_credits(
+            serp_payload.get("user_id"),
+            STAGE_CREDITS["title_generation"],
+            "title_generation",
+            workspace_id=serp_payload.get("workspace_id"),
+        )
+    except InsufficientCreditsError as e:
+        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+
+
 async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     """
     Enhanced LangGraph node: Google-like keyword recommendations.
@@ -119,6 +144,8 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
 
         data_to_store = {
             "original_query": original_query,
+            # The market the research is for: a Library start restores it.
+            "country": original_country,
             "recommendations": recommendations,
             "questions": serp_normalized.get("questions", []) if serp_normalized else [],
             "related_topics": serp_normalized.get("related_topics", []) if serp_normalized else [],
@@ -228,24 +255,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     if not is_changed and not keyphrase_fits_a_title(primary_keyword):
         logger.info("Kept keyword is longer than a title can be: titles not charged")
     elif not is_changed:
-        from src.utils.credit_manager import (
-            STAGE_CREDITS,
-            InsufficientCreditsError,
-            _emit_credit_event,
-            consume_stage_credits,
-        )
-
-        _user_id = (serp_payload or {}).get("user_id")
-        _workspace_id = (serp_payload or {}).get("workspace_id")
-        try:
-            await consume_stage_credits(
-                _user_id,
-                STAGE_CREDITS["title_generation"],
-                "title_generation",
-                workspace_id=_workspace_id,
-            )
-        except InsufficientCreditsError as e:
-            _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+        await charge_title_generation(serp_payload or {})
 
     # Persist the selected intent
     if "serp_backlinks" in seo_result:

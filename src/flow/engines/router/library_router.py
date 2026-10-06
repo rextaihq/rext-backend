@@ -50,6 +50,11 @@ async def library_router(state: REXT) -> str:
 
             from src.services.notification_helper import notify_now
 
+            # A Library start announces itself once its item has loaded
+            # (load_library_item): a refused one never started.
+            if serp_payload.get("is_library"):
+                return "load_library_item"
+
             await notify_now(
                 user_id=uid,
                 pref_flag="gen_started",

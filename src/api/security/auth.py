@@ -107,7 +107,11 @@ async def runs_need_content_create(
     )
     if not await _may_create_content(ctx.user.identity, workspace_id):
         raise _forbidden(CONTENT_CREATE_REFUSED)
-    return {"owner": ctx.user.identity, "workspace_id": str(workspace_id)}
+    scope = {"owner": ctx.user.identity, "workspace_id": str(workspace_id)}
+    # A run that creates its own thread (if_not_exists="create") stamps it with
+    # these, as threads.create does; for any other run they're the run's own.
+    value.setdefault("metadata", {}).update(scope)
+    return scope
 
 
 @auth.on.assistants
