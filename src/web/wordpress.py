@@ -256,7 +256,9 @@ class WordPressPublisher:
             return {"status": status, "message": message, "authors_available": authors_available}
 
         try:
-            response = await self.client.get(endpoint, timeout=15)
+            # A site that moves its REST API (http to https, a new path) is followed;
+            # the public client checks every hop.
+            response = await self.client.get(endpoint, timeout=15, follow_redirects=True)
         except httpx.InvalidURL as exc:
             # Not an httpx.HTTPError: the address never became a request.
             logger.info("[WordPress Test] invalid address %s: %s", endpoint, exc)
@@ -272,13 +274,27 @@ class WordPressPublisher:
                 "The site did not answer. Check the site URL and that the site is online.",
             )
 
+        # A redirect to another host drops the key (httpx keeps Authorization only on
+        # the same origin or an http-to-https upgrade), so its answer says nothing
+        # about the key: the stored address is what needs changing.
+        if response.history and response.url.host.lower() != httpx.URL(endpoint).host.lower():
+            moved_to = f"{response.url.scheme}://{response.url.host}"
+            logger.info("[WordPress Test] %s redirects to %s", endpoint, moved_to)
+            return outcome(
+                "redirected",
+                f"The site sends its REST API to {moved_to}. Use that address as the "
+                "site URL and the API endpoint, and test again.",
+            )
+
         code = response.status_code
         logger.info("[WordPress Test] %s answered %s", endpoint, code)
         if code == 200:
             authors_available = None
             if self.api_key:
                 try:
-                    authors = await self.client.get(f"{base}/authors", timeout=15)
+                    authors = await self.client.get(
+                        f"{base}/authors", timeout=15, follow_redirects=True
+                    )
                     authors_available = authors.status_code == 200
                 except (httpx.HTTPError, httpx.InvalidURL):
                     authors_available = False
