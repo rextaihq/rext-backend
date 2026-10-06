@@ -100,7 +100,9 @@ def _is_per_article(blocks: list[OutlineBlock]) -> bool:
 def _section_description(block: OutlineBlock) -> str:
     """A planned section's field: its place, its approved heading and its plan."""
     shape = (
-        "an H3 subsection of the section before it" if block.level == 3 else "its own H2 section"
+        f"an H{block.level} subsection of the section before it"
+        if block.level > 2
+        else "its own H2 section"
     )
     lines = [
         f"Planned section {block.position} of {block.of}: {block.heading!r}, written as "

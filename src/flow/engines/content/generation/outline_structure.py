@@ -421,16 +421,15 @@ def section_containers(blocks: list[OutlineBlock]) -> list[tuple[str, list[dict]
     return containers
 
 
-# A container with more planned items than this stays one writer field. Its
-# items are then entries of one section (a long glossary, a tool list) rather
-# than sections of their own, and a field per item would bloat the schema the
-# writer must fill.
-MAX_EXPANDED_SECTIONS = 12
+# A guard on the writer's schema, far above any real outline: only lists of
+# sections expand (lists of entries never do), and a pillar page's can be long.
+MAX_EXPANDED_SECTIONS = 40
 
 
 def _item_level(item: dict) -> int:
-    """2 for an H2, 3 for an H3 (BlogSection.heading_level is "H2" or "H3")."""
-    return 3 if str(item.get("heading_level") or "").strip().upper() in {"H3", "3"} else 2
+    """The section's heading level: 2, 3 or 4 ("H2"-"H4"; a pillar section may be an H4)."""
+    level = str(item.get("heading_level") or "").strip().upper().removeprefix("H")
+    return int(level) if level in {"2", "3", "4"} else 2
 
 
 def _planned_children(
