@@ -2,14 +2,6 @@
 # failure in the CI run is a new one. One pytest node id per line. Fix a test, then take it off. A new failure
 # goes here only with a task that owns it. rext-control#373.
 # From the CI run on 41867a2 (stage at bca668ce), 2026-10-06.
-tests/api/routes/test_webhook_security.py::TestLemonSqueezyWebhookSecurity::test_lemonsqueezy_webhook_accepts_valid_signature
-tests/api/routes/test_webhook_security.py::TestLemonSqueezyWebhookSecurity::test_lemonsqueezy_webhook_production_requires_secret
-tests/api/routes/test_webhook_security.py::TestLemonSqueezyWebhookSecurity::test_lemonsqueezy_webhook_rejects_invalid_signature
-tests/api/routes/test_webhook_security.py::TestLemonSqueezyWebhookSecurity::test_lemonsqueezy_webhook_rejects_missing_signature
-tests/api/routes/test_webhook_security.py::TestLemonSqueezyWebhookSecurity::test_lemonsqueezy_webhook_rejects_replay_attack
-tests/api/routes/test_webhook_security.py::TestResendWebhookSecurity::test_resend_webhook_dev_mode_allows_no_secret
-tests/api/routes/test_webhook_security.py::TestResendWebhookSecurity::test_resend_webhook_rejects_invalid_signature
-tests/api/routes/test_webhook_security.py::TestResendWebhookSecurity::test_resend_webhook_rejects_missing_signature_headers
 tests/edge_cases/test_invitation_edge_cases.py::TestInvitationEdgeCases::test_accept_expired_invitation
 tests/edge_cases/test_invitation_edge_cases.py::TestInvitationEdgeCases::test_accept_invitation_after_email_changed
 tests/edge_cases/test_invitation_edge_cases.py::TestInvitationEdgeCases::test_accept_invitation_already_member
@@ -23,9 +15,6 @@ tests/edge_cases/test_invitation_edge_cases.py::TestInvitationEdgeCases::test_wo
 tests/integration/test_email_flows.py::TestEmailQueryFlows::test_query_emails_for_user
 tests/integration/test_email_flows.py::TestEmailQueryFlows::test_query_emails_for_workspace
 tests/integration/test_email_flows.py::TestEmailSendingFlows::test_send_email_with_workspace_and_user
-tests/integration/test_payment_failure_webhook.py::test_payment_failure_handles_missing_user_gracefully
-tests/integration/test_payment_failure_webhook.py::test_payment_failure_preserves_first_failure_timestamp
-tests/integration/test_payment_failure_webhook.py::test_payment_failure_sets_grace_period
 tests/middleware/test_ai_rate_limiter.py::TestAIEndpointRateLimiter::test_get_user_tier_enterprise
 tests/middleware/test_ai_rate_limiter.py::TestAIEndpointRateLimiter::test_get_user_tier_free
 tests/middleware/test_ai_rate_limiter.py::TestAIEndpointRateLimiter::test_get_user_tier_no_subscription
@@ -69,8 +58,6 @@ tests/routes/test_user_workspaces.py::test_get_user_workspaces_includes_statisti
 tests/routes/test_user_workspaces.py::test_get_user_workspaces_with_multiple_workspaces
 tests/routes/test_user_workspaces.py::test_get_user_workspaces_with_no_workspaces
 tests/routes/test_user_workspaces.py::test_workspace_ordering
-tests/scripts/test_validate_lemonsqueezy_key.py::TestValidateApiKey::test_validate_connection_timeout
-tests/scripts/test_validate_lemonsqueezy_key.py::TestValidateApiKey::test_validate_http_error
 tests/security/test_file_upload_security.py::TestFullValidationPipeline::test_quota_exceeded_fails
 tests/security/test_file_upload_security.py::TestStorageQuotaValidation::test_accepts_when_under_quota
 tests/security/test_file_upload_security.py::TestStorageQuotaValidation::test_rejects_when_over_quota
@@ -109,18 +96,13 @@ tests/services/test_admin_invitation_service.py::test_revoke_admin_invitation_su
 tests/services/test_admin_invitation_uniqueness.py::test_duplicate_pending_invitation_blocked
 tests/services/test_admin_invitation_uniqueness.py::test_race_condition_uniqueness_handling
 tests/services/test_admin_invitation_uniqueness.py::test_reinvitation_after_non_pending_status
-tests/services/test_data_retention.py::TestCleanupAll::test_cleanup_all_includes_payment_data
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_cancelled_subscriptions
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_expired_subscriptions
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_dry_run_mode_anonymization
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_keep_active_subscriptions
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_skip_already_anonymized_subscriptions
-tests/services/test_data_retention.py::TestWebhookEventCleanup::test_cleanup_old_processed_webhook_events
-tests/services/test_data_retention.py::TestWebhookEventCleanup::test_dry_run_mode_webhook_cleanup
-tests/services/test_data_retention.py::TestWebhookEventCleanup::test_keep_unprocessed_webhook_events
-tests/services/test_data_retention.py::TestWebhookEventCleanup::test_no_webhook_events_to_cleanup
-tests/services/test_data_retention.py::test_anonymize_subscriptions_uses_config_default
-tests/services/test_data_retention.py::test_cleanup_webhook_events_uses_config_default
+tests/services/test_data_retention.py::TestCleanupAll::test_cleanup_all_includes_payment_data  # G44.13 #504: the data cleanup's own bug
+tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_cancelled_subscriptions  # G44.13 #504: the data cleanup's own bug
+tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_expired_subscriptions  # G44.13 #504: the data cleanup's own bug
+tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_skip_already_anonymized_subscriptions  # G44.13 #504: the data cleanup's own bug
+tests/services/test_data_retention.py::TestWebhookEventCleanup::test_cleanup_old_processed_webhook_events  # G44.13 #504: the data cleanup's own bug
+tests/services/test_data_retention.py::test_anonymize_subscriptions_uses_config_default  # G44.13 #504: the data cleanup's own bug
+tests/services/test_data_retention.py::test_cleanup_webhook_events_uses_config_default  # G44.13 #504: the data cleanup's own bug
 tests/services/test_workspace_deletion_permissions.py::test_non_member_cannot_delete_workspace
 tests/services/test_workspace_deletion_permissions.py::test_non_owner_cannot_delete_workspace
 tests/services/test_workspace_deletion_permissions.py::test_owner_can_delete_workspace
@@ -158,7 +140,7 @@ tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderErrorHand
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_success
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_with_cc_bcc
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_with_reply_to
-tests/unit/providers/payment/test_lemonsqueezy_provider.py::TestCreateCheckoutSession::test_create_checkout_session_uses_sandbox_mode
+tests/unit/providers/payment/test_lemonsqueezy_provider.py::TestCreateCheckoutSession::test_create_checkout_session_uses_sandbox_mode  # G44.9 #407: after rextaihq/rext-backend#831 (F11.3) merges, in its file
 tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_empty_user_dict
 tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_not_impersonating
 tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_not_impersonating_explicit_false
@@ -244,8 +226,6 @@ tests/unit/services/test_role_service.py::TestRoleServiceDeleteRole::test_delete
 tests/unit/services/test_role_service.py::TestRoleServiceDeleteRole::test_delete_role_with_reassignment
 tests/unit/services/test_role_service.py::TestRoleServiceGetRoleHierarchy::test_get_role_hierarchy_ordered
 tests/unit/services/test_role_service.py::TestRoleServiceUpdateRole::test_update_role_system_role_protection
-tests/unit/services/test_subscription_retrieval_service.py::test_get_subscription_returns_details
-tests/unit/services/test_subscription_retrieval_service.py::test_list_subscriptions_returns_formatted_data
 tests/unit/services/test_user_service.py::TestUserServiceChangePassword::test_change_password_success
 tests/unit/services/test_user_service.py::TestUserServiceChangePassword::test_change_password_updates_password_changed_at
 tests/unit/services/test_user_service.py::TestUserServiceUpdateLastLogin::test_update_last_login_handles_none_count
