@@ -332,8 +332,8 @@ HOSTNAME = re.compile(rf"(?=.{{1,253}}$){HOST_LABEL}(?:\.{HOST_LABEL})*\.?", re.
 
 
 def absolute_url(url: str) -> bool:
-    """Whether url is a full http or https address: a valid host name or IP, a valid port if any,
-    no spaces."""
+    """Whether url is a full http or https address: a valid host name (international ones too) or
+    IP, a valid port if any, no spaces."""
     try:
         parsed = urlparse(url.strip())
         host = parsed.hostname or ""
@@ -346,7 +346,12 @@ def absolute_url(url: str) -> bool:
         ipaddress.ip_address(host)
         return True
     except ValueError:
-        return HOSTNAME.fullmatch(host) is not None
+        pass
+    try:
+        host = host.encode("idna").decode("ascii")  # an international name, in its punycode form
+    except UnicodeError:
+        return False
+    return HOSTNAME.fullmatch(host) is not None
 
 
 def normalize_url(url: str) -> str:
