@@ -42,25 +42,21 @@ async def get_dashboard_details(
     )
     formatted_logs = [format_audit_log(log, include_details=False) for log in logs]
 
-    # 3. Calculate content breakdown
+    # 3. Calculate content breakdown. Like the library (ContentService.list_content),
+    # the counts leave out what is in the trash, and they use the resolved id, so a
+    # slug in the path counts the same as the UUID.
     total_content = analytics["content_count"]
-    # For now we use counts from analytics if available,
-    # but published/draft might need specific counts
-    # (Checking content specific counts from previous logic)
+    in_library = (Content.workspace_id == ws_uuid, Content.deleted_at.is_(None))
     published_content = await db.scalar(
-        select(func.count())
-        .select_from(Content)
-        .where(Content.workspace_id == workspace_id, Content.status == "published")
+        select(func.count()).select_from(Content).where(*in_library, Content.status == "published")
     )
     draft_content = await db.scalar(
-        select(func.count())
-        .select_from(Content)
-        .where(Content.workspace_id == workspace_id, Content.status == "draft")
+        select(func.count()).select_from(Content).where(*in_library, Content.status == "draft")
     )
 
-    # 4. Total personas
+    # 4. Total personas (deleted personas are removed, not trashed)
     total_personas = await db.scalar(
-        select(func.count()).select_from(Persona).where(Persona.workspace_id == workspace_id)
+        select(func.count()).select_from(Persona).where(Persona.workspace_id == ws_uuid)
     )
 
     return success(
