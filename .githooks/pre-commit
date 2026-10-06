@@ -8,7 +8,9 @@
 #
 # Why the index and not your working tree: a module sitting on your disk but
 # never `git add`-ed does not exist for anyone else. That exact case shipped a
-# crash-looping image to stage on 2026-09-02.
+# crash-looping image to stage on 2026-09-02. So the index is exported into a
+# temporary directory and every check runs there: a staged file fixed only on
+# disk is judged as staged, and unstaged work never blocks a commit.
 #
 # Why staged-files-only for ruff: the repo carries ~3700 pre-existing lint
 # errors. Repo-wide would block every commit. New and changed code is held to
@@ -28,6 +30,8 @@ if [ -z "$PY" ]; then
     exit 1
 fi
 
+REPO=$(git rev-parse --show-toplevel)
+
 if command -v ruff >/dev/null 2>&1; then
     RUFF="ruff"
 elif command -v uv >/dev/null 2>&1; then
@@ -41,22 +45,43 @@ else
     exit 1
 fi
 
+# Ruff runs inside the snapshot (its config is the staged one) on the staged
+# paths, read NUL-separated from $STAGED_LIST; under uv it keeps the repository's
+# environment instead of building one in the snapshot.
+ruff_staged() {
+    if [ "$RUFF" = "uv run ruff" ]; then
+        xargs -0 uv run --project "$REPO" ruff "$@" < "$STAGED_LIST"
+    else
+        # shellcheck disable=SC2086
+        xargs -0 $RUFF "$@" < "$STAGED_LIST"
+    fi
+}
+
+# ── the snapshot being committed ──────────────────────────────────────────
+SNAPSHOT=$(mktemp -d "${TMPDIR:-/tmp}/rext-pre-commit.XXXXXX")
+STAGED_LIST=$(mktemp "${TMPDIR:-/tmp}/rext-pre-commit-staged.XXXXXX")
+trap 'rm -rf "$SNAPSHOT" "$STAGED_LIST"' EXIT INT TERM
+git checkout-index --all --prefix="$SNAPSHOT/"
+
 fail=0
 
 # ── 1. imports ────────────────────────────────────────────────────────────
+# Every file in the snapshot is in the index, so it is checked as it is on disk there.
 echo "pre-commit: checking import integrity..."
-"$PY" scripts/check_imports.py --tracked || fail=1
+(cd "$SNAPSHOT" && "$PY" scripts/check_imports.py) || fail=1
 
 # ── 2 & 3. ruff on staged python files ────────────────────────────────────
 # ACMR = added/copied/modified/renamed; deleted files are excluded.
-staged=$(git diff --cached --name-only --diff-filter=ACMR -z -- '*.py' | tr '\0' '\n')
+git diff --cached --name-only --diff-filter=ACMR -z -- '*.py' > "$STAGED_LIST"
+staged=$(tr '\0' '\n' < "$STAGED_LIST")
 
 if [ -n "$staged" ]; then
     count=$(printf '%s\n' "$staged" | grep -c .)
     echo "pre-commit: linting $count staged python file(s)..."
 
-    printf '%s\n' "$staged" | tr '\n' '\0' | xargs -0 $RUFF check --force-exclude || fail=1
-    printf '%s\n' "$staged" | tr '\n' '\0' | xargs -0 $RUFF format --check --force-exclude || fail=1
+    # From inside the snapshot, so the paths ruff reports are the repo's own.
+    (cd "$SNAPSHOT" && ruff_staged check --force-exclude) || fail=1
+    (cd "$SNAPSHOT" && ruff_staged format --check --force-exclude) || fail=1
 else
     echo "pre-commit: no staged python files to lint."
 fi
