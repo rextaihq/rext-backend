@@ -50,6 +50,7 @@ async def generate_unique_slug(
     exclude_id: Optional[UUID] = None,
     workspace_id: Optional[UUID] = None,
     workspace_field: str = "workspace_id",
+    include_deleted: bool = False,
 ) -> str:
     """
     Generate unique slug by appending number if needed.
@@ -63,6 +64,8 @@ async def generate_unique_slug(
         exclude_id: Optional ID to exclude from uniqueness check (for updates)
         workspace_id: Optional workspace ID for scoped uniqueness
         workspace_field: Name of the workspace_id field in the model
+        include_deleted: Also avoid the slugs of soft-deleted rows, for a table whose unique
+            constraint covers them (content's does)
 
     Returns:
         Unique slug string
@@ -70,10 +73,9 @@ async def generate_unique_slug(
     slug_col = getattr(model_class, slug_field)
     pattern = f"{base_slug}%"
 
-    query = select(slug_col).where(
-        slug_col.like(pattern),
-        model_class.deleted_at.is_(None),
-    )
+    query = select(slug_col).where(slug_col.like(pattern))
+    if not include_deleted:
+        query = query.where(model_class.deleted_at.is_(None))
 
     if workspace_id is not None:
         query = query.where(getattr(model_class, workspace_field) == workspace_id)
