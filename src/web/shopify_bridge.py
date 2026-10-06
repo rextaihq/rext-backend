@@ -146,19 +146,22 @@ class ShopifyAppBridge:
         endpoint = str(PurePosixPath(self.publish_endpoint))
         return f"{base}{endpoint}"
 
-    def _resolve_publish_url(self, config_json: Optional[Dict[str, Any]]) -> str:
+    def _resolve_publish_url(self, config_json: Optional[Dict[str, Any]]) -> tuple[str, bool]:
+        """The publish URL, and whether it comes from the customer's connection
+        (an override or the stored app launch URL) rather than the operator's
+        configured bridge base URL."""
         cfg = config_json or {}
         override_url = (cfg.get("bridge_publish_url") or "").strip()
         if override_url:
-            return override_url.rstrip("/")
+            return override_url.rstrip("/"), True
 
         if self.base_url:
-            return urljoin(f"{self.base_url}/", self.publish_endpoint.lstrip("/"))
+            return urljoin(f"{self.base_url}/", self.publish_endpoint.lstrip("/")), False
 
         app_launch_url = (cfg.get("app_launch_url") or "").strip()
         derived = self._derive_publish_url_from_launch_url(app_launch_url)
         if derived:
-            return derived
+            return derived, True
 
         raise RextValidationException(
             message=(
@@ -202,11 +205,12 @@ class ShopifyAppBridge:
     ) -> Dict[str, Any]:
         normalized_store_url = normalize_store_url(store_url)
         store_handle = extract_store_handle(normalized_store_url)
-        publish_url = self._resolve_publish_url(config_json)
-        if ((config_json or {}).get("bridge_publish_url") or "").strip():
-            # A customer-given override must not lead to a private or reserved
-            # network. The configured bridge base URL is the operator's own and
-            # may be an internal address, so it is not checked.
+        publish_url, customer_given = self._resolve_publish_url(config_json)
+        if customer_given:
+            # A URL from the customer's connection (an override, or one derived
+            # from the stored app launch URL) must not lead to a private or
+            # reserved network. The configured bridge base URL is the operator's
+            # own and may be an internal address, so it is not checked.
             await ensure_public_site_urls(publish_url)
         logger.info(
             f"Shopify App Bridge publishing to: {publish_url} (store: {normalized_store_url})"
