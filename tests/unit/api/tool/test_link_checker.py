@@ -1,8 +1,11 @@
+import time
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from src.api.server import app
+from src.api.tool import tools
 from src.api.tool.tools import broken_link_checker
 from src.utils import url_validator
 
@@ -46,6 +49,19 @@ async def test_a_private_address_is_never_fetched(sent, url):
 async def test_a_name_that_resolves_to_a_private_address_is_never_fetched(sent, monkeypatch):
     monkeypatch.setattr(url_validator, "_resolve_hostname", lambda host: ["10.1.2.3"])
     assert await broken_link_checker("https://internal.example.com/") is False
+    assert sent == []
+
+
+async def test_a_stalled_name_lookup_ends_the_check_in_time(sent, monkeypatch):
+    def stalled(host):
+        time.sleep(1)
+        return ["8.8.8.8"]
+
+    monkeypatch.setattr(url_validator, "_resolve_hostname", stalled)
+    monkeypatch.setattr(tools, "LINK_CHECK_SECONDS", 0.2)
+    started = time.monotonic()
+    assert await broken_link_checker("https://slow.example.com/") is False
+    assert time.monotonic() - started < 0.8
     assert sent == []
 
 
