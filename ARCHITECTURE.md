@@ -4,7 +4,7 @@ A map of how this repository is put together, for whoever is about to change it.
 
 ## Overview
 
-A LangGraph server that mounts a FastAPI application as its HTTP app (`langgraph.json`: the graph `agent` is `main:graph`, the app is `src/api/server.py:app`). One process on port 2024 serves three things: the REST API under `/api/v1` (the spec at `/openapi.json`, the docs at `/docs`), the LangGraph server's own endpoints for threads, runs and the store, which the dashboard's generation routes call to start and resume runs, and the server-sent events the dashboard follows. `langgraph.json` has no `auth` entry today, so the LangGraph endpoints apply no per-user filtering of their own (rework task 0.0, rext-control#195, wires the `Auth()` handler in `src/api/security/auth.py`). `server.py` at the root starts the API alone with uvicorn, without the graph.
+A LangGraph server that mounts a FastAPI application as its HTTP app (`langgraph.json`: the graph `agent` is `main:graph`, the app is `src/api/server.py:app`). One process on port 2024 serves three things: the REST API under `/api/v1` (the spec at `/openapi.json`, the docs at `/docs`), the LangGraph server's own endpoints for threads, runs and the store, which the dashboard's generation routes call to start and resume runs, and the server-sent events the dashboard follows. `langgraph.json`'s `auth` entry (`src/api/security/auth.py`) requires the user's access token on those LangGraph routes, stamps every thread's `metadata.owner` and shows a user only their own threads; assistants are read-only. `server.py` at the root starts the API alone with uvicorn, without the graph.
 
 - **Auth:** JWT, HS256, an access token of 30 minutes and a refresh token of 7 days by default (`src/api/security/token_utils.py`, `src/api/config.py`); `get_current_user` (`src/api/security/dependencies.py`) also checks the blacklist and that the session row is active. Roles and permissions are database rows, checked by `require_permissions` and `PermissionChecker` (`src/api/middleware/permissions.py`).
 - **Data:** PostgreSQL with pgvector holds the application's tables (SQLAlchemy 2, Alembic under `alembic/versions`) and the LangGraph runtime's own tables (checkpoints, threads, runs, the store), which the runtime creates and migrates itself. Every component reads the address from `POSTGRES_URI_CUSTOM`. Redis serves the cache and the rate limiter; without it the cache is skipped and the rate limiter counts in memory.
@@ -23,7 +23,7 @@ src/api/
                             events (SSE), email, shopify, admin, health
   schema/                   pydantic request and response models
   models/                   SQLAlchemy models
-  security/                 JWT, the dependencies, the API-key check (wired to no registered route)
+  security/                 JWT, the dependencies, the LangGraph auth handler (auth.py)
   middleware/               permissions, rate limits, plan limits (usage_limiter.py), security headers, errors
   database/                 the async and sync engines and sessions
   lib/                      logging (structlog), Sentry, error capture
@@ -49,7 +49,7 @@ rext/                       the Shopify app (Node), built and deployed by the sa
 
 ## The pipeline
 
-`START` → `library_router`, which checks the balance against a whole article's cost and sends a library keyword straight to `content_engine` (or ends at `insufficient_credits`) → `serp_engine` (the SERP and the competitors) → `seo_engine` (the keyword overview, backlinks and recommended keywords; **gate 1**, the keyword) → `keyword_router`, which goes back to `serp_engine` if the keyword or country changed, or ends the run at `no_serp_data` (an error the dashboard shows) when the search returned nothing → `content_engine`: `content_type` (**gate 2**), `topic_generation` (**gate 3**), keyword clustering, `generate_outline` and `review_outline` (**gate 4**, accept or reject with feedback), `generate_content`, `validate_content` and `repair_content`, `humanize_content`, `final_validate_content`, `review_content`, `persist_content` (the article is saved as a draft and a notification sent). Each gate is an `interrupt()`; the dashboard resumes the thread with the user's answer. The dashboard starts runs with `onDisconnect: "continue"`, so a run finishes after the user leaves; under `langgraph dev` the checkpointer is the in-memory runtime and runs vanish on restart.
+`START` → `library_router`, which checks the balance against a whole article's cost and sends a library keyword straight to `content_engine` (or ends at `insufficient_credits`) → `serp_engine` (the SERP and the competitors; `has_organic_results` ends the run at `no_serp_data`, an error the dashboard shows, when the search returned nothing) → `seo_engine` (the keyword overview, backlinks and recommended keywords; **gate 1**, the keyword) → `keyword_router`, which goes back to `serp_engine` if the keyword or country changed (or on to `no_serp_data`) → `content_engine`: `content_type` (**gate 2**), `topic_generation` (**gate 3**), keyword clustering, `generate_outline` and `review_outline` (**gate 4**, accept or reject with feedback), `generate_content`, `validate_content` and `repair_content`, `humanize_content`, `final_validate_content`, `review_content`, `persist_content` (the article is saved as a draft and a notification sent). Each gate is an `interrupt()`; the dashboard resumes the thread with the user's answer. The dashboard starts runs with `onDisconnect: "continue"`, so a run finishes after the user leaves; under `langgraph dev` the checkpointer is the in-memory runtime and runs vanish on restart.
 
 ## Credits and billing
 
@@ -65,12 +65,11 @@ The rework's local stack runs on the office laptop: PostgreSQL with pgvector, Re
 
 ## Traps
 
-- The LangGraph runtime's tables are not in Alembic: never drop them, and a change to a state shape strands the generations in flight.
+- The LangGraph runtime's and the store's tables are not Alembic's: `alembic/env.py` leaves them out of autogenerate (`src/api/database/langgraph_tables.py` names them). Never drop them, and a change to a state shape strands the generations in flight.
 - The store (`src/flow/store/rext_store.py`) connects with psycopg directly and needs pgvector; it must not go through PgBouncer.
 - The tests write to the database `POSTGRES_URI_CUSTOM` names, and `tests/conftest.py` creates no tables (its `create_all` is commented out): the schema must be migrated there first, and it must never be a database with content.
 - `scripts/db.py seed` prints the super admin's password from `.env`.
-- `uv run` re-syncs the environment with the lockfile, which pulls the CUDA build of torch (several GB) that nothing imports; rework worktrees set `UV_NO_SYNC=1`.
-- The image CI builds comes from `langgraph build` with `langgraph.json`'s Dockerfile lines, not from the committed `Dockerfile`, and installs from the `pyproject.toml` floors rather than the lockfile.
+- The image comes from `langgraph build`, which generates the Dockerfile from `langgraph.json` (its `dockerfile_lines` install the lock's runtime packages). The committed `Dockerfile` must equal what `langgraph.json` generates, and a test compares the two: change `langgraph.json` and regenerate it.
 - A push to `stage` deploys staging and a push to `main` deploys production; nothing is pushed there directly.
 - The repository has about 3,700 old ruff findings: new and changed files are clean, untouched files are not reformatted.
 - `.githooks/pre-commit` runs only after `git config core.hooksPath .githooks`.
