@@ -54,12 +54,15 @@ class MigrationFailed(RuntimeError):
 
 
 def _summary(error: BaseException) -> str:
-    """What failed, without the database's detail (a constraint's detail holds row values)."""
+    """What failed, as the error's type and SQLSTATE only.
+
+    PostgreSQL can put a row's values in any part of its message (a constraint's
+    detail, or "invalid input syntax for type ...: <value>" in the primary one), so
+    none of it is kept. Running the migration by hand shows the full error.
+    """
     cause = getattr(error, "orig", None) or error.__cause__ or error
-    diag = getattr(cause, "diag", None)
-    if diag is not None and getattr(diag, "message_primary", None):
-        return f"{type(cause).__name__}: {diag.message_primary} (SQLSTATE {diag.sqlstate})"
-    return type(cause).__name__
+    sqlstate = getattr(getattr(cause, "diag", None), "sqlstate", None)
+    return f"{type(cause).__name__} (SQLSTATE {sqlstate})" if sqlstate else type(cause).__name__
 
 
 class Outcome(NamedTuple):
