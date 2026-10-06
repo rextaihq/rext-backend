@@ -139,3 +139,28 @@ def test_the_nltk_corpora_are_loaded_at_import_not_in_a_worker_thread():
     assert type(stopwords).__name__ != "LazyCorpusLoader"
     assert "the" in keyword_service.ENGLISH_STOP_WORDS
     assert "the" in keyword_service.KeywordExtractor().stop_words
+
+
+def test_missing_nltk_data_does_not_stop_the_server_from_starting(monkeypatch):
+    # No network at start: the downloads fail quietly and the corpus is missing.
+    # Importing the module (which builds the graph) must still work; the corpus
+    # is then loaded on first use, as before.
+    import importlib
+
+    import nltk
+    from nltk.corpus import stopwords
+
+    import src.services.keyword_service as keyword_service
+
+    def missing(*args, **kwargs):
+        raise LookupError("Resource stopwords not found.")
+
+    monkeypatch.setattr(nltk, "download", lambda *a, **k: False)
+    monkeypatch.setattr(stopwords, "words", missing)
+    try:
+        reloaded = importlib.reload(keyword_service)
+        assert reloaded.ENGLISH_STOP_WORDS is None
+    finally:
+        monkeypatch.undo()
+        importlib.reload(keyword_service)
+    assert keyword_service.ENGLISH_STOP_WORDS
