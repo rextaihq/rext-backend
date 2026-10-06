@@ -101,12 +101,17 @@ def test_the_deploy_waits_for_the_running_commit(name: str, secret: str, health:
 def test_a_failed_production_deploy_says_what_to_do_by_hand() -> None:
     # The release is the first real run: the team needs the manual step in the error itself.
     steps = _jobs("production.yaml")["deploy"]["steps"]
-    for step in steps:
-        if "COOLIFY_UUID_PROD" in step.get("run", "") or step is _wait_step("production.yaml"):
-            error = [line for line in step["run"].splitlines() if "::error::" in line]
-            assert error, step["name"]
-            assert 'Restart with \\"Pull latest images\\" ticked' in error[-1], step["name"]
-            assert "rext-backend service" in error[-1], step["name"]
+    wait = _wait_step("production.yaml")["name"]
+    checked = [s for s in steps if "COOLIFY_UUID_PROD" in s.get("run", "") or s["name"] == wait]
+    assert [s["name"] for s in checked] == [
+        "Restart the production backend with the new image",
+        wait,
+    ]
+    for step in checked:
+        error = [line for line in step["run"].splitlines() if "::error::" in line]
+        assert error, step["name"]
+        assert 'Restart with \\"Pull latest images\\" ticked' in error[-1], step["name"]
+        assert "rext-backend service" in error[-1], step["name"]
 
 
 def _jobs(name: str) -> dict:
