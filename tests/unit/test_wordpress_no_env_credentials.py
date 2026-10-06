@@ -10,6 +10,7 @@ import base64
 import httpx
 import pytest
 
+from src.utils import url_validator
 from src.web.wordpress import WordPressPublisher
 
 # The customer's site: a public address written as an IP, so no lookup is needed.
@@ -39,11 +40,11 @@ def sent(monkeypatch, server_settings) -> list[httpx.Request]:
         requests.append(request)
         return httpx.Response(401, json={"code": "rest_not_logged_in"})
 
-    class _Recording(httpx.AsyncClient):
-        def __init__(self, **kwargs):
-            super().__init__(transport=httpx.MockTransport(respond), **kwargs)
-
-    monkeypatch.setattr(httpx, "AsyncClient", _Recording)
+    # The publisher builds every client through public_client(), whose transport is
+    # the seam: the request hook still runs, and nothing leaves the test.
+    monkeypatch.setattr(
+        url_validator, "PublicOnlyTransport", lambda verify=True: httpx.MockTransport(respond)
+    )
     return requests
 
 
