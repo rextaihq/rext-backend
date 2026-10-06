@@ -845,7 +845,12 @@ def setup_exception_handlers(app: FastAPI) -> None:
             request_id=request_id,
         )
 
-        return JSONResponse(status_code=exc.status_code, content=json.loads(error_response.json()))
+        # The exception's headers go out with it: Retry-After on a 429, WWW-Authenticate on a 401.
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=json.loads(error_response.json()),
+            headers=getattr(exc, "headers", None),
+        )
 
     async def validation_exception_handler(request: Request, exc: ValidationError):
         """

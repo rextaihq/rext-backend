@@ -1,17 +1,16 @@
+import html
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
 import httpx
 import textstat
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 
-from src.api.tool.prompts.canonical_prompt import canonical_prompt
+from src.api.tool.limits import model_tokens
 from src.api.tool.prompts.grammar_prompt import grammar_prompt
 from src.api.tool.prompts.headline_analyzer_prompt import headline_analyzer_prompt
 from src.api.tool.prompts.hook_prompt import hook_prompt
-from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
 from src.api.tool.prompts.meta_prompt import meta_prompt
 from src.api.tool.prompts.outline_prompt import outline_tool_prompt
 from src.api.tool.prompts.paragraph_rewriter_prompt import paragraph_rewriter_prompt
@@ -46,9 +45,9 @@ from src.api.tool.schema.schema import (
 from src.flow.model.llm_manager import load_model
 
 
-def _get_model():
-    """Internal helper to consistently load the model."""
-    return load_model()
+def _get_model(tool: str):
+    """The model for a free tool, with the output cap its daily budget charges (limits.FREE_TOOLS)."""
+    return load_model(max_tokens=model_tokens(tool))
 
 
 # Word Counter Tool
@@ -96,7 +95,7 @@ async def generate_meta_description(page_title: str, target_keywords: List[str])
     keywords_str = ", ".join(target_keywords)
 
     # Load the LLM
-    llm = _get_model()
+    llm = _get_model("meta-description/generate")
 
     # Create the chain
     chain = meta_prompt | llm | StrOutputParser()
@@ -135,7 +134,7 @@ async def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -
     Every generated title is validated individually using Pydantic's TitleTag model
     to ensure it is strictly between 50 and 60 characters inclusive.
     """
-    llm = _get_model()
+    llm = _get_model("title-tags")
 
     prompt = title_prompt.format(keyword=keyword, topic=topic, brand=brand, tone=tone)
 
@@ -170,7 +169,7 @@ async def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -
                 break
 
     # Revision / regeneration loop if Pydantic validation fails for any titles and < 5 valid titles
-    max_retries = 5
+    max_retries = 2  # three calls at most: the budget charges title-tags for three
     retry_count = 0
     while len(valid_titles) < 5 and retry_count < max_retries:
         retry_count += 1
@@ -356,29 +355,11 @@ def normalize_url(url: str) -> str:
 
 async def generate_canonical_tag(url: str):
     """
-    AI-powered Canonical Tag Generator logic.
+    Canonical Tag Generator: the tag for the normalized URL. Built in code: the rules are mechanical
+    (normalize_url), so a model would add cost and nothing else.
     """
     normalized_url = normalize_url(url)
-
-    model = _get_model()
-
-    # Format the prompt
-    formatted_prompt = canonical_prompt.format(url=url)
-
-    response = await model.ainvoke(
-        [
-            SystemMessage(content="You generate SEO ONLY valid HTML canonical tags."),
-            HumanMessage(content=formatted_prompt),
-        ]
-    )
-
-    canonical_tag = response.content if hasattr(response, "content") else str(response)
-    canonical_tag = canonical_tag.strip().strip("`").replace("html\n", "").strip()
-
-    # Safety fallback
-    if not canonical_tag.startswith("<link") or 'rel="canonical"' not in canonical_tag:
-        canonical_tag = f'<link rel="canonical" href="{normalized_url}" />'
-
+    canonical_tag = f'<link rel="canonical" href="{html.escape(normalized_url)}" />'
     return {"canonical_tag": canonical_tag, "url": url, "normalized_url": normalized_url}
 
 
@@ -387,13 +368,47 @@ async def generate_canonical_tag(url: str):
 # =========================
 
 
+def _hreflang_code(
+    language: Optional[str], region: Optional[str]
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Google's hreflang value for a language and an optional region: an ISO 639-1 language, an ISO
+    15924 script, an ISO 3166-1 region, as en, en-US or zh-Hant-TW (EN_us is en-US). Returns the
+    value and a note for the warnings: why it isn't one when the value is None.
+    """
+    parts = [p for p in re.split(r"[-_\s]+", (language or "").strip()) if p]
+    if region and region.strip():
+        parts = parts[:2] if len(parts) > 1 and len(parts[1]) == 4 else parts[:1]
+        parts.append(region.strip())
+    if not parts or not re.fullmatch(r"[A-Za-z]{2,3}", parts[0]):
+        return (
+            None,
+            f"'{language or ''}' is not a language code: use an ISO 639-1 code such as en or es.",
+        )
+    code = [parts[0].lower()]
+    rest = parts[1:]
+    if rest and re.fullmatch(r"[A-Za-z]{4}", rest[0]):
+        code.append(rest.pop(0).title())
+    if rest:
+        if len(rest) > 1 or not re.fullmatch(r"[A-Za-z]{2}", rest[0]):
+            return (
+                None,
+                f"'{'-'.join(rest)}' is not a region code: use an ISO 3166-1 code such as US or GB.",
+            )
+        if rest[0].upper() == "UK":
+            code.append("GB")
+            return "-".join(code), "UK is not a region code; GB (the United Kingdom) is used."
+        code.append(rest[0].upper())
+    return "-".join(code), None
+
+
 async def generate_hreflang_tags(request):
     """
-    AI-powered Google-compliant Hreflang Tag Generator logic.
-    Expects a HreflangRequest object (duck-typed).
+    Google-compliant Hreflang Tag Generator: one alternate tag per language version (each version
+    lists every other and itself), and x-default for the default URL. Built in code: Google's rules
+    are mechanical, so a model would add cost and nothing else. Expects a HreflangRequest object
+    (duck-typed).
     """
-    model = _get_model()
-
     if len(request.language_region_urls) > 50:
         raise ValueError("Maximum of 50 URLs allowed for hreflang generation.")
 
@@ -408,62 +423,30 @@ async def generate_hreflang_tags(request):
             )
         urls_seen[url_str] = entry.language or "unknown"
 
-    # Determine format rules
-    if request.output_format == "sitemap":
-        format_rule = "- Output ONLY valid XML <xhtml:link> tags"
-        format_instruction = (
-            'Return ONLY valid XML <xhtml:link rel="alternate" hreflang="..." href="..." /> tags.'
-        )
-        context_note = (
-            "Your output must be ready to paste directly inside a <url> block of an XML sitemap."
-        )
-    else:
-        format_rule = "- Output ONLY valid HTML <link> tags"
-        format_instruction = (
-            'Return ONLY valid HTML <link rel="alternate" hreflang="..." href="..." /> tags.'
-        )
-        context_note = "Your output must be ready to paste directly inside the <head> section of an HTML document."
+    tag = "xhtml:link" if request.output_format == "sitemap" else "link"
+    pairs = []
+    codes_seen = {}
+    for entry in request.language_region_urls:
+        code, note = _hreflang_code(entry.language, entry.region)
+        if note:
+            warnings.append(note if code else f"{note} Left out: {entry.url}")
+        if not code:
+            continue
+        if code in codes_seen:
+            if codes_seen[code] != str(entry.url):
+                warnings.append(
+                    f"'{code}' is given twice; the first URL is kept: {codes_seen[code]}"
+                )
+            continue
+        codes_seen[code] = str(entry.url)
+        pairs.append((code, str(entry.url)))
+    if request.include_x_default:
+        pairs.append(("x-default", str(request.default_url)))
 
-    # Prepare input for LLM
-    lang_region_urls_str = "\n".join(
-        [
-            f"- url: {entry.url}, language: {entry.language or 'unknown'}, region: {entry.region or 'unknown'}"
-            for entry in request.language_region_urls
-        ]
+    hreflang_tags = "\n".join(
+        f'<{tag} rel="alternate" hreflang="{code}" href="{html.escape(url)}" />'
+        for code, url in pairs
     )
-
-    # Format prompts
-    system_content = hreflang_system_prompt.format(
-        format_rule=format_rule, context_note=context_note
-    )
-
-    user_content = hreflang_user_prompt.format(
-        default_url=request.default_url,
-        lang_region_urls_str=lang_region_urls_str,
-        include_x_default=str(request.include_x_default).lower(),
-        format_instruction=format_instruction,
-    )
-
-    response = await model.ainvoke(
-        [SystemMessage(content=system_content.strip()), HumanMessage(content=user_content.strip())]
-    )
-
-    hreflang_tags = response.content if hasattr(response, "content") else str(response)
-    hreflang_tags = hreflang_tags.strip()
-
-    # Final cleanup: Remove markdown code blocks if any
-    if hreflang_tags.startswith("```"):
-        lines = hreflang_tags.split("\n")
-        if lines[0].startswith("```") and lines[-1].startswith("```"):
-            hreflang_tags = "\n".join(lines[1:-1]).strip()
-        else:
-            hreflang_tags = (
-                hreflang_tags.replace("```html", "")
-                .replace("```xml", "")
-                .replace("```", "")
-                .strip()
-            )
-
     return {"hreflang_tags": hreflang_tags, "warnings": warnings if warnings else None}
 
 
@@ -778,7 +761,7 @@ async def grammar_checker(text: str) -> GrammarCheckerResponse:
     if not text or not text.strip():
         return GrammarCheckerResponse(corrected_text=text or "", issues=[])
 
-    llm = _get_model()
+    llm = _get_model("grammar-checker")
     structured_llm = llm.with_structured_output(GrammarCheckerResponse)
 
     prompt = grammar_prompt.format(text=text)
@@ -835,7 +818,7 @@ async def grammar_checker(text: str) -> GrammarCheckerResponse:
 # Ai Content idea Generater tool
 async def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
     """Generate high-quality content ideas using structured LLM output."""
-    llm = _get_model()
+    llm = _get_model("content-idea-generator")
     structured_llm = llm.with_structured_output(IdeaGeneratorResponse)
     prompt = idea_prompt.format(
         ideas_count=data.ideas_count, topic=data.topic, content_type=data.content_type
@@ -846,7 +829,7 @@ async def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorRes
 # Hook Generater Tool
 async def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
     """Generate catchy hooks using LLM."""
-    llm = _get_model()
+    llm = _get_model("hook-generator")
 
     formatted_prompt = hook_prompt.format(
         number_of_variations=data.number_of_variations,
@@ -867,7 +850,7 @@ async def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
 # Blog Topic Generater Tool
 async def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleResponse:
     """Generate SEO-friendly blog titles using LLM."""
-    llm = _get_model()
+    llm = _get_model("seo-blog-titles")
 
     formatted_prompt = seo_blog_title_prompt.format(
         number_of_topics=data.number_of_topics,
@@ -886,7 +869,7 @@ async def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleRes
 
 async def generate_questions(text: str) -> List[str]:
     """Generate engaging questions from text using LLM."""
-    llm = _get_model()
+    llm = _get_model("question-generator")
 
     formatted_prompt = question_prompt.format(text=text)
 
@@ -901,7 +884,7 @@ async def generate_questions(text: str) -> List[str]:
 # Content Outline Generator Tool
 async def generate_content_outline(data: OutlineGeneratorRequest) -> OutlineGeneratorResponse:
     """Generate a structured content outline using LLM with auto section calculation."""
-    llm = _get_model()
+    llm = _get_model("outline-generator")
     structured_llm = llm.with_structured_output(OutlineGeneratorResponse)
 
     word_count = data.target_word_count or 1500
@@ -929,7 +912,7 @@ async def generate_content_outline(data: OutlineGeneratorRequest) -> OutlineGene
 # Headline Analyzer Tool
 async def analyze_headline(data: HeadlineAnalyzerRequest) -> HeadlineAnalyzerResponse:
     """Analyze headline CTR, sentiment, and quality using LLM and text analysis."""
-    llm = _get_model()
+    llm = _get_model("headline-analyzer")
     structured_llm = llm.with_structured_output(HeadlineAnalyzerResponse)
 
     prompt = headline_analyzer_prompt.format(headline=data.headline)
@@ -1093,7 +1076,7 @@ def calculate_keyword_density(data: KeywordDensityRequest) -> KeywordDensityResp
 # Paragraph Rewriter Tool
 async def rewrite_paragraph(data: ParagraphRewriterRequest) -> ParagraphRewriterResponse:
     """Rewrite a paragraph according to specified goal and tone."""
-    llm = _get_model()
+    llm = _get_model("paragraph-rewriter")
     structured_llm = llm.with_structured_output(ParagraphRewriterResponse)
 
     prompt = paragraph_rewriter_prompt.format(

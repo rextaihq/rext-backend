@@ -144,6 +144,18 @@ class Settings(BaseSettings):
     )
     RATE_LIMITING_ENABLED: bool = Field(default=True, description="Enable rate limiting")
 
+    # The public free tools (/api/v1/tools/*, src/api/tool/limits.py): per visitor, per tool and
+    # per UTC day, and one daily budget for the tools that call a model.
+    FREE_TOOLS_MODEL_CALLS_PER_DAY: int = Field(
+        default=20, ge=0, description="Free tools: calls per visitor per model tool per day"
+    )
+    FREE_TOOLS_CALLS_PER_DAY: int = Field(
+        default=100, ge=0, description="Free tools: calls per visitor per other tool per day"
+    )
+    FREE_TOOLS_DAILY_BUDGET_USD: float = Field(
+        default=5.0, ge=0, description="Free tools: the most their model calls spend per day, US$"
+    )
+
     # Trusted reverse proxy IPs (comma-separated)
     TRUSTED_PROXY_IPS: str = Field(
         default="127.0.0.1,::1", description="Comma-separated list of trusted reverse proxy IPs"
