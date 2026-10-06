@@ -8,6 +8,7 @@ a stand-in there: a real upgrade would leave the schema in the test database.
 import threading
 import time
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -105,7 +106,7 @@ def test_a_failed_migration_stops_the_start_and_frees_the_lock():
     def upgrade(_connection):
         raise RuntimeError("column already exists")
 
-    with pytest.raises(MigrationFailed, match="column already exists"):
+    with pytest.raises(MigrationFailed, match="could not be applied: RuntimeError"):
         migrate(URL, upgrade=upgrade)
 
     engine = create_engine(URL.set(drivername="postgresql+psycopg"), poolclass=NullPool)
@@ -183,3 +184,64 @@ def test_a_revision_the_image_doesnt_know_is_left_alone():
 
     assert result == Outcome("newer", "newer", "head", ahead=True)
     upgrade.assert_not_called()
+
+
+# --- what a failure keeps and says --------------------------------------------------
+
+
+def _table_exists(name: str) -> bool:
+    engine = create_engine(URL.set(drivername="postgresql+psycopg"), poolclass=NullPool)
+    try:
+        with engine.connect() as connection:
+            return (
+                connection.execute(text("SELECT to_regclass(:name)"), {"name": name}).scalar()
+                is not None
+            )
+    finally:
+        engine.dispose()
+
+
+def test_a_migration_short_of_the_head_keeps_nothing():
+    table = f"g32_probe_{uuid4().hex[:8]}"
+
+    def upgrade(connection):
+        connection.execute(text(f"CREATE TABLE {table} (x int)"))
+        return Outcome("a", "a", "b")
+
+    with pytest.raises(MigrationFailed, match="not at the head"):
+        migrate(URL, upgrade=upgrade)
+
+    assert not _table_exists(table)  # checked before the commit, so rolled back
+
+
+def test_a_failed_migration_says_what_failed_without_the_rows_values():
+    def upgrade(connection):
+        connection.execute(text("CREATE TEMP TABLE g32_people (email text UNIQUE)"))
+        connection.execute(text("INSERT INTO g32_people VALUES ('ana@example.com')"))
+        connection.execute(text("INSERT INTO g32_people VALUES ('ana@example.com')"))
+        return Outcome("a", "b", "b")
+
+    with pytest.raises(MigrationFailed) as failed:
+        migrate(URL, upgrade=upgrade)
+
+    message = str(failed.value)
+    assert "UniqueViolation" in message and "23505" in message
+    assert "ana@example.com" not in message
+    assert failed.value.__cause__ is None and failed.value.__suppress_context__
+
+
+def test_a_direct_address_is_probed_with_a_short_timeout(monkeypatch):
+    monkeypatch.setenv("POSTGRES_URI_CUSTOM", _address(URL))
+    monkeypatch.setenv("DATABASE_URI", _address(SAME_NAME_ELSEWHERE))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    made = []
+    real = migrate_on_start._engine
+    monkeypatch.setattr(
+        migrate_on_start,
+        "_engine",
+        lambda url, **kw: made.append((url.port, kw)) or real(url, **kw),
+    )
+
+    migration_engine().dispose()
+
+    assert (SAME_NAME_ELSEWHERE.port, {"connect_timeout": 5}) in made
