@@ -177,11 +177,12 @@ def _resolve_hostname(hostname: str) -> list[str]:
 async def ensure_public_urls(*urls: str | None) -> None:
     """Raise SSRFValidationError unless every given URL leads to a public address.
 
-    The DNS lookup runs in a thread, so the event loop is not blocked. Empty values
-    are skipped.
+    The DNS lookup runs in a thread, so the event loop is not blocked. Empty and
+    blank values are skipped.
     """
-    for url in filter(None, urls):
-        await asyncio.to_thread(validate_url_for_ssrf, url)
+    for url in urls:
+        if url and url.strip():
+            await asyncio.to_thread(validate_url_for_ssrf, url.strip())
 
 
 def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
