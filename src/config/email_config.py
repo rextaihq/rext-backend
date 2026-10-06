@@ -4,8 +4,10 @@ from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.config.hidden_secrets import HidesSecrets
 
-class EmailConfig(BaseSettings):
+
+class EmailConfig(HidesSecrets, BaseSettings):
     """
     Email configuration from environment variables.
 
