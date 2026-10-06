@@ -22,6 +22,10 @@ class Settings(BaseSettings):
         default="development", description="Application environment (development/production)"
     )
     DEBUG: bool = Field(default=False, description="Enable debug mode")
+    MIGRATE_ON_START: bool = Field(
+        default=False,
+        description="Apply the pending Alembic migrations before serving (the image sets it)",
+    )
     LOCAL_UNLIMITED_WORKSPACES: bool = Field(
         default=False,
         description="Local-only override for workspace limit testing; requires ENVIRONMENT=local",
