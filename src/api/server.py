@@ -85,6 +85,18 @@ async def lifespan(app):
     except Exception as e:  # noqa: BLE001 - never block startup on logging
         logger.warning(f"Error log capture not installed: {e}")
 
+    # --- Apply the pending migrations before anything reads the database ---
+    # Every deploy migrates by itself (G32, revnix/rext-control#358); the image turns
+    # it on. A failure stops the start, so no code serves against an older schema.
+    if settings.MIGRATE_ON_START:
+        from src.api.database.migrate_on_start import apply_pending_migrations
+
+        try:
+            await apply_pending_migrations()
+        except Exception as e:
+            logger.critical(f"🚨 Database migration failed, the server won't start: {e}")
+            raise
+
     # --- Connect Redis cache ---
     # cache.connect() catches its own errors and never raises (it just leaves
     # _enabled False), so this log must check that flag directly — it used to

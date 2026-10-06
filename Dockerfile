@@ -1,5 +1,6 @@
 FROM langchain/langgraph-api:0.12.6-py3.11-wolfi
 
+ENV MIGRATE_ON_START=true
 ENV UV_NO_BUILD_ISOLATION=1
 RUN uv pip install --system --no-cache-dir --extra-index-url https://pypi.org/simple "hatchling>=1.26.0" editables
 RUN apk add --no-cache libnspr libnss dbus-libs glib libatk-1.0 libatk-bridge-2.0 at-spi2-core pango cairo fontconfig freetype harfbuzz ca-certificates curl bash alsa-lib libx11 libxcomposite libxdamage libxfixes libxrandr libxrender libxtst libxcursor libxi libsm libice libxkbcommon mesa-gles mesa-gbm cups-libs
