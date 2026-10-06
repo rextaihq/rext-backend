@@ -7,9 +7,13 @@ Implements OWASP SSRF Prevention Cheat Sheet recommendations.
 Reference: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
 """
 
+import asyncio
 import ipaddress
 import socket
+from collections.abc import Awaitable, Callable
 from urllib.parse import urlparse
+
+import httpx
 
 from src.utils.logger import logger
 
@@ -88,14 +92,15 @@ def validate_url_for_ssrf(url: str) -> str:
     if not hostname:
         raise SSRFValidationError("URL must contain a valid hostname")
 
-    # Check for IP address directly in URL
+    # Check for IP address directly in URL. Only the parse is guarded:
+    # SSRFValidationError is itself a ValueError and must not be swallowed here.
     try:
         ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        ip = None  # not a raw IP address: a hostname, resolved below
+    if ip is not None:
         _check_ip_blocked(ip)
         return url
-    except ValueError:
-        # Not a raw IP address — it's a hostname, resolve it
-        pass
 
     # Resolve hostname to IP addresses and validate each one
     resolved_ips = _resolve_hostname(hostname)
@@ -105,9 +110,9 @@ def validate_url_for_ssrf(url: str) -> str:
     for ip_str in resolved_ips:
         try:
             ip = ipaddress.ip_address(ip_str)
-            _check_ip_blocked(ip)
         except ValueError:
-            raise SSRFValidationError(f"Invalid IP address from DNS resolution: {ip_str}")
+            raise SSRFValidationError(f"Invalid IP address from DNS resolution: {ip_str}") from None
+        _check_ip_blocked(ip)
 
     logger.info(
         "URL passed SSRF validation",
@@ -157,3 +162,34 @@ def _resolve_hostname(hostname: str) -> list[str]:
     except socket.gaierror as e:
         logger.warning(f"DNS resolution failed for {hostname}: {e}")
         return []
+
+
+async def ensure_public_urls(*urls: str | None) -> None:
+    """Raise SSRFValidationError unless every given URL leads to a public address.
+
+    The DNS lookup runs in a thread, so the event loop is not blocked. Empty values
+    are skipped.
+    """
+    for url in filter(None, urls):
+        await asyncio.to_thread(validate_url_for_ssrf, url)
+
+
+def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
+    """An httpx request hook that refuses every request to a private or reserved address.
+
+    Give it to a client that talks to a customer-given address
+    (``event_hooks={"request": [refuse_private_addresses()]}``): each request it
+    sends, redirects included, is checked before it leaves, and a host that passed
+    once is not looked up again for that client. Re-resolution between the check and
+    the connection (DNS rebinding) is not covered.
+    """
+    passed: set[str] = set()
+
+    async def refuse(request: httpx.Request) -> None:
+        host = request.url.host
+        if host in passed:
+            return
+        await asyncio.to_thread(validate_url_for_ssrf, str(request.url))
+        passed.add(host)
+
+    return refuse

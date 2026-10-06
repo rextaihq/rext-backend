@@ -29,6 +29,7 @@ from src.api.schema.content_schema import ContentCreate
 from src.flow.model.llm_manager import load_model
 from src.utils.image_alt_text import build_image_alt_text
 from src.utils.image_placeholder import strip_unresolved_placeholders
+from src.utils.url_validator import refuse_private_addresses
 from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
@@ -214,10 +215,14 @@ class WordPressPublisher:
                 "Set WORDPRESS_SITE_URL, WORDPRESS_USERNAME, and WORDPRESS_APP_PASSWORD"
             )
 
+        # Every request goes to a customer-given address, with their credentials:
+        # none may reach a private or reserved network (the API's own, Redis,
+        # cloud metadata).
         self.client = httpx.AsyncClient(
             verify=self.verify_ssl,
             headers=headers,
             auth=auth,
+            event_hooks={"request": [refuse_private_addresses()]},
         )
 
         # Persona name -> WordPress user ID, for the life of this publisher.
@@ -1357,6 +1362,7 @@ class WordPressPublisher:
                 async with httpx.AsyncClient(
                     verify=self.verify_ssl,
                     headers={"Accept": "application/json"},
+                    event_hooks={"request": [refuse_private_addresses()]},
                 ) as public_client:
                     response = await public_client.get(core_endpoint, timeout=30)
                 logger.info("[WordPress Verify] fallback_response_status=%s", response.status_code)
