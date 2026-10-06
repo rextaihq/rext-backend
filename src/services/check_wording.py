@@ -33,7 +33,7 @@ USER_WORDING: dict[str, str] = {
     "brand_placement": "Your brand mention sits on a line of its own instead of in a sentence.",
     "brand_placement_policy": "Your brand mention isn't where this kind of article puts it.",
     "brand_prominence": "Your brand's mentions don't match the prominence you chose.",
-    "brand_integration_depth": "Your brand mention needs a specific benefit next to it.",
+    "brand_integration_depth": "Your brand mention is too brief or too general; give it a full sentence.",
     "brand_factual_grounding": "Something said about your brand isn't in your brand details.",
     "brand_context_heuristic": "Check the tone of the sentence that mentions your brand.",
     "internal_links_integration": "Internal links aren't woven in as the outline planned.",
@@ -99,6 +99,7 @@ _SEVERAL_CAUSES: dict[str, tuple[str, list[tuple[str, str]]]] = {
         [
             ("section(s) the approved", "some the outline planned are missing"),
             ("REQUIRED section(s)", "some the outline planned are missing"),
+            ("expected section(s)", "some the outline planned are missing"),
             (
                 "planned section(s) are out of the approved order",
                 "some are out of the outline's order",

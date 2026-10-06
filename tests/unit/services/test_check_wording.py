@@ -287,6 +287,11 @@ def test_every_cause_marker_is_the_checks_own_wording():
             "Sections: some the outline planned are missing; some are out of the outline's order.",
         ),
         (
+            "required_sections",
+            "Missing 1/7 expected section(s): pricing",
+            "Sections: some the outline planned are missing.",
+        ),
+        (
             "internal_links_integration",
             "1 relevant approved link(s) never embedded: https://rext.ai/a; 2 link(s) only present "
             "as a bolted-on line, not woven in: https://rext.ai/b, https://rext.ai/c",
