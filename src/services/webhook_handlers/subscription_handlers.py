@@ -44,7 +44,7 @@ from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
-    retry_deadline,
+    lemonsqueezy_status,
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
@@ -206,17 +206,7 @@ async def handle_subscription_created(
         else BillingPeriod.MONTHLY
     )
 
-    # Map LemonSqueezy status to internal status
-    status_map = {
-        "on_trial": SubscriptionStatus.TRIAL,
-        "active": SubscriptionStatus.ACTIVE,
-        "paused": SubscriptionStatus.PAUSED,
-        "past_due": SubscriptionStatus.PAST_DUE,
-        "unpaid": SubscriptionStatus.PAST_DUE,
-        "cancelled": SubscriptionStatus.CANCELLED,
-        "expired": SubscriptionStatus.EXPIRED,
-    }
-    internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+    internal_status = lemonsqueezy_status(status)
 
     # Check if subscription already exists (shouldn't happen due to idempotency, but be safe)
     stmt = select(UserSubscription).where(
@@ -576,17 +566,7 @@ async def handle_subscription_updated(
             else BillingPeriod.MONTHLY
         )
 
-        # Map status
-        status_map = {
-            "on_trial": SubscriptionStatus.TRIAL,
-            "active": SubscriptionStatus.ACTIVE,
-            "paused": SubscriptionStatus.PAUSED,
-            "past_due": SubscriptionStatus.PAST_DUE,
-            "unpaid": SubscriptionStatus.PAST_DUE,
-            "cancelled": SubscriptionStatus.CANCELLED,
-            "expired": SubscriptionStatus.EXPIRED,
-        }
-        internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+        internal_status = lemonsqueezy_status(status)
 
         # IMPORTANT: Cancel any existing active/trial subscriptions for this user
         # This handles the case when user upgrades via a new checkout instead of upgrade endpoint
@@ -667,17 +647,7 @@ async def handle_subscription_updated(
         # Return early - subscription created, nothing to update
         return None
 
-    # Map status
-    status_map = {
-        "on_trial": SubscriptionStatus.TRIAL,
-        "active": SubscriptionStatus.ACTIVE,
-        "paused": SubscriptionStatus.PAUSED,
-        "past_due": SubscriptionStatus.PAST_DUE,
-        "unpaid": SubscriptionStatus.PAST_DUE,
-        "cancelled": SubscriptionStatus.CANCELLED,
-        "expired": SubscriptionStatus.EXPIRED,
-    }
-    internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+    internal_status = lemonsqueezy_status(status)
 
     # Check if plan changed (variant_id changed)
     plan_changed = False
@@ -775,15 +745,6 @@ async def handle_subscription_updated(
     # CANCELLED with `end_date` still in the future), so the user keeps their
     # credits until `end_date` regardless of the status flip here.
     end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    # Cancelled during a payment retry: access ends at the grace deadline, not
-    # at Lemon Squeezy's ends_at.
-    deadline = retry_deadline(subscription)
-    if internal_status == SubscriptionStatus.CANCELLED and deadline is not None:
-        end_date_dt = deadline
-    # "active" here (a resumed cancellation, say) is not a payment: a row still in
-    # its retry stays there until subscription_payment_success/recovered ends it.
-    if internal_status == SubscriptionStatus.ACTIVE and deadline is not None:
-        internal_status = SubscriptionStatus.SUSPENDED
 
     subscription.status = internal_status
     if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
@@ -980,9 +941,6 @@ async def handle_subscription_cancelled(
 
     now = datetime.now(timezone.utc)
     end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    # Cancelled during a payment retry: access ends at the grace deadline, not
-    # at Lemon Squeezy's ends_at.
-    end_date = retry_deadline(subscription) or end_date
 
     # Update subscription
     subscription.status = SubscriptionStatus.CANCELLED
@@ -1111,7 +1069,7 @@ async def handle_subscription_payment_success(
 
     Actions:
     1. Find subscription
-    2. Update status to ACTIVE (if was TRIAL or SUSPENDED)
+    2. Update status to ACTIVE (if it was on trial or its renewal had failed)
     3. Reset usage counters for new billing cycle
     4. Update next renewal date
     5. Return email task data for payment success email with receipt
@@ -1153,12 +1111,14 @@ async def handle_subscription_payment_success(
         # Don't raise error - this is normal webhook ordering issue
         return None
 
-    # Update subscription - activate if was trial or suspended. A successful
-    # payment ends a payment retry, so its grace deadline goes too.
+    # Update subscription - activate if it was on trial or its renewal had failed
+    # (PAST_DUE while Lemon Squeezy retried, UNPAID after it gave up, SUSPENDED on
+    # rows from the old grace period).
     if subscription.status in [
         SubscriptionStatus.TRIAL,
         SubscriptionStatus.SUSPENDED,
         SubscriptionStatus.PAST_DUE,
+        SubscriptionStatus.UNPAID,
     ]:
         subscription.status = SubscriptionStatus.ACTIVE
         subscription.grace_period_end = None
@@ -1235,23 +1195,6 @@ async def handle_subscription_payment_success(
     }
 
 
-GRACE_PERIOD_DAYS = 7
-
-
-def grace_deadline(subscription: UserSubscription, now: datetime) -> Optional[datetime]:
-    """When access ends for a failed renewal: 7 days after the retry began.
-
-    Lemon Squeezy sends subscription_payment_failed for each of its recovery
-    attempts, for longer than our grace period. A subscription already in its
-    retry keeps the deadline it got at the first failure, so later attempts
-    cannot stretch it; an EXPIRED one (the grace job ended its retry) gets none,
-    so a late attempt cannot reopen access. Any other status starts a new one.
-    """
-    if subscription.status == SubscriptionStatus.EXPIRED:
-        return None
-    return retry_deadline(subscription) or now + timedelta(days=GRACE_PERIOD_DAYS)
-
-
 async def handle_subscription_payment_failed(
     webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
@@ -1262,16 +1205,12 @@ async def handle_subscription_payment_failed(
 
     Actions:
     1. Find subscription
-    2. Set status to SUSPENDED (grace period)
-    3. Calculate and set grace period (7 days)
-    4. Track payment failure timestamp
-    5. Return email task data to be sent AFTER commit
-
-    Grace Period Behavior:
-    - User retains access during grace period (7 days)
-    - LemonSqueezy will automatically retry payment
-    - Dunning emails sent at 1, 3, 6 days (Task 3.4.2)
-    - Auto-suspend after grace period (Task 3.4.3)
+    2. Set status to PAST_DUE: Lemon Squeezy retries the payment (its dunning,
+       about two weeks) and the plan stays meanwhile. When the retries run out,
+       Lemon Squeezy's subscription_updated says "unpaid" and access ends then;
+       there is no deadline of our own.
+    3. Track payment failure timestamp
+    4. Return email task data to be sent AFTER commit
 
     Args:
         webhook_data: Parsed webhook data
@@ -1316,29 +1255,22 @@ async def handle_subscription_payment_failed(
     result = await db.execute(stmt)
     plan = result.scalar_one_or_none()
 
-    # Grace period: 7 days from the first failure of this retry
     now = datetime.now(timezone.utc)
-    grace_period_days = GRACE_PERIOD_DAYS
-    grace_period_end = grace_deadline(subscription, now)
-    if grace_period_end is None:
+    if subscription.status in (
+        SubscriptionStatus.EXPIRED,
+        SubscriptionStatus.CANCELLED,
+        SubscriptionStatus.UNPAID,
+    ):
+        # A failed charge never reopens or moves an ending: an expired subscription
+        # stays expired, a cancelled one keeps its end_date, and an unpaid one stays
+        # unpaid until a payment succeeds.
         logger.info(
-            f"Payment failed for expired subscription {subscription.id}: its grace period "
-            "already ran out, so it stays expired"
-        )
-        return
-    if subscription.status == SubscriptionStatus.CANCELLED:
-        # Cancelled (during the retry or before it): end_date already says when
-        # access ends, and a failed charge must not turn the cancellation back
-        # into a suspension with a new deadline.
-        logger.info(
-            f"Payment failed for cancelled subscription {subscription.id}: it stays "
-            f"cancelled, access ends {subscription.end_date}"
+            f"Payment failed for {subscription.status.value} subscription {subscription.id}: "
+            "its status stays"
         )
         return
 
-    # Update subscription - set to SUSPENDED during grace period
-    subscription.status = SubscriptionStatus.SUSPENDED
-    subscription.grace_period_end = grace_period_end
+    subscription.status = SubscriptionStatus.PAST_DUE
 
     # Only set payment_failed_at if not already set (track first failure)
     if not subscription.payment_failed_at:
@@ -1349,12 +1281,8 @@ async def handle_subscription_payment_failed(
     await db.flush()
 
     logger.info(
-        f"Payment failed for subscription {subscription.id} - grace period set until {grace_period_end.isoformat()}",
-        extra={
-            "subscription_id": str(subscription.id),
-            "grace_period_end": grace_period_end.isoformat(),
-            "grace_period_days": grace_period_days,
-        },
+        f"Payment failed for subscription {subscription.id} - past due while Lemon Squeezy retries",
+        extra={"subscription_id": str(subscription.id)},
     )
 
     # What the failed charge was for, in cents. The subscription item carries
@@ -1379,7 +1307,7 @@ async def handle_subscription_payment_failed(
         amount=amount_cents,
         failure_reason="Payment failed",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
-        metadata={"grace_period_end": grace_period_end.isoformat()},
+        metadata={"status": SubscriptionStatus.PAST_DUE.value},
         db=db,
     )
 
@@ -1387,12 +1315,8 @@ async def handle_subscription_payment_failed(
     retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
 
     logger.warning(
-        f"Payment failed for subscription {subscription.id} - user has access until {grace_period_end.isoformat()}",
-        extra={
-            "subscription_id": str(subscription.id),
-            "user_id": str(user.id),
-            "grace_period_end": grace_period_end.isoformat(),
-        },
+        f"Payment failed for subscription {subscription.id} - access stays while it is retried",
+        extra={"subscription_id": str(subscription.id), "user_id": str(user.id)},
     )
 
     # IMPORTANT: Return email data to be sent AFTER commit
@@ -1427,10 +1351,9 @@ async def handle_subscription_payment_recovered(
     5. Return email task data to be sent AFTER commit
 
     Recovery Process:
-    - Payment fails → SUSPENDED status with grace period
-    - Dunning emails sent (days 1, 3, 6)
+    - Payment fails → PAST_DUE while Lemon Squeezy retries (UNPAID once it gives up)
     - User updates payment method OR automatic retry succeeds
-    - This handler → Restore to ACTIVE, clear grace period, return email data
+    - This handler → Restore to ACTIVE, return email data
 
     Args:
         webhook_data: Parsed webhook data
@@ -1663,14 +1586,12 @@ async def handle_subscription_resumed(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Update subscription - resume to ACTIVE, unless it was cancelled during a
-    # payment retry: resuming does not pay, so it goes back to the retry with
-    # its deadline, and only a successful payment makes it ACTIVE.
-    if retry_deadline(subscription) is not None:
-        subscription.status = SubscriptionStatus.SUSPENDED
-        subscription.end_date = None
-    else:
-        subscription.status = SubscriptionStatus.ACTIVE
+    # Update subscription - resumed, so it no longer ends. Its status is the one
+    # Lemon Squeezy reports (past_due when it was cancelled during a payment
+    # retry: resuming does not pay); ACTIVE when the payload has none.
+    subscription.status = lemonsqueezy_status(sub_data.get("status"))
+    subscription.end_date = None
+    subscription.cancel_at_period_end = False
     subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.updated_at = datetime.now(timezone.utc)
 

@@ -37,11 +37,10 @@ from src.api.middleware.exceptions import (
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
-    PAYMENT_RETRY_STATUSES,
+    FAILED_PAYMENT_STATUSES,
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
-    retry_deadline,
     subscription_grants_access,
     subscription_is_active_paid,
 )
@@ -102,14 +101,14 @@ def _refuse_during_payment_retry(
     user_id: UUID,
     message: str = _RETRY_NEW_SUBSCRIPTION,
 ) -> None:
-    """A subscription whose renewal is being retried is fixed by a new card, not another plan.
+    """A subscription whose renewal failed is fixed by a new card, not another plan.
 
-    It still grants access through its grace period (subscription_grants_access),
-    so it is found here. Starting another subscription would bill the user twice
-    once Lemon Squeezy's retry succeeds, and a plan change would hand out the new
-    plan's full allowance before anything was paid.
+    It still grants access while Lemon Squeezy retries it (PAST_DUE), so it is
+    found here. Starting another subscription would bill the user twice once the
+    retry succeeds, and a plan change would hand out the new plan's full
+    allowance before anything was paid.
     """
-    if subscription is not None and retry_deadline(subscription) is not None:
+    if subscription is not None and subscription.status in FAILED_PAYMENT_STATUSES:
         raise DuplicateResourceException(
             message=message,
             resource_type="subscription",
@@ -838,13 +837,6 @@ class SubscriptionService:
         # key off `subscription_grants_access()` (status ACTIVE/TRIAL, OR
         # CANCELLED with `end_date` still in the future), not off this status
         # flip, so the user keeps their credits until `end_date` below.
-        # A subscription whose renewal is being retried was paid up to the failed
-        # renewal and is owed its grace period, not a new billing period: its
-        # grace deadline is the end, earlier or later than a renewal date.
-        in_payment_retry = (
-            subscription.status in PAYMENT_RETRY_STATUSES
-            and subscription.grace_period_end is not None
-        )
         subscription.status = SubscriptionStatus.CANCELLED
 
         if cancel_immediately:
@@ -853,8 +845,6 @@ class SubscriptionService:
             # subscription_grants_access() treats any future end_date as a live
             # grace period.
             subscription.end_date = datetime.now(timezone.utc)
-        elif in_payment_retry:
-            subscription.end_date = subscription.grace_period_end
         else:
             # Deferred cancellation: record when the paid-through period ends so
             # the UI/email can show it and credits/limits keep working until then.

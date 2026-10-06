@@ -16,14 +16,21 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 
 
 class SubscriptionStatus(str, enum.Enum):
-    """Subscription status enum."""
+    """Subscription status enum.
+
+    For a Lemon Squeezy subscription the status is Lemon Squeezy's own
+    (`lemonsqueezy_status()` maps it), and it decides access: see
+    `subscription_grants_access`.
+    """
 
     ACTIVE = "active"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
     TRIAL = "trial"
+    # Written by the old 7-day payment grace; no longer set (rows were moved to PAST_DUE).
     SUSPENDED = "suspended"
-    PAST_DUE = "past_due"  # Payment failed, retrying
+    PAST_DUE = "past_due"  # A renewal failed and Lemon Squeezy is retrying it; access stays
+    UNPAID = "unpaid"  # Lemon Squeezy's retries ran out; no access until the card is updated
     PAUSED = "paused"  # Subscription temporarily paused
 
 
@@ -85,11 +92,14 @@ class UserSubscription(Base, SerializableMixin):
     cancel_at_period_end = Column(
         Boolean, default=False, nullable=False
     )  # Cancel at period end flag
+    # Lemon Squeezy's `updated_at` for the state stored here, so a webhook carrying
+    # an older state than the row's can be told apart and ignored.
+    provider_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     # Payment failure & dunning management
     grace_period_end = Column(
         DateTime(timezone=True), nullable=True, index=True
-    )  # When to suspend after payment failure
+    )  # Set by the old 7-day payment grace; no longer written
     payment_failed_at = Column(DateTime(timezone=True), nullable=True)  # When payment first failed
 
     # Usage tracking (reset monthly)
@@ -139,59 +149,60 @@ class UserSubscription(Base, SerializableMixin):
         return data
 
 
-# A renewal payment failed and is being retried; the plan stays until `grace_period_end`.
-# PAST_DUE belongs here too, but the database's subscriptionstatus type holds it as
-# 'past_due' (migration 33eb548e7bd9) while SQLAlchemy sends the name 'PAST_DUE', so
-# naming it in a query fails on every migrated database. It joins once the type's
-# labels are renamed to the enum's names.
-PAYMENT_RETRY_STATUSES = (SubscriptionStatus.SUSPENDED,)
+# Lemon Squeezy's subscription statuses (docs.lemonsqueezy.com, the subscription
+# object) and the status each is stored as.
+_LEMONSQUEEZY_STATUSES = {
+    "on_trial": SubscriptionStatus.TRIAL,
+    "active": SubscriptionStatus.ACTIVE,
+    "paused": SubscriptionStatus.PAUSED,
+    "past_due": SubscriptionStatus.PAST_DUE,
+    "unpaid": SubscriptionStatus.UNPAID,
+    "cancelled": SubscriptionStatus.CANCELLED,
+    "expired": SubscriptionStatus.EXPIRED,
+}
 
 
-def retry_deadline(subscription: "UserSubscription") -> Optional[datetime]:
-    """The grace deadline a subscription's access ends at, while its renewal is being retried.
+def lemonsqueezy_status(status: Optional[str]) -> SubscriptionStatus:
+    """The stored status for a Lemon Squeezy status string (ACTIVE when unknown)."""
+    return _LEMONSQUEEZY_STATUSES.get((status or "").lower(), SubscriptionStatus.ACTIVE)
 
-    Set while the subscription is in its retry, and kept when it is cancelled
-    during the retry (cancel() makes the deadline its end_date). Lemon Squeezy's
-    cancellation events carry their own ends_at, which is not this deadline, so
-    they keep this one instead. None otherwise.
-    """
-    deadline = subscription.grace_period_end
-    if deadline is None:
-        return None
-    if subscription.status in PAYMENT_RETRY_STATUSES:
-        return deadline
-    if subscription.status == SubscriptionStatus.CANCELLED and subscription.end_date == deadline:
-        return deadline
-    return None
+
+# The statuses that keep the plan: paid, on trial, or with a failed renewal that
+# Lemon Squeezy is still retrying (its dunning, about two weeks). UNPAID and EXPIRED
+# lose it; CANCELLED keeps it until end_date (below).
+ACCESS_STATUSES = (
+    SubscriptionStatus.ACTIVE,
+    SubscriptionStatus.TRIAL,
+    SubscriptionStatus.PAST_DUE,
+)
+
+# A renewal failed and has not been paid since: still retried (PAST_DUE), given up
+# on (UNPAID), or left by the old grace period (SUSPENDED). The fix is a new card,
+# not another subscription, and the month's credits wait for the payment.
+FAILED_PAYMENT_STATUSES = (
+    SubscriptionStatus.PAST_DUE,
+    SubscriptionStatus.UNPAID,
+    SubscriptionStatus.SUSPENDED,
+)
 
 
 def subscription_grants_access(now: Optional[datetime] = None):
     """
     SQLAlchemy filter: the subscription still grants plan access/credits.
 
-    True for a genuinely active/trial subscription, and ALSO true for a
+    True for a subscription in ACCESS_STATUSES, and ALSO true for a
     subscription the user has already cancelled but whose paid-through
     `end_date` hasn't passed yet - cancelling flips `status` to CANCELLED
     immediately (so the UI/re-cancel checks reflect it right away), but the
     user keeps their plan's credits and limits until `end_date`.
-
-    Also true while a failed renewal is being retried: the payment-failed
-    webhook sets SUSPENDED with a `grace_period_end`, and the user keeps the
-    plan until that date, as the payment-failed email promises. The grace job
-    expires the subscription once it passes.
     """
     now = now or datetime.now(timezone.utc)
     return or_(
-        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+        UserSubscription.status.in_(ACCESS_STATUSES),
         and_(
             UserSubscription.status == SubscriptionStatus.CANCELLED,
             UserSubscription.end_date.isnot(None),
             UserSubscription.end_date > now,
-        ),
-        and_(
-            UserSubscription.status.in_(PAYMENT_RETRY_STATUSES),
-            UserSubscription.grace_period_end.isnot(None),
-            UserSubscription.grace_period_end > now,
         ),
     )
 

@@ -40,7 +40,12 @@ class EmailTemplate(Base, SerializableMixin):
         nullable=True,
         index=True,
     )
-    template_type = Column(SQLEnum(TemplateType), nullable=False)
+    # Stored by value ("workspace_invitation"): the database's templatetype labels are
+    # the values, as for the other lowercase enums (orders, refunds, licenses).
+    template_type = Column(
+        SQLEnum(TemplateType, name="templatetype", values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
 
     # Template content
     subject = Column(String(255), nullable=False)
