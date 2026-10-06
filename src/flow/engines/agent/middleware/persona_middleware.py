@@ -21,6 +21,11 @@ from src.flow.engines.content.generation.outline_structure import (
     format_structure_for_prompt,
     resolve_outline_structure,
 )
+from src.flow.engines.content.generation.persona_relevance import (
+    TOPIC_FIT_THRESHOLD,
+    persona_fits_topic,
+    topic_fit,
+)
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
@@ -44,6 +49,29 @@ def persona_profile_text(persona: Any) -> str:
     return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
 
 
+def persona_fits_outline(persona: Any, outline: Optional[dict]) -> bool:
+    """Whether the article may speak from the persona's experience (G56, rext-control #501).
+
+    The outline step's own score for this persona when it has one, so the writer follows the fit
+    the person saw; else the same score taken here, on the outline's keyphrase and title.
+    """
+    outline = outline or {}
+    persona_id = str(getattr(persona, "id", "") or "")
+    for recommendation in outline.get("persona_recommendations") or []:
+        if (
+            isinstance(recommendation, dict)
+            and persona_id
+            and str(recommendation.get("persona_id")) == persona_id
+            and isinstance(recommendation.get("breakdown"), dict)
+        ):
+            return topic_fit(recommendation["breakdown"]) >= TOPIC_FIT_THRESHOLD
+    return persona_fits_topic(
+        persona,
+        topic=outline.get("focus_keyphrase") or outline.get("title"),
+        title=outline.get("title"),
+    )
+
+
 class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Runs before the agent loop starts.
@@ -59,6 +87,20 @@ class PersonaInjectionMiddleware(AgentMiddleware):
     def __init__(self, counters: Optional[dict] = None):
         super().__init__()
         self.counters = counters
+
+    # The author bio the article carries when the persona's expertise fits its subject (G56,
+    # rext-control #501). For a persona that doesn't fit, NO_AUTHOR_BIO_RULES takes its place, so a
+    # software founder's bio never lands in a bakery article.
+    AUTHOR_BIO_RULES = """AUTHOR BIO — PLACEMENT & STRUCTURE:
+- Place the author bio section roughly in the MIDDLE of the article (after 40–60% of the content), not at the end
+- Heading: choose a natural, experience-focused heading that does NOT include the author's name — for example: "My Experience With This", "How I Got Here", "A Bit About My Background", "My Journey in [Field]", "What I've Learned Over the Years", or similar — pick whichever fits the article's tone
+- Content: 2–3 sentences — mention the author's full name naturally in the first sentence (e.g. "I'm [Name], a [title] with X years..."), then cover the background, credentials or outcomes the author profile actually states (years in field only if the profile gives them) — never invent a credential, figure or achievement; the name in the content builds credibility even though the heading stays generic
+- This section is a direct E-E-A-T trust signal — omitting it is an automatic failure
+- If a LinkedIn URL is available in the persona: place ONLY the LinkedIn link as the very last line of the article, after all other sections, as a standalone markdown link: [Connect with [Name] on LinkedIn]([linkedin_url]) — no heading, no extra text"""
+
+    NO_AUTHOR_BIO_RULES = """AUTHOR BIO — NONE IN THIS ARTICLE:
+- This article's subject is outside the author's stated expertise, so it carries no author bio: no "My Experience…", "How I Got Here", "About Me" or background section, no "I'm [Name], a [title]" line, and no LinkedIn line
+- This is not an E-E-A-T failure: the article earns trust through practitioner reasoning and cited evidence, not through the author's credentials"""
 
     CONTENT_INSTRUCTIONS = """
 You are the specific human expert defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. Write as that person — their name, their background, their voice, their opinions — with the authority, imperfection, and character of a real professional writing from direct experience.
@@ -190,12 +232,7 @@ TRUSTWORTHINESS — verifiable, transparent, honest:
 - Never overstate certainty. Use "In my experience..." for anecdotal claims. Reserve factual language for cited stats.
 - If you disagree with a cited source, say so and explain why
 
-AUTHOR BIO — PLACEMENT & STRUCTURE:
-- Place the author bio section roughly in the MIDDLE of the article (after 40–60% of the content), not at the end
-- Heading: choose a natural, experience-focused heading that does NOT include the author's name — for example: "My Experience With This", "How I Got Here", "A Bit About My Background", "My Journey in [Field]", "What I've Learned Over the Years", or similar — pick whichever fits the article's tone
-- Content: 2–3 sentences — mention the author's full name naturally in the first sentence (e.g. "I'm [Name], a [title] with X years..."), then cover the background, credentials or outcomes the author profile actually states (years in field only if the profile gives them) — never invent a credential, figure or achievement; the name in the content builds credibility even though the heading stays generic
-- This section is a direct E-E-A-T trust signal — omitting it is an automatic failure
-- If a LinkedIn URL is available in the persona: place ONLY the LinkedIn link as the very last line of the article, after all other sections, as a standalone markdown link: [Connect with [Name] on LinkedIn]([linkedin_url]) — no heading, no extra text
+{AUTHOR_BIO_BLOCK}
 
 ========================
 INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED
@@ -548,22 +585,44 @@ Write the full article now. Every third-party claim must have an inline [text](u
             f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}"
         )
 
+        # Whether the article may speak from the persona's experience (G56, rext-control #501).
+        # Without a persona nothing changes.
+        fits_topic = persona_fits_outline(personas, outline) if personas else True
+        print(f"  persona fits the topic: {fits_topic}")
+
         full_prompt = self._build_full_content_prompt(
-            personas, outline, target_word_count, content_type, voice=voice
+            personas, outline, target_word_count, content_type, voice=voice, fits_topic=fits_topic
         )
 
         # The author profile is the only ground truth for first-person experience
         # claims (years in field, credentials). Recorded on the shared counters so
-        # generate_content can hand it to validation as claim evidence.
+        # generate_content can hand it to validation as claim evidence. A persona
+        # outside the subject gives none: an experience claim it slips in is then
+        # unsupported, as with no persona.
         if self.counters is not None:
-            self.counters["author_profile"] = persona_profile_text(personas) if personas else ""
+            self.counters["author_profile"] = (
+                persona_profile_text(personas) if personas and fits_topic else ""
+            )
             # The same voice for the humanize pass (via generation_meta).
             self.counters["article_voice"] = voice
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
         # more reliably than a long system prompt — so the persona name must appear there.
-        if personas:
+        if personas and not fits_topic:
+            p_name = str(personas.full_name or personas.name)
+            p_title = str(personas.professional_title or "expert")
+            persona_header = (
+                f"╔══════════════════════════════════════════════╗\n"
+                f"  AUTHOR VOICE — THIS SUBJECT IS OUTSIDE THE AUTHOR'S EXPERTISE\n"
+                f"  You write in the voice of: {p_name}, {p_title}\n"
+                f"  RULES:\n"
+                f"  1. Do NOT write '{p_name}' in the article, and do not introduce yourself\n"
+                f"  2. Do NOT claim experience, credentials or a background in this subject\n"
+                f"  3. NO author bio, no experience or background section, no LinkedIn line\n"
+                f"╚══════════════════════════════════════════════╝\n\n"
+            )
+        elif personas:
             p_name = str(personas.full_name or personas.name)
             p_title = str(personas.professional_title or "expert")
             p_linkedin: str = (
@@ -621,8 +680,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
         target_word_count: int = 3000,
         content_type: str = "",
         voice: Optional[dict] = None,
+        fits_topic: bool = True,
     ) -> str:
-        persona_block = self._build_persona_block(personas) if personas else ""
+        persona_block = self._build_persona_block(personas, fits_topic) if personas else ""
         outline_block = self._build_outline_block(outline, content_type) if outline else ""
         brand_placement_block = (
             self._build_brand_placement_block(outline, content_type) if outline else ""
@@ -668,6 +728,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         content_instructions = self.CONTENT_INSTRUCTIONS.format(
             LENGTH_ACCEPTANCE_BLOCK=length_acceptance_block,
+            AUTHOR_BIO_BLOCK=self.AUTHOR_BIO_RULES if fits_topic else self.NO_AUTHOR_BIO_RULES,
         )
 
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
@@ -743,21 +804,33 @@ Write the full article now. Every third-party claim must have an inline [text](u
     # ------------------------------------------------------------------
     # Message builders
     # ------------------------------------------------------------------
-    def _build_persona_block(self, persona: Persona) -> str:
-        return self._format_single_persona(persona)
+    def _build_persona_block(self, persona: Persona, fits_topic: bool = True) -> str:
+        return self._format_single_persona(persona, fits_topic)
 
-    def _format_single_persona(self, persona: Persona) -> str:
+    def _format_single_persona(self, persona: Persona, fits_topic: bool = True) -> str:
         name = persona.full_name or persona.name
         title = persona.professional_title or "expert"
 
-        lines = [
-            "## YOUR AUTHOR IDENTITY — EMBODY THIS FULLY",
-            "",
-            f"You ARE **{name}**, {title}.",
-            "Do not write about this person — write AS this person, in first person.",
-            "",
-            "### Who You Are",
-        ]
+        if fits_topic:
+            lines = [
+                "## YOUR AUTHOR IDENTITY — EMBODY THIS FULLY",
+                "",
+                f"You ARE **{name}**, {title}.",
+                "Do not write about this person — write AS this person, in first person.",
+                "",
+                "### Who You Are",
+            ]
+        else:
+            # G56 (rext-control #501): the subject is outside the persona's expertise, so the
+            # article takes their voice and none of their background.
+            lines = [
+                "## YOUR AUTHOR VOICE",
+                "",
+                f"You write in the voice of **{name}**, {title}. This article's subject is outside "
+                f"{name}'s stated expertise: the voice is theirs, the experience is not.",
+                "",
+                "### Who You Are",
+            ]
 
         if name:
             lines.append(f"- **Name:** {name}")
@@ -770,12 +843,12 @@ Write the full article now. Every third-party claim must have an inline [text](u
             if isinstance(expertise, list):
                 expertise = ", ".join(str(e) for e in expertise)
             lines.append(f"- **Expertise:** {expertise}")
-        if persona.pain_points:
+        if persona.pain_points and fits_topic:
             lines.append(f"- **Pain Points You've Lived:** {persona.pain_points}")
         if persona.behaviors:
             lines.append(f"- **How You Work:** {persona.behaviors}")
 
-        if persona.bio:
+        if persona.bio and fits_topic:
             lines += ["", "### Your Background", persona.bio]
 
         if persona.tone_of_voice:
@@ -787,17 +860,27 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if persona.goals:
             lines += ["", "### Your Content Goals", persona.goals]
 
-        lines += [
-            "",
-            "### REQUIRED: How to Use This Identity in the Article",
-            f"- **MANDATORY**: Use your name **{name}** in the first or second paragraph of the introduction",
-            f'  Good: "I\'m {name}, and as a {title}, I..." (background details only as stated above — never invent years, clients or results)',
-            f'  Good: "My name is {name}. In my work as a {title}, I\'ve seen firsthand..."',
-            f"- **MANDATORY**: Mention your name **{name}** at least once more later in the article",
-            f'  Good: "In my opinion as {name}..." or "From what I\'ve observed..."',
-            "- Reference your background and expertise when introducing any major claim or recommendation",
-            "- Your name and professional identity must be unmistakably present — never anonymous, never generic",
-        ]
+        if fits_topic:
+            lines += [
+                "",
+                "### REQUIRED: How to Use This Identity in the Article",
+                f"- **MANDATORY**: Use your name **{name}** in the first or second paragraph of the introduction",
+                f'  Good: "I\'m {name}, and as a {title}, I..." (background details only as stated above — never invent years, clients or results)',
+                f'  Good: "My name is {name}. In my work as a {title}, I\'ve seen firsthand..."',
+                f"- **MANDATORY**: Mention your name **{name}** at least once more later in the article",
+                f'  Good: "In my opinion as {name}..." or "From what I\'ve observed..."',
+                "- Reference your background and expertise when introducing any major claim or recommendation",
+                "- Your name and professional identity must be unmistakably present — never anonymous, never generic",
+            ]
+        else:
+            lines += [
+                "",
+                "### REQUIRED: This Subject Is Outside Your Expertise",
+                "- Do NOT introduce yourself or write your name in the article",
+                "- Do NOT claim experience, credentials, clients, results or a background in this subject — nothing in your profile is evidence for it",
+                "- Write NO author bio and no experience or background section",
+                '- First person is fine for reasoning and judgment ("I\'d start with...", "In my view..."), never for a history you would need to have lived',
+            ]
 
         if persona.linkedin_url:
             lines += [

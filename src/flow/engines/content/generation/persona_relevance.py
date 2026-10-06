@@ -174,6 +174,17 @@ _WEIGHTS = {
 # should be allowed to dilute below this.
 _PHRASE_MATCH_FLOOR = 85.0
 
+# How much of the article's subject a persona must speak before the article may
+# present them as someone with experience in it: an author bio, "I'm <name>, a
+# <title>", credentials (G56, rext-control #501). Measured on the subject alone,
+# the better of the topic and title dimensions; intent and content type are left
+# out, since nearly every profile speaks "guide" or "how" and a software founder
+# must not qualify for a bakery article on those. 30 is about a third of the
+# subject's meaningful words in the persona's own profile ("email" and
+# "marketing" in "email marketing ideas for local bakeries" score 40), and any
+# speciality named whole in the topic or title clears it at 85.
+TOPIC_FIT_THRESHOLD = 30.0
+
 
 @dataclass
 class PersonaRelevance:
@@ -184,13 +195,25 @@ class PersonaRelevance:
     score: float
     breakdown: dict[str, float] = field(default_factory=dict)
 
+    @property
+    def fits_topic(self) -> bool:
+        """Whether the article may speak from this persona's experience."""
+        return topic_fit(self.breakdown) >= TOPIC_FIT_THRESHOLD
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "persona_id": self.persona_id,
             "name": self.name,
             "score": self.score,
             "breakdown": dict(self.breakdown),
+            "fits_topic": self.fits_topic,
         }
+
+
+def topic_fit(breakdown: dict[str, Any]) -> float:
+    """The persona's fit for the article's subject: the better of topic and title."""
+    values = [breakdown.get(name) for name in ("topic", "title")]
+    return max((float(v) for v in values if isinstance(v, (int, float))), default=0.0)
 
 
 def _tokens(text: Any) -> set[str]:
@@ -350,3 +373,10 @@ def rank_personas(
         for persona in personas
     ]
     return sorted(scored, key=lambda relevance: relevance.score, reverse=True)
+
+
+def persona_fits_topic(
+    persona: Any, *, topic: Optional[str] = None, title: Optional[str] = None
+) -> bool:
+    """Whether an article on this topic and title may speak from the persona's experience."""
+    return score_persona(persona, topic=topic, title=title).fits_topic
