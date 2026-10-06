@@ -54,7 +54,7 @@ def sent(monkeypatch) -> _Sent:
 @pytest.mark.parametrize("private", PRIVATE_REDIRECTS)
 async def test_an_image_url_that_redirects_to_a_private_address_is_refused(sent, private):
     sent.target["redirect_to"] = private
-    async with WordPressPublisher(site_url=PUBLIC, api_key="key", env_fallback=False) as wp:
+    async with WordPressPublisher(site_url=PUBLIC, api_key="key") as wp:
         with pytest.raises(SSRFValidationError):
             await wp._download_image(f"{PUBLIC}/image.png")
 
@@ -62,7 +62,7 @@ async def test_an_image_url_that_redirects_to_a_private_address_is_refused(sent,
 
 
 async def test_a_public_image_still_downloads(sent):
-    async with WordPressPublisher(site_url=PUBLIC, api_key="key", env_fallback=False) as wp:
+    async with WordPressPublisher(site_url=PUBLIC, api_key="key") as wp:
         response = await wp._download_image(f"{PUBLIC}/image.png")
 
     assert response.status_code == 200
