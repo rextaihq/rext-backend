@@ -116,6 +116,17 @@ jobs:
       - name: Install
         run: uv sync --frozen
 
+      - name: OpenAPI spec, the dashboard's contract
+        # --strict fails on a duplicate operation id, which a typed client cannot be generated from.
+        run: uv run python scripts/export_openapi.py --strict openapi.json
+
+      - name: Keep the spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json
+          retention-days: 30
+
       - name: One migration head
         run: |
           heads=$(uv run alembic heads | grep -c '(head)')

@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.api.schema.response.plan_responses import StageCost
+
 
 class LicenseItem(BaseModel):
     """Schema for a license item."""
@@ -21,6 +23,41 @@ class LicenseItem(BaseModel):
     activated_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     created_at: datetime
+
+
+class CreditBonus(BaseModel):
+    """An offer's live credit grants, spent first (`bonus_summary`, src/services/credit_grants.py)."""
+
+    label: str
+    promotion: Optional[str] = None
+    credits: int = Field(description="Credits left in the grants")
+    granted: int
+    expires_at: Optional[str] = Field(None, description="ISO 8601, the earliest grant's expiry")
+
+
+class RunCost(BaseModel):
+    """What one billed button costs against the balance (`run_costs`, src/services/plan_catalog.py)."""
+
+    cost: int
+    minimum_balance: int
+    can_run: bool
+    balance_after: Optional[int] = Field(None, description="Null when the button cannot run")
+    stages: List[StageCost]
+
+
+class CreditBalanceResponse(BaseModel):
+    """GET /subscriptions/credits: the balance of the active workspace's owner, or the caller's."""
+
+    current_credits: int = Field(description="This month's credits plus the live bonus")
+    monthly_credits: int
+    bonus: Optional[CreditBonus] = None
+    credits_per_month: Optional[int] = Field(None, description="Null for an unlimited plan")
+    credits_reset_date: Optional[str] = Field(None, description="ISO 8601")
+    articles_remaining: Optional[int] = Field(None, description="Null for an unlimited plan")
+    plan_name: Optional[str] = None
+    target_user_id: str
+    is_workspace_credits: bool
+    runs: Dict[str, RunCost] = Field(description="Each billed button, by name")
 
 
 class SubscriptionDetails(BaseModel):
