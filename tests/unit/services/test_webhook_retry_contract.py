@@ -35,7 +35,6 @@ EXPECTED_HANDLERS = {
     "subscription_payment_recovered",
     "order_created",
     "order_refunded",
-    "license_key_created",
 }
 
 

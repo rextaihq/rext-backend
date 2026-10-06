@@ -48,7 +48,6 @@ EVENTS = [
     "subscription_payment_recovered",
     "subscription_payment_refunded",
     "subscription_plan_changed",
-    "license_key_created",
 ]
 
 
