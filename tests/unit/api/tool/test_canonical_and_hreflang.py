@@ -184,3 +184,15 @@ def test_an_address_with_a_valid_port_is_kept():
         res.json()["data"]["canonical_tag"]
         == '<link rel="canonical" href="https://localhost:3000/a" />'
     )
+
+
+@pytest.mark.asyncio
+async def test_an_international_domain_name_is_a_full_address():
+    canonical = await generate_canonical_tag("https://例え.テスト/page/")
+    assert canonical["canonical_tag"] == '<link rel="canonical" href="https://例え.テスト/page" />'
+    result = await generate_hreflang_tags(
+        hreflang([{"url": "https://例え.テスト/ja", "language": "ja"}], include_x_default=False)
+    )
+    assert result["hreflang_tags"] == (
+        '<link rel="alternate" hreflang="ja" href="https://例え.テスト/ja" />'
+    )
