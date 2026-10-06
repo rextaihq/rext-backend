@@ -18,37 +18,103 @@ Testing Strategy:
 - Assert that access is denied (404 Not Found, not 403 to avoid leaking existence)
 """
 
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+import pytest_asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from src.api.database.base import Base
 from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.content_models.content import Content
+from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.content_service import ContentService
 from src.services.member_service import MemberService
 from src.services.workspace_service import WorkspaceService
+from tests.conftest import TEST_DATABASE_URL
 
 # ============================================================================
 # Fixtures
 # ============================================================================
 
 
-@pytest.fixture
+def _with_parents(*tables):
+    """The tables, and every table their foreign keys reach."""
+    found = []
+
+    def visit(table):
+        if table in found:
+            return
+        found.append(table)
+        for key in table.foreign_keys:
+            visit(key.column.table)
+
+    for table in tables:
+        visit(table)
+    return found
+
+
+@pytest_asyncio.fixture
+async def db():
+    """The tables these tests need, inside a transaction that is rolled back.
+
+    The services commit in places: each commit only releases a savepoint, so nothing
+    is left behind, on an empty test database or a migrated one.
+    """
+    tables = _with_parents(
+        Users.__table__,
+        WorkspaceModel.__table__,
+        WorkspaceMembers.__table__,
+        Content.__table__,
+        ContentSEOData.__table__,  # creating content writes its SEO row
+        Role.__table__,  # a new member gets the viewer role
+        UserRole.__table__,
+        AuditLog.__table__,
+    )
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        await connection.run_sync(
+            lambda sync: Base.metadata.create_all(sync, tables=tables, checkfirst=True)
+        )
+        async with AsyncSession(
+            bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
+        ) as session:
+            yield session
+        await transaction.rollback()
+    await engine.dispose()
+
+
+async def _viewer_role(db: AsyncSession) -> Role:
+    """The workspace viewer role a new member gets: the seeded one, or one made here."""
+    role = (await db.execute(select(Role).where(Role.name == "viewer"))).scalar_one_or_none()
+    if role is None:
+        role = Role(name="viewer", display_name="Viewer", is_workspace_role=True)
+        db.add(role)
+        await db.flush()
+    return role
+
+
+def _user(name: str) -> Users:
+    return Users(
+        id=uuid4(),
+        email=f"{name.lower().replace(' ', '-')}-{uuid4().hex[:8]}@example.com",
+        full_name=name,
+    )
+
+
+@pytest_asyncio.fixture
 async def workspace_a(db: AsyncSession) -> WorkspaceModel:
     """Create workspace A for testing"""
-    user_a = Users(
-        id=uuid4(),
-        email="user_a@example.com",
-        username="user_a",
-        password_hash="hashed",
-        first_name="User",
-        last_name="A",
-    )
+    user_a = _user("User A")
     db.add(user_a)
     await db.flush()
 
@@ -56,7 +122,7 @@ async def workspace_a(db: AsyncSession) -> WorkspaceModel:
         id=uuid4(),
         user_id=user_a.id,
         name="Workspace A",
-        slug="workspace-a",
+        slug=f"workspace-a-{uuid4().hex[:8]}",
         url="https://workspace-a.com",
     )
     db.add(workspace)
@@ -78,17 +144,10 @@ async def workspace_a(db: AsyncSession) -> WorkspaceModel:
     return workspace
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def workspace_b(db: AsyncSession) -> WorkspaceModel:
     """Create workspace B for testing"""
-    user_b = Users(
-        id=uuid4(),
-        email="user_b@example.com",
-        username="user_b",
-        password_hash="hashed",
-        first_name="User",
-        last_name="B",
-    )
+    user_b = _user("User B")
     db.add(user_b)
     await db.flush()
 
@@ -96,7 +155,7 @@ async def workspace_b(db: AsyncSession) -> WorkspaceModel:
         id=uuid4(),
         user_id=user_b.id,
         name="Workspace B",
-        slug="workspace-b",
+        slug=f"workspace-b-{uuid4().hex[:8]}",
         url="https://workspace-b.com",
     )
     db.add(workspace)
@@ -118,19 +177,17 @@ async def workspace_b(db: AsyncSession) -> WorkspaceModel:
     return workspace
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def content_in_workspace_b(db: AsyncSession, workspace_b: WorkspaceModel) -> Content:
     """Create content in workspace B"""
     content = Content(
         id=uuid4(),
         workspace_id=workspace_b.id,
         created_by_user_id=workspace_b.owner.id,
-        author_id=workspace_b.owner.id,
         title="Secret Content B",
         slug="secret-content-b",
         body_markdown="This is secret content in workspace B",
         status="published",
-        content_format="Markdown",
         content_language="English",
     )
     db.add(content)
@@ -226,12 +283,10 @@ class TestContentIsolation:
             id=uuid4(),
             workspace_id=workspace_b.id,
             created_by_user_id=workspace_b.owner.id,
-            author_id=workspace_b.owner.id,
             title="Draft Content B",
             slug="draft-content-b",
             body_markdown="Draft content",
             status="ready",  # Ready to publish
-            content_format="Markdown",
             content_language="English",
         )
         db.add(draft_content)
@@ -275,14 +330,8 @@ class TestMemberIsolation:
         service = MemberService(db)
 
         # Create a new user to add
-        new_user = Users(
-            id=uuid4(),
-            email="newuser@example.com",
-            username="newuser",
-            password_hash="hashed",
-            first_name="New",
-            last_name="User",
-        )
+        await _viewer_role(db)
+        new_user = _user("New User")
         db.add(new_user)
         await db.flush()
 
@@ -348,19 +397,18 @@ class TestWorkspaceSettingsIsolation:
     ):
         """User from workspace A cannot update workspace B's settings"""
         service = WorkspaceService(db)
-
         original_name = workspace_b.name
         original_url = workspace_b.url
 
-        # Try to update workspace B using workspace A's context
-        # This depends on route implementation - service layer should not allow this
-        # without proper verification
-
-        # The service's _ensure_membership() should prevent this
+        # User A updating workspace B: the membership check refuses it as not found.
         with pytest.raises(ResourceNotFoundException):
-            # Simulating what a malicious request might try
-            await service.get_workspace(workspace_b.id)
-            # Service should verify user is a member before allowing updates
+            await service.update_workspace_for_user(
+                workspace_id=workspace_b.id,
+                user_id=workspace_a.owner.id,
+                name="Hacked Name",
+                timezone=None,
+                url="https://hacked.example",
+            )
 
         # Verify workspace B settings unchanged
         await db.refresh(workspace_b)
@@ -375,20 +423,30 @@ class TestWorkspaceSettingsIsolation:
         content_in_workspace_b: Content,
     ):
         """Workspace analytics only show data for the specified workspace"""
-        # Create content in workspace A
+        # Two items in workspace A, one in workspace B: each count is its own.
         content_a = Content(
             id=uuid4(),
             workspace_id=workspace_a.id,
             created_by_user_id=workspace_a.owner.id,
-            author_id=workspace_a.owner.id,
             title="Content A",
             slug="content-a",
             body_markdown="Content for workspace A",
             status="published",
-            content_format="Markdown",
             content_language="English",
         )
         db.add(content_a)
+        db.add(
+            Content(
+                id=uuid4(),
+                workspace_id=workspace_a.id,
+                created_by_user_id=workspace_a.owner.id,
+                title="Content A2",
+                slug="content-a2",
+                body_markdown="Second item for workspace A",
+                status="published",
+                content_language="English",
+            )
+        )
         await db.flush()
 
         service = WorkspaceService(db)
@@ -396,8 +454,8 @@ class TestWorkspaceSettingsIsolation:
         # Get analytics for workspace A
         analytics_a = await service.get_workspace_analytics(workspace_id=workspace_a.id)
 
-        # Should show 1 content item (content_a)
-        assert analytics_a["content_count"] == 1
+        # Should show workspace A's two items only
+        assert analytics_a["content_count"] == 2
 
         # Get analytics for workspace B
         analytics_b = await service.get_workspace_analytics(workspace_id=workspace_b.id)

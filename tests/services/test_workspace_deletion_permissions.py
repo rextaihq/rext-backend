@@ -12,61 +12,71 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.workspace_service import WorkspaceService
 
+# The seeded workspace roles (scripts/seed_permissions.py): the owner at level 60, the
+# level delete_workspace requires; an editor below it. An empty database gets them here.
+ROLE_LEVELS = {"workspace_owner": 60, "editor": 30}
+
+
+async def _role(db, name: str) -> Role:
+    role = (await db.execute(select(Role).where(Role.name == name))).scalar_one_or_none()
+    if role is None:
+        role = Role(
+            name=name,
+            display_name=name.replace("_", " ").title(),
+            hierarchy_level=ROLE_LEVELS[name],
+            is_workspace_role=True,
+        )
+        db.add(role)
+        await db.flush()
+    return role
+
+
+def _user(name: str) -> Users:
+    return Users(
+        id=uuid4(),
+        email=f"{name.lower().replace(' ', '-')}-{uuid4().hex[:8]}@example.com",
+        full_name=name,
+        status="active",
+        email_verified=True,
+    )
+
+
+def _workspace(owner: Users, name: str) -> WorkspaceModel:
+    return WorkspaceModel(
+        id=uuid4(),
+        slug=f"{name.lower().replace(' ', '-')}-{uuid4().hex[:8]}",
+        name=name,
+        timezone="UTC",
+        user_id=owner.id,
+        created_at=datetime.now(timezone.utc),
+    )
+
 
 @pytest.mark.asyncio
 async def test_owner_can_delete_workspace(db_session):
     """Test that a workspace owner can successfully delete their workspace."""
     # Arrange
-    user = Users(
-        id=uuid4(),
-        email="owner@example.com",
-        username="owner",
-        first_name="Owner",
-        last_name="User",
-        password="hashed_password",
-        status="active",
-        email_verified=True,
-    )
+    user = _user("Owner User")
     db_session.add(user)
-
-    workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="owner-workspace",
-        title="Owner Workspace",
-        name="Owner Workspace",  # Providing name as well since model has it
-        timezone="UTC",
-        user_id=user.id,
-        created_at=datetime.now(timezone.utc),
-    )
+    workspace = _workspace(user, "Owner Workspace")
     db_session.add(workspace)
     await db_session.flush()
 
-    # Add owner role
-    role = Role(
-        id=uuid4(), name="workspace_owner", display_name="Workspace Owner", is_workspace_role=True
+    role = await _role(db_session, "workspace_owner")
+    db_session.add(
+        UserRole(user_id=user.id, role_id=role.id, workspace_id=workspace.id, is_primary=True)
     )
-    db_session.add(role)
+    db_session.add(
+        WorkspaceMembers(id=uuid4(), user_id=user.id, workspace_id=workspace.id, status="active")
+    )
     await db_session.flush()
-
-    # Assign role to user
-    user_role = UserRole(
-        user_id=user.id, role_id=role.id, workspace_id=workspace.id, is_primary=True
-    )
-    db_session.add(user_role)
-
-    # Add membership (needed for _ensure_membership in higher levels, though delete calls generic get)
-    membership = WorkspaceMembers(
-        id=uuid4(), user_id=user.id, workspace_id=workspace.id, status="active"
-    )
-    db_session.add(membership)
-    await db_session.commit()
 
     # Act
     service = WorkspaceService(db_session)
     await service.delete_workspace(workspace.id, user.id)
+    await db_session.flush()
 
-    # Assert
-    # Verify soft delete
+    # Assert: soft deleted, by the owner
     result = await db_session.execute(
         select(WorkspaceModel).where(WorkspaceModel.id == workspace.id)
     )
@@ -79,113 +89,56 @@ async def test_owner_can_delete_workspace(db_session):
 async def test_non_owner_cannot_delete_workspace(db_session):
     """Test that a non-owner (e.g. editor) cannot delete the workspace."""
     # Arrange
-    owner = Users(
-        id=uuid4(),
-        email="realowner@example.com",
-        username="realowner",
-        first_name="Real",
-        last_name="Owner",
-    )
-    editor = Users(
-        id=uuid4(),
-        email="editor@example.com",
-        username="editor",
-        first_name="Editor",
-        last_name="User",
-    )
+    owner = _user("Real Owner")
+    editor = _user("Editor User")
     db_session.add_all([owner, editor])
-
-    workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="shared-workspace",
-        title="Shared Workspace",
-        name="Shared Workspace",
-        timezone="UTC",
-        user_id=owner.id,
-        created_at=datetime.now(timezone.utc),
-    )
+    workspace = _workspace(owner, "Shared Workspace")
     db_session.add(workspace)
     await db_session.flush()
 
-    # Add non-owner role
-    editor_role = Role(id=uuid4(), name="editor", display_name="Editor", is_workspace_role=True)
-    db_session.add(editor_role)
+    editor_role = await _role(db_session, "editor")
+    db_session.add(
+        UserRole(
+            user_id=editor.id, role_id=editor_role.id, workspace_id=workspace.id, is_primary=True
+        )
+    )
+    db_session.add(
+        WorkspaceMembers(id=uuid4(), user_id=editor.id, workspace_id=workspace.id, status="active")
+    )
     await db_session.flush()
-
-    # Assign editor role to user
-    user_role = UserRole(
-        user_id=editor.id, role_id=editor_role.id, workspace_id=workspace.id, is_primary=True
-    )
-    db_session.add(user_role)
-
-    membership = WorkspaceMembers(
-        id=uuid4(), user_id=editor.id, workspace_id=workspace.id, status="active"
-    )
-    db_session.add(membership)
-    await db_session.commit()
 
     # Act & Assert
     service = WorkspaceService(db_session)
-
     with pytest.raises(RextAuthorizationException) as exc:
         await service.delete_workspace(workspace.id, editor.id)
-
     assert "Only workspace owners can perform this action" in str(exc.value)
 
     # Verify NOT deleted
     result = await db_session.execute(
         select(WorkspaceModel).where(WorkspaceModel.id == workspace.id)
     )
-    ws = result.scalar_one()
-    assert ws.deleted_at is None
+    assert result.scalar_one().deleted_at is None
 
 
 @pytest.mark.asyncio
 async def test_non_member_cannot_delete_workspace(db_session):
     """Test that a non-member cannot delete the workspace."""
     # Arrange
-    owner = Users(
-        id=uuid4(),
-        email="owner@example.com",
-        username="owner",
-        first_name="Owner",
-        last_name="User",
-    )
-    stranger = Users(
-        id=uuid4(),
-        email="stranger@example.com",
-        username="stranger",
-        first_name="Stranger",
-        last_name="User",
-    )
+    owner = _user("Owner User")
+    stranger = _user("Stranger User")
     db_session.add_all([owner, stranger])
-
-    workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="target-workspace",
-        title="Target Workspace",
-        name="Target Workspace",
-        timezone="UTC",
-        user_id=owner.id,
-        created_at=datetime.now(timezone.utc),
-    )
+    workspace = _workspace(owner, "Target Workspace")
     db_session.add(workspace)
-    await db_session.commit()
+    await db_session.flush()
 
-    # Act & Assert
+    # Act & Assert: no role in the workspace at all
     service = WorkspaceService(db_session)
-
-    # Depending on implementation details, this might raise Forbidden or some other error.
-    # verify_user_is_workspace_owner checks UserRole which won't exist.
-
     with pytest.raises(RextAuthorizationException) as exc:
         await service.delete_workspace(workspace.id, stranger.id)
-
     assert "Only workspace owners can perform this action" in str(exc.value)
 
     # Verify NOT deleted
     result = await db_session.execute(
         select(WorkspaceModel).where(WorkspaceModel.id == workspace.id)
     )
-    ws = result.scalar_one()
-    assert ws.deleted_at is None
+    assert result.scalar_one().deleted_at is None
