@@ -94,7 +94,12 @@ CLAIM_REPAIR_GUIDANCE: dict[str, str] = {
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
 _TABLE_ROW_RE = re.compile(r"^\s*\|")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]*-{3,}[\s:|-]*$")
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[\"'(\[*_]?[A-Z0-9])")
+# A sentence ends at . ! or ?, also when a closing quote or bracket follows it
+# ("not 'lab-tested.' Our picks…"): without that, the next sentence's "Our" made the
+# one before it read as a first-person testing claim.
+_SENTENCE_SPLIT_RE = re.compile(
+    r"(?:(?<=[.!?])|(?<=[.!?][\"'\u201d\u2019)\]]))\s+(?=[\"'(\[*_\u201c\u2018]?[A-Z0-9])"
+)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -210,6 +215,12 @@ _TESTING_RE = re.compile(
     r"|hands-on\s+(?:testing|tests|review|evaluation)"
     r"|in\s+(?:my|our)\s+(?:own\s+)?(?:tests?|testing|benchmarks?|trials?))\b",
     re.IGNORECASE,
+)
+# A testing word denied within two words before it ("not lab-tested", "we haven't
+# tested", "we have not personally benchmarked") discloses that no test was run: it
+# isn't a testing claim. "No doubt we tested" still is.
+_NEGATION_BEFORE_RE = re.compile(
+    r"(?:\b(?:not|never|without)\b|n['\u2019]t\b)(?:\W+\w+){0,2}\W*$", re.IGNORECASE
 )
 _CLIENT_OUTCOME_RE = re.compile(
     r"\b(?:my|our|a|one)\s+(?:(?:former|recent|past|previous|long-time|ecommerce|e-commerce|saas|b2b|"
@@ -512,6 +523,8 @@ def _fabricated_experience(unit: _Unit, index: _EvidenceIndex) -> Optional[str]:
     if not _FIRST_PERSON_RE.search(text):
         return None
     testing = _TESTING_RE.search(text)
+    if testing and _NEGATION_BEFORE_RE.search(text[: testing.start()]):
+        testing = None
     if testing:
         # The pipeline never runs hands-on tests, so a first-person testing claim
         # is invented unless a retrieved source describes that exact test.
