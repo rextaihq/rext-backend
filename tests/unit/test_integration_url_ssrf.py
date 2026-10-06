@@ -5,7 +5,11 @@ import pytest
 
 from src.api.middleware.exceptions import RextExternalServiceException, RextValidationException
 from src.services.integration_services import IntegrationService
-from src.utils.integration_urls import PRIVATE_ADDRESS_MESSAGE, ensure_public_site_urls
+from src.utils.integration_urls import (
+    INVALID_ADDRESS_MESSAGE,
+    PRIVATE_ADDRESS_MESSAGE,
+    ensure_public_site_urls,
+)
 from src.utils.url_validator import (
     SSRFValidationError,
     refuse_private_addresses,
@@ -21,6 +25,7 @@ PRIVATE = [
     "http://10.0.0.5/",
     "http://169.254.169.254/latest/meta-data/",
     "https://[::1]/",
+    "http://100.64.0.1/",
 ]
 PUBLIC = "http://93.184.216.34/"
 
@@ -78,6 +83,13 @@ async def test_connect_and_update_refuse_a_private_site_url(url):
 
 async def test_connect_and_update_accept_public_and_empty_values():
     await ensure_public_site_urls(PUBLIC, None, "")
+
+
+async def test_a_malformed_site_url_is_a_validation_error():
+    with pytest.raises(RextValidationException) as exc:
+        await ensure_public_site_urls("http://[invalid")
+
+    assert exc.value.message == INVALID_ADDRESS_MESSAGE
 
 
 @pytest.mark.parametrize("url", PRIVATE)
@@ -157,5 +169,20 @@ async def test_the_operators_bridge_address_is_not_checked(monkeypatch):
     bridge = ShopifyAppBridge(shared_secret="secret", base_url="http://rext-shopify-app:3000")
 
     await _bridge_publish(bridge, {})
+
+    assert sent == ["http://rext-shopify-app:3000/app/api/rext/publish"]
+
+
+async def test_a_blank_bridge_override_leaves_the_operators_address_unchecked(monkeypatch):
+    sent: list[str] = []
+
+    async def post(self, url, **kwargs):
+        sent.append(str(url))
+        return httpx.Response(200, json={"article": {"id": 1}}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    bridge = ShopifyAppBridge(shared_secret="secret", base_url="http://rext-shopify-app:3000")
+
+    await _bridge_publish(bridge, {"bridge_publish_url": "   "})
 
     assert sent == ["http://rext-shopify-app:3000/app/api/rext/publish"]

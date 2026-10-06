@@ -203,7 +203,7 @@ class ShopifyAppBridge:
         normalized_store_url = normalize_store_url(store_url)
         store_handle = extract_store_handle(normalized_store_url)
         publish_url = self._resolve_publish_url(config_json)
-        if (config_json or {}).get("bridge_publish_url"):
+        if ((config_json or {}).get("bridge_publish_url") or "").strip():
             # A customer-given override must not lead to a private or reserved
             # network. The configured bridge base URL is the operator's own and
             # may be an internal address, so it is not checked.
