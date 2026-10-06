@@ -102,6 +102,24 @@ def _stamp_provider_state(subscription: UserSubscription, sub_data: Dict[str, An
         subscription.provider_updated_at = incoming
 
 
+# When the newest payment credited was made (its invoice's updated_at), kept in the
+# subscription's metadata: invoice events don't stamp provider_updated_at, so this
+# orders them among themselves.
+_PAID_INVOICE_AT = "paid_invoice_at"
+
+
+def _last_paid_invoice_at(subscription: UserSubscription) -> Optional[datetime]:
+    return _provider_time((subscription.subscription_metadata or {}).get(_PAID_INVOICE_AT))
+
+
+def _record_paid_invoice(subscription: UserSubscription, paid_at: datetime) -> None:
+    # Reassigned, not mutated in place: SQLAlchemy doesn't track a plain JSONB's insides.
+    subscription.subscription_metadata = {
+        **(subscription.subscription_metadata or {}),
+        _PAID_INVOICE_AT: paid_at.isoformat(),
+    }
+
+
 def _ignore_older(subscription: UserSubscription, sub_data: Dict[str, Any], event: str) -> bool:
     if not _is_older_than_stored(subscription, sub_data):
         return False
@@ -1302,6 +1320,20 @@ async def handle_subscription_payment_success(
         )
         return None
 
+    # A payment no newer than the last one credited (a previous cycle's, delivered
+    # late, or this one again) would give back credits already spent this cycle.
+    paid_at = _provider_time(sub_data.get("updated_at"))
+    last_paid_at = _last_paid_invoice_at(subscription)
+    if paid_at and last_paid_at and paid_at <= last_paid_at:
+        logger.info(
+            "subscription_payment_success: ignored, not newer than the last payment credited",
+            extra={
+                "subscription_id": str(subscription.id),
+                "event_updated_at": sub_data.get("updated_at"),
+            },
+        )
+        return None
+
     # Update subscription - activate if it was on trial or its renewal had failed
     # (PAST_DUE while Lemon Squeezy retried, UNPAID after it gave up, SUSPENDED on
     # rows from the old grace period).
@@ -1345,6 +1377,8 @@ async def handle_subscription_payment_success(
     ):
         subscription.current_credits = plan_row.credits_per_month
         subscription.credits_reset_date = next_period_end
+    if paid_at:
+        _record_paid_invoice(subscription, paid_at)
 
         # The first payment: a promotion's bonus, if subscription_created did not
         # grant it already (it grants once per subscription and promotion).
@@ -1471,6 +1505,20 @@ async def handle_subscription_payment_failed(
     stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
     result = await db.execute(stmt)
     plan = result.scalar_one_or_none()
+
+    # A failure older than the last payment credited (delivered late, after the
+    # renewal was paid) is over: it doesn't make the plan past due again.
+    failed_at = _provider_time(sub_data.get("updated_at"))
+    last_paid_at = _last_paid_invoice_at(subscription)
+    if failed_at and last_paid_at and failed_at < last_paid_at:
+        logger.info(
+            "subscription_payment_failed: ignored, older than the last payment credited",
+            extra={
+                "subscription_id": str(subscription.id),
+                "event_updated_at": sub_data.get("updated_at"),
+            },
+        )
+        return None
 
     now = datetime.now(timezone.utc)
     if subscription.status in (
