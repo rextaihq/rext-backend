@@ -1,0 +1,190 @@
+"""Closing an account stops renewals; the plan runs to the end of the paid period.
+
+Founder decision on F12 (revnix/rext-control#337, 2026-10-06): Lemon Squeezy only
+cancels at the period end, so the app no longer claims an immediate end. It says
+until when the plan stays active. Checked on the test PostgreSQL inside a
+rolled-back transaction, with Lemon Squeezy and the email replaced by mocks.
+"""
+
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
+
+import src.services.subscription_service as service_module
+from src.api.database.async_database import get_async_db
+from src.api.database.base import Base
+from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
+from src.api.models.user_models.token_blacklist import TokenBlacklist
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.user_models.users import Users
+from src.api.security.dependencies import get_current_user
+from src.api.security.token_utils import hash_password
+from tests.conftest import TEST_DATABASE_URL
+
+PAID_UNTIL = (datetime.now(timezone.utc) + timedelta(days=17)).replace(microsecond=0)
+PASSWORD = "a-test-password-1"
+
+
+def _with_their_references(models):
+    """The tables and every table their foreign keys point at."""
+    tables, stack = set(), [model.__table__ for model in models]
+    while stack:
+        table = stack.pop()
+        if table not in tables:
+            tables.add(table)
+            stack.extend(fk.column.table for fk in table.foreign_keys)
+    return list(tables)
+
+
+@pytest_asyncio.fixture
+async def session():
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        await connection.run_sync(
+            lambda sync: Base.metadata.create_all(
+                sync,
+                # Closing an account also reads roles and ends sessions.
+                tables=_with_their_references(
+                    [UserSubscription, AuditLog, UserRole, UserSession, TokenBlacklist]
+                ),
+                checkfirst=True,
+            )
+        )
+        async with AsyncSession(bind=connection, expire_on_commit=False) as db:
+            yield db
+        await transaction.rollback()
+    await engine.dispose()
+
+
+@pytest.fixture
+def provider(monkeypatch):
+    fake = AsyncMock()
+    monkeypatch.setattr(service_module, "get_payment_provider_singleton", lambda: fake)
+    monkeypatch.setattr(service_module, "invalidate_cache", AsyncMock())
+    return fake
+
+
+async def _customer(db, status, *, ls_id="ls-close"):
+    plan = SubscriptionPlan(
+        name=f"growth-{uuid4().hex[:8]}", display_name="Growth", credits_per_month=1000
+    )
+    user = Users(email=f"{uuid4().hex[:12]}@example.com", password_hash=hash_password(PASSWORD))
+    db.add_all([plan, user])
+    await db.flush()
+    subscription = UserSubscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status=status,
+        lemonsqueezy_subscription_id=f"{ls_id}-{uuid4().hex[:6]}" if ls_id else None,
+        renews_at=PAID_UNTIL,
+    )
+    db.add(subscription)
+    await db.flush()
+    return user, subscription
+
+
+async def _close(session, user, cancel_subscriptions=True):
+    from src.api.routes.users import user_status
+    from src.api.server import app
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_async_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: {"identity": str(user.id)}
+    email = AsyncMock()
+    try:
+        with patch.object(user_status, "send_deactivation_email_task", email):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                response = await ac.post(
+                    "/api/v1/user/deactivate",
+                    json={
+                        "password": PASSWORD,
+                        "confirm": True,
+                        "cancel_subscriptions": cancel_subscriptions,
+                    },
+                )
+    finally:
+        app.dependency_overrides.clear()
+    return response, email
+
+
+@pytest.mark.parametrize("status", [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE])
+@pytest.mark.asyncio
+async def test_closing_stops_renewals_and_keeps_the_paid_period(session, provider, status):
+    user, subscription = await _customer(session, status)
+
+    response, email = await _close(session, user)
+
+    assert response.status_code == 200, response.text
+    provider.cancel_subscription.assert_awaited_once_with(
+        subscription_id=subscription.lemonsqueezy_subscription_id, at_period_end=True
+    )
+    row = (
+        await session.execute(
+            select(UserSubscription).where(UserSubscription.id == subscription.id)
+        )
+    ).scalar_one()
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert row.cancel_at_period_end is True
+    assert row.end_date == PAID_UNTIL
+    data = response.json()["data"]
+    assert datetime.fromisoformat(data["plan_ends_at"]) == PAID_UNTIL
+    assert f"stays active until {PAID_UNTIL:%B %d, %Y}" in data["message"]
+    assert email.call_args.kwargs["plan_ends_on"] == f"{PAID_UNTIL:%B %d, %Y}"
+
+
+@pytest.mark.asyncio
+async def test_a_past_due_plan_counts_as_active_when_closing(session, provider):
+    user, _ = await _customer(session, SubscriptionStatus.PAST_DUE)
+
+    response, _ = await _close(session, user, cancel_subscriptions=False)
+
+    # Lemon Squeezy is still retrying its payment: it isn't left running unasked.
+    assert response.status_code in (400, 422), response.text
+    assert "active subscriptions" in response.text
+    provider.cancel_subscription.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_an_immediate_cancel_of_a_billed_plan_ends_at_the_paid_period(session, provider):
+    user, subscription = await _customer(session, SubscriptionStatus.ACTIVE)
+
+    await service_module.SubscriptionService(session).cancel(user.id, cancel_immediately=True)
+
+    provider.cancel_subscription.assert_awaited_once_with(
+        subscription_id=subscription.lemonsqueezy_subscription_id, at_period_end=True
+    )
+    assert subscription.end_date == PAID_UNTIL
+    assert subscription.cancel_at_period_end is True
+
+
+@pytest.mark.asyncio
+async def test_a_local_trial_can_still_end_at_once(session, provider):
+    user, subscription = await _customer(session, SubscriptionStatus.TRIAL, ls_id=None)
+
+    await service_module.SubscriptionService(session).cancel(user.id, cancel_immediately=True)
+
+    provider.cancel_subscription.assert_not_called()
+    assert subscription.end_date <= datetime.now(timezone.utc)
+
+
+def test_the_email_says_until_when_the_plan_stays():
+    from emails.templates.auth.account_recovery import create_account_deactivated_email
+
+    with_plan = create_account_deactivated_email(user_name="Ana", plan_ends_on="October 23, 2026")
+    without = create_account_deactivated_email(user_name="Ana")
+
+    assert "stays active until <strong>October 23, 2026</strong>" in with_plan
+    assert "won't renew" not in without

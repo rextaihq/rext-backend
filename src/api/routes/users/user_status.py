@@ -12,7 +12,7 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     RextValidationException,
 )
-from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
+from src.api.models.subscription_models.subscriptions import ACCESS_STATUSES, UserSubscription
 from src.api.schema.response.admin_responses import (
     DeactivateAccountResponseSchema,
     UserStatusActionResponse,
@@ -184,7 +184,12 @@ async def ban_user(
 
 
 async def send_deactivation_email_task(
-    email: str, first_name: str, user_id: str, frontend_url: str, retention_days: int = 14
+    email: str,
+    first_name: str,
+    user_id: str,
+    frontend_url: str,
+    retention_days: int = 14,
+    plan_ends_on: str | None = None,
 ):
     """Background task to send the self-deactivation confirmation email."""
     from src.api.database.async_database import get_async_db_context
@@ -200,6 +205,7 @@ async def send_deactivation_email_task(
                 user_id=UUID(user_id),
                 frontend_url=frontend_url,
                 retention_days=retention_days,
+                plan_ends_on=plan_ends_on,
             )
             logger.info(f"Deactivation email sent successfully to {email}")
     except Exception as e:
@@ -238,11 +244,12 @@ async def deactivate_self(
 
     old_status = user.status
 
-    # Check active subscriptions
+    # Check active subscriptions: every one that keeps the plan, a past-due one
+    # included (Lemon Squeezy is still retrying its payment).
     subscriptions_result = await db.execute(
         select(UserSubscription).where(
             UserSubscription.user_id == user_id,
-            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            UserSubscription.status.in_(ACCESS_STATUSES),
         )
     )
     active_subs = subscriptions_result.scalars().all()
@@ -252,14 +259,17 @@ async def deactivate_self(
             message="You have active subscriptions. Please cancel them first or enable automatic cancellation."
         )
 
+    # Renewals stop and the plan runs to the end of the period already paid for
+    # (founder decision on F12, 2026-10-06); the response and the email say until when.
+    plan_ends_at = None
     if active_subs:
         sub_service = SubscriptionService(db)
         try:
-            await sub_service.cancel(
+            cancelled = await sub_service.cancel(
                 user_id=user_id,
                 reason="Account deactivation",
-                cancel_immediately=True,
             )
+            plan_ends_at = cancelled.end_date
         except Exception as e:
             logger.error(f"Failed to cancel subscription during deactivation: {e}")
 
@@ -277,6 +287,7 @@ async def deactivate_self(
         user_id=str(db_user.id),
         frontend_url=get_settings().FRONTEND_URL,
         retention_days=get_settings().USER_DELETION_RETENTION_DAYS,
+        plan_ends_on=plan_ends_at.strftime("%B %d, %Y") if plan_ends_at else None,
     )
 
     # Audit log
@@ -298,7 +309,16 @@ async def deactivate_self(
             status="inactive",
             deactivated_at=db_user.deactivated_at,
             scheduled_deletion_at=scheduled_deletion,
-            message="Your account has been deactivated. It will be permanently deleted after 14 days unless you log back in.",
+            plan_ends_at=plan_ends_at,
+            message=(
+                "Your account has been deactivated. It will be permanently deleted after 14 days "
+                "unless you log back in."
+                + (
+                    f" Your plan won't renew and stays active until {plan_ends_at:%B %d, %Y}."
+                    if plan_ends_at
+                    else ""
+                )
+            ),
         ).model_dump(mode="json"),
         request=request,
         message="Account deactivated successfully",

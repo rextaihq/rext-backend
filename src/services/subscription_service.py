@@ -749,7 +749,8 @@ class SubscriptionService:
         Args:
             user_id: User UUID
             reason: Optional cancellation reason
-            cancel_immediately: If True, cancel now; if False, at end of period
+            cancel_immediately: If True, cancel now; if False, at end of period. A
+                subscription the payment provider bills always ends at the period end.
             background_tasks: Optional background tasks for notifications
             fail_on_provider_error: If True, raise exception if payment provider call fails
 
@@ -773,8 +774,23 @@ class SubscriptionService:
                 message="No active subscription found",
             )
 
+        # Lemon Squeezy only cancels at the end of the paid period, and its webhooks
+        # then set that end, so an immediate end for a subscription it bills would
+        # be undone within seconds. Founder decision on F12 (2026-10-06): the plan
+        # runs to the end of the paid period, and the app says so. Only a
+        # subscription Lemon Squeezy doesn't bill (a local trial) can end now.
+        billed_by_provider = bool(
+            subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id
+        )
+        if cancel_immediately and billed_by_provider:
+            logger.info(
+                "Immediate cancel of a provider subscription: it ends at the paid period's end",
+                extra={"user_id": str(user_id), "subscription_id": str(subscription.id)},
+            )
+            cancel_immediately = False
+
         # Cancel subscription with payment provider if provider subscription exists
-        if subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id:
+        if billed_by_provider:
             try:
                 provider_sub_id = (
                     subscription.lemonsqueezy_subscription_id
@@ -857,6 +873,9 @@ class SubscriptionService:
                 subscription.end_date = None
 
         subscription.updated_at = datetime.now(timezone.utc)
+        # Read before the refresh, which expires the relationship: loading it again
+        # afterwards would be lazy IO in async code.
+        plan_name = subscription.plan.name if subscription.plan else "Unknown"
         await self.db.flush()
         await self.db.refresh(subscription)
 
@@ -875,7 +894,7 @@ class SubscriptionService:
         await audit_logger.log_subscription_cancelled(
             user_id=user_id,
             subscription_id=subscription.id,
-            plan_name=subscription.plan.name if subscription.plan else "Unknown",
+            plan_name=plan_name,
             reason=reason,
             cancel_immediately=cancel_immediately,
             db=self.db,
@@ -891,7 +910,7 @@ class SubscriptionService:
                 message="Your subscription has been cancelled.",
                 payload={
                     "subscription_id": str(subscription.id),
-                    "plan_name": subscription.plan.name if subscription.plan else "Unknown",
+                    "plan_name": plan_name,
                     "end_date": subscription.end_date.isoformat()
                     if subscription.end_date
                     else None,
