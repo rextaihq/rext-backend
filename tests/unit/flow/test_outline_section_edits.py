@@ -325,6 +325,46 @@ def test_a_stale_id_beside_an_addition_never_removes_the_sections():
     assert _headings(edited) == [*_headings(_blog_outline()), "Caring for your shoes"]
 
 
+def test_an_added_h4_keeps_its_level_in_a_pillar_outline():
+    outline = {
+        "structure": {
+            "sections": [_section("Pillar"), _section("Branch", "H3"), _section("Leaf", "H4")]
+        }
+    }
+    edited = apply_section_edits(
+        outline,
+        "pillar-content",
+        [
+            {"id": "structure.sections:0", "heading": "Pillar"},
+            {"id": "structure.sections:1", "heading": "Branch"},
+            {"new": True, "list": "structure.sections", "heading": "Twig", "heading_level": "H4"},
+            {"id": "structure.sections:2", "heading": "Leaf"},
+        ],
+    )
+
+    sections = edited["structure"]["sections"]
+    assert [(s["heading"], s["heading_level"]) for s in sections] == [
+        ("Pillar", "H2"),
+        ("Branch", "H3"),
+        ("Twig", "H4"),
+        ("Leaf", "H4"),
+    ]
+
+
+def test_a_refused_row_never_logs_the_reviewers_words(caplog):
+    words = "Call Jane Doe on 555-0100"
+    rows = [
+        {"new": True, "heading": words},
+        {"id": "nonsense", "heading": words},
+        {"new": True, "list": "faqs", "heading": words},
+    ]
+    with caplog.at_level("WARNING"):
+        apply_section_edits(_blog_outline(), "blog", rows)
+
+    assert caplog.records
+    assert "Jane Doe" not in caplog.text
+
+
 def test_additions_that_cannot_be_taken_are_ignored():
     outline = _best_tools_outline()
     for rows in (

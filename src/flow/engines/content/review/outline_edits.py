@@ -38,7 +38,7 @@ from src.flow.engines.content.generation.outline_structure import (
 
 logger = logging.getLogger(__name__)
 
-HEADING_LEVELS = ("H2", "H3")
+HEADING_LEVELS = ("H2", "H3", "H4")
 # More than this many added sections in one approval is not a review any more;
 # the rest are ignored and logged.
 MAX_ADDED_SECTIONS = 6
@@ -129,12 +129,13 @@ def _rows_by_list(rows: list) -> dict[str, list[tuple[int | None, dict]]]:
             if isinstance(path, str) and path:
                 by_list.setdefault(path, []).append((None, row))
             else:
-                logger.warning("[OutlineEdits] ignoring an added section without a list: %r", row)
+                # Never the row itself: its heading is the reviewer's text.
+                logger.warning("[OutlineEdits] ignoring an added section without a list")
             continue
         row_id = row.get("id") if isinstance(row, dict) else None
         path, _, index = row_id.rpartition(":") if isinstance(row_id, str) else ("", "", "")
         if not path or not index.isdigit() or row_id in seen:
-            logger.warning("[OutlineEdits] ignoring section row %r", row)
+            logger.warning("[OutlineEdits] ignoring a section row without a valid id, or a repeat")
             continue
         seen.add(row_id)
         by_list.setdefault(path, []).append((int(index), row))
@@ -171,7 +172,14 @@ def apply_section_edits(outline: dict, content_type: str, rows: Any) -> dict:
                 continue
             new_item = _added_item(items, row) if path in addable else None
             if new_item is None or added >= MAX_ADDED_SECTIONS:
-                logger.warning("[OutlineEdits] added section not taken in %r: %r", path, row)
+                reason = (
+                    "the list takes no additions"
+                    if path not in addable
+                    else "no heading"
+                    if new_item is None
+                    else f"past the cap of {MAX_ADDED_SECTIONS}"
+                )
+                logger.warning("[OutlineEdits] an added section in %r not taken: %s", path, reason)
                 continue
             added += 1
             reordered.append(new_item)
@@ -179,7 +187,7 @@ def apply_section_edits(outline: dict, content_type: str, rows: Any) -> dict:
             logger.warning("[OutlineEdits] edits would empty %r; kept as it was", path)
             continue
         # A list that now opens on a subsection has no H2 above it.
-        if reordered[0].get("heading_level") == "H3":
+        if reordered[0].get("heading_level") in ("H3", "H4"):
             reordered[0]["heading_level"] = "H2"
         logger.info(
             "[OutlineEdits] %s: %d of %d sections, order %s",
