@@ -224,6 +224,8 @@ async def test_answering_the_keyword_gate_saves_the_research_once_and_charges_on
     assert gate["Primary Keyword"] == QUERY
     assert gate["Recommendations"] == ["content marketing metrics"]
     assert gate["seo_state"]["volume"] == 320
+    # The top ten for the side pane, as the title gate sends them.
+    assert [(t["position"], t["title"]) for t in gate["serp_titles"]] == [(1, "A result")]
 
     done = await app.ainvoke(Command(resume={"Primary Keyword": QUERY}), CONFIG)
 
