@@ -55,7 +55,6 @@ class SubscriptionPlanService:
             features=payload.features or {},
             max_workspaces=payload.max_workspaces,
             max_members_per_workspace=payload.max_members_per_workspace,
-            max_api_calls_per_month=payload.max_api_calls_per_month,
             is_active=payload.is_active,
             is_public=payload.is_public,
             lemonsqueezy_product_id=payload.lemonsqueezy_product_id,

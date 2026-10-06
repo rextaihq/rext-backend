@@ -388,7 +388,6 @@ async def get_my_subscription(
     response_data["plan_limits"] = {
         "max_workspaces": plan.max_workspaces,
         "max_members_per_workspace": plan.max_members_per_workspace,
-        "max_api_calls_per_month": plan.max_api_calls_per_month,
     }
 
     # Add current_period_end as alias for renews_at (frontend compatibility)
@@ -415,7 +414,6 @@ async def get_my_subscription(
         current_usage = await service.calculate_usage(user_id)
         response_data["current_usage"] = {
             "workspaces": current_usage["workspaces"],
-            "api_calls": subscription.current_api_calls,
         }
 
     # Add available plans for discovery

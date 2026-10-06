@@ -21,7 +21,6 @@ class PlanDetails(BaseModel):
     features: Dict[str, Any] = Field(default_factory=dict)
     max_workspaces: int
     max_members_per_workspace: int
-    max_api_calls_per_month: int
     is_active: bool
     is_public: bool
     lemonsqueezy_product_id: Optional[str] = None

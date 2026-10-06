@@ -32,7 +32,7 @@ class RequireFeature:
     def __init__(self, limit_type: str, error_message: Optional[str] = None):
         """
         Args:
-            limit_type: The usage limit to check (e.g., "workspaces", "members", "api_calls")
+            limit_type: The usage limit to check (e.g., "workspaces", "members")
             error_message: Custom error message when limit is exceeded
         """
         self.limit_type = limit_type

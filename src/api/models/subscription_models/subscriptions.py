@@ -103,7 +103,6 @@ class UserSubscription(Base, SerializableMixin):
     payment_failed_at = Column(DateTime(timezone=True), nullable=True)  # When payment first failed
 
     # Usage tracking (reset monthly)
-    current_api_calls = Column(Integer, default=0)
     usage_reset_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Credit tracking (new credit-based billing)

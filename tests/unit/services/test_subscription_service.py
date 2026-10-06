@@ -2,7 +2,6 @@
 Unit tests for SubscriptionService.
 
 Tests cover:
-- subscribe: Subscription creation with trial logic
 - upgrade: Plan upgrades with validation
 - downgrade: Plan downgrades with usage validation
 - cancel: Subscription cancellation (immediate and deferred)
@@ -34,152 +33,27 @@ from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.services.subscription_service import SubscriptionService
 
 
-@pytest.mark.unit
-class TestSubscriptionServiceSubscribe:
-    """Test subscribe method"""
+async def _subscribe(db, user_id, plan):
+    """The subscription the tests start from, as the removed subscribe() made it.
 
-    async def test_subscribe_free_plan(self, db_session, setup_factories):
-        """Should create subscription with free plan (no trial)"""
-        # Arrange
-        user = await setup_factories["user"].create()
-
-        # Create free plan
-        free_plan = SubscriptionPlan(
-            id=uuid4(),
-            name="Free Plan",
-            display_name="Free Plan",
-            description="Free tier",
-            price_monthly=0,
-            price_yearly=0,
-            max_workspaces=1,
-            is_active=True,
-        )
-        db_session.add(free_plan)
-        await db_session.flush()
-
-        service = SubscriptionService(db_session)
-
-        # Act
-        subscription = await service.subscribe(
-            user_id=user.id, plan_id=free_plan.id, billing_period=BillingPeriod.MONTHLY
-        )
-
-        # Assert
-        assert subscription.user_id == user.id
-        assert subscription.plan_id == free_plan.id
-        assert subscription.status == SubscriptionStatus.ACTIVE  # No trial for free
-        assert subscription.trial_end_date is None
-        assert subscription.billing_period == BillingPeriod.MONTHLY
-
-    async def test_subscribe_paid_plan_with_trial(self, db_session, setup_factories):
-        """Should create subscription with 14-day trial for paid plans"""
-        # Arrange
-        user = await setup_factories["user"].create()
-
-        # Create paid plan
-        pro_plan = SubscriptionPlan(
-            id=uuid4(),
-            name="Pro Plan",
-            display_name="Pro Plan",
-            description="Professional tier",
-            price_monthly=29.99,
-            price_yearly=299.99,
-            max_workspaces=10,
-            is_active=True,
-        )
-        db_session.add(pro_plan)
-        await db_session.flush()
-
-        service = SubscriptionService(db_session)
-
-        # Act
-        subscription = await service.subscribe(
-            user_id=user.id, plan_id=pro_plan.id, billing_period=BillingPeriod.MONTHLY
-        )
-
-        # Assert
-        assert subscription.user_id == user.id
-        assert subscription.plan_id == pro_plan.id
-        assert subscription.status == SubscriptionStatus.TRIAL
-        assert subscription.trial_end_date is not None
-
-        # Check the trial is the trial's length (7 days)
-        trial_days = (subscription.trial_end_date - subscription.start_date).days
-        assert trial_days == TRIAL_DURATION_DAYS == 7
-
-    async def test_subscribe_duplicate_active_subscription(self, db_session, setup_factories):
-        """Should raise DuplicateResourceException when user already has active subscription"""
-        # Arrange
-        user = await setup_factories["user"].create()
-
-        # Create two plans
-        plan1 = SubscriptionPlan(
-            id=uuid4(),
-            name="Basic",
-            display_name="Basic",
-            price_monthly=9.99,
-            max_workspaces=1,
-            is_active=True,
-        )
-        plan2 = SubscriptionPlan(
-            id=uuid4(),
-            name="Pro",
-            display_name="Pro",
-            price_monthly=29.99,
-            max_workspaces=5,
-            is_active=True,
-        )
-        db_session.add(plan1)
-        db_session.add(plan2)
-        await db_session.flush()
-
-        service = SubscriptionService(db_session)
-
-        # Subscribe to first plan
-        await service.subscribe(user.id, plan1.id, BillingPeriod.MONTHLY)
-
-        # Act & Assert - try to subscribe to second plan
-        with pytest.raises(DuplicateResourceException) as exc_info:
-            await service.subscribe(user.id, plan2.id, BillingPeriod.MONTHLY)
-
-        assert "already has an active subscription" in exc_info.value.message.lower()
-        assert exc_info.value.context["conflicting_field"] == "user_id"
-
-    async def test_subscribe_plan_not_found(self, db_session, setup_factories):
-        """Should raise ResourceNotFoundException when plan doesn't exist"""
-        # Arrange
-        user = await setup_factories["user"].create()
-        service = SubscriptionService(db_session)
-        non_existent_plan_id = uuid4()
-
-        # Act & Assert
-        with pytest.raises(ResourceNotFoundException):
-            await service.subscribe(user.id, non_existent_plan_id, BillingPeriod.MONTHLY)
-
-    async def test_subscribe_inactive_plan(self, db_session, setup_factories):
-        """Should raise ResourceNotFoundException when plan is inactive"""
-        # Arrange
-        user = await setup_factories["user"].create()
-
-        # Create inactive plan
-        inactive_plan = SubscriptionPlan(
-            id=uuid4(),
-            name="Deprecated Plan",
-            display_name="Deprecated Plan",
-            price_monthly=19.99,
-            max_workspaces=3,
-            is_active=False,  # Inactive
-        )
-        db_session.add(inactive_plan)
-        await db_session.flush()
-
-        service = SubscriptionService(db_session)
-
-        # Act & Assert
-        with pytest.raises(ResourceNotFoundException) as exc_info:
-            await service.subscribe(user.id, inactive_plan.id, BillingPeriod.MONTHLY)
-
-        assert "inactive" in exc_info.value.message.lower()
+    A paid plan starts in the trial (TRIAL_DURATION_DAYS), a free one active. (Subscriptions are
+    created by Lemon Squeezy's webhooks and the sign-up trial, not by the service.)
+    """
+    now = datetime.now(timezone.utc)
+    paid = (plan.price_monthly or 0) > 0 or (plan.price_yearly or 0) > 0
+    subscription = UserSubscription(
+        user_id=user_id,
+        plan_id=plan.id,
+        status=SubscriptionStatus.TRIAL if paid else SubscriptionStatus.ACTIVE,
+        billing_period=BillingPeriod.MONTHLY,
+        start_date=now,
+        trial_end_date=now + timedelta(days=TRIAL_DURATION_DAYS) if paid else None,
+        usage_reset_date=now + timedelta(days=30),
+    )
+    db.add(subscription)
+    await db.flush()
+    await db.refresh(subscription)
+    return subscription
 
 
 @pytest.mark.unit
@@ -215,7 +89,7 @@ class TestSubscriptionServiceUpgrade:
         service = SubscriptionService(db_session)
 
         # Subscribe to basic plan
-        await service.subscribe(user.id, basic_plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, basic_plan)
 
         # Act
         upgraded_subscription = await service.upgrade(user.id, pro_plan.id)
@@ -306,7 +180,7 @@ class TestSubscriptionServiceUpgrade:
         service = SubscriptionService(db_session)
 
         # Subscribe monthly
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act - change to yearly
         updated_subscription = await service.upgrade(
@@ -334,7 +208,7 @@ class TestSubscriptionServiceUpgrade:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
@@ -399,7 +273,7 @@ class TestSubscriptionServiceDowngrade:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, pro_plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, pro_plan)
 
         # Act - downgrade should succeed (usage fits)
         downgraded = await service.downgrade(user.id, basic_plan.id)
@@ -438,7 +312,7 @@ class TestSubscriptionServiceDowngrade:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, pro_plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, pro_plan)
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
@@ -469,7 +343,7 @@ class TestSubscriptionServiceCancel:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act
         cancelled = await service.cancel(
@@ -498,7 +372,7 @@ class TestSubscriptionServiceCancel:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        subscription = await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        subscription = await _subscribe(db_session, user.id, plan)
 
         # Act
         cancelled = await service.cancel(user.id, cancel_immediately=False)
@@ -577,7 +451,7 @@ class TestSubscriptionServiceCheckTrialStatus:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act
         trial_status = await service.check_trial_status(user.id)
@@ -622,7 +496,7 @@ class TestSubscriptionServiceCheckTrialStatus:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, free_plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, free_plan)
 
         # Act
         trial_status = await service.check_trial_status(user.id)
@@ -652,7 +526,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act
         result = await service.validate_plan_limits(user.id, "workspace", increment=1)
@@ -681,7 +555,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
@@ -710,7 +584,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act
         result = await service.validate_plan_limits(user.id, "workspace", increment=100)
@@ -735,7 +609,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        await _subscribe(db_session, user.id, plan)
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
@@ -765,7 +639,7 @@ class TestSubscriptionServiceGetSubscriptionByUser:
         await db_session.flush()
 
         service = SubscriptionService(db_session)
-        created_subscription = await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
+        created_subscription = await _subscribe(db_session, user.id, plan)
 
         # Act
         subscription = await service.get_subscription_by_user(user.id)

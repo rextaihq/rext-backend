@@ -62,22 +62,6 @@ class AdminSubscriptionExtendRequest(BaseModel):
     )
 
 
-class AdminUsageResetRequest(BaseModel):
-    """Schema for admin to reset usage counter."""
-
-    reset_api_calls: bool = Field(default=True, description="Reset API call counter")
-    reason: Optional[str] = Field(None, max_length=500, description="Reason for reset")
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "reset_api_calls": True,
-                "reason": "Testing completed, reset for production use",
-            }
-        }
-    )
-
-
 class AdminCreditAdjustment(BaseModel):
     """Body for a super admin adding, deducting or resetting a user's credits.
 

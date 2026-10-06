@@ -76,7 +76,6 @@ class SubscriptionDetails(BaseModel):
     lemonsqueezy_customer_id: Optional[str] = None
     renews_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
-    current_api_calls: int
     usage_reset_date: Optional[datetime] = None
     plan_name: Optional[str] = None
     plan_display_name: Optional[str] = None
