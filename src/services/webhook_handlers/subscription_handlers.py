@@ -1377,8 +1377,6 @@ async def handle_subscription_payment_success(
     ):
         subscription.current_credits = plan_row.credits_per_month
         subscription.credits_reset_date = next_period_end
-    if paid_at:
-        _record_paid_invoice(subscription, paid_at)
 
         # The first payment: a promotion's bonus, if subscription_created did not
         # grant it already (it grants once per subscription and promotion).
@@ -1397,6 +1395,8 @@ async def handle_subscription_payment_success(
                 or datetime.now(timezone.utc),
                 order_id=subscription.lemonsqueezy_order_id,
             )
+    if paid_at:
+        _record_paid_invoice(subscription, paid_at)
 
     subscription.updated_at = datetime.now(timezone.utc)
     _stamp_card_details(subscription, sub_data)
