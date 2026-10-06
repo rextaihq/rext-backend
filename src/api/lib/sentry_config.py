@@ -264,10 +264,7 @@ def traces_sampler(sampling_context: Dict[str, Any]) -> float:
         return 0.5  # 50%
 
     # Sample AI endpoints at higher rate (expensive operations)
-    if any(
-        segment in path
-        for segment in ["/content/generate", "/topics/generate", "/knowledge/process"]
-    ):
+    if "/knowledge/process" in path:
         return 0.8  # 80%
 
     # Default sampling rate from settings
