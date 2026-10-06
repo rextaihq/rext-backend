@@ -87,7 +87,7 @@ jobs:
     env:
       # Placeholders for a database that lives and dies with this job; nothing here reaches a real service.
       POSTGRES_URI_CUSTOM: postgresql://rext:ci-only-not-a-secret@localhost:5432/rext_test
-      # Some tests read DATABASE_URL instead (the RBAC floor); the migrations seed the roles and permissions they check.
+      # Some tests read DATABASE_URL instead (the RBAC floor); the seed step below adds the roles and permissions.
       DATABASE_URL: postgresql://rext:ci-only-not-a-secret@localhost:5432/rext_test
       REDIS_URL: redis://localhost:6379/0
       ENVIRONMENT: development
@@ -128,14 +128,20 @@ jobs:
       - name: Migrations apply to an empty database
         run: uv run alembic upgrade head
 
+      - name: Roles and permissions
+        # The baseline migration is schema only; the RBAC seed is idempotent and prints only role and permission names.
+        run: set -o pipefail; uv run python -m scripts.seed_permissions | tail -n 3
+
       - name: Tests (reported, not blocking yet)
         continue-on-error: true
-        # A test that hangs fails after a minute and the run goes on (it is listed with the failures); the whole run
-        # stops after twenty, so the summary still reports. pytest-timeout comes with this run only, not into the lock.
-        timeout-minutes: 20
+        # tests/ci_quarantine.py reports the failures of the tests in tests/quarantine.list as expected, so a failure
+        # listed below is a new one, and ends the process once pytest has reported. A test that hangs fails after a
+        # minute and the run goes on; the step stops after ten (the suite takes about four). pytest-timeout comes with
+        # this run only, not into the lock.
+        timeout-minutes: 10
         run: |
           set -o pipefail
-          uv run --with pytest-timeout pytest -q -p no:cacheprovider --no-cov -o addopts= -rfE \
+          uv run --with pytest-timeout python -m pytest -q -p no:cacheprovider --no-cov -o addopts= -rfE -p tests.ci_quarantine \
             --timeout=60 --timeout-method=signal --durations=25 2>&1 | tee pytest.log
 
       - name: Summary
@@ -144,12 +150,19 @@ jobs:
           {
             echo "### Tests"
             echo
-            echo "$(tail -n 1 pytest.log 2>/dev/null)"
+            echo "$(grep -E ' in [0-9.]+s' pytest.log 2>/dev/null | tail -n 1)"
             echo
-            echo "<details><summary>Failures and errors</summary>"
+            echo "Failures and errors outside tests/quarantine.list (new ones): $(grep -cE '^(FAILED|ERROR) ' pytest.log 2>/dev/null || true)"
             echo
             echo '```'
             grep -E '^(FAILED|ERROR) ' pytest.log 2>/dev/null | head -n 600 || true
             echo '```'
+            echo
+            echo "<details><summary>Quarantined tests that passed (take them off the list)</summary>"
+            echo
+            echo '```'
+            grep -E '^QUARANTINE-PASSED ' pytest.log 2>/dev/null | cut -d' ' -f2- || true
+            echo '```'
             echo "</details>"
+            grep -E '^threads still alive at exit' pytest.log 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"

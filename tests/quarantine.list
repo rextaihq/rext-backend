@@ -1,0 +1,3 @@
+# Tests that fail on stage today: CI reports their failures as expected (tests/ci_quarantine.py), so any other
+# failure in the CI run is a new one. One pytest node id per line. Fix a test, then take it off. A new failure
+# goes here only with a task that owns it. rext-control#373.
