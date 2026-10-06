@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator, Deque, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+from sse_starlette import ServerSentEvent
 
 from src.utils.logger import logger
 
@@ -51,7 +52,7 @@ class _Subscription:
 
     operation_id: str
     user_id: UUID
-    queue: Queue[Optional[str]]
+    queue: Queue[Optional[ServerSentEvent]]
     last_activity: datetime = field(default_factory=_utcnow)
 
 
@@ -60,7 +61,7 @@ class _OperationState:
     """Holds subscriber state and pending events for an operation."""
 
     subscribers: List[_Subscription] = field(default_factory=list)
-    pending_events: Deque[str] = field(default_factory=deque)  # maxlen set post-init
+    pending_events: Deque[ServerSentEvent] = field(default_factory=deque)  # maxlen set post-init
     created_at: datetime = field(default_factory=_utcnow)
     last_event_at: datetime = field(default_factory=_utcnow)
     completed: bool = False
@@ -118,11 +119,11 @@ class EventStreamManager:
         operation_id: str,
         user_id: UUID,
         max_duration_seconds: float = 7200.0,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[ServerSentEvent]:
         """
         Subscribe to an operation's event stream.
 
-        Yields formatted SSE strings until the stream completes, the client
+        Yields one SSE event each until the stream completes, the client
         disconnects, or the maximum connection duration is reached.
 
         Args:
@@ -131,7 +132,7 @@ class EventStreamManager:
             max_duration_seconds: Maximum connection lifetime in seconds (default: 2 hours).
         """
         validate_operation_id(operation_id)
-        queue: Queue[Optional[str]] = asyncio.Queue()
+        queue: Queue[Optional[ServerSentEvent]] = asyncio.Queue()
         subscription = _Subscription(
             operation_id=operation_id,
             user_id=user_id,
@@ -158,8 +159,8 @@ class EventStreamManager:
 
         await queue.put(self._format_event(connection_event))
 
-        for event_text in pending_events:
-            await queue.put(event_text)
+        for pending in pending_events:
+            await queue.put(pending)
 
         connection_start = datetime.now(timezone.utc)
         try:
@@ -355,7 +356,9 @@ class EventStreamManager:
             state = self._operations.get(operation_id)
             return state.completed if state else False
 
-    async def subscribe_completed(self, operation_id: str, user_id: UUID) -> AsyncIterator[str]:
+    async def subscribe_completed(
+        self, operation_id: str, user_id: UUID
+    ) -> AsyncIterator[ServerSentEvent]:
         """
         Subscribe to an already completed operation.
         Immediately sends a completion event and closes.
@@ -447,9 +450,9 @@ class EventStreamManager:
                     operation_id,
                 )
 
-    async def _enqueue_event(self, subscription: _Subscription, event_text: str) -> None:
+    async def _enqueue_event(self, subscription: _Subscription, sse: ServerSentEvent) -> None:
         try:
-            await subscription.queue.put(event_text)
+            await subscription.queue.put(sse)
             subscription.last_activity = datetime.now(timezone.utc)
         except asyncio.CancelledError:
             raise
@@ -460,11 +463,17 @@ class EventStreamManager:
                 exc,
             )
 
-    def _format_event(self, event: OperationEvent) -> str:
-        """Return an SSE-compliant string with id/event/data fields."""
-        event_name = f"{event.scope}.{event.step}"
-        payload = event.model_dump_json()
-        return f"id: {event.id}\nevent: {event_name}\ndata: {payload}\n\n"
+    def _format_event(self, event: OperationEvent) -> ServerSentEvent:
+        """One SSE event with id, event and data fields.
+
+        EventSourceResponse encodes it as a single frame. A preformatted string would
+        be wrapped in a second data: field, hiding the event name from clients.
+        """
+        return ServerSentEvent(
+            id=event.id,
+            event=f"{event.scope}.{event.step}",
+            data=event.model_dump_json(),
+        )
 
 
 event_stream_manager = EventStreamManager()

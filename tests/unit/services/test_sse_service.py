@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from uuid import uuid4
 
 import pytest
+from sse_starlette import ServerSentEvent
+from sse_starlette.sse import ensure_bytes
 
 from src.services.sse_service import EventStreamManager, OperationEvent
 
@@ -13,7 +16,7 @@ async def test_subscribe_emits_connection_event() -> None:
     manager = EventStreamManager(cleanup_interval_seconds=0)
     operation_id = "op-connection"
     user_id = uuid4()
-    received: list[str] = []
+    received: list[ServerSentEvent] = []
 
     async def consumer() -> None:
         async for payload in manager.subscribe(operation_id, user_id):
@@ -23,7 +26,7 @@ async def test_subscribe_emits_connection_event() -> None:
     await asyncio.wait_for(asyncio.create_task(consumer()), timeout=1.0)
 
     assert received, "Expected at least one SSE message"
-    assert "event: connection.connected" in received[0]
+    assert received[0].event == "connection.connected"
 
 
 @pytest.mark.asyncio
@@ -31,7 +34,7 @@ async def test_publish_delivers_event_to_subscriber() -> None:
     manager = EventStreamManager(cleanup_interval_seconds=0)
     operation_id = "op-publish"
     user_id = uuid4()
-    received: list[str] = []
+    received: list[ServerSentEvent] = []
 
     async def consumer() -> None:
         async for payload in manager.subscribe(operation_id, user_id):
@@ -58,9 +61,10 @@ async def test_publish_delivers_event_to_subscriber() -> None:
     await asyncio.wait_for(consume_task, timeout=1.0)
 
     assert len(received) == 2
-    assert received[1].startswith("id: ")
-    assert "event: workspace.scrape.started" in received[1]
-    assert '"status":"started"' in received[1]
+    data = json.loads(received[1].data)
+    assert received[1].id == data["id"]
+    assert received[1].event == "workspace.scrape.started"
+    assert data["status"] == "started"
 
 
 @pytest.mark.asyncio
@@ -68,8 +72,8 @@ async def test_multiple_subscribers_receive_same_events() -> None:
     manager = EventStreamManager(cleanup_interval_seconds=0)
     operation_id = "op-multi"
 
-    async def collect() -> list[str]:
-        events: list[str] = []
+    async def collect() -> list[ServerSentEvent]:
+        events: list[ServerSentEvent] = []
         async for payload in manager.subscribe(operation_id, uuid4()):
             events.append(payload)
             if len(events) == 2:
@@ -96,7 +100,7 @@ async def test_multiple_subscribers_receive_same_events() -> None:
 
     for events in (events_one, events_two):
         assert len(events) == 2
-        assert "event: workspace.brand_voice.completed" in events[1]
+        assert events[1].event == "workspace.brand_voice.completed"
 
 
 @pytest.mark.asyncio
@@ -116,7 +120,7 @@ async def test_pending_events_delivered_to_late_subscriber() -> None:
         )
     )
 
-    received: list[str] = []
+    received: list[ServerSentEvent] = []
 
     async def consumer() -> None:
         async for payload in manager.subscribe(operation_id, late_user):
@@ -127,8 +131,75 @@ async def test_pending_events_delivered_to_late_subscriber() -> None:
     await asyncio.wait_for(asyncio.create_task(consumer()), timeout=1.0)
 
     assert len(received) == 2
-    assert "event: workspace.scrape.completed" in received[1]
-    assert '"message":"Scrape finished"' in received[1]
+    assert received[1].event == "workspace.scrape.completed"
+    assert json.loads(received[1].data)["message"] == "Scrape finished"
+
+
+def _frames(events: list[ServerSentEvent]) -> list[list[str]]:
+    """The lines of each frame as EventSourceResponse writes them to the wire."""
+    wire = b"".join(ensure_bytes(event, "\r\n") for event in events).decode()
+    return [frame.split("\r\n") for frame in wire.split("\r\n\r\n") if frame]
+
+
+@pytest.mark.asyncio
+async def test_each_event_is_one_frame_on_the_wire() -> None:
+    manager = EventStreamManager(cleanup_interval_seconds=0)
+    operation_id = "op-wire"
+    received: list[ServerSentEvent] = []
+
+    async def consumer() -> None:
+        async for payload in manager.subscribe(operation_id, uuid4()):
+            received.append(payload)
+            if len(received) == 2:
+                break
+
+    consume_task = asyncio.create_task(consumer())
+    await asyncio.sleep(0)
+    event = OperationEvent(
+        operation_id=operation_id,
+        scope="workspace",
+        step="scrape.started",
+        status="started",
+        message="Scraping website\nline two",
+    )
+    await manager.publish(event)
+    await asyncio.wait_for(consume_task, timeout=1.0)
+
+    connected, published = _frames(received)
+    assert [line.split(": ", 1)[0] for line in connected] == ["id", "event", "data"]
+    assert connected[1] == "event: connection.connected"
+    assert published[0] == f"id: {event.id}"
+    assert published[1] == "event: workspace.scrape.started"
+    # The JSON is one data line, never a frame wrapped inside data:.
+    assert published[2].startswith("data: {")
+    assert json.loads(published[2].removeprefix("data: ")) == json.loads(event.model_dump_json())
+    assert len(published) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_completed_operation_sends_two_named_frames() -> None:
+    manager = EventStreamManager(cleanup_interval_seconds=0)
+    operation_id = "op-done"
+    await manager.publish(
+        OperationEvent(
+            operation_id=operation_id,
+            scope="workspace",
+            step="pipeline.completed",
+            status="completed",
+            message="Pipeline finished",
+            payload={"workspace_id": "w1"},
+        )
+    )
+    await manager.complete(operation_id)
+
+    events = [event async for event in manager.subscribe_completed(operation_id, uuid4())]
+
+    frames = _frames(events)
+    assert [frame[1] for frame in frames] == [
+        "event: connection.connected",
+        "event: workspace.pipeline.completed",
+    ]
+    assert json.loads(events[1].data)["payload"] == {"workspace_id": "w1"}
 
 
 @pytest.mark.asyncio
