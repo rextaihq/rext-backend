@@ -59,10 +59,14 @@ def alerts(monkeypatch):
     return alert
 
 
-def _provider(invoice={"id": "inv-old", "total": 8900}, refund_error=None):
+def _invoice(status="paid", total=8900, refunded=False, id="inv-old"):
+    return {"id": id, "status": status, "total": total, "refunded": refunded}
+
+
+def _provider(invoice=None, refund_error=None):
     return SimpleNamespace(
         cancel_subscription=AsyncMock(),
-        latest_paid_invoice=AsyncMock(return_value=invoice),
+        latest_invoice=AsyncMock(return_value=invoice or _invoice()),
         refund_subscription_invoice=AsyncMock(side_effect=refund_error),
     )
 
@@ -135,9 +139,7 @@ async def test_a_failed_refund_asks_a_person_and_is_not_retried(session, alerts)
 
     assert settled == [older.id]
     await session.refresh(older)
-    assert (
-        "refund its latest paid invoice" in older.subscription_metadata["duplicate_settle_failed"]
-    )
+    assert "refund its latest invoice" in older.subscription_metadata["duplicate_settle_failed"]
     assert alerts.call_args.kwargs["severity"] == "critical"
     again = _provider()
     assert await module.settle_duplicate_subscriptions(session, user.id, again) == []
@@ -199,3 +201,124 @@ async def test_a_late_recovery_of_the_older_one_settles_it(session, alerts, monk
     }
     assert rows == {older.id: SubscriptionStatus.CANCELLED, newer.id: SubscriptionStatus.ACTIVE}
     provider.refund_subscription_invoice.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_partly_refunded_invoice_goes_to_a_person_not_an_older_one(session, alerts):
+    user, (older, _) = await _customer_with(
+        session, SubscriptionStatus.ACTIVE, SubscriptionStatus.ACTIVE
+    )
+    provider = _provider(_invoice(status="partial_refund", refunded=True))
+
+    assert await module.settle_duplicate_subscriptions(session, user.id, provider) == [older.id]
+
+    provider.refund_subscription_invoice.assert_not_called()
+    await session.refresh(older)
+    assert "partial_refund" in older.subscription_metadata["duplicate_settle_failed"]
+    assert older.status == SubscriptionStatus.CANCELLED
+    assert alerts.call_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_a_refund_made_already_is_not_made_again(session, alerts):
+    """An earlier attempt refunded, then its transaction didn't commit: the retry refunds nothing."""
+    user, (older, _) = await _customer_with(
+        session, SubscriptionStatus.ACTIVE, SubscriptionStatus.ACTIVE
+    )
+    provider = _provider(_invoice(status="refunded", refunded=True))
+
+    await module.settle_duplicate_subscriptions(session, user.id, provider)
+
+    provider.refund_subscription_invoice.assert_not_called()
+    await session.refresh(older)
+    assert older.subscription_metadata["duplicate_refunded_invoice_id"] == "inv-old"
+    assert older.subscription_metadata["duplicate_refund_found_done"] is True
+    assert "duplicate_settle_failed" not in older.subscription_metadata
+    assert alerts.call_args.kwargs["severity"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_the_newer_purchase_stays_whatever_order_the_webhooks_came_in(session, alerts):
+    """Stored first but bought last: Lemon Squeezy's creation time decides, not ours."""
+    user, (stored_first, stored_last) = await _customer_with(
+        session, SubscriptionStatus.ACTIVE, SubscriptionStatus.ACTIVE
+    )
+    stored_first.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    stored_last.subscription_metadata = module.provider_created_record("2026-10-06T09:00:00Z")
+    await session.flush()
+    provider = _provider()
+
+    assert await module.settle_duplicate_subscriptions(session, user.id, provider) == [
+        stored_last.id
+    ]
+    provider.cancel_subscription.assert_awaited_once_with(stored_last.lemonsqueezy_subscription_id)
+    assert stored_first.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_one_settlement_per_customer_at_a_time(session, alerts, monkeypatch):
+    """The customer's lock comes before the read, so a second webhook waits and then sees both."""
+    user, _ = await _customer_with(session, SubscriptionStatus.ACTIVE, SubscriptionStatus.ACTIVE)
+    statements = []
+    execute = session.execute
+
+    async def recording(statement, *args, **kwargs):
+        statements.append((str(statement), args[0] if args else None))
+        return await execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", recording)
+
+    await module.settle_duplicate_subscriptions(session, user.id, _provider())
+
+    sql, params = statements[0]
+    assert "pg_advisory_xact_lock" in sql
+    assert params == {"key": f"subscriptions:settle:{user.id}"}
+
+
+@pytest.mark.asyncio
+async def test_a_settled_duplicate_keeps_its_end_when_lemon_squeezy_cancels_it(
+    session, alerts, monkeypatch
+):
+    """Lemon Squeezy's cancellation says ends_at in a month; the refunded one gives no plan."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    handler_alerts = MagicMock()
+    monkeypatch.setattr(handlers, "trigger_payment_alert", handler_alerts)
+
+    user, (older, _) = await _customer_with(
+        session, SubscriptionStatus.ACTIVE, SubscriptionStatus.ACTIVE
+    )
+    await module.settle_duplicate_subscriptions(session, user.id, _provider())
+    await session.refresh(older)
+    ended = older.end_date
+
+    def event(status):
+        return {
+            "data": {
+                "type": "subscriptions",
+                "id": older.lemonsqueezy_subscription_id,
+                "attributes": {
+                    "status": status,
+                    "ends_at": (NOW + timedelta(days=30)).isoformat(),
+                    "updated_at": (NOW + timedelta(minutes=1)).isoformat(),
+                },
+            }
+        }
+
+    await handlers.handle_subscription_cancelled(
+        event("cancelled"), SimpleNamespace(id=uuid4()), session
+    )
+    await handlers.handle_subscription_updated(
+        event("cancelled"), SimpleNamespace(id=uuid4()), session
+    )
+    await session.refresh(older)
+    assert older.end_date == ended
+    handler_alerts.assert_not_called()
+
+    # Resumed in Lemon Squeezy's portal, it can bill again: a person is told.
+    await handlers.handle_subscription_updated(
+        event("active"), SimpleNamespace(id=uuid4()), session
+    )
+    await session.refresh(older)
+    assert older.status == SubscriptionStatus.CANCELLED
+    assert handler_alerts.call_args.kwargs["severity"] == "critical"

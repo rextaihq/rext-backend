@@ -9,14 +9,18 @@ are alerted.
 
 Money moves here, so nothing is repeated automatically: each settled row records
 what was done, a row already settled is skipped, and a step that fails raises a
-critical alert for a person to finish instead of a retry.
+critical alert for a person to finish instead of a retry. Only the newest invoice
+is ever refunded, and only when it is paid in full: one already refunded (an
+earlier attempt whose transaction didn't commit) is taken as done, and anything
+else (a partial refund, an invoice not paid yet) goes to a person, never an
+older invoice in its place.
 """
 
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.sentry_config import trigger_payment_alert
@@ -34,9 +38,37 @@ LIVE_STATUSES = (
 )
 
 
+# When Lemon Squeezy created the subscription, from its webhook, kept in the row's metadata.
+PROVIDER_CREATED_AT = "provider_created_at"
+
+
 def is_settled_duplicate(subscription: UserSubscription) -> bool:
     """The subscription was cancelled here as the older of two."""
     return bool((getattr(subscription, "subscription_metadata", None) or {}).get("duplicate_of"))
+
+
+def provider_created_record(created_at: Optional[str]) -> dict:
+    """The metadata a new row starts with: when Lemon Squeezy created the subscription."""
+    return {PROVIDER_CREATED_AT: created_at} if created_at else {}
+
+
+def _created(subscription: UserSubscription) -> datetime:
+    """When Lemon Squeezy created the subscription, else when we stored it.
+
+    Webhooks arrive out of order, so the row stored last isn't always the newer purchase.
+    """
+    when = subscription.created_at or datetime.min
+    stamped = (subscription.subscription_metadata or {}).get(PROVIDER_CREATED_AT)
+    if stamped:
+        try:
+            when = datetime.fromisoformat(str(stamped).replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+class _NeedsAPerson(Exception):
+    """The settlement can't decide the amount itself."""
 
 
 async def settle_duplicate_subscriptions(
@@ -47,17 +79,26 @@ async def settle_duplicate_subscriptions(
     The payment provider is looked up only when there is something to settle.
     Returns the ids of the subscriptions settled now.
     """
-    live = (
-        await db.scalars(
-            select(UserSubscription)
-            .where(
-                UserSubscription.user_id == user_id,
-                UserSubscription.lemonsqueezy_subscription_id.is_not(None),
-                UserSubscription.status.in_(LIVE_STATUSES),
+    # One settlement per customer at a time. Two subscription_created webhooks for one
+    # customer can run at once, each seeing only its own new row: the second waits here
+    # until the first commits, then reads both (each statement reads what's committed).
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"subscriptions:settle:{user_id}"},
+    )
+    live = sorted(
+        (
+            await db.scalars(
+                select(UserSubscription).where(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.lemonsqueezy_subscription_id.is_not(None),
+                    UserSubscription.status.in_(LIVE_STATUSES),
+                )
             )
-            .order_by(UserSubscription.created_at.desc())
-        )
-    ).all()
+        ).all(),
+        key=_created,
+        reverse=True,
+    )
     if len(live) < 2:
         return []
 
@@ -86,13 +127,24 @@ async def _settle(subscription: UserSubscription, keep: UserSubscription, provid
     try:
         await provider.cancel_subscription(ls_id)
         record["duplicate_cancelled_at"] = now.isoformat()
-        step = "find its latest paid invoice"
-        invoice = await provider.latest_paid_invoice(ls_id)
-        if invoice and invoice["total"] > 0:
-            step = "refund its latest paid invoice"
+        step = "find its latest invoice"
+        invoice = await provider.latest_invoice(ls_id)
+        step = "refund its latest invoice"
+        if invoice is None or invoice["total"] <= 0:
+            pass  # nothing was paid
+        elif invoice["status"] == "refunded":
+            # Refunded already: an earlier attempt whose transaction didn't commit, or a person.
+            record["duplicate_refunded_invoice_id"] = invoice["id"]
+            record["duplicate_refund_found_done"] = True
+        elif invoice["status"] == "paid" and not invoice["refunded"]:
             await provider.refund_subscription_invoice(invoice["id"], invoice["total"])
             record["duplicate_refunded_invoice_id"] = invoice["id"]
             record["duplicate_refunded_cents"] = invoice["total"]
+        else:
+            raise _NeedsAPerson(
+                f"invoice {invoice['id']} is {invoice['status']}, so the amount to refund "
+                "needs a person"
+            )
     except Exception as e:
         record["duplicate_settle_failed"] = f"{step}: {e}"
         trigger_payment_alert(

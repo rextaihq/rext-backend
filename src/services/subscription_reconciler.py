@@ -12,12 +12,11 @@ older state than the stored one is ignored), and the emails those rules call for
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.services.duplicate_subscriptions import is_settled_duplicate
 from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
 from src.utils.logger import logger
 
@@ -35,6 +34,12 @@ async def reconcile_subscriptions(
             .where(
                 UserSubscription.lemonsqueezy_subscription_id.is_not(None),
                 UserSubscription.status != SubscriptionStatus.EXPIRED,
+                # Settled duplicates end here (duplicate_subscriptions.py), and are left out
+                # before the limit: skipped afterwards, they would fill every batch for good.
+                or_(
+                    UserSubscription.subscription_metadata.is_(None),
+                    ~UserSubscription.subscription_metadata.has_key("duplicate_of"),
+                ),
             )
             .order_by(UserSubscription.updated_at.asc())
             .limit(limit)
@@ -45,8 +50,6 @@ async def reconcile_subscriptions(
     counts = {"checked": 0, "changed": 0, "failed": 0}
     emails: List[Dict[str, Any]] = []
     for row in rows:
-        if is_settled_duplicate(row):
-            continue
         ls_id = row.lemonsqueezy_subscription_id
         before = row.status
         try:
@@ -61,6 +64,9 @@ async def reconcile_subscriptions(
                 extra={"lemonsqueezy_subscription_id": ls_id, "error": str(e)},
             )
             continue
+        finally:
+            # Every read is paced, a failed one too: errors back to back would hit the limit.
+            await _pause()
         counts["checked"] += 1
         if row.status != before:
             counts["changed"] += 1
@@ -74,9 +80,12 @@ async def reconcile_subscriptions(
             )
         if result and result.get("send_email"):
             emails.append(result)
-        await asyncio.sleep(_PAUSE_BETWEEN_READS_SECONDS)
 
     return {**counts, "emails": emails}
+
+
+async def _pause() -> None:
+    await asyncio.sleep(_PAUSE_BETWEEN_READS_SECONDS)
 
 
 def _as_webhook(ls_id: str, attributes: Dict[str, Any]) -> Dict[str, Any]:

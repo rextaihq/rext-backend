@@ -37,6 +37,7 @@ from src.api.lib.sentry_config import (
     add_payment_breadcrumb,
     alert_subscription_creation_failure,
     set_payment_context,
+    trigger_payment_alert,
 )
 from src.api.models.subscription_models.discount_usage import DiscountUsage
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -50,7 +51,12 @@ from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import grant_promotion_bonus, order_refunded
-from src.services.duplicate_subscriptions import settle_duplicate_subscriptions
+from src.services.duplicate_subscriptions import (
+    LIVE_STATUSES,
+    is_settled_duplicate,
+    provider_created_record,
+    settle_duplicate_subscriptions,
+)
 from src.services.trial_service import TrialService
 from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
@@ -131,6 +137,39 @@ def _ignore_older(subscription: UserSubscription, sub_data: Dict[str, Any], even
             "event_updated_at": sub_data.get("updated_at"),
         },
     )
+    return True
+
+
+def _ignore_settled_duplicate(
+    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+) -> bool:
+    """A subscription settled as the older of two ends when it was settled.
+
+    Lemon Squeezy's own cancellation leaves it a grace period, and its events say
+    so (cancelled, with ends_at in the future): written back here, the refunded
+    subscription would give the plan again. A settled duplicate that Lemon Squeezy
+    reports live again (resumed in its portal) bills again, so a person is told.
+    """
+    if not is_settled_duplicate(subscription):
+        return False
+    logger.info(
+        f"{event}: ignored, the subscription was settled as a duplicate",
+        extra={"subscription_id": str(subscription.id), "status": sub_data.get("status")},
+    )
+    if lemonsqueezy_status(sub_data.get("status")) in LIVE_STATUSES:
+        trigger_payment_alert(
+            alert_type="duplicate_subscription",
+            message=(
+                f"Settled duplicate subscription {subscription.lemonsqueezy_subscription_id} for "
+                f"user {subscription.user_id} is {sub_data.get('status')} at Lemon Squeezy again "
+                f"({event}): it can bill again"
+            ),
+            severity="critical",
+            context={"lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id},
+            user_id=str(subscription.user_id),
+            subscription_id=str(subscription.id),
+            operation=event,
+        )
     return True
 
 
@@ -476,6 +515,7 @@ async def handle_subscription_created(
             current_api_calls=0,
             current_credits=_opening_credits(plan, internal_status, left_on_replaced),
             provider_updated_at=_provider_time(sub_data.get("updated_at")),
+            subscription_metadata=provider_created_record(sub_data.get("created_at")),
             # `renews_at` from the provider is the authoritative period end;
             # fall back to a calendar month only when it is absent.
             credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
@@ -771,6 +811,7 @@ async def handle_subscription_updated(
             current_api_calls=0,
             current_credits=_opening_credits(plan, internal_status, left_on_replaced),
             provider_updated_at=_provider_time(sub_data.get("updated_at")),
+            subscription_metadata=provider_created_record(sub_data.get("created_at")),
             # `renews_at` from the provider is the authoritative period end;
             # fall back to a calendar month only when it is absent.
             credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
@@ -824,6 +865,8 @@ async def handle_subscription_updated(
         return None
 
     if _ignore_older(subscription, sub_data, "subscription_updated"):
+        return None
+    if _ignore_settled_duplicate(subscription, sub_data, "subscription_updated"):
         return None
 
     internal_status = lemonsqueezy_status(status)
@@ -1131,6 +1174,8 @@ async def handle_subscription_cancelled(
         raise ValueError(error_msg)
 
     if _ignore_older(subscription, sub_data, "subscription_cancelled"):
+        return None
+    if _ignore_settled_duplicate(subscription, sub_data, "subscription_cancelled"):
         return None
 
     now = datetime.now(timezone.utc)
@@ -1864,6 +1909,8 @@ async def handle_subscription_resumed(
         raise ValueError(error_msg)
 
     if _ignore_older(subscription, sub_data, "subscription_resumed"):
+        return None
+    if _ignore_settled_duplicate(subscription, sub_data, "subscription_resumed"):
         return None
 
     # Update subscription - resumed, so it no longer ends. Its status is the one

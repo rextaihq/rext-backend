@@ -64,6 +64,12 @@ class LemonSqueezyTransientError(LemonSqueezyError):
         super().__init__(message)
 
 
+# A subscription's statuses in Lemon Squeezy's API.
+_SUBSCRIPTION_STATUSES = frozenset(
+    {"on_trial", "active", "paused", "past_due", "unpaid", "cancelled", "expired"}
+)
+
+
 class LemonSqueezyProvider(PaymentProvider):
     """LemonSqueezy payment provider implementation"""
 
@@ -540,11 +546,22 @@ class LemonSqueezyProvider(PaymentProvider):
         The reconciler applies these with the webhook handlers' rules, so it needs
         the raw fields (status, ends_at, renews_at, updated_at, variant_id), not
         the provider-neutral SubscriptionData.
+
+        Raises LemonSqueezyError when the answer lacks a known status or its time:
+        applied anyway, a missing status would read as active and give the plan back.
         """
         response = await self._make_request(
             method="GET", endpoint=f"/subscriptions/{subscription_id}"
         )
-        return dict((response.get("data") or {}).get("attributes") or {})
+        attributes = dict((response.get("data") or {}).get("attributes") or {})
+        if attributes.get("status") not in _SUBSCRIPTION_STATUSES or not attributes.get(
+            "updated_at"
+        ):
+            raise LemonSqueezyError(
+                f"Lemon Squeezy answered subscription {subscription_id} without a known "
+                f"status and its time (status {attributes.get('status')!r})"
+            )
+        return attributes
 
     async def get_subscription(self, subscription_id: str) -> SubscriptionData:
         """
@@ -1050,23 +1067,29 @@ class LemonSqueezyProvider(PaymentProvider):
         except (ValueError, AttributeError):
             return None
 
-    async def latest_paid_invoice(self, subscription_id: str) -> Optional[Dict[str, Any]]:
+    async def latest_invoice(self, subscription_id: str) -> Optional[Dict[str, Any]]:
         """
-        The newest paid, unrefunded invoice of a subscription, or None.
+        The newest invoice of a subscription, whatever its status, or None.
+
+        Not the newest paid one: a refund made already, or a partial one, shows as the
+        newest invoice's status, and an older invoice must never be refunded in its place.
 
         Returns:
-            Dict with the invoice's ``id`` and ``total`` (cents)
+            Dict with the invoice's ``id``, ``status`` (pending, paid, void, refunded,
+            partial_refund), ``total`` (cents) and ``refunded``
         """
         invoices = await self._paginate(
-            "/subscription-invoices",
-            {"filter[subscription_id]": str(subscription_id), "filter[status]": "paid"},
-            25,
+            "/subscription-invoices", {"filter[subscription_id]": str(subscription_id)}, 1000
         )
-        paid = [i for i in invoices if i.get("status") == "paid" and not i.get("refunded")]
-        if not paid:
+        if not invoices:
             return None
-        newest = max(paid, key=lambda i: i.get("created_at") or "")
-        return {"id": str(newest["id"]), "total": int(newest.get("total") or 0)}
+        newest = max(invoices, key=lambda i: i.get("created_at") or "")
+        return {
+            "id": str(newest["id"]),
+            "status": newest.get("status"),
+            "total": int(newest.get("total") or 0),
+            "refunded": bool(newest.get("refunded")),
+        }
 
     async def refund_subscription_invoice(self, invoice_id: str, amount: int) -> Dict[str, Any]:
         """

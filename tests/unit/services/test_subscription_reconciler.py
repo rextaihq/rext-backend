@@ -150,6 +150,45 @@ async def test_expired_and_settled_duplicates_are_not_read(session):
 
 
 @pytest.mark.asyncio
+async def test_settled_duplicates_never_take_the_batch(session):
+    """Left out before the limit, so a pile of them can't push the real ones out for good."""
+    for _ in range(2):
+        await _subscription(session, SubscriptionStatus.CANCELLED, metadata={"duplicate_of": "x"})
+    real = await _subscription(session, SubscriptionStatus.PAST_DUE)
+    api = _api(
+        {real.lemonsqueezy_subscription_id: {"status": "active", "updated_at": T2.isoformat()}}
+    )
+
+    result = await module.reconcile_subscriptions(session, api, limit=1)
+
+    assert result["checked"] == 1
+    assert real.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_every_read_is_paced_a_failed_one_too(session, monkeypatch):
+    broken = await _subscription(session, SubscriptionStatus.ACTIVE)
+    fine = await _subscription(session, SubscriptionStatus.ACTIVE)
+    pause = AsyncMock()
+    monkeypatch.setattr(module, "_pause", pause)
+
+    await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                broken.lemonsqueezy_subscription_id: RuntimeError("429"),
+                fine.lemonsqueezy_subscription_id: {
+                    "status": "active",
+                    "updated_at": T2.isoformat(),
+                },
+            }
+        ),
+    )
+
+    assert pause.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_the_job_commits_then_sends_the_emails():
     from src.api.tasks import subscription_reconcile_task as task
 
