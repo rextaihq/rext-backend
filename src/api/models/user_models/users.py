@@ -158,7 +158,6 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     trial_conversions = relationship(
         "TrialConversion", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
-    licenses = relationship("License", back_populates="user", passive_deletes=True)
     payment_methods = relationship(
         "PaymentMethod", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )

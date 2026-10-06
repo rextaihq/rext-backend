@@ -4,8 +4,8 @@ import enum
 class InvitationStatus(str, enum.Enum):
     """Status values for workspace and admin invitations.
 
-    Follows the same (str, enum.Enum) pattern used by LicenseStatus,
-    RefundStatus, and SubscriptionStatus in the subscription models.
+    Follows the same (str, enum.Enum) pattern used by RefundStatus and
+    SubscriptionStatus in the subscription models.
     """
 
     PENDING = "pending"

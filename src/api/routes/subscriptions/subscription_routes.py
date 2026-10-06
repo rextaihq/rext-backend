@@ -25,7 +25,6 @@ from src.api.middleware.rate_limiter import (
     subscription_cancel_rate_limit,
     subscription_update_rate_limit,
 )
-from src.api.models.subscription_models.licenses import License
 from src.api.models.subscription_models.orders import Order
 from src.api.models.subscription_models.refund_requests import (
     REFUND_REQUEST_WINDOW_DAYS,
@@ -425,12 +424,6 @@ async def get_my_subscription(
         include_inactive=False, include_private=False, is_admin=False
     )
     response_data["plans"] = available_plans.get("plans", [])
-
-    # Add user licenses
-    license_result = await db.execute(select(License).where(License.user_id == user_id))
-    licenses = license_result.scalars().all()
-    response_data["licenses"] = [lic.to_dict() for lic in licenses]
-    response_data["activations_count"] = sum(lic.activation_count for lic in licenses)
 
     # Schedule expiring notification if renewal is near (within 3 days)
     if subscription.renews_at:
