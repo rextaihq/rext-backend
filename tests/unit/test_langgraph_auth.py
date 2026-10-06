@@ -162,3 +162,75 @@ async def test_a_resource_without_a_rule_is_refused():
         await langgraph_auth.deny_everything_else(_ctx("runs", "create"), {})
 
     assert exc.value.status_code == 403
+
+
+# --- content.create on generation threads and runs (E17, rext-control#368) ------
+
+WORKSPACE = "33333333-3333-3333-3333-333333333333"
+
+
+@pytest.fixture
+def role(monkeypatch, fake_db):
+    """The caller holds content.create in WORKSPACE only."""
+    asked = []
+
+    async def _check_permission(db, user_id, permission, workspace_id):
+        asked.append((str(user_id), permission, str(workspace_id)))
+        return permission == "content.create" and str(workspace_id) == WORKSPACE
+
+    monkeypatch.setattr("src.utils.rbac_utils.check_permission", _check_permission)
+    return asked
+
+
+async def test_a_new_thread_names_a_workspace_where_its_creator_may_create(role):
+    value = {"metadata": {"owner": OTHER, "workspace_id": WORKSPACE}}
+
+    filters = await langgraph_auth.new_threads_name_their_workspace(
+        _ctx("threads", "create"), value
+    )
+
+    assert value["metadata"] == {"owner": USER, "workspace_id": WORKSPACE}
+    assert filters == {"owner": USER}
+    assert role == [(USER, "content.create", WORKSPACE)]
+
+
+@pytest.mark.parametrize("metadata", [{}, {"workspace_id": OTHER}, {"workspace_id": "not-a-uuid"}])
+async def test_a_thread_without_content_create_in_its_workspace_is_refused(role, metadata):
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.new_threads_name_their_workspace(
+            _ctx("threads", "create"), {"metadata": metadata}
+        )
+
+    assert exc.value.status_code == 403
+
+
+async def test_a_new_run_needs_content_create_in_its_workspace(role):
+    value = {"kwargs": {"input": {"serp_payload": {"workspace_id": WORKSPACE, "query": "q"}}}}
+
+    filters = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    assert filters == {"owner": USER, "workspace_id": WORKSPACE}
+
+
+async def test_a_resume_names_the_workspace_in_its_metadata(role):
+    value = {"kwargs": {"command": {"resume": "approve"}}, "metadata": {"workspace_id": WORKSPACE}}
+
+    filters = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    # The filter keeps the run to the caller's threads in that workspace.
+    assert filters == {"owner": USER, "workspace_id": WORKSPACE}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"kwargs": {"input": {"serp_payload": {"workspace_id": OTHER}}}},
+        {"kwargs": {"command": {"resume": "approve"}}, "metadata": {"workspace_id": OTHER}},
+        {"kwargs": {"command": {"resume": "approve"}}},
+    ],
+)
+async def test_a_viewer_can_neither_start_nor_resume_a_run(role, value):
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
+
+    assert exc.value.status_code == 403
