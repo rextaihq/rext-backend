@@ -59,6 +59,7 @@ from src.api.schema.response_schemas import ErrorSeverity
 # TODO: src.api.tasks.webhook_reprocessing_task missing — disabled until committed
 # from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
+from src.api.tasks.subscription_reconcile_task import run_subscription_reconcile_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
@@ -597,6 +598,22 @@ class ScheduledTaskManager:
             logger.info("Registered task: data_cleanup")
         else:
             logger.info("Data cleanup task disabled (CLEANUP_ENABLED=false)")
+
+        # Subscription reconcile with Lemon Squeezy — daily at 2:30 AM
+        if cleanup_config.SUBSCRIPTION_RECONCILE_ENABLED:
+            self.scheduler.add_job(
+                run_subscription_reconcile_task,
+                trigger=CronTrigger(hour=2, minute=30),
+                id="subscription_reconcile",
+                name="Nightly subscription reconcile with Lemon Squeezy",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: subscription_reconcile")
+        else:
+            logger.info(
+                "Subscription reconcile task disabled (SUBSCRIPTION_RECONCILE_ENABLED=false)"
+            )
 
         # Trial expiration check — daily at midnight
         if cleanup_config.TRIAL_TASKS_ENABLED:

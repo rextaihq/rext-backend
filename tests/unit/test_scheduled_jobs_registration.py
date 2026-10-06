@@ -81,3 +81,20 @@ def test_nothing_is_registered_when_the_scheduler_is_off(manager, monkeypatch):
 
     assert fake.jobs == []
     assert not fake.started
+
+
+def test_the_nightly_subscription_reconcile_is_registered_and_the_grace_jobs_are_gone(
+    manager, monkeypatch
+):
+    from src.api.tasks.subscription_reconcile_task import run_subscription_reconcile_task
+
+    monkeypatch.setattr(scheduled_tasks.cleanup_config, "SUBSCRIPTION_RECONCILE_ENABLED", True)
+    task_manager, fake = manager
+    task_manager.start()
+    jobs = _jobs(fake)
+
+    assert jobs["subscription_reconcile"].func is run_subscription_reconcile_task
+    assert jobs["subscription_reconcile"].kwargs["max_instances"] == 1
+    # Lemon Squeezy's status replaced our own grace timer and its countdown emails (F11).
+    assert "grace_period_expiration" not in jobs
+    assert "payment_dunning" not in jobs

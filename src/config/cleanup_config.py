@@ -28,6 +28,8 @@ class CleanupConfig(HidesSecrets, BaseSettings):
     TRIAL_TASKS_ENABLED: bool = True
     DIGEST_TASKS_ENABLED: bool = True
     WEBHOOK_REPROCESS_TASKS_ENABLED: bool = True
+    # Nightly re-read of every unfinished subscription from Lemon Squeezy (F11).
+    SUBSCRIPTION_RECONCILE_ENABLED: bool = True
 
     # How often live API counters are copied into api_usage_hourly. Must stay
     # well below the Redis metric TTL so no bucket expires undrained.
