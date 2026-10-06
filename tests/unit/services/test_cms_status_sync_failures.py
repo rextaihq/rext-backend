@@ -184,7 +184,11 @@ async def test_bulk_sync_counts_a_failed_check_as_failed_and_bridge_mode_as_skip
     missing_id_record = _record(ok, wp_post_id=None)
     bridge_record = _record(bridge)
     records = [synced_record, failed_record, missing_id_record, bridge_record]
-    contents = [SimpleNamespace(id=r.content_id, status="published") for r in records]
+    # The failed record's article was unpublished since: its record's stale PUBLISHED must not undo it.
+    contents = [
+        SimpleNamespace(id=r.content_id, status="draft" if r is failed_record else "published")
+        for r in records
+    ]
     db = _StubDB((), records, [ok, down, bridge], contents)
 
     counts = await CMSStatusService(db).bulk_sync_workspace(uuid4())
@@ -200,4 +204,26 @@ async def test_bulk_sync_counts_a_failed_check_as_failed_and_bridge_mode_as_skip
     # Only the record that was really checked moves its article's status.
     by_content = {c.id: c.status for c in contents}
     assert by_content[synced_record.content_id] == "draft"
-    assert by_content[failed_record.content_id] == "published"
+    assert by_content[failed_record.content_id] == "draft"
+
+
+async def test_a_failed_site_cannot_outvote_a_checked_one(monkeypatch):
+    # One article on two sites: one reports a draft, the other's check fails with PUBLISHED kept.
+    checked = _site("wordpress")
+    down = _site("wordpress", site_url="https://down.example.com")
+
+    def wordpress_for(site_url, **_kwargs):
+        answer = FAILED if site_url == down.site_url else {"status": "draft", "success": True}
+        return _client(answer)()
+
+    monkeypatch.setattr(cms_status, "WordPressPublisher", wordpress_for)
+    content = SimpleNamespace(id=uuid4(), status="published")
+    on_checked = _record(checked, content_id=content.id)
+    on_down = _record(down, content_id=content.id)
+    db = _StubDB((), [on_checked, on_down], [checked, down], [content])
+
+    counts = await CMSStatusService(db).bulk_sync_workspace(uuid4())
+
+    assert counts == {"synced": 1, "failed": 1, "skipped": 0}
+    assert on_down.status == PublishingStatus.PUBLISHED
+    assert content.status == "draft"
