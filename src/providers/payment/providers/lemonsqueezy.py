@@ -1037,6 +1037,50 @@ class LemonSqueezyProvider(PaymentProvider):
         except (ValueError, AttributeError):
             return None
 
+    async def latest_paid_invoice(self, subscription_id: str) -> Optional[Dict[str, Any]]:
+        """
+        The newest paid, unrefunded invoice of a subscription, or None.
+
+        Returns:
+            Dict with the invoice's ``id`` and ``total`` (cents)
+        """
+        invoices = await self._paginate(
+            "/subscription-invoices",
+            {"filter[subscription_id]": str(subscription_id), "filter[status]": "paid"},
+            25,
+        )
+        paid = [i for i in invoices if i.get("status") == "paid" and not i.get("refunded")]
+        if not paid:
+            return None
+        newest = max(paid, key=lambda i: i.get("created_at") or "")
+        return {"id": str(newest["id"]), "total": int(newest.get("total") or 0)}
+
+    async def refund_subscription_invoice(self, invoice_id: str, amount: int) -> Dict[str, Any]:
+        """
+        Refund a subscription invoice (``POST /subscription-invoices/:id/refund``).
+
+        Args:
+            invoice_id: Subscription invoice ID from LemonSqueezy
+            amount: Amount to refund, in cents (the invoice's total for a full refund)
+        """
+        logger.info(
+            "Refunding subscription invoice",
+            operation="refund_subscription_invoice",
+            invoice_id=invoice_id,
+            amount=amount,
+        )
+        return await self._make_request(
+            "POST",
+            f"/subscription-invoices/{invoice_id}/refund",
+            data={
+                "data": {
+                    "type": "subscription-invoices",
+                    "id": str(invoice_id),
+                    "attributes": {"amount": amount},
+                }
+            },
+        )
+
     async def _paginate(self, endpoint: str, params: Dict[str, Any], limit: int) -> list:
         """
         Fetch a JSON:API collection following ``meta.page.lastPage`` until ``limit``

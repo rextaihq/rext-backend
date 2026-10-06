@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logging_config import (
@@ -50,6 +50,7 @@ from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import grant_promotion_bonus, order_refunded
+from src.services.duplicate_subscriptions import settle_duplicate_subscriptions
 from src.services.trial_service import TrialService
 from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
@@ -377,10 +378,10 @@ async def handle_subscription_created(
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            or_(
-                UserSubscription.lemonsqueezy_subscription_id.is_(None),
-                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
-            ),
+            # Only rows Lemon Squeezy doesn't bill (a local trial): an older Lemon
+            # Squeezy subscription is cancelled there and refunded by
+            # settle_duplicate_subscriptions() once the new one is stored.
+            UserSubscription.lemonsqueezy_subscription_id.is_(None),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
@@ -495,6 +496,9 @@ async def handle_subscription_created(
                 "status": internal_status.value,
             },
         )
+
+    # A second live Lemon Squeezy subscription bills twice: settle the older one.
+    await settle_duplicate_subscriptions(db, user.id)
 
     # Update user's provider_customer_id if not set
     if not user.provider_customer_id and lemonsqueezy_customer_id:
@@ -719,10 +723,10 @@ async def handle_subscription_updated(
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            or_(
-                UserSubscription.lemonsqueezy_subscription_id.is_(None),
-                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
-            ),
+            # Only rows Lemon Squeezy doesn't bill (a local trial): an older Lemon
+            # Squeezy subscription is cancelled there and refunded by
+            # settle_duplicate_subscriptions() once the new one is stored.
+            UserSubscription.lemonsqueezy_subscription_id.is_(None),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
@@ -786,6 +790,8 @@ async def handle_subscription_updated(
                 "plan_id": str(plan.id),
             },
         )
+
+        await settle_duplicate_subscriptions(db, user.id)
 
         # Update user's provider_customer_id if not set
         if not user.provider_customer_id and lemonsqueezy_customer_id:
@@ -1683,6 +1689,9 @@ async def handle_subscription_payment_recovered(
     # Keep payment_failed_at for analytics/history
 
     await db.flush()
+
+    # A late recovery can revive a subscription the customer already replaced.
+    await settle_duplicate_subscriptions(db, subscription.user_id)
 
     logger.info(
         f"Payment recovered for subscription {subscription.id} - restored from {previous_status.value} to ACTIVE",
