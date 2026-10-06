@@ -27,7 +27,7 @@ if ! command -v python3 > /dev/null 2>&1; then
 fi
 
 REASON="$reason" python3 -c '
-import json, os, re, shlex, sys
+import fnmatch, json, os, re, shlex, sys
 
 REASON = os.environ["REASON"]
 SEPARATORS = set(";&|()")
@@ -38,18 +38,34 @@ PATHS_ONLY = {"git", "gh"}
 # they are not here; -b and -t mean something else to git, and to gh attestation -b is a file).
 GIT_MESSAGE_COMMANDS = {("commit",), ("tag",), ("merge",), ("notes",), ("stash",)}
 GIT_MESSAGE_OPTIONS = {"-m", "--message"}
-GH_MESSAGE_COMMANDS = {("pr", "create"), ("pr", "edit"), ("pr", "comment"), ("pr", "review"), ("pr", "merge"),
-                       ("pr", "revert"), ("pr", "close"), ("pr", "reopen"), ("issue", "create"), ("issue", "edit"),
-                       ("issue", "comment"), ("issue", "close"), ("issue", "reopen"), ("release", "create"),
-                       ("release", "edit"), ("discussion", "create"), ("discussion", "edit"),
-                       ("discussion", "comment")}
-GH_MESSAGE_OPTIONS = {"-b", "--body", "-t", "--title", "--subject", "-n", "--notes", "-c", "--comment"}
+# git bundles short options (commit -am "x"); the first one in a bundle that takes a value ends it (-Fm reads m).
+GIT_SHORT_WITH_VALUE = set("cCFtSu")
+BODY, TITLE, COMMENT = {"-b", "--body"}, {"-t", "--title"}, {"-c", "--comment"}
+NOTES = {"-n", "--notes"}
+GH_MESSAGE_OPTIONS = {("pr", "create"): BODY | TITLE, ("pr", "edit"): BODY | TITLE, ("pr", "comment"): BODY,
+                      ("pr", "review"): BODY,  # its -c is a switch
+                      ("pr", "merge"): BODY | {"-t", "--subject"}, ("pr", "revert"): BODY | TITLE,
+                      ("pr", "close"): COMMENT, ("pr", "reopen"): COMMENT, ("issue", "create"): BODY | TITLE,
+                      ("issue", "edit"): BODY | TITLE, ("issue", "comment"): BODY, ("issue", "close"): COMMENT,
+                      ("issue", "reopen"): COMMENT, ("release", "create"): NOTES | TITLE,
+                      ("release", "edit"): NOTES | TITLE, ("discussion", "create"): BODY | TITLE,
+                      ("discussion", "edit"): BODY | TITLE, ("discussion", "comment"): BODY}
 VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "-R", "--repo"}
-# Set by a command that turns on a shell option letting a pattern reach a dot file without a leading dot or
-# ignore case (shopt -s dotglob, nocaseglob or extglob; a GLOBIGNORE assignment), for the commands after it.
+WRAPPERS = ("sudo", "command", "builtin", "env", "time", "nice", "nohup", "exec")
+# The shell options that let a pattern reach a dot file without a leading dot or ignore case, as the commands
+# so far set them (shopt -s and -u; a GLOBIGNORE of some value turns dotglob on, unset turns it off).
 GLOB_OPTIONS = {"dotglob", "nocaseglob", "extglob"}
+SHELL_OPTIONS = set()
 LOOSE = False
 EXTGLOB = False
+# A wildcard in quotes or after a backslash is not the shell one: the program it is handed to reads the pattern
+# (find -name "*"), with no leading-dot rule. It goes through the word split as one of these.
+QUOTED = {"*": "\ue000", "?": "\ue001", "[": "\ue002"}
+UNQUOTE = str.maketrans({v: k for k, v in QUOTED.items()})
+# The names a program owned pattern is tried against.
+LIKELY = [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.dev", ".env.stage",
+          ".env.staging", ".env.prod", ".envrc", ".env.backup", ".env.bak", ".env.old", ".env.secret",
+          ".env.neon-backup"]
 BRACE = re.compile(r"(?<!\$)\{([^{}]*)\}")
 
 def command_words(words, count):
@@ -69,15 +85,23 @@ def message_values(name, words):
     if name == "git":
         options = GIT_MESSAGE_OPTIONS if command_words(words, 1) in GIT_MESSAGE_COMMANDS else set()
     else:
-        options = GH_MESSAGE_OPTIONS if command_words(words, 2) in GH_MESSAGE_COMMANDS else set()
+        options = GH_MESSAGE_OPTIONS.get(command_words(words, 2), set())
     found = set()
     for i, w in enumerate(words):
         if w == "--":
             break
         if w in options and i + 1 < len(words):
             found.add(i + 1)
-        elif any(w.startswith(o + "=") if o.startswith("--") else len(w) > 2 and w.startswith(o) for o in options):
+        elif any(w.startswith(o + "=") for o in options if o.startswith("--")):
             found.add(i)
+        elif options and re.fullmatch(r"-[A-Za-z].*", w):
+            # A bundle of short options (-am, -bTEXT): the message sits in it or in the next word.
+            for j, ch in enumerate(w[1:], 1):
+                if "-" + ch in options:
+                    found.add(i if j < len(w) - 1 else i + 1)
+                    break
+                if not ch.isalpha() or (name == "git" and ch in GIT_SHORT_WITH_VALUE) or name == "gh":
+                    break
     return found
 
 def block():
@@ -120,20 +144,46 @@ def expanded(word):
             out.append(w)
     return out + todo
 
+def mark_quoted(text):
+    # The command with each quoted or escaped wildcard replaced by its QUOTED stand-in.
+    out, quote, i = [], None, 0
+    while i < len(text):
+        c = text[i]
+        if c == "\\" and quote != "\x27" and i + 1 < len(text):
+            out += [c, QUOTED.get(text[i + 1], text[i + 1])]
+            i += 2
+            continue
+        if quote and c == quote:
+            quote = None
+        elif quote:
+            c = QUOTED.get(c, c)
+        elif c in "\x27\"":
+            quote = c
+        out.append(c)
+        i += 1
+    return "".join(out)
+
 def globbed(word):
-    # A pattern the shell may expand to an env file, such as .e* or .[e]nv.secret, wherever the command runs. A
-    # pattern reaches a dot file only from a literal leading dot, so it can reach an env file only when the text
-    # before its first wildcard could begin ".env"; with dotglob or nocaseglob any start can.
+    # A pattern that may reach an env file. One the shell expands (cat .e*, .[e]nv.secret) reaches a dot file
+    # only from a literal leading dot, so it counts when the text before its first wildcard could begin ".env"
+    # (any start can with dotglob or nocaseglob), wherever the command runs. One in quotes is for the program
+    # (find -name "*"), which has no such rule: it counts when it matches one of the usual env names.
+    if word.startswith("-") and "=" in word:
+        word = word.split("=", 1)[1]  # --include=*.py
     base = os.path.basename(word)
+    if base.translate(UNQUOTE).endswith(".example"):
+        return False
     cuts = [base.index(c) for c in "*?[" if c in base]
-    if not cuts or base.endswith(".example"):
-        return False
-    lead = base[:min(cuts)]
-    if LOOSE:
-        lead = lead.lower()
-    elif not lead.startswith("."):
-        return False
-    return ".env".startswith(lead) or lead.startswith(".env")
+    if cuts:
+        lead = base[:min(cuts)].translate(UNQUOTE)
+        if LOOSE:
+            lead = lead.lower()
+        elif not lead.startswith("."):
+            return False
+        return ".env".startswith(lead) or lead.startswith(".env")
+    if any(c in base for c in QUOTED.values()):
+        return any(fnmatch.fnmatchcase(name, base.translate(UNQUOTE)) for name in LIKELY)
+    return False
 
 def touches(token):
     return any(refs(w) or globbed(w) for w in expanded(token))
@@ -149,13 +199,30 @@ def grep_counts_only(args):
             return True
     return False
 
+def command_of(segment):
+    # The command a segment runs: without its variable assignments and wrappers (sudo, command, env ...).
+    words = [t for t in segment if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", t)]
+    while words and words[0] in WRAPPERS:
+        words = words[1:]
+    return words
+
 def note_options(segment):
     global LOOSE, EXTGLOB
-    if segment and segment[0] == "shopt" and any(w.startswith("-") and "s" in w for w in segment[1:]):
-        LOOSE = LOOSE or bool(GLOB_OPTIONS & set(segment))
-        EXTGLOB = EXTGLOB or "extglob" in segment
-    if any(re.fullmatch(r"GLOBIGNORE=.*", w) for w in segment):
-        LOOSE = True
+    words = command_of(segment)
+    if words[:1] == ["shopt"]:
+        flags = "".join(w[1:] for w in words[1:] if w.startswith("-"))
+        named = GLOB_OPTIONS & set(words)
+        if "s" in flags:
+            SHELL_OPTIONS.update(named)
+        elif "u" in flags:
+            SHELL_OPTIONS.difference_update(named)
+    for w in segment:
+        if w.startswith("GLOBIGNORE=") and w != "GLOBIGNORE=":
+            SHELL_OPTIONS.add("dotglob")
+    if words[:1] == ["unset"] and "GLOBIGNORE" in words:
+        SHELL_OPTIONS.discard("dotglob")
+    LOOSE = bool(SHELL_OPTIONS)
+    EXTGLOB = "extglob" in SHELL_OPTIONS
 
 def check_segment(segment):
     note_options(segment)
@@ -165,9 +232,7 @@ def check_segment(segment):
     # A substitution prints whatever it reads, whichever command it is handed to.
     if any(("$(" in t or "`" in t or "<(" in t) for t in hits):
         block()
-    words = [t for t in segment if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", t)]
-    while words and words[0] in ("sudo", "command", "env", "time", "nice", "nohup", "exec"):
-        words = words[1:]
+    words = command_of(segment)
     name = os.path.basename(words[0]) if words else ""
     if name in PATHS_ONLY:
         # A path names the file itself (HEAD:.env, some dir/.env.local); the value of a message option only mentions one.
@@ -184,7 +249,7 @@ def check_segment(segment):
     block()
 
 def check_command(text):
-    lexer = shlex.shlex(text.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+    lexer = shlex.shlex(mark_quoted(text).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
     lexer.whitespace_split = True
     segment = []
     for tok in list(lexer) + [";"]:
@@ -211,6 +276,8 @@ elif tool in ("Read", "Edit", "MultiEdit", "Write", "NotebookEdit"):
     if env_name(args.get("file_path") or args.get("notebook_path")):
         block()
 elif tool == "Grep":
-    if env_name(args.get("path")) or any(refs(" " + g) or globbed(g) for g in expanded(args.get("glob") or "")):
+    # The glob is for ripgrep, not the shell: every wildcard in it is the program kind.
+    glob = (args.get("glob") or "").translate(str.maketrans(QUOTED))
+    if env_name(args.get("path")) or any(refs(" " + g) or globbed(g) for g in expanded(glob)):
         block()
 ' <<< "$input"
