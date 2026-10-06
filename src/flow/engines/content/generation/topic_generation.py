@@ -49,6 +49,74 @@ logger = logging.getLogger(__name__)
 
 _REGENERATE_ACTIONS = {"regenerate_topics", "regenerate", "regen"}
 
+# A run whose topic step yields no titles ends here, with this message, instead
+# of skipping the title gate into an empty outline (rext-control#359: a refused
+# model key did exactly that).
+TOPICS_FAILED_CODE = "topic_generation_failed"
+TOPICS_FAILED_MESSAGE = (
+    "Title ideas could not be written for this keyword just now. Please try again in a few minutes."
+)
+
+
+def _topics_failed(keyphrase: str = "") -> Dict[str, Any]:
+    content: Dict[str, Any] = {
+        "topics": [],
+        "selected_topic": "",
+        "error": TOPICS_FAILED_MESSAGE,
+        "error_code": TOPICS_FAILED_CODE,
+    }
+    if keyphrase:
+        content[FOCUS_KEYWORD_STATE_KEY] = keyphrase
+    return {"content": content}
+
+
+def topics_router(state: REXT) -> str:
+    """After topic generation: on to clustering, or to the end when it failed."""
+    failed = (state.get("content") or {}).get("error_code") == TOPICS_FAILED_CODE
+    return "topics_failed" if failed else "keyword_clustering"
+
+
+async def topics_failed(state: REXT) -> Dict[str, Any]:
+    """Terminal node for a run whose topic step produced no titles.
+
+    Like rext.no_serp_data, the message reaches the user as a custom stream
+    event (type "run", step "run.failed") and as content.error in the thread
+    state; an operator sees it in the error log, since it is an outage or a
+    model fault, not the user's keyword.
+    """
+    try:
+        from langgraph.config import get_stream_writer
+
+        get_stream_writer()(
+            {
+                "type": "run",
+                "step": "run.failed",
+                "error_code": TOPICS_FAILED_CODE,
+                "message": TOPICS_FAILED_MESSAGE,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
+        logger.warning("topics_failed stream emit failed: %s", exc)
+
+    try:
+        from src.services.monitoring_service import MonitoringService
+
+        await MonitoringService.persist_error_log(
+            api_severity="medium",
+            message="Content generation stopped: the topic step produced no titles",
+            source="flow content.topics_failed",
+            path="/flow/content/topics_failed",
+            metadata={
+                "error_code": TOPICS_FAILED_CODE,
+                "workspace_id": str((state.get("serp_payload") or {}).get("workspace_id") or ""),
+            },
+        )
+    except Exception:  # noqa: BLE001 - reporting never breaks the flow
+        pass
+
+    return {}
+
+
 # A topic set must still be usable after invalid titles are dropped. Below this
 # the set is treated as a failed generation so the caller keeps the previous
 # valid one instead of showing the user a near-empty picker.
@@ -508,12 +576,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             normalized_result["error"],
         )
 
-        return {
-            "content": {
-                "topics": [],
-                "selected_topic": "",
-            }
-        }
+        return _topics_failed()
 
     query = normalized_result.get("query")
 
@@ -524,12 +587,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     if not query:
         logger.warning("No query found")
 
-        return {
-            "content": {
-                "topics": [],
-                "selected_topic": "",
-            }
-        }
+        return _topics_failed()
 
     # -- Resolve the EXACT user-entered focus keyphrase -----------------
     #
@@ -585,13 +643,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     if results is None:
         logger.error("Unable to generate a valid topic set for query=%r.", query)
 
-        return {
-            "content": {
-                "topics": [],
-                "selected_topic": "",
-                FOCUS_KEYWORD_STATE_KEY: keyphrase,
-            }
-        }
+        return _topics_failed(keyphrase)
 
     topics, recommended_topic, recommendation_reason = _extract_topics(results)
 

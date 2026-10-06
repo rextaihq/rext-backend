@@ -35,7 +35,11 @@ def create_content_engine():
     from src.flow.engines.content.generation.outline import generate_outline
     from src.flow.engines.content.generation.persist_content import persist_content
     from src.flow.engines.content.generation.repair_content import repair_content
-    from src.flow.engines.content.generation.topic_generation import topic_generation
+    from src.flow.engines.content.generation.topic_generation import (
+        topic_generation,
+        topics_failed,
+        topics_router,
+    )
     from src.flow.engines.content.generation.validation import (
         final_validate_content,
         validate_content,
@@ -49,6 +53,7 @@ def create_content_engine():
     graph = StateGraph(REXT)
 
     graph.add_node("topic_generation", topic_generation)
+    graph.add_node("topics_failed", topics_failed)
     graph.add_node("content_type", content_type)
     graph.add_node("keyword_clustering", keyword_clustering_node)
     graph.add_node("map_keyword_clusters", map_keyword_clusters)
@@ -64,7 +69,14 @@ def create_content_engine():
 
     graph.add_edge(START, "content_type")
     graph.add_edge("content_type", "topic_generation")
-    graph.add_edge("topic_generation", "keyword_clustering")
+    # A topic step with no titles ends the run instead of reaching an empty
+    # outline gate (rext-control#359).
+    graph.add_conditional_edges(
+        "topic_generation",
+        topics_router,
+        {"keyword_clustering": "keyword_clustering", "topics_failed": "topics_failed"},
+    )
+    graph.add_edge("topics_failed", END)
     graph.add_edge("keyword_clustering", "map_keyword_clusters")
     graph.add_edge("map_keyword_clusters", "generate_outline")
     graph.add_edge("generate_outline", "review_outline")
