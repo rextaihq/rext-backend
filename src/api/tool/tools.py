@@ -1,3 +1,4 @@
+import asyncio
 import html
 import ipaddress
 import re
@@ -498,16 +499,22 @@ async def generate_hreflang_tags(request):
 # =========================
 
 
+# The whole check, redirects and the private-address check's name lookups included:
+# httpx's own timeout covers neither the lookups nor the number of redirects.
+LINK_CHECK_SECONDS = 10
+
+
 async def broken_link_checker(url):
-    """Whether the address answers 200. A private or reserved address, or a redirect
-    to one, is never fetched and counts as not working."""
+    """Whether the address answers 200 within LINK_CHECK_SECONDS. A private or reserved
+    address, or a redirect to one, is never fetched and counts as not working."""
     try:
         url_str = str(url)
-        async with httpx.AsyncClient(
-            event_hooks={"request": [refuse_private_addresses()]}
-        ) as client:
-            response = await client.get(url_str, timeout=5, follow_redirects=True)
-            return response.status_code == 200
+        async with asyncio.timeout(LINK_CHECK_SECONDS):
+            async with httpx.AsyncClient(
+                event_hooks={"request": [refuse_private_addresses()]}
+            ) as client:
+                response = await client.get(url_str, timeout=5, follow_redirects=True)
+                return response.status_code == 200
     except Exception:
         return False
 
