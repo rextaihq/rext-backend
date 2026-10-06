@@ -18,7 +18,11 @@ def create_rext_engine():
     from src.flow.engines.content.content_engine import create_content_engine
     from src.flow.engines.router.keyword_router import keyword_router
     from src.flow.engines.router.library_router import library_router
-    from src.flow.engines.seo.library_item import library_item_router, load_library_item
+    from src.flow.engines.seo.library_item import (
+        charge_library_start,
+        library_item_router,
+        load_library_item,
+    )
     from src.flow.engines.seo.seo_engine import create_seo_engine
     from src.flow.engines.serp.serp_engine import create_serp_engine
 
@@ -30,6 +34,7 @@ def create_rext_engine():
     flow.add_node("insufficient_credits", _insufficient_credits)
     flow.add_node("no_serp_data", _no_serp_data)
     flow.add_node("load_library_item", load_library_item)
+    flow.add_node("charge_library_start", charge_library_start)
 
     flow.add_conditional_edges(
         START,
@@ -52,17 +57,18 @@ def create_rext_engine():
     # A search with no organic result ends the run here, before seo_engine
     # charges the serp_seo credit or calls the keyword overview (founder,
     # 2026-10-05: such a run is not charged). A Library start already has its
-    # keyword research, so it goes from the SERP straight to the content steps,
-    # without the keyword gate.
+    # keyword research, so it goes from the SERP to its charges and on to the
+    # content steps, without the keyword gate.
     flow.add_conditional_edges(
         "serp_engine",
         _after_serp,
         {
             "seo_engine": "seo_engine",
-            "content_engine": "content_engine",
+            "charge_library_start": "charge_library_start",
             "no_serp_data": "no_serp_data",
         },
     )
+    flow.add_edge("charge_library_start", "content_engine")
     # A changed keyword or country must re-run the SERP engine too, otherwise the
     # recommendations/competitors of the previous analysis would be reused.
     flow.add_conditional_edges(
@@ -113,13 +119,13 @@ async def _insufficient_credits(state: REXT) -> dict:
 # What the user reads when a run ends for want of search results, by the
 # SERP fetch's serp_status.
 def _after_serp(state: REXT) -> str:
-    """After the SERP: none to work from, a Library start's content steps, or the keyword step."""
+    """After the SERP: none to work from, a Library start's charges and content steps, or the keyword step."""
     from src.flow.engines.serp.normalization import has_organic_results
 
     if not has_organic_results(state):
         return "no_serp_data"
     if (state.get("serp_payload") or {}).get("is_library"):
-        return "content_engine"
+        return "charge_library_start"
     return "seo_engine"
 
 

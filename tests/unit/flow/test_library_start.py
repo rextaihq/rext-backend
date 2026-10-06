@@ -18,11 +18,12 @@ from src.flow.engines.content.generation.topic_generation import (
     KEYWORD_TOO_LONG_MESSAGE,
     TOPICS_FAILED_CODE,
 )
-from src.flow.engines.rext import _after_serp
+from src.flow.engines.rext import _after_serp, create_rext_engine
 from src.flow.engines.router.library_router import library_router
 from src.flow.engines.seo.library_item import (
     LIBRARY_ITEM_MESSAGE,
     LIBRARY_ITEM_MISSING,
+    charge_library_start,
     library_item_router,
     load_library_item,
 )
@@ -97,8 +98,8 @@ async def test_a_library_start_loads_the_item_from_the_callers_library(billing):
     # The stored keyword and market, not the start's.
     assert update["serp_payload"] == {"query": "content marketing roi", "country": "United Kingdom"}
     assert update["content"] == {"error": None, "error_code": None}
-    # It costs what any article costs: the SERP stage and the title step.
-    assert [c.args[2] for c in charged.await_args_list] == ["serp_seo", "title_generation"]
+    # Charged only once its fresh SERP has results (charge_library_start).
+    charged.assert_not_awaited()
     notify.assert_awaited_once()
     seo = update["seo_result"]
     assert seo["serp_backlinks"]["search_volume"] == 1900
@@ -183,8 +184,28 @@ async def test_the_router_sends_a_library_start_to_load_its_item(monkeypatch, bi
 
 def test_after_the_serp_a_library_start_skips_the_keyword_gate(monkeypatch):
     monkeypatch.setattr(normalization_module, "has_organic_results", lambda state: True)
-    assert _after_serp({"serp_payload": {"is_library": True}}) == "content_engine"
+    assert _after_serp({"serp_payload": {"is_library": True}}) == "charge_library_start"
     assert _after_serp({"serp_payload": {}}) == "seo_engine"
 
+    # A search that finds nothing ends before the charges, as the keyword analysis does.
     monkeypatch.setattr(normalization_module, "has_organic_results", lambda state: False)
     assert _after_serp({"serp_payload": {"is_library": True}}) == "no_serp_data"
+
+
+async def test_a_library_start_costs_what_any_article_costs_once_its_serp_has_results(billing):
+    charged, _ = billing
+    state = {"serp_payload": {**_state()["serp_payload"], "query": "content marketing roi"}}
+
+    assert await charge_library_start(state) == {}
+
+    # The SERP stage and the title step, for the start's user and workspace.
+    assert [c.args[2] for c in charged.await_args_list] == ["serp_seo", "title_generation"]
+    assert {c.kwargs["workspace_id"] for c in charged.await_args_list} == {W1}
+
+
+def test_the_charges_lead_to_the_content_steps():
+    edges = {(e.source, e.target) for e in create_rext_engine().get_graph().edges}
+
+    assert ("serp_engine", "charge_library_start") in edges
+    assert ("charge_library_start", "content_engine") in edges
+    assert ("serp_engine", "content_engine") not in edges
