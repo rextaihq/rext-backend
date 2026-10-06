@@ -6,6 +6,7 @@ from langgraph.types import interrupt
 
 from src.flow.engines.content.generation.seo_title_rules import keyphrase_fits_a_title
 from src.flow.engines.serp.normalization import has_organic_results
+from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -255,6 +256,9 @@ async def keyword_recommendation(state: REXT) -> Any:
             "Recommendations": display_recommendations,
             "Keyword Clusters": inputs["keyword_clusters"],
             "seo_state": inputs["seo_state"],
+            # The SERP's top ten, for the side pane beside the keyword card, as the
+            # title gate sends them (empty when the run has no SERP).
+            "serp_titles": build_serp_titles(inputs["serp_normalized"]),
         }
     )
 
