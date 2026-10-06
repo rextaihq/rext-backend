@@ -7,6 +7,8 @@ expected headings unchanged.
 
 import copy
 
+import pytest
+
 import src.flow.engines.content.review.outline as review_module
 from src.flow.engines.content.generation.content_generation import (
     _format_outline_for_generation,
@@ -409,6 +411,31 @@ def test_gate_payload_without_a_serp_has_empty_sources(monkeypatch):
     assert payload["serp_titles"] == []
     assert payload["serp_questions"] == []
     assert payload["related_searches"] == []
+
+
+@pytest.mark.parametrize(
+    ("serp_normalized", "serp_result"),
+    [
+        # A failed lookup (fetch_serp's empty state) before normalization.
+        ({}, {"organic_results": [], "related_searches": [], "serp_status": "lookup_failed"}),
+        # State that isn't the shape it should be.
+        (["not", "a dict"], "provider error"),
+        # The right keys holding the wrong things.
+        ({"normalize_results": 5, "questions": 7}, {"related_searches": "running shoes"}),
+        # A result whose title and address aren't text: the shared title reader
+        # raises on it, and the gate sends no evidence rather than stopping.
+        ({"normalize_results": [{"position": 1, "title": 42, "url": 7}]}, None),
+    ],
+)
+def test_an_odd_or_missing_serp_never_breaks_the_gate(monkeypatch, serp_normalized, serp_result):
+    payload = _gate_payload(monkeypatch, serp_normalized, serp_result)
+
+    assert payload["serp_titles"] == []
+    assert payload["serp_questions"] == []
+    assert payload["related_searches"] == []
+    # The gate answers as before.
+    assert [row["id"] for row in payload["editable_sections"]] == BLOG_IDS
+    assert payload["section_additions"] == ["structure.sections"]
 
 
 def test_related_searches_are_googles_not_the_models_backfill(monkeypatch):

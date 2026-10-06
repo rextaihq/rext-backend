@@ -26,11 +26,36 @@ def _distinct(values, limit: int = SOURCE_LIST_LIMIT) -> list[str]:
     """Non-empty strings, each once (ignoring case), in their order, at most `limit`."""
     seen: set[str] = set()
     out: list[str] = []
-    for value in values or []:
+    for value in values if isinstance(values, (list, tuple)) else []:
         if isinstance(value, str) and value.strip() and value.strip().lower() not in seen:
             seen.add(value.strip().lower())
             out.append(value.strip())
     return out[:limit]
+
+
+def _search_sources(state: REXT) -> dict[str, list]:
+    """What the outline was planned against, for the screen's Sources view: the
+    top results, the questions people also ask, the related searches.
+
+    Every run passes this gate, and the evidence is optional: a missing or
+    malformed SERP (a failed lookup, an older run's state) gives empty lists and
+    never stops the gate.
+    """
+    normalized = state.get("serp_normalized")
+    normalized = normalized if isinstance(normalized, dict) else {}
+    raw = state.get("serp_result")
+    raw = raw if isinstance(raw, dict) else {}
+    try:
+        return {
+            "serp_titles": build_serp_titles(normalized),
+            "serp_questions": _distinct(normalized.get("questions")),
+            # Google's own: the normalized related_topics are backfilled with the
+            # model's suggested keywords when the search shows none (competitor.py).
+            "related_searches": _distinct(raw.get("related_searches")),
+        }
+    except Exception:
+        logger.warning("Outline gate: the search evidence could not be read", exc_info=True)
+        return {"serp_titles": [], "serp_questions": [], "related_searches": []}
 
 
 def review_outline(state: REXT):
@@ -63,7 +88,6 @@ def review_outline(state: REXT):
     )
     seo_result = state.get("seo_result", {})
     keyword_clusters = seo_result.get("keyword_clusters", [])
-    serp_normalized = state.get("serp_normalized") or {}
 
     # Ensure cluster mapping is available in the outline dict for the frontend
     cluster_heading_map = content_state.get("cluster_heading_map") or outline_dict.get(
@@ -94,13 +118,8 @@ def review_outline(state: REXT):
             "editable_sections": editable_sections(outline_dict, content_type),
             # The lists a new section may be added to (a row with "new": true).
             "section_additions": addable_lists(outline_dict, content_type),
-            # What the outline was planned against, for the screen's Sources view:
-            # the top results, the questions people also ask, the related searches.
-            "serp_titles": build_serp_titles(serp_normalized),
-            "serp_questions": _distinct(serp_normalized.get("questions")),
-            # Google's own: the normalized related_topics are backfilled with the
-            # model's suggested keywords when the search shows none (competitor.py).
-            "related_searches": _distinct((state.get("serp_result") or {}).get("related_searches")),
+            # serp_titles, serp_questions and related_searches, for Sources.
+            **_search_sources(state),
             "instruction": (
                 "Please approve the outline, or reject/regenerate it with "
                 "feedback on what should change — your feedback will be "
