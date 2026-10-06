@@ -23,11 +23,12 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import BackgroundTasks
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.api.cache.decorators import invalidate_cache
+from src.api.cache.redis_client import cache
 from src.api.lib.sentry_config import capture_payment_exception
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -58,10 +59,60 @@ _RETRY_NEW_SUBSCRIPTION = (
     "Your last payment failed and is being retried. Update your payment method "
     "to keep your plan instead of starting a new subscription."
 )
+_UNPAID_NEW_SUBSCRIPTION = (
+    "Your last payment couldn't be collected. Update your payment method to "
+    "reactivate your plan instead of starting a new subscription."
+)
+_CANCELLED_NEW_SUBSCRIPTION = (
+    "Your cancelled subscription hasn't ended yet. Resume it instead of starting "
+    "a new subscription."
+)
+_PAUSED_NEW_SUBSCRIPTION = "Your subscription is paused. Resume it instead of starting a new one."
 _RETRY_PLAN_CHANGE = (
     "Your last payment failed and is being retried. Update your payment method "
     "first; your plan can change once the payment goes through."
 )
+_UNPAID_PLAN_CHANGE = (
+    "Your last payment couldn't be collected. Update your payment method "
+    "first; your plan can change once the payment goes through."
+)
+
+# What a customer whose subscription isn't finished does instead of a new checkout.
+UPDATE_PAYMENT_METHOD = "update_payment_method"
+RESUME = "resume"
+
+# A repeated checkout request (a double click, a second tab) within this window
+# gets the same Lemon Squeezy checkout, so it can't be paid twice.
+_CHECKOUT_REUSE_SECONDS = 600
+
+
+def billing_action(
+    subscription: Optional[UserSubscription], now: Optional[datetime] = None
+) -> Optional[Dict[str, str]]:
+    """What the customer does with a subscription that isn't finished, else None.
+
+    A failed renewal is fixed with a new card (Lemon Squeezy recovers the same
+    subscription); a paused one, or a cancelled one whose end hasn't come, is
+    resumed. Either way a second subscription would bill twice.
+    """
+    if subscription is None:
+        return None
+    status = subscription.status
+    if status in (SubscriptionStatus.PAST_DUE, SubscriptionStatus.SUSPENDED):
+        return {"action": UPDATE_PAYMENT_METHOD, "message": _RETRY_NEW_SUBSCRIPTION}
+    if status == SubscriptionStatus.UNPAID:
+        return {"action": UPDATE_PAYMENT_METHOD, "message": _UNPAID_NEW_SUBSCRIPTION}
+    if not subscription.lemonsqueezy_subscription_id:
+        return None
+    if status == SubscriptionStatus.PAUSED:
+        return {"action": RESUME, "message": _PAUSED_NEW_SUBSCRIPTION}
+    if status == SubscriptionStatus.CANCELLED:
+        end = subscription.end_date
+        if end is not None and end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if end is None or end > (now or datetime.now(timezone.utc)):
+            return {"action": RESUME, "message": _CANCELLED_NEW_SUBSCRIPTION}
+    return None
 
 
 def trial_has_ended(
@@ -108,11 +159,14 @@ def _refuse_during_payment_retry(
     would hand out the new plan's full allowance before anything was paid.
     """
     if subscription is not None and subscription.status in FAILED_PAYMENT_STATUSES:
+        if message == _RETRY_PLAN_CHANGE and subscription.status == SubscriptionStatus.UNPAID:
+            message = _UNPAID_PLAN_CHANGE
         raise DuplicateResourceException(
             message=message,
             resource_type="subscription",
             conflicting_field="user_id",
             conflicting_value=str(user_id),
+            context={"billing_action": UPDATE_PAYMENT_METHOD},
         )
 
 
@@ -191,7 +245,7 @@ class SubscriptionService:
         # (so credit/plan-limit checks keep working) - that must NOT block a fresh
         # subscribe here, otherwise a cancelled user could never resubscribe until
         # their old grace period fully expired.
-        await self._refuse_while_a_renewal_is_unpaid(user_id)
+        await self._refuse_while_a_subscription_is_unfinished(user_id)
         existing_subscription = await self.get_subscription_by_user(user_id)
         if existing_subscription and existing_subscription.status != SubscriptionStatus.CANCELLED:
             raise DuplicateResourceException(
@@ -297,14 +351,17 @@ class SubscriptionService:
             ResourceNotFoundException: If plan not found or inactive
             RextValidationException: If variant ID not configured for plan
         """
+        # One checkout at a time per user: the lock holds until the transaction
+        # ends, so a double click waits for the first request and then reuses its
+        # checkout (below) instead of opening a second one that could be paid too.
+        await self._lock_checkout(user_id)
+
         # Check if user already has an active subscription
-        # Allow checkout if user is on free or trial plan (they can upgrade via checkout),
-        # or if their existing subscription is already cancelled (still shows up here
-        # because get_subscription_by_user() keeps it visible through its paid-through
-        # grace period for credit/limit purposes) - a cancelled user must be able to
-        # resubscribe right away, not wait out their old grace period.
+        # Allow checkout if user is on free or trial plan (they can upgrade via checkout).
+        # A subscription that isn't finished (a failed renewal, a pause, or a
+        # cancellation whose end hasn't come) is fixed or resumed, never replaced.
         if not skip_subscription_check:
-            await self._refuse_while_a_renewal_is_unpaid(user_id)
+            await self._refuse_while_a_subscription_is_unfinished(user_id)
         existing_subscription = await self.get_subscription_by_user(user_id)
         if (
             existing_subscription
@@ -348,6 +405,16 @@ class SubscriptionService:
             )
 
         logger.info(f"🔍 DEBUG: Variant ID is {variant_id}")
+
+        # A repeated request for the same checkout gets the one already open.
+        reuse_key = f"checkout:open:{user_id}:{variant_id}:{discount_code or ''}"
+        open_checkout = await cache.get(reuse_key)
+        if open_checkout:
+            logger.info(
+                "Returning the user's open checkout instead of a second one",
+                extra={"user_id": str(user_id), "plan_id": str(plan_id)},
+            )
+            return open_checkout
         # Get user to retrieve/store customer ID
         result = await self.db.execute(select(Users).where(Users.id == user_id))
         user = result.scalar_one_or_none()
@@ -436,10 +503,12 @@ class SubscriptionService:
         logger.info(
             f"Checkout session created for user {user_id}, checkout_url: {checkout_session.checkout_url}, session_id: {checkout_session.session_id}"
         )
-        return {
+        checkout = {
             "checkout_url": checkout_session.checkout_url,
             "session_id": checkout_session.session_id,
         }
+        await cache.set(reuse_key, checkout, ttl=_CHECKOUT_REUSE_SECONDS)
+        return checkout
 
     async def upgrade(
         self, user_id: UUID, new_plan_id: UUID, billing_period: Optional[BillingPeriod] = None
@@ -1088,9 +1157,9 @@ class SubscriptionService:
         return True
 
     async def _refuse_while_a_renewal_is_unpaid(
-        self, user_id: UUID, message: str = _RETRY_NEW_SUBSCRIPTION
+        self, user_id: UUID, message: str = _RETRY_PLAN_CHANGE
     ) -> None:
-        """Refuse a new subscription or plan change while one of the user's renewals is unpaid.
+        """Refuse a plan change while one of the user's renewals is unpaid.
 
         Looked up on its own, not through get_subscription_by_user(): an UNPAID
         subscription grants no access, so that lookup never returns it, yet a new
@@ -1106,6 +1175,49 @@ class SubscriptionService:
             .limit(1)
         )
         _refuse_during_payment_retry(unpaid, user_id, message)
+
+    async def unfinished_subscription(self, user_id: UUID) -> Optional[UserSubscription]:
+        """The user's newest subscription that billing_action() has an action for."""
+        candidates = await self.db.scalars(
+            select(UserSubscription)
+            .where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_(
+                    [
+                        *FAILED_PAYMENT_STATUSES,
+                        SubscriptionStatus.PAUSED,
+                        SubscriptionStatus.CANCELLED,
+                    ]
+                ),
+            )
+            .order_by(UserSubscription.created_at.desc())
+        )
+        return next((row for row in candidates if billing_action(row) is not None), None)
+
+    async def _refuse_while_a_subscription_is_unfinished(self, user_id: UUID) -> None:
+        """No new subscription while one isn't finished: the customer gets its action instead.
+
+        The refusal carries `billing_action` ("update_payment_method" or "resume")
+        so the dashboard can offer that button.
+        """
+        unfinished = await self.unfinished_subscription(user_id)
+        action = billing_action(unfinished)
+        if action is None:
+            return
+        raise DuplicateResourceException(
+            message=action["message"],
+            resource_type="subscription",
+            conflicting_field="user_id",
+            conflicting_value=str(user_id),
+            context={"billing_action": action["action"]},
+        )
+
+    async def _lock_checkout(self, user_id: UUID) -> None:
+        """Serialize one user's checkout requests until this transaction ends."""
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"checkout:{user_id}"},
+        )
 
     async def get_subscription_by_user(self, user_id: UUID) -> Optional[UserSubscription]:
         """

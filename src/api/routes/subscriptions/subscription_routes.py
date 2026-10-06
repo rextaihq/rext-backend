@@ -33,7 +33,7 @@ from src.api.models.subscription_models.refund_requests import (
     RefundRequestStatus,
 )
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.schema.response.checkout_responses import (
     CheckoutSessionResponse,
@@ -81,7 +81,7 @@ from src.services.refund_request_service import (
 )
 from src.services.refund_service import RefundService
 from src.services.subscription_plan_service import SubscriptionPlanService
-from src.services.subscription_service import SubscriptionService
+from src.services.subscription_service import SubscriptionService, billing_action
 from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.logger import logger
 from src.utils.response_utils import success
@@ -1506,15 +1506,24 @@ async def resume_subscription(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Resume a paused subscription.
+    Resume a paused subscription, or a cancelled one before it ends.
 
-    The subscription_resumed webhook updates our local record.
+    The subscription_resumed / subscription_updated webhook updates our local record.
     """
     user_id = current_user.get("identity")
     ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+    local_status = await db.scalar(
+        select(UserSubscription.status).where(
+            UserSubscription.lemonsqueezy_subscription_id == ls_subscription_id
+        )
+    )
+    provider = get_payment_provider_singleton()
 
     try:
-        await get_payment_provider_singleton().resume_subscription(ls_subscription_id)
+        if local_status == SubscriptionStatus.CANCELLED:
+            await provider.uncancel_subscription(ls_subscription_id)
+        else:
+            await provider.resume_subscription(ls_subscription_id)
     except Exception:
         logger.error("Failed to resume subscription", exc_info=True)
         raise HTTPException(
@@ -1600,6 +1609,8 @@ async def get_subscription_status(
     subscription = await service.get_subscription_by_user(user_id)
     ended_trial = await service.get_ended_trial(user_id)
     usage = await usage_service.get_usage_metrics(user_id)
+    unfinished = await service.unfinished_subscription(user_id)
+    action = billing_action(unfinished)
 
     portal_url = await service.get_customer_portal_url(
         user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
@@ -1617,6 +1628,16 @@ async def get_subscription_status(
                     "ended_at": ended_trial.trial_end_date or ended_trial.end_date,
                 }
                 if ended_trial
+                else None
+            ),
+            "billing_action": (
+                {
+                    "action": action["action"],
+                    "status": unfinished.status.value,
+                    "payment_failed_at": unfinished.payment_failed_at,
+                    "ends_at": unfinished.end_date,
+                }
+                if action
                 else None
             ),
         },

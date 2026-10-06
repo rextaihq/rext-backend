@@ -252,9 +252,14 @@ async def test_a_second_subscription_is_refused_while_a_renewal_is_unpaid(sessio
     with pytest.raises(DuplicateResourceException) as changing:
         await service.upgrade(user.id, uuid4(), BillingPeriod.MONTHLY)
 
-    for raised in (subscribing, checking_out):
+    for raised in (subscribing, checking_out, changing):
         assert "Update your payment method" in raised.value.message
+        assert raised.value.context["billing_action"] == "update_payment_method"
     assert "your plan can change once the payment goes through" in changing.value.message
+    # Lemon Squeezy's retries are over once a subscription is unpaid.
+    retrying = "is being retried" in subscribing.value.message
+    assert retrying is (status == SubscriptionStatus.PAST_DUE)
+    assert ("is being retried" in changing.value.message) is retrying
 
 
 def test_an_active_subscription_blocks_nothing():

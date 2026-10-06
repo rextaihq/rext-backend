@@ -55,3 +55,7 @@ class SubscriptionStatusResponse(BaseModel):
     portal_url: Optional[str] = None
     # Set when the user's trial is over and nothing replaced it; null otherwise.
     expired_trial: Optional[ExpiredTrial] = None
+    # Set when a subscription isn't finished: "update_payment_method" (a failed
+    # renewal) or "resume" (paused, or cancelled before its end), with its status.
+    # The dashboard offers that action instead of a new checkout; null otherwise.
+    billing_action: Optional[Dict[str, Any]] = None

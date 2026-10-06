@@ -784,6 +784,40 @@ class LemonSqueezyProvider(PaymentProvider):
 
         return await self.get_subscription(subscription_id)
 
+    async def uncancel_subscription(self, subscription_id: str) -> SubscriptionData:
+        """
+        Resume a cancelled subscription in LemonSqueezy before it ends.
+
+        A cancelled subscription keeps running until `ends_at`; setting
+        `cancelled` back to false makes it renew again. Lemon Squeezy refuses it
+        once the subscription has expired.
+
+        Args:
+            subscription_id: Subscription ID from LemonSqueezy
+
+        Returns:
+            SubscriptionData: Updated subscription information
+        """
+        logger.info(
+            "Resuming cancelled subscription",
+            operation="uncancel_subscription",
+            subscription_id=subscription_id,
+        )
+
+        await self._make_request(
+            method="PATCH",
+            endpoint=f"/subscriptions/{subscription_id}",
+            data={
+                "data": {
+                    "type": "subscriptions",
+                    "id": subscription_id,
+                    "attributes": {"cancelled": False},
+                }
+            },
+        )
+
+        return await self.get_subscription(subscription_id)
+
     async def resume_subscription(self, subscription_id: str) -> SubscriptionData:
         """
         Resume a paused subscription in LemonSqueezy.
