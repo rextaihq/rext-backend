@@ -224,8 +224,17 @@ def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
         host = request.url.host
         if host in passed:
             return
+        # httpx runs this hook before the transport, so the lookup here is bounded by
+        # the request's connect timeout too.
+        timeout = (request.extensions.get("timeout") or {}).get("connect")
         try:
-            await asyncio.to_thread(validate_url_for_ssrf, str(request.url))
+            await asyncio.wait_for(
+                asyncio.to_thread(validate_url_for_ssrf, str(request.url)), timeout
+            )
+        except TimeoutError:
+            raise httpx.ConnectTimeout(
+                f"Looking up {host} took over {timeout} s", request=request
+            ) from None
         except UnresolvableHostError:
             # A name that does not resolve is a network failure, not a refusal: the
             # connection reports it as one, and a retry may find it.
@@ -270,15 +279,18 @@ class _PublicOnlyNetworkBackend(httpcore.AsyncNetworkBackend):
         # Every address was checked; try them in the resolver's order, as a
         # connection by name would (an unreachable IPv6 answer falls through).
         failure: Exception | None = None
-        for address in addresses:
+        for index, address in enumerate(addresses):
             left = None if timeout is None else timeout - (time.monotonic() - started)
             if left is not None and left <= 0:
                 raise httpcore.ConnectTimeout(f"Connecting to {host} took over {timeout} s")
+            # What is left is shared among the addresses still to try, so a first
+            # address that never answers cannot use up the time of a reachable one.
+            attempt = None if left is None else left / (len(addresses) - index)
             try:
                 return await self._backend.connect_tcp(
                     address,
                     port,
-                    timeout=left,
+                    timeout=attempt,
                     local_address=local_address,
                     socket_options=socket_options,
                 )
