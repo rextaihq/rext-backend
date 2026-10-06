@@ -88,6 +88,8 @@ def test_an_off_topic_persona_gives_its_voice_and_no_bio():
     assert FOUNDER.full_name not in prompt
     assert FOUNDER.linkedin_url not in prompt
     assert "Founder & Lead Developer at Nextly" not in prompt
+    # The shared prompt's other experience lines stay, and these rules say they don't apply (Codex).
+    assert "These rules win over every other line of this prompt about experience" in prompt
     # The voice stays.
     assert "Calm, plain-spoken." in prompt
 
@@ -95,15 +97,11 @@ def test_an_off_topic_persona_gives_its_voice_and_no_bio():
 def test_the_outline_steps_own_score_decides():
     fitting = {
         **BAKERY_OUTLINE,
-        "persona_recommendations": [
-            {"persona_id": "founder-1", "breakdown": {"topic": 60.0, "title": 0.0}}
-        ],
+        "persona_recommendations": [{"persona_id": "founder-1", "fits_topic": True}],
     }
     off_topic = {
         **CMS_OUTLINE,
-        "persona_recommendations": [
-            {"persona_id": "founder-1", "breakdown": {"topic": 0.0, "title": 10.0}}
-        ],
+        "persona_recommendations": [{"persona_id": "founder-1", "fits_topic": False}],
     }
 
     assert persona_fits_outline(FOUNDER, fitting) is True

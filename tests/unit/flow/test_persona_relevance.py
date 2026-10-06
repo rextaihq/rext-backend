@@ -7,7 +7,7 @@ from src.flow.engines.content.generation.persona_relevance import (
     persona_fits_topic,
     rank_personas,
     score_persona,
-    topic_fit,
+    subject_fit,
 )
 
 
@@ -202,8 +202,8 @@ def test_a_persona_who_speaks_the_subject_fits_it():
 
 
 @pytest.mark.unit
-def test_topic_fit_is_the_subject_alone_not_intent_or_content_type():
-    """Every profile speaks "guide" or "how": those dimensions never make a persona fit a subject."""
+def test_subject_fit_is_the_stated_expertise_against_the_subject():
+    """Intent and content type say nothing about the subject, and neither do a bio's generic words."""
     relevance = score_persona(
         FOUNDER_PERSONA,
         topic=BAKERY_TOPIC,
@@ -212,12 +212,24 @@ def test_topic_fit_is_the_subject_alone_not_intent_or_content_type():
         content_type="how_to",
     )
 
-    assert topic_fit(relevance.breakdown) == max(
-        relevance.breakdown["topic"], relevance.breakdown["title"]
-    )
-    assert topic_fit({"topic": 10.0, "title": 0.0, "search_intent": 100.0}) == 10.0
-    assert topic_fit({}) == 0.0
+    assert relevance.subject_fit == 0.0
+    assert relevance.breakdown["search_intent"] >= 0  # the ranking still scores it
     assert TOPIC_FIT_THRESHOLD == 30.0
+
+
+@pytest.mark.unit
+def test_a_bios_generic_words_are_no_expertise():
+    """Codex on #837: "I share practical ideas" must not make a software founder fit "Bakery Ideas"."""
+    founder = _Persona(
+        "founder-2",
+        "Ola Berg",
+        professional_title="Software Founder",
+        areas_of_expertise=["Product engineering"],
+        bio="I share practical ideas for building products.",
+    )
+
+    assert subject_fit(founder, topic="bakery ideas", title="Bakery Ideas") == 0.0
+    assert not persona_fits_topic(founder, topic="bakery ideas", title="Bakery Ideas")
 
 
 @pytest.mark.unit
