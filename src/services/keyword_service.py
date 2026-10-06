@@ -14,6 +14,13 @@ nltk.download("punkt", quiet=True)
 nltk.download("punkt_tab", quiet=True)
 nltk.download("stopwords", quiet=True)
 
+# Loaded once, here, while the server starts on one thread. NLTK loads a corpus
+# lazily on first use, and that first load is not thread-safe; the clustering
+# step extracts keywords in worker threads, several runs at once
+# (rext-control#386). Once loaded, reading them from any thread is safe.
+ENGLISH_STOP_WORDS = frozenset(stopwords.words("english"))
+word_tokenize("warm the tokenizer")
+
 
 class KeywordExtractor:
     """
@@ -28,7 +35,7 @@ class KeywordExtractor:
     """
 
     def __init__(self):
-        self.stop_words = set(stopwords.words("english"))
+        self.stop_words = set(ENGLISH_STOP_WORDS)
         # self.stemmer = PorterStemmer()
 
     def _clean_text(self, text: str) -> str:
