@@ -60,8 +60,45 @@ CONTENT_CREATE_REFUSED = (
 )
 
 
+async def _active_in_workspace(db, user_id, workspace_id) -> bool:
+    """A platform admin, the workspace's owner, or an active member of it (not deleted).
+
+    The same gate workspace access applies elsewhere (workspace_permission_service):
+    a member marked inactive keeps their role assignment, so the role alone
+    would still let them in.
+    """
+    from sqlalchemy import select
+
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
+    from src.utils.rbac_utils import is_user_admin
+
+    if await is_user_admin(db, user_id):
+        return True
+    owned = await db.execute(
+        select(WorkspaceModel.id).where(
+            WorkspaceModel.id == workspace_id,
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None),
+        )
+    )
+    if owned.scalar_one_or_none() is not None:
+        return True
+    member = await db.execute(
+        select(WorkspaceMembers.user_id)
+        .join(WorkspaceModel, WorkspaceModel.id == WorkspaceMembers.workspace_id)
+        .where(
+            WorkspaceMembers.workspace_id == workspace_id,
+            WorkspaceMembers.user_id == user_id,
+            WorkspaceMembers.status == "active",
+            WorkspaceModel.deleted_at.is_(None),
+        )
+    )
+    return member.scalar_one_or_none() is not None
+
+
 async def _may_create_content(user_id: str, workspace_id: object) -> bool:
-    """Whether the user holds content.create in the workspace (the role's cached permissions)."""
+    """Whether the user may create content in the workspace: active there, and content.create in their role."""
     from uuid import UUID
 
     from src.utils.rbac_utils import check_permission
@@ -71,6 +108,8 @@ async def _may_create_content(user_id: str, workspace_id: object) -> bool:
     except (TypeError, ValueError):
         return False
     async with get_async_db_context() as db:
+        if not await _active_in_workspace(db, uid, wid):
+            return False
         return await check_permission(db, uid, "content.create", wid)
 
 
