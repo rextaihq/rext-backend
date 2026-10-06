@@ -31,6 +31,8 @@ SEPARATORS = set(";&|()")
 ENV_REF = re.compile(r"(?:^|[^\w.-])(\.env(?:rc)?(?:[.-][\w-]+)*)(?=$|[^\w.-])")
 ALLOWED = {"test", "[", "[[", "ls", "stat", "wc"}
 PATHS_ONLY = {"git", "gh"}
+# Their options whose value is text, not a path (--body-file and -F read a file, so they are not here).
+MESSAGE_OPTIONS = {"-m", "--message", "--body", "-b", "--title", "-t", "--notes"}
 # Names a glob is tried against: the usual env files.
 LIKELY = [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.dev", ".env.stage", ".envrc",
           ".env.backup", ".env.bak"]
@@ -87,8 +89,15 @@ def check_segment(segment):
         words = words[1:]
     name = os.path.basename(words[0]) if words else ""
     if name in PATHS_ONLY:
-        # A path names the file itself (HEAD:.env, some dir/.env.local); a message only mentions one.
-        if any(not re.search(r"\s", t) or env_name(t) or globbed(t) for t in hits):
+        # A path names the file itself (HEAD:.env, some dir/.env.local); the value of a message option only mentions one.
+        messages = set()
+        for i, w in enumerate(words):
+            if w in MESSAGE_OPTIONS and i + 1 < len(words):
+                messages.add(i + 1)
+            elif w.startswith(("--message=", "--body=", "--title=", "--notes=")) or re.fullmatch(r"-m.+", w):
+                messages.add(i)
+        if any(i not in messages and touches(w) and (not re.search(r"\s", w) or env_name(w) or globbed(w))
+               for i, w in enumerate(words)):
             block()
         return
     if name == "wc" and any(t.startswith("--files0-from") for t in words[1:]):
