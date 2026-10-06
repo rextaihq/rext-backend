@@ -790,6 +790,7 @@ class SubscriptionService:
             cancel_immediately = False
 
         # Cancel subscription with payment provider if provider subscription exists
+        provider_ends_at = None
         if billed_by_provider:
             try:
                 provider_sub_id = (
@@ -798,9 +799,10 @@ class SubscriptionService:
                 )
 
                 # Cancel with payment provider
-                await self.payment_provider.cancel_subscription(
+                provider_state = await self.payment_provider.cancel_subscription(
                     subscription_id=provider_sub_id, at_period_end=not cancel_immediately
                 )
+                provider_ends_at = getattr(provider_state, "current_period_end", None)
 
                 logger.info(
                     f"Cancelled subscription {provider_sub_id} with payment provider",
@@ -863,7 +865,14 @@ class SubscriptionService:
         else:
             # Deferred cancellation: record when the paid-through period ends so
             # the UI/email can show it and credits/limits keep working until then.
-            if subscription.renews_at:
+            # Lemon Squeezy's own end comes first: the local renewal date can be stale.
+            if (
+                isinstance(provider_ends_at, datetime)
+                and provider_ends_at.tzinfo is not None
+                and provider_ends_at > datetime.now(timezone.utc)
+            ):
+                subscription.end_date = provider_ends_at
+            elif subscription.renews_at:
                 subscription.end_date = subscription.renews_at
             elif subscription.billing_period == BillingPeriod.MONTHLY:
                 subscription.end_date = subscription.usage_reset_date

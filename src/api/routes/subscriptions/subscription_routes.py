@@ -771,9 +771,11 @@ async def cancel_subscription(
             resource_type="subscription", message="No active subscription found to cancel"
         )
 
+    # The service keeps a plan Lemon Squeezy bills to its period end even when asked
+    # to end it now, so the message follows what it did, not what was asked.
     message = (
         "Subscription cancelled immediately"
-        if cancel_data.cancel_immediately
+        if not subscription.cancel_at_period_end
         else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
     )
 
