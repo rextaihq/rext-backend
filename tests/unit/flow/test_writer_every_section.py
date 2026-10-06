@@ -14,7 +14,11 @@ import pytest
 from src.flow.engines.content.generation.brand_schema_context import (
     resolve_brand_schema_context,
 )
-from src.flow.engines.content.generation.brand_slot import SLOT_BLOCK_KEYS
+from src.flow.engines.content.generation.brand_slot import (
+    SLOT_BLOCK_KEYS,
+    SLOT_LINE_PREFIX,
+    SLOT_SECTION_INDEX,
+)
 from src.flow.engines.content.generation.outline_structure import (
     MAX_EXPANDED_SECTIONS,
     expand_section_containers,
@@ -126,7 +130,14 @@ def test_a_sections_plan_is_on_its_own_field_and_bookkeeping_is_not():
     assert "400" not in description  # suggested_word_count is the pipeline's, not the writer's
 
 
-def test_a_long_list_of_entries_stays_one_field():
+def test_a_long_pillar_outline_gets_a_field_per_section():
+    sections = [{**_section(f"Pillar chapter {i}", ["a point"])} for i in range(1, 16)]
+    model, blocks = _model({"structure": {"sections": sections}}, "pillar-content")
+
+    assert [b.key for b in blocks if b.parent] == [f"structure_{i}" for i in range(1, 16)]
+
+
+def test_an_outline_beyond_the_schema_guard_stays_one_field():
     sections = [(f"Entry {i}", ["a point"]) for i in range(MAX_EXPANDED_SECTIONS + 1)]
     blocks = expand_section_containers(resolve_outline_structure(_blog_outline(sections), "blog"))
 
@@ -152,18 +163,52 @@ def test_the_article_is_assembled_in_the_approved_order_with_its_levels():
     assert "structure_3" not in payload[STRUCTURED_BLOCKS_KEY]
 
 
-def test_the_brand_mention_targets_the_section_the_slot_chose():
+def test_an_h4_planned_section_is_written_and_checked_as_an_h4():
+    sections = [
+        _section("Choosing a platform", ["cost"]),
+        _section("Pricing tiers", ["plans"], "H4"),
+    ]
+    outline = {"structure": {"sections": sections}}
+    _, blocks = _model(outline, "pillar-content")
+    assert [b.level for b in blocks if b.parent] == [2, 4]
+
+    payload = assemble_structured_payload(
+        {
+            "title": "T",
+            "structure_1": {"heading": "Choosing a platform", "markdown": "About cost."},
+            "structure_2": {"heading": "Pricing tiers", "markdown": "About plans."},
+        },
+        blocks,
+    )
+    assert "#### Pricing tiers" in payload["body_markdown"]
+
+    spec = build_requirements_spec(outline, "pillar-content", focus_keyword="platform")
+    assert [p["level"] for p in spec["planned_sections"]] == [2, 4]
+    flattened = _article(("##", "Choosing a platform", "cost"), ("##", "Pricing tiers", "plans"))
+    assert not check_required_sections(flattened, spec)["passed"]
+
+
+def test_the_brand_mention_targets_only_the_section_the_slot_chose():
     outline = _blog_outline(
         promote_brand=True,
-        brand_voice_promotion={"brand_name": "Rext", SLOT_BLOCK_KEYS: ["structure"]},
+        brand_voice_promotion={
+            "brand_name": "Rext",
+            SLOT_BLOCK_KEYS: ["structure"],
+            SLOT_SECTION_INDEX: 1,
+        },
     )
-    outline["structure"]["sections"][1]["key_points"].append(
-        "Work in the approved mention of Rext here."
-    )
+    sections = outline["structure"]["sections"]
+    sections[1]["key_points"].append(f"{SLOT_LINE_PREFIX} Rext here.")
+    sections[3]["key_points"].append("Compare Rext with the other tools")  # named, not the slot
     blocks = expand_section_containers(resolve_outline_structure(outline, "blog"))
 
     context = resolve_brand_schema_context(outline, "blog", blocks)
 
+    assert set(context.field_directives) == {"structure_2"}
+
+    # An outline approved before the slot recorded its index: the slot's own line decides.
+    del outline["brand_voice_promotion"][SLOT_SECTION_INDEX]
+    context = resolve_brand_schema_context(outline, "blog", blocks)
     assert set(context.field_directives) == {"structure_2"}
 
 
@@ -217,3 +262,42 @@ def test_a_reworded_heading_counts_when_the_section_covers_its_plan():
     )
 
     assert check_required_sections(article, _spec())["passed"]
+
+
+def test_planned_sections_out_of_the_approved_order_block():
+    article = _article(
+        *(("##", h, " ".join(p)) for h, p in [SECTIONS[0], SECTIONS[2], SECTIONS[1], SECTIONS[3]])
+    )
+
+    result = check_required_sections(article, _spec())
+
+    assert not result["passed"] and result["severity"] == "blocking"
+    assert "out of the approved order" in result["detail"]
+
+
+def test_a_planned_subsection_under_the_wrong_section_blocks():
+    outline = _blog_outline()
+    outline["structure"]["sections"][1]["heading_level"] = "H3"  # planned under section 1
+    spec = build_requirements_spec(outline, "blog", focus_keyword="content marketing roi")
+    article = _article(
+        ("##", SECTIONS[0][0], "attribution gaps, long sales cycles"),
+        ("##", SECTIONS[2][0], "UTM tags, goal setup in analytics"),
+        ("###", SECTIONS[1][0], "leads per post, cost per lead"),  # under section 3 instead
+        ("##", SECTIONS[3][0], "payback period, monthly budget"),
+    )
+
+    result = check_required_sections(article, spec)
+
+    assert not result["passed"] and "out of the approved order" in result["detail"]
+
+
+def test_an_optional_legacy_sections_list_is_still_checked_by_heading():
+    # A flat top-level `sections` list no schema declares is kept as an optional
+    # block: its sections aren't required, but dropping all of them still fails.
+    outline = {"sections": [_section(h, p) for h, p in SECTIONS]}
+    spec = build_requirements_spec(outline, "blog", focus_keyword="content marketing roi")
+    assert spec["planned_sections"] and not any(p["required"] for p in spec["planned_sections"])
+
+    result = check_required_sections(_article(("##", "Something else entirely", "text")), spec)
+
+    assert not result["passed"]

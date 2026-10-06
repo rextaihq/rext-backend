@@ -128,7 +128,7 @@ def blocks_to_body_markdown(
     is what keeps this change backward-compatible.
 
     Absent optional blocks are skipped rather than rendered empty. `levels` gives
-    a block's heading level (2 for ##, 3 for ###) by key; a block not in it is an H2.
+    a block's heading level (2 for ##, 3 for ###, 4 for ####) by key; a block not in it is an H2.
     """
     parts: List[str] = []
     for key, block in ordered_blocks:

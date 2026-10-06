@@ -55,6 +55,12 @@ logger = logging.getLogger(__name__)
 # `brand_voice_promotion` is already in outline_structure._NON_STRUCTURAL_KEYS, so
 # nothing under it can be mistaken for a section.
 SLOT_BLOCK_KEYS = "slot_block_keys"
+# The index of the section a body-led slot chose inside its container (blog's
+# `structure.sections`), so a writer that gets one field per planned section
+# (outline_structure.expand_section_containers) can target exactly that one.
+SLOT_SECTION_INDEX = "slot_section_index"
+# How a slot's line in a section's key points starts.
+SLOT_LINE_PREFIX = "Work in the approved mention of"
 
 
 @dataclass(frozen=True)
@@ -74,6 +80,7 @@ class BrandSlotWrite:
 
     path: str
     block_keys: tuple[str, ...]
+    section_index: int | None = None
 
 
 _WORD_RE = re.compile(r"[a-zA-Z0-9']+")
@@ -815,16 +822,16 @@ def _slot_body_section(
         section["key_points"] = key_points
     if any(_mentions(p, brand_name) for p in key_points):
         return BrandSlotWrite(
-            f"{container_label}[{index}].key_points (already present)", (block_key,)
+            f"{container_label}[{index}].key_points (already present)", (block_key,), index
         )
 
     claim = _claim(promo)
     key_points.append(
-        f"Work in the approved mention of {brand_name} here — {claim}"
+        f"{SLOT_LINE_PREFIX} {brand_name} here — {claim}"
         if claim
-        else f"Work in the approved mention of {brand_name} here."
+        else f"{SLOT_LINE_PREFIX} {brand_name} here."
     )
-    return BrandSlotWrite(f"{container_label}[{index}].key_points", (block_key,))
+    return BrandSlotWrite(f"{container_label}[{index}].key_points", (block_key,), index)
 
 
 def _annotate_relevant_item(
@@ -877,9 +884,9 @@ def _annotate_relevant_item(
 
     claim = _claim(promo)
     addition = (
-        f"Work in the approved mention of {brand_name} here — {claim}"
+        f"{SLOT_LINE_PREFIX} {brand_name} here — {claim}"
         if claim
-        else f"Work in the approved mention of {brand_name} here."
+        else f"{SLOT_LINE_PREFIX} {brand_name} here."
     )
     existing = item.get(text_field)
     item[text_field] = (
@@ -1050,6 +1057,8 @@ def apply_brand_slot_to_outline(outline: dict, content_type: str) -> dict:
     promotion = updated.get("brand_voice_promotion")
     if isinstance(promotion, dict):
         promotion[SLOT_BLOCK_KEYS] = list(written.block_keys)
+        if written.section_index is not None:
+            promotion[SLOT_SECTION_INDEX] = written.section_index
 
     logger.info(
         "[BrandSlot] reserved %s for '%s' (content_type=%s)",

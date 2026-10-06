@@ -783,11 +783,11 @@ def check_title_subject_alignment(
 # article section must use to count as that section under a reworded heading.
 _PLANNED_SECTION_MIN_COVERAGE = 0.35
 
-_SECTION_HEADING_RE = re.compile(r"^(#{2,3})\s+(.+?)\s*#*\s*$", flags=re.MULTILINE)
+_SECTION_HEADING_RE = re.compile(r"^(#{2,4})\s+(.+?)\s*#*\s*$", flags=re.MULTILINE)
 
 
 def _article_sections(body: str) -> list[tuple[int, str, str]]:
-    """(level, heading, text) for each H2/H3; an H2's text includes its H3s."""
+    """(level, heading, text) for each H2-H4; a section's text includes its subsections."""
     marks = [
         (len(m.group(1)), m.group(2), m.start(), m.end())
         for m in _SECTION_HEADING_RE.finditer(body)
@@ -799,18 +799,22 @@ def _article_sections(body: str) -> list[tuple[int, str, str]]:
     return sections
 
 
-def _missing_planned_sections(final_content: dict, spec: RequirementsSpec) -> list[dict]:
-    """The approved outline's required planned sections the article doesn't have.
+def _planned_section_problems(
+    final_content: dict, spec: RequirementsSpec
+) -> tuple[list[dict], list[dict]]:
+    """(missing, out of order): the approved outline's required planned sections.
 
     Each planned section must be a section of its own, at its own level: a
     planned H2 written as an H3 under another section is the collapse
     rext-control#329 is about. Matched one to one, first by heading, then, for a
     reworded heading, by how much of the section's own plan an unmatched section
-    of the same level covers.
+    of the same level covers. The matched sections must then come in the
+    approved order, which also keeps each planned subsection under the section
+    it was planned under.
     """
     planned = [p for p in (spec.get("planned_sections") or []) if p.get("required")]
     if not planned:
-        return []
+        return [], []
     sections = _article_sections(final_content.get("body_markdown") or "")
     free = list(range(len(sections)))
     found: dict[int, int] = {}
@@ -837,7 +841,16 @@ def _missing_planned_sections(final_content: dict, spec: RequirementsSpec) -> li
             free.remove(best[1])
         else:
             missing.append(plan)
-    return missing
+    # In the approved order: the longest run of matches already in plan order
+    # stays; any other matched section is out of order.
+    order = [(i, found[i]) for i in range(len(planned)) if i in found]
+    runs: list[list[int]] = []
+    for k, (_i, j) in enumerate(order):
+        before = [runs[m] for m in range(k) if order[m][1] < j]
+        runs.append(max(before, key=len, default=[]) + [k])
+    keep = set(max(runs, key=len, default=[]))
+    misplaced = [planned[i] for k, (i, _j) in enumerate(order) if k not in keep]
+    return missing, misplaced
 
 
 def _describe_missing_section(plan: dict, planned: list[dict]) -> str:
@@ -855,7 +868,7 @@ def _describe_missing_section(plan: dict, planned: list[dict]) -> str:
         if after
         else "in its planned place"
     )
-    kind = "H3" if plan.get("level") == 3 else "H2"
+    kind = f"H{plan.get('level') or 2}"
     words = " ".join((plan.get("plan") or "").split())
     covering = f", covering: {words[:240]}" if words else ""
     return f"section {position} of {plan.get('of')}, {plan.get('heading')!r} (an {kind} {place}{covering})"
@@ -866,26 +879,34 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
     # of the article, at its level and in its place, whether or not generation
     # was structured. A dropped one blocks, and the detail tells repair which
     # section to restore, where, and what it covers (rext-control#329).
-    missing_planned = _missing_planned_sections(final_content, spec)
-    if missing_planned:
-        planned = [p for p in (spec.get("planned_sections") or []) if p.get("required")]
-        return _fail(
-            "required_sections",
-            "blocking",
-            f"Missing {len(missing_planned)} of the {len(planned)} section(s) the approved "
-            "outline plans: "
-            + "; ".join(
-                _describe_missing_section(p, spec.get("planned_sections") or [])
-                for p in missing_planned
+    missing_planned, misplaced = _planned_section_problems(final_content, spec)
+    if missing_planned or misplaced:
+        all_planned = spec.get("planned_sections") or []
+        planned = [p for p in all_planned if p.get("required")]
+        parts = []
+        if missing_planned:
+            parts.append(
+                f"Missing {len(missing_planned)} of the {len(planned)} section(s) the approved "
+                "outline plans: "
+                + "; ".join(_describe_missing_section(p, all_planned) for p in missing_planned)
+                + ". Write each as its own section with that heading, in that position; don't "
+                "merge it into another section."
             )
-            + ". Write each as its own section with that heading, in that position; don't "
-            "merge it into another section.",
-        )
+        if misplaced:
+            parts.append(
+                f"{len(misplaced)} planned section(s) are out of the approved order: "
+                + "; ".join(_describe_missing_section(p, all_planned) for p in misplaced)
+                + ". Move each to that position."
+            )
+        return _fail("required_sections", "blocking", " ".join(parts))
 
-    # Planned sections were matched above, rewordings included; matching their
-    # headings again below would flag a reworded one as missing.
+    # Required planned sections were matched above, rewordings included;
+    # matching their headings again below would flag a reworded one as missing.
+    # Optional ones (a legacy top-level `sections` list) keep the check below.
     planned_labels = {
-        (p.get("heading") or "").strip().lower() for p in spec.get("planned_sections") or []
+        (p.get("heading") or "").strip().lower()
+        for p in spec.get("planned_sections") or []
+        if p.get("required")
     }
     expected = [
         label

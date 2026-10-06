@@ -28,7 +28,6 @@ table.
 
 from __future__ import annotations
 
-import json
 import logging
 
 from src.flow.engines.content.generation.brand_placement_policy import (
@@ -37,7 +36,11 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_article_brand_policy,
     resolve_placement_instruction,
 )
-from src.flow.engines.content.generation.brand_slot import SLOT_BLOCK_KEYS
+from src.flow.engines.content.generation.brand_slot import (
+    SLOT_BLOCK_KEYS,
+    SLOT_LINE_PREFIX,
+    SLOT_SECTION_INDEX,
+)
 from src.flow.engines.content.generation.outline_structure import OutlineBlock
 from src.flow.model.structure.contents.base import EMPTY_SCHEMA_CONTEXT, SchemaContext
 from src.flow.model.structure.outlines import normalize_content_type
@@ -70,18 +73,24 @@ def _resolve_target_keys(
         if matched:
             return matched
         # A recorded container (blog's `structure`) is expanded into one field
-        # per planned section (rext-control#329). The slot wrote the mention into
-        # one section's key points, so that section is the field to target.
-        brand_name = (promo.get("brand_name") or "").strip().lower()
-        sections = tuple(
-            block.key
-            for block in blocks
-            if block.parent in recorded
-            and brand_name
-            and brand_name in json.dumps(block.data, default=str).lower()
-        )
+        # per planned section (rext-control#329): target the one section the
+        # slot chose. Outlines approved before the slot recorded its index fall
+        # back to the section carrying the slot's own line in its key points.
+        sections = [block for block in blocks if block.parent in recorded]
         if sections:
-            return sections
+            index = promo.get(SLOT_SECTION_INDEX)
+            chosen = [b for b in sections if isinstance(index, int) and b.position == index + 1]
+            if not chosen:
+                chosen = [
+                    b
+                    for b in sections
+                    if any(
+                        isinstance(point, str) and point.startswith(SLOT_LINE_PREFIX)
+                        for point in (b.data or {}).get("key_points") or []
+                    )
+                ][:1]
+            if chosen:
+                return (chosen[0].key,)
         if recorded:
             logger.info(
                 "brand_schema_context: recorded slot blocks %s are not fields on this "
