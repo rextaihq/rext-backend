@@ -56,6 +56,14 @@ class SSRFValidationError(ValueError):
     pass
 
 
+class InvalidURLError(SSRFValidationError):
+    """The URL itself is unusable: too long, an unsupported scheme, or no hostname."""
+
+
+class UnresolvableHostError(SSRFValidationError):
+    """The URL's hostname resolves to no address."""
+
+
 def validate_url_for_ssrf(url: str) -> str:
     """
     Validate a URL to prevent SSRF attacks.
@@ -77,20 +85,20 @@ def validate_url_for_ssrf(url: str) -> str:
         SSRFValidationError: If the URL fails any validation check.
     """
     if len(url) > MAX_URL_LENGTH:
-        raise SSRFValidationError(f"URL exceeds maximum length of {MAX_URL_LENGTH} characters")
+        raise InvalidURLError(f"URL exceeds maximum length of {MAX_URL_LENGTH} characters")
 
     parsed = urlparse(url)
 
     # Check scheme
     if parsed.scheme not in ALLOWED_SCHEMES:
-        raise SSRFValidationError(
+        raise InvalidURLError(
             f"URL scheme '{parsed.scheme}' is not allowed. Only {ALLOWED_SCHEMES} are permitted."
         )
 
     # Check hostname exists
     hostname = parsed.hostname
     if not hostname:
-        raise SSRFValidationError("URL must contain a valid hostname")
+        raise InvalidURLError("URL must contain a valid hostname")
 
     # Check for IP address directly in URL. Only the parse is guarded:
     # SSRFValidationError is itself a ValueError and must not be swallowed here.
@@ -105,7 +113,7 @@ def validate_url_for_ssrf(url: str) -> str:
     # Resolve hostname to IP addresses and validate each one
     resolved_ips = _resolve_hostname(hostname)
     if not resolved_ips:
-        raise SSRFValidationError(f"Could not resolve hostname: {hostname}")
+        raise UnresolvableHostError(f"Could not resolve hostname: {hostname}")
 
     for ip_str in resolved_ips:
         try:
