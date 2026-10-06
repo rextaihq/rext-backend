@@ -8,8 +8,9 @@ repair step's; the checklist (API and dashboard) shows a line written for the re
 
 from __future__ import annotations
 
-import inspect
 import json
+import re
+from pathlib import Path
 
 import pytest
 
@@ -46,17 +47,43 @@ def _no_repair_wording(text: str) -> None:
         assert phrase not in text, f"repair wording {phrase!r} reached the reader: {text!r}"
 
 
+# The names the checks' results carry (`_fail("<name>", ...)`), which is what is saved: one
+# differs from its function (`check_facts_and_external_links_integration` -> "facts_and_external_links").
 CHECK_NAMES = sorted(
-    name.removeprefix("check_")
-    for name, fn in inspect.getmembers(validation, inspect.isfunction)
-    if name.startswith("check_") and fn.__module__ == validation.__name__
+    set(
+        re.findall(
+            r'_(?:fail|pass)\(\s*"([a-z_]+)"', Path(validation.__file__).read_text(encoding="utf-8")
+        )
+    )
 )
+FROM_DETAIL = {"unsupported_claims", "meta_description_length"}
 
 
 def test_every_check_has_words_for_the_reader():
-    missing = [n for n in CHECK_NAMES if n != "unsupported_claims" and n not in USER_WORDING]
+    assert len(CHECK_NAMES) >= 25 and "facts_and_external_links" in CHECK_NAMES
+    missing = [n for n in CHECK_NAMES if n not in FROM_DETAIL and n not in USER_WORDING]
     assert not missing
-    assert "unsupported_claims" in CHECK_NAMES
+    for name in CHECK_NAMES:
+        assert not user_detail(name, "").endswith("this check didn't pass."), name
+
+
+@pytest.mark.parametrize(
+    ("detail", "line"),
+    [
+        (
+            "Meta description is 98 characters; aim for 120-156.",
+            "The meta description is too short: search results have room for more.",
+        ),
+        (
+            "Meta description is 171 characters; the maximum is 156. Rewrite it as a complete, "
+            "shorter description that keeps the exact focus keyphrase.",
+            "The meta description is too long: search results cut it off.",
+        ),
+    ],
+)
+def test_a_meta_description_reads_as_too_short_or_too_long(detail, line):
+    assert user_detail("meta_description_length", detail) == line
+    assert user_detail("meta_description_length", line) == line
 
 
 @pytest.mark.parametrize(
