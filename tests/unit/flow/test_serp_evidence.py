@@ -144,15 +144,45 @@ def _serp(items):
 ORGANIC = {"type": "organic", "title": "A", "url": "https://a.test/x", "rank_group": 1}
 
 
-def test_parse_records_an_ai_overview_and_never_claims_absence():
-    assert _parse_serp_response(_serp([{"type": "ai_overview"}, ORGANIC]))["ai_overview"] is True
-    # Only cached AI Overviews come back without the paid async load, so a
-    # missing item is "not seen", never "absent".
+CACHED_OVERVIEW = {
+    "type": "ai_overview",
+    "asynchronous_ai_overview": False,
+    "markdown": "An answer.",
+    "items": [{"type": "ai_overview_element"}],
+    "references": [{"url": "https://a.test/x"}],
+}
+# What DataForSEO returns, without the paid load, for an overview Google loads
+# after the page: the item, with no content.
+PLACEHOLDER = {
+    "type": "ai_overview",
+    "asynchronous_ai_overview": True,
+    "markdown": None,
+    "items": None,
+    "references": None,
+}
+
+
+def test_parse_reads_a_cached_overview_and_the_placeholder_as_shown():
+    assert _parse_serp_response(_serp([CACHED_OVERVIEW, ORGANIC]))["ai_overview"] is True
+    assert _parse_serp_response(_serp([PLACEHOLDER, ORGANIC]))["ai_overview"] is True
+
+
+def test_parse_never_claims_absence():
+    # Without the paid async load, the paid load found an overview behind 3 of
+    # 9 complete SERPs that had no item, so a missing item is "not seen".
     assert _parse_serp_response(_serp([ORGANIC]))["ai_overview"] is None
+
+
+def test_parse_proves_nothing_from_a_failed_or_empty_lookup():
     assert _parse_serp_response(_serp(None))["ai_overview"] is None
     no_result = {"tasks": [{"status_code": 20000, "result": []}]}
     assert _parse_serp_response(no_result)["ai_overview"] is None
     assert _empty_serp_state()["ai_overview"] is None
+
+
+def test_parse_proves_nothing_from_a_failed_task_with_some_results():
+    failed = {"tasks": [{"status_code": 40101, "data": {}, "result": [{"items": [ORGANIC]}]}]}
+    assert _parse_serp_response(failed)["ai_overview"] is None
 
 
 def test_normalised_features_carry_the_flag():
