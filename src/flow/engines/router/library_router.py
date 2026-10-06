@@ -52,7 +52,7 @@ async def library_router(state: REXT) -> str:
             await notify_now(
                 user_id=uid,
                 pref_flag="gen_started",
-                message=f'Generating content for "{serp_payload.get("query") or "your topic"}".',
+                message=f'Generating content for "{serp_payload.get("query") or "your keyword"}".',
                 payload={"query": serp_payload.get("query")},
                 workspace_id=wid,
             )

@@ -667,7 +667,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         user_response = interrupt(
             {
                 "type": "topic",
-                "instruction": "Select a topic",
+                "instruction": "Select a title",
                 "topics": last_valid_topics,
                 "recommended_topic": last_valid_recommended,
                 "recommendation_reason": last_valid_reason,
