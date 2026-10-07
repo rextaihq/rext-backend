@@ -18,7 +18,10 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-from src.flow.engines.content.generation.requirements_spec import RequirementsSpec
+from src.flow.engines.content.generation.requirements_spec import (
+    RequirementsSpec,
+    brand_named_in,
+)
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 
 Stage = Literal["writer", "rewrite", "repair"]
@@ -63,6 +66,9 @@ class GenerationBrief(TypedDict):
     brand_name: str
     call_to_action: str
     call_to_action_links: bool
+    # The approved call to action names a brand the choice keeps out of it: the article
+    # carries its intent in new words, never its text.
+    call_to_action_reworded: bool
 
 
 def _text(value: Any) -> str:
@@ -101,6 +107,8 @@ def build_generation_brief(spec: RequirementsSpec, outline: dict | None) -> Gene
     low, high = compute_word_target_band(target)
     choice, brand_name = _brand(spec, outline)
     call_to_action = _text((spec.get("outline_cta") or {}).get("text"))
+    # "None" and "Subtle" keep the brand out of the call to action, which then has no link.
+    brand_free = bool(call_to_action) and choice in ("none", "subtle")
     return GenerationBrief(
         title=_text(spec.get("selected_title")),
         content_type=_text(spec.get("content_type")),
@@ -116,8 +124,8 @@ def build_generation_brief(spec: RequirementsSpec, outline: dict | None) -> Gene
         brand_choice=choice,
         brand_name=brand_name if choice else "",
         call_to_action=call_to_action,
-        # "None" and "Subtle" keep the brand out of the call to action, which then has no link.
-        call_to_action_links=bool(call_to_action) and choice not in ("none", "subtle"),
+        call_to_action_links=bool(call_to_action) and not brand_free,
+        call_to_action_reworded=brand_free and brand_named_in(call_to_action, brand_name),
     )
 
 
@@ -160,7 +168,15 @@ def _brand_line(brief: GenerationBrief) -> str:
 
 
 def _call_to_action_line(brief: GenerationBrief) -> str:
-    if not brief["call_to_action"]:
+    text = brief["call_to_action"]
+    if not text:
         return ""
-    link = "" if brief["call_to_action_links"] else " (without the brand, and with no link)"
-    return f'- Call to action: "{brief["call_to_action"]}"{link}'
+    if brief["call_to_action_reworded"]:
+        # Quoting it would put the brand's name in front of a stage told to keep it out.
+        return (
+            f'- Call to action: the same intent as the outline\'s ("{text}"), in new words '
+            f"without {brief['brand_name']}, and with no link"
+        )
+    return f'- Call to action: "{text}"' + (
+        "" if brief["call_to_action_links"] else " (with no link)"
+    )
