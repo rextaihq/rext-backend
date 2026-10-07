@@ -183,18 +183,21 @@ def _give_start_month(subscription: UserSubscription, plan: SubscriptionPlan) ->
     _mark_start_month_given(subscription)
 
 
-def _payment_gives_a_month(subscription: UserSubscription, billing_reason: Optional[str]) -> bool:
+def _payment_gives_a_month(billing_reason: Optional[str], start_month_given: bool) -> bool:
     """Whether a paid invoice brings a month of credits.
 
     A renewal does. A first payment does unless the subscription opened with its month: the
     invoice paid for that month, and processed after the customer spent, a reset would give
     the spending back (F8e). A plan change's prorated invoice ("updated") doesn't: the change
     itself set the credits (F8a).
+
+    `start_month_given` is _start_month_given() as the row stood before this payment changed
+    its status.
     """
     if billing_reason == "updated":
         return False
     if billing_reason == "initial":
-        return not _start_month_given(subscription)
+        return not start_month_given
     return True
 
 
@@ -1639,6 +1642,12 @@ async def handle_subscription_payment_success(
         )
         return None
 
+    # Whether the start's month was given already, read before the status changes below: a row
+    # from before the marker is judged by its status, and one whose first payment had failed is
+    # still unpaid here. Read after the activation it would pass for a start that opened paid,
+    # and the customer who has just paid would get no credits.
+    start_month_given = _start_month_given(subscription)
+
     # Update subscription - activate if it was on trial or its renewal had failed
     # (PAST_DUE while Lemon Squeezy retried, UNPAID after it gave up, SUSPENDED on
     # rows from the old grace period).
@@ -1680,7 +1689,7 @@ async def handle_subscription_payment_success(
         and plan_row.credits_per_month is not None
         and not refunded_first_payment
     ):
-        if _payment_gives_a_month(subscription, sub_data.get("billing_reason")):
+        if _payment_gives_a_month(sub_data.get("billing_reason"), start_month_given):
             subscription.current_credits = plan_row.credits_per_month
             subscription.credits_reset_date = next_period_end
             if sub_data.get("billing_reason") == "initial":
