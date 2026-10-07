@@ -226,3 +226,106 @@ def test_the_rewrite_is_told_to_keep_the_brand_out():
 
     assert data["brand_instruction"].startswith("BRAND EXCLUSION")
     assert "Acme Tools" in data["brand_instruction"]
+
+
+# -- Review round 1 of #918 ---------------------------------------------------------------
+
+
+def test_a_call_to_action_linking_to_the_brand_blocks_under_none():
+    article = {**ARTICLE, "cta": {"text": "Get started", "url": "https://acme.test/signup"}}
+
+    result = _absent(article)
+
+    assert result["passed"] is False and "call to action's link" in result["detail"]
+
+
+def test_approved_internal_links_are_not_brand_links():
+    """The workspace's own approved pages share the brand's host; the user chose to keep them."""
+    internal = "https://www.acme.test/blog/garden-planner"
+    outline = _outline("none", internal_links=[{"url": internal, "title": "Garden planner"}])
+    article = {**ARTICLE, "body_markdown": f"See [our planner]({internal}) first."}
+
+    assert check_brand_absent(article, build_requirements_spec(outline, "blog"))["passed"] is True
+    other = {**ARTICLE, "body_markdown": "See [the shop](https://acme.test/shop)."}
+    assert check_brand_absent(other, build_requirements_spec(outline, "blog"))["passed"] is False
+
+
+@pytest.mark.parametrize(
+    "outline_extra",
+    [
+        {"title": "Acme Tools login: a step-by-step guide"},
+        {"focus_keyphrase": "acme tools login"},
+    ],
+)
+def test_none_cannot_exclude_a_brand_the_title_or_keyphrase_names(outline_extra):
+    """The title stays verbatim and the keyphrase must appear: None means no promotion there."""
+    assert excluded_brand_of(_outline("none", **outline_extra)) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "counts"),
+    [
+        ("Save this for later.", False),
+        ("Later you can review it.", False),  # sentence start: ordinary use
+        ("We scheduled it in Later last week.", True),
+        ("## Later\n\nIt helps.", False),  # a heading's first word
+    ],
+)
+def test_a_one_word_brand_that_is_an_ordinary_word_counts_only_as_the_name(text, counts):
+    outline = {
+        "title": "How to schedule posts",
+        "brand_prominence": "none",
+        "brand_voice_promotion": {"brand_name": "Later", "brand_url": ""},
+    }
+    article = {**ARTICLE, "title": "How to schedule posts", "body_markdown": text}
+
+    result = check_brand_absent(article, build_requirements_spec(outline, "blog"))
+
+    assert result["passed"] is (not counts)
+
+
+def test_a_subtle_call_to_action_must_not_link_to_the_brand():
+    from src.flow.engines.content.generation.validation import check_brand_prominence
+
+    article = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\nAcme Tools maps the sun for you.",
+        "cta": {"text": "Get started", "url": "https://acme.test"},
+    }
+
+    result = check_brand_prominence(article, build_requirements_spec(_outline("subtle"), "blog"))
+
+    assert result["passed"] is False and "must not send readers" in result["detail"]
+
+
+@pytest.mark.asyncio
+async def test_humanize_bringing_the_brand_back_is_repaired_after_it(monkeypatch):
+    """With no brand context (None), the final pass still routes brand_absent to repair."""
+    import src.flow.engines.content.generation.validation as validation
+
+    asked = []
+
+    async def repair(**kwargs):
+        asked.extend(c["name"] for c in kwargs["failed_checks"])
+        return None
+
+    monkeypatch.setattr(validation, "run_targeted_repair", repair)
+    monkeypatch.setattr(
+        validation,
+        "enforce_subheadings_for_spec",
+        AsyncMock(side_effect=lambda content, *a, **k: content),
+    )
+    article = {**ARTICLE, "body_markdown": "## Choose the spot\n\nAcme Tools maps the sun."}
+    await validation.final_validate_content(
+        {
+            "content": {
+                "final_content": article,
+                "outline": _outline("none"),
+                "content_type": "blog",
+                "selected_topic": ARTICLE["title"],
+            },
+            "serp_payload": {"keyword": "vegetable garden"},
+        }
+    )
+
+    assert "brand_absent" in asked
