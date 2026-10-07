@@ -35,6 +35,7 @@ UI, where partial values are fine.
 from __future__ import annotations
 
 import logging
+import re
 import typing
 from dataclasses import dataclass
 from typing import Any, Union, get_args, get_origin
@@ -535,8 +536,36 @@ def resolve_required_headings(blocks: list[OutlineBlock]) -> list[str]:
 _PROMPT_SUPPRESSED_FIELDS = frozenset(
     {
         "suggested_word_count",
+        # Set by outline_edits on the section that holds the FAQs; the prompts name
+        # that section by its heading instead (`faq_section_heading`).
+        "holds_faqs",
     }
 )
+
+# A section whose heading says it's the FAQ (G71, revnix/rext-control#587).
+FAQ_HEADING = re.compile(r"\b(faqs?|frequently asked)\b", re.IGNORECASE)
+
+
+def faq_section_heading(outline: dict, content_type: str) -> str | None:
+    """The heading of the outline's section that holds the approved FAQs, or None.
+
+    The section a reviewer renamed keeps a `holds_faqs` mark (outline_edits), so its
+    new heading, "Questions agencies ask…", is still known as the FAQ section and
+    the writer puts the FAQs there instead of adding a second FAQ section after it.
+    Without a mark, a section whose heading says FAQ is the one.
+    """
+    containers = section_containers(resolve_outline_structure(outline, content_type))
+    for mark_only in (True, False):
+        for _, items in containers:
+            for item in items:
+                field = item_heading_field(item)
+                if not field:
+                    continue
+                heading = item[field].strip()
+                marked = item.get("holds_faqs") is True
+                if marked if mark_only else FAQ_HEADING.search(heading):
+                    return heading
+    return None
 
 
 # A call to action is an instruction, never content to copy. Rendered like any other
