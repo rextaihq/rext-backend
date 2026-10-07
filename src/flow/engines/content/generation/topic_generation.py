@@ -72,6 +72,11 @@ KEYWORD_TOO_LONG_MESSAGE = (
 )
 
 
+# Endings a model reaches for to fill a title to its minimum length (staging, 2026-10-07:
+# "How to start a podcast on YouTube: Essential Tips Here"). Named in both title prompts (G65).
+_FILLER_EXAMPLES = '"Essential Tips Here", "Read This Now", "All You Need", "Learn More Today"'
+
+
 def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
     # The keyphrase is cleared, not pinned: `content` deep-merges, and a pinned
     # phrase outranks the keyword chosen next (resolve_focus_keyword), so a
@@ -267,7 +272,9 @@ async def _repair_invalid_titles(
                 "- Keep the title natural and readable.\n"
                 "- Do not add unsupported facts, statistics, dates, products, "
                 "companies, people, rankings, or claims.\n"
-                "- Do not use generic filler merely to increase character count.\n"
+                "- Do not use generic filler merely to increase character count: no ending "
+                f"that would fit any title ({_FILLER_EXAMPLES}). Add who it is for, a number, "
+                "the outcome or the year instead.\n"
                 "- Do not change the subject just to satisfy the character count.\n\n"
                 "Only repair the supplied invalid titles. "
                 "Do not modify titles that are already valid.\n\n"
@@ -523,7 +530,10 @@ def _build_system_prompt(
         "- Count the final title before returning it.\n"
         "- If the first draft is outside the range, rewrite it before returning "
         "the final answer.\n\n"
-        f"Do NOT add meaningless filler just to reach {TITLE_MIN_CHARS} characters.\n"
+        f"Do NOT add meaningless filler just to reach {TITLE_MIN_CHARS} characters. Filler is "
+        "an ending that says nothing about the article and would fit any title: "
+        f"{_FILLER_EXAMPLES}. To lengthen a title, add something specific to the "
+        "topic instead: who it is for, a number of steps or items, the outcome, or the year.\n"
         f"Do NOT remove important meaning just to stay below {title_max_chars(keyphrase)} characters.\n"
         "The final title must be natural, readable, and useful.\n\n"
         "==================================================\n"
