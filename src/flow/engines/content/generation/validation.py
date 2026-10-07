@@ -1554,7 +1554,7 @@ def check_brand_absent(final_content: dict, spec: RequirementsSpec) -> Validatio
             _excluded_mentions(text, brand_name) or (host and _links_to_host(text, host, approved))
         )
     ]
-    if host and isinstance(cta.get("url"), str) and _links_to_host(cta["url"], host, set()):
+    if host and isinstance(cta.get("url"), str) and _links_to_host(cta["url"], host, approved):
         found.append("call to action's link")
     if not found:
         return _pass("brand_absent", f"'{brand_name}' is not mentioned, as the user chose.")
