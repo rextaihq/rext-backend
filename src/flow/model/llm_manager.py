@@ -7,6 +7,7 @@ from langgraph.constants import TAG_NOSTREAM
 
 from src.api.config import get_settings
 from src.flow.model.provider_outage import provider_outage, report_provider_outage
+from src.utils.loop_local_http import SHARED_ASYNC_CLIENT
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -151,6 +152,10 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS, temperature: float | None =
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=max_tokens,
         streaming=True,
         **kwargs,
@@ -173,6 +178,10 @@ def load_content_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         temperature=0.9,
         streaming=True,
@@ -206,6 +215,10 @@ def load_luna_content_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="none",
         use_responses_api=True,
@@ -225,6 +238,10 @@ def load_humanize_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="low",
         tags=ARTICLE_STEP_TAGS,
@@ -244,6 +261,10 @@ def topic_generation_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=TOPIC_GENERATION_MAX_TOKENS,
         streaming=True,
     )

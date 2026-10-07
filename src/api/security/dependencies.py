@@ -241,13 +241,19 @@ async def get_current_user_sse(
         # Verify the token
         payload = decode_and_verify_token(auth_token)
 
-        # Check if token is blacklisted
-        jti = payload.get("jti")
-        if jti and await is_token_blacklisted(jti, db):
-            raise RextAuthenticationException(
-                message="Token has been revoked", context={"reason": "Token blacklisted"}
-            )
-        await _ensure_active_user_session(payload, db)
+        # A stream keeps this request's session for its whole life: the two reads below must
+        # not leave their transaction open, or every live stream holds a database connection
+        # idle in transaction until it closes (G79, rext-control#643). Both are read-only.
+        try:
+            # Check if token is blacklisted
+            jti = payload.get("jti")
+            if jti and await is_token_blacklisted(jti, db):
+                raise RextAuthenticationException(
+                    message="Token has been revoked", context={"reason": "Token blacklisted"}
+                )
+            await _ensure_active_user_session(payload, db)
+        finally:
+            await db.rollback()
 
     except HTTPException as e:
         if "expired" in str(e.detail).lower():
