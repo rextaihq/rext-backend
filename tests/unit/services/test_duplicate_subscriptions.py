@@ -479,3 +479,52 @@ async def test_an_older_purchase_arriving_last_gets_no_bonus_audit_or_welcome(
         select(AuditLog.id).where(AuditLog.resource_id == str(older.id))
     )
     assert created_audit.first() is None
+
+
+@pytest.mark.asyncio
+async def test_an_older_purchase_left_to_a_person_gets_no_bonus_audit_or_welcome_either(
+    session, alerts, monkeypatch
+):
+    """With automatic settlement off it is only marked, and stops there all the same."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    monkeypatch.delenv("BILLING_AUTO_SETTLE_DUPLICATES", raising=False)
+    bonus = AsyncMock()
+    monkeypatch.setattr(handlers, "grant_promotion_bonus", bonus)
+    user, (newer,) = await _customer_with(session, SubscriptionStatus.ACTIVE)
+    newer.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    plan = await session.get(SubscriptionPlan, newer.plan_id)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{uuid4().hex[:6]}"
+    await session.flush()
+    payload = {
+        "data": {
+            "type": "subscriptions",
+            "id": "ls-bought-first-manual",
+            "attributes": {
+                "status": "active",
+                "variant_id": plan.lemonsqueezy_variant_id_monthly,
+                "user_email": user.email,
+                "created_at": "2026-10-06T09:00:00Z",
+                "updated_at": "2026-10-06T09:00:05Z",
+            },
+        },
+        "custom_data": {"user_id": str(user.id)},
+    }
+
+    task = await handlers.handle_subscription_created(
+        payload, SimpleNamespace(id=uuid4(), event_type="subscription_created"), session
+    )
+
+    older = await session.scalar(
+        select(UserSubscription).where(
+            UserSubscription.lemonsqueezy_subscription_id == "ls-bought-first-manual"
+        )
+    )
+    assert task is None
+    assert older.status == SubscriptionStatus.ACTIVE  # a person cancels and refunds it
+    assert older.subscription_metadata["duplicate_found_of"] == str(newer.id)
+    bonus.assert_not_called()
+    created_audit = await session.execute(
+        select(AuditLog.id).where(AuditLog.resource_id == str(older.id))
+    )
+    assert created_audit.first() is None

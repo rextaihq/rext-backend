@@ -297,58 +297,206 @@ async def test_a_cancellation_it_finds_sends_the_cancellation_email(session):
 
 
 @pytest.mark.asyncio
-async def test_the_notice_goes_out_when_the_email_fails():
+async def test_each_email_goes_out_right_after_its_own_commit(session, monkeypatch):
+    """A later failure in the batch can't lose an email whose change is already committed."""
+    first = await _subscription(session, SubscriptionStatus.PAST_DUE)
+    second = await _subscription(session, SubscriptionStatus.PAST_DUE)
+    order = []
+    commit = session.commit
+
+    async def recording_commit():
+        order.append("commit")
+        await commit()
+
+    async def deliver(task):
+        order.append(f"deliver {task['email_type']}")
+
+    monkeypatch.setattr(session, "commit", recording_commit)
+
+    result = await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                first.lemonsqueezy_subscription_id: {
+                    "status": "unpaid",
+                    "updated_at": T2.isoformat(),
+                },
+                second.lemonsqueezy_subscription_id: RuntimeError("timeout"),
+            }
+        ),
+        deliver=deliver,
+    )
+
+    assert order == ["commit", "deliver subscription_unpaid", "commit"]
+    assert result["emails"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_revived_subscription_that_can_bill_gets_the_duplicate_check(session, monkeypatch):
+    """Past due counts too: it still bills, so an older one revived into it is a duplicate."""
+    import src.services.duplicate_subscriptions as duplicates
+
+    monkeypatch.setattr(duplicates, "trigger_payment_alert", MagicMock())
+    monkeypatch.delenv("BILLING_AUTO_SETTLE_DUPLICATES", raising=False)
+    older = await _subscription(session, SubscriptionStatus.CANCELLED)
+    older.created_at = T1
+    older.end_date = T2 + timedelta(days=20)
+    newer = UserSubscription(
+        user_id=older.user_id,
+        plan_id=older.plan_id,
+        status=SubscriptionStatus.ACTIVE,
+        lemonsqueezy_subscription_id=f"ls-{uuid4().hex[:8]}",
+        provider_updated_at=T1,
+        created_at=T2,
+    )
+    session.add(newer)
+    await session.flush()
+
+    await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                older.lemonsqueezy_subscription_id: {
+                    "status": "past_due",
+                    "updated_at": T2.isoformat(),
+                },
+                newer.lemonsqueezy_subscription_id: {
+                    "status": "active",
+                    "updated_at": T1.isoformat(),
+                },
+            }
+        ),
+    )
+
+    assert older.subscription_metadata["duplicate_found_of"] == str(newer.id)
+
+
+@pytest.mark.asyncio
+async def test_a_found_cancellation_wins_over_a_plan_change_email(session, monkeypatch):
+    row = await _subscription(session, SubscriptionStatus.ACTIVE)
+    handle = module.handle_subscription_updated
+
+    async def plan_change_too(*args, **kwargs):
+        await handle(*args, **kwargs)
+        return {"send_email": True, "email_type": "subscription_upgraded", "email_data": {}}
+
+    monkeypatch.setattr(module, "handle_subscription_updated", plan_change_too)
+
+    result = await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                row.lemonsqueezy_subscription_id: {
+                    "status": "cancelled",
+                    "ends_at": (T2 + timedelta(days=20)).isoformat(),
+                    "updated_at": T2.isoformat(),
+                }
+            }
+        ),
+    )
+
+    assert [email["email_type"] for email in result["emails"]] == ["subscription_cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_a_cancellation_a_webhook_already_applied_sends_nothing_again(session):
+    """Cancelled by its webhook after the batch was read: the status under the lock decides."""
+    from sqlalchemy import update
+
+    first = await _subscription(session, SubscriptionStatus.ACTIVE)
+    second = await _subscription(session, SubscriptionStatus.ACTIVE)
+    cancelled = {
+        "status": "cancelled",
+        "ends_at": (T2 + timedelta(days=20)).isoformat(),
+        "updated_at": T2.isoformat(),
+    }
+
+    async def read(ls_id):
+        if ls_id == first.lemonsqueezy_subscription_id:
+            # Meanwhile the second one's subscription_cancelled webhook lands.
+            await session.execute(
+                update(UserSubscription)
+                .where(UserSubscription.id == second.id)
+                .values(status=SubscriptionStatus.CANCELLED)
+            )
+            return {"status": "active", "updated_at": T1.isoformat()}
+        return cancelled
+
+    result = await module.reconcile_subscriptions(
+        session, SimpleNamespace(get_subscription_attributes=AsyncMock(side_effect=read))
+    )
+
+    assert result["emails"] == []
+
+
+@pytest.mark.asyncio
+async def test_the_job_delivers_each_email_with_its_notice():
     from src.api.tasks import subscription_reconcile_task as task
 
     db = AsyncMock()
     session_cm = AsyncMock()
     session_cm.__aenter__.return_value = db
     email = {"send_email": True, "email_type": "subscription_unpaid", "email_data": {}}
+    send = AsyncMock()
     notify = AsyncMock()
+
+    async def reconcile(_db, deliver):
+        await deliver(email)
+        return {"checked": 1, "changed": 1, "failed": 0, "emails": []}
 
     with (
         patch.object(task, "AsyncSessionLocal", lambda: session_cm),
-        patch.object(
-            task,
-            "reconcile_subscriptions",
-            AsyncMock(return_value={"checked": 1, "changed": 1, "failed": 0, "emails": [email]}),
-        ),
+        patch.object(task, "reconcile_subscriptions", reconcile),
+        patch("src.api.routes.subscriptions.webhook_routes._send_webhook_email", send),
+        patch("src.api.routes.subscriptions.webhook_routes._send_webhook_notification", notify),
+    ):
+        result = await task.run_subscription_reconcile_task()
+
+    send.assert_awaited_once_with(email, None)
+    notify.assert_awaited_once_with(email)
+    assert result == {"checked": 1, "changed": 1, "failed": 0}
+
+
+@pytest.mark.asyncio
+async def test_the_notice_goes_out_when_the_email_fails():
+    from src.api.tasks import subscription_reconcile_task as task
+
+    email = {"send_email": True, "email_type": "subscription_unpaid", "email_data": {}}
+    notify = AsyncMock()
+    with (
         patch(
             "src.api.routes.subscriptions.webhook_routes._send_webhook_email",
             AsyncMock(side_effect=RuntimeError("email provider down")),
         ),
         patch("src.api.routes.subscriptions.webhook_routes._send_webhook_notification", notify),
     ):
-        await task.run_subscription_reconcile_task()
+        await task.deliver_reconcile_email(email)
 
     notify.assert_awaited_once_with(email)
 
 
 @pytest.mark.asyncio
-async def test_the_job_commits_then_sends_the_emails():
+async def test_a_found_cancellation_gets_its_own_in_app_notice():
+    """The payment notices' map has no cancellation: the reconcile sends that one itself."""
     from src.api.tasks import subscription_reconcile_task as task
 
-    db = AsyncMock()
-    session_cm = AsyncMock()
-    session_cm.__aenter__.return_value = db
-    email = {"send_email": True, "email_type": "subscription_unpaid", "email_data": {}}
-    order = []
-    db.commit.side_effect = lambda: order.append("commit")
-    send = AsyncMock(side_effect=lambda *_a: order.append("email"))
-
+    email = {
+        "send_email": True,
+        "email_type": "subscription_cancelled",
+        "email_data": {"user_id": "u1", "plan_name": "Growth", "end_date": "October 27, 2026"},
+    }
+    notify_now = AsyncMock()
+    payment_notice = AsyncMock()
     with (
-        patch.object(task, "AsyncSessionLocal", lambda: session_cm),
-        patch.object(
-            task,
-            "reconcile_subscriptions",
-            AsyncMock(return_value={"checked": 1, "changed": 1, "failed": 0, "emails": [email]}),
-        ),
-        patch("src.api.routes.subscriptions.webhook_routes._send_webhook_email", send),
+        patch("src.api.routes.subscriptions.webhook_routes._send_webhook_email", AsyncMock()),
         patch(
-            "src.api.routes.subscriptions.webhook_routes._send_webhook_notification", AsyncMock()
+            "src.api.routes.subscriptions.webhook_routes._send_webhook_notification",
+            payment_notice,
         ),
+        patch("src.services.notification_helper.notify_now", notify_now),
     ):
-        result = await task.run_subscription_reconcile_task()
+        await task.deliver_reconcile_email(email)
 
-    assert order == ["commit", "email"]
-    assert result == {"checked": 1, "changed": 1, "failed": 0}
+    payment_notice.assert_not_called()
+    assert notify_now.await_args.kwargs["pref_flag"] == "billing_subscription_cancelled"
+    assert "October 27, 2026" in notify_now.await_args.kwargs["message"]

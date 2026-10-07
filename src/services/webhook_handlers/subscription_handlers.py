@@ -53,6 +53,7 @@ from src.services.audit_logger import audit_logger
 from src.services.credit_grants import grant_promotion_bonus, order_refunded
 from src.services.duplicate_subscriptions import (
     LIVE_STATUSES,
+    is_known_duplicate,
     is_settled_duplicate,
     provider_created_record,
     settle_duplicate_subscriptions,
@@ -259,10 +260,11 @@ def _ignore_settled_duplicate(
 def _settled_on_arrival(subscription: UserSubscription, settled, event: str) -> bool:
     """The subscription just stored is the older of two (its webhook came last).
 
-    settle_duplicate_subscriptions() has cancelled and refunded it, so it gets no
+    settle_duplicate_subscriptions() has cancelled and refunded it, or, while
+    automatic settlement is off, marked it for a person to; either way it gets no
     promotion, discount record, creation audit or welcome email.
     """
-    if subscription.id not in settled:
+    if subscription.id not in settled and not is_known_duplicate(subscription):
         return False
     logger.info(
         f"{event}: the new subscription was settled as the older of two; nothing more is done",
