@@ -1,7 +1,11 @@
+# Third-party images are pinned by digest (rext-control#423); where a tag precedes the
+# digest it is only for readers, Docker pulls the digest. Deploys restart the Service
+# with "pull latest images", so a floating tag would move on every deploy. To update
+# one: try the new digest on staging, then change it here and in both Coolify services.
 services:
     # Redis for application cache
     rext-cache-redis:
-        image: redis:7-alpine
+        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
         command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
         volumes:
             - rext-cache-data:/data
@@ -16,7 +20,7 @@ services:
 
     # Redis for LangGraph
     langgraph-redis:
-        image: redis:7-alpine
+        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
@@ -32,7 +36,7 @@ services:
 
     # Postgres Databases and also add some other secrets
     postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
         restart: unless-stopped
         environment:
             POSTGRES_USER: ${POSTGRES_USER}
@@ -81,7 +85,7 @@ services:
     # One-time helper: syncs the live Postgres role password to match POSTGRES_PASSWORD
     # (fixes drift after the value changes post-initdb on an existing data volume)
     pg-password-sync:
-        image: postgres:17-alpine
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         restart: "no"
         depends_on:
             postgres:
@@ -102,7 +106,7 @@ services:
 
     # PgBouncer: connection pooler between app and Postgres
     pgbouncer:
-        image: edoburu/pgbouncer:latest
+        image: edoburu/pgbouncer@sha256:9c78945868a6a142c7fc40ccd843bbe5a606df163c7ffce4de70e0d628d696a2
         restart: unless-stopped
         entrypoint: ["sh", "-c", "rm -f /etc/pgbouncer/userlist.txt /etc/pgbouncer/pgbouncer.ini; exec /entrypoint.sh /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini"]
         environment:
@@ -373,7 +377,7 @@ services:
     # ghcr.io/rextaihq/minio-mirror (private package, needs GHCR login).
     # Do not switch back to quay.io/docker.io - those pulls fail.
     minio:
-        image: ghcr.io/rextaihq/minio-mirror:latest
+        image: ghcr.io/rextaihq/minio-mirror@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
         restart: unless-stopped
         command: server /data --console-address ":9001"
         environment:
