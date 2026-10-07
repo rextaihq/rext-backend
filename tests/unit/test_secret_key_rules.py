@@ -95,6 +95,32 @@ def test_two_strong_different_secrets_are_accepted() -> None:
     assert settings.REFRESH_SECRET_KEY == STRONG_REFRESH
 
 
+def test_ordinary_settings_may_equal_their_example_values() -> None:
+    """Only the two signing secrets are compared with the example file: a server whose
+    ordinary settings match it (an environment name, a log level, a port, a Redis
+    address) starts as before."""
+    example = dict(
+        line.split("=", 1)
+        for line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    )
+    ordinary = [
+        "ENVIRONMENT",
+        "LOG_LEVEL",
+        "HOST",
+        "PORT",
+        "ALGORITHM",
+        "REDIS_URL",
+        "FRONTEND_URL",
+    ]
+    values = {name: example[name].strip() for name in ordinary}
+
+    settings = _settings(**values)
+
+    for name, value in values.items():
+        assert str(getattr(settings, name)) == value, name
+
+
 def test_the_example_file_holds_no_signing_secret() -> None:
     # Empty, so a copied example can't start a server at all.
     lines = (ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
