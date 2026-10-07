@@ -33,7 +33,7 @@ re-exports ``Section``, so a local class of that name would shadow the canonical
 
 from typing import ClassVar, List, Literal, Optional
 
-from pydantic import BaseModel, Field, conlist
+from pydantic import BaseModel, Field, conlist, model_validator
 
 from src.flow.model.structure.outlines.common import (
     CTASection,
@@ -136,13 +136,26 @@ class BlogSection(BaseModel):
 
 
 class ContentStructure(BaseModel):
-    sections: conlist(BlogSection, min_length=4, max_length=8) = Field(
+    # H2s and their H3s share one list, so the cap leaves room for subsections: 8 entries
+    # in all used to mean a blog with H3s had to drop H2s for them, and anything over the
+    # cap fails the whole outline at validation (rext-control#603).
+    sections: conlist(BlogSection, min_length=4, max_length=16) = Field(
         description=(
-            "4-8 sections covering the topic end to end, including a closing "
-            "summary/takeaways section. Main sections are H2; use H3 only "
-            "directly under a preceding H2."
+            "4-8 H2 sections covering the topic end to end, including a closing "
+            "summary/takeaways section, each followed by its H3 subsections where "
+            "it has distinct parts: at most 16 entries in all. An H3 comes "
+            "directly after its H2 or a sibling H3."
         )
     )
+
+    @model_validator(mode="after")
+    def _at_most_eight_h2s(self):
+        # The 16 entries leave room for H3s, not for more main sections: past 8 H2s an outline
+        # is refused, as it was when 8 entries were the cap.
+        h2s = sum(1 for section in self.sections if section.heading_level == "H2")
+        if h2s > 8:
+            raise ValueError(f"at most 8 H2 sections, got {h2s}")
+        return self
 
 
 class BlogFAQSection(FAQSection):

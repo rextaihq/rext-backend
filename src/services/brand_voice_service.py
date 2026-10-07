@@ -68,24 +68,24 @@ class BrandVoiceService:
         """A manually entered competitor must have a live https://<name>.com site.
 
         Redirects are followed (nike.com -> www.nike.com is normal), and every
-        hop is checked against private and internal addresses first. The site
-        counts as existing only when the final page answers HTTP 200.
+        hop is checked against private and internal addresses first, by the
+        public-only client, which also connects only to the address it checked.
+        The site counts as existing only when the final page answers HTTP 200.
         """
         import httpx
 
         from src.utils.fast_scraper import REQUEST_HEADERS
-        from src.utils.url_validator import SSRFValidationError, validate_url_for_ssrf
+        from src.utils.url_validator import SSRFValidationError, public_client
 
         url = f"https://{BrandVoiceService._competitor_domain(name)}"
         try:
-            async with httpx.AsyncClient(
+            async with public_client(
                 headers=REQUEST_HEADERS,
                 follow_redirects=False,
                 timeout=_COMPETITOR_SITE_TIMEOUT_SECONDS,
                 trust_env=False,
             ) as client:
                 for _ in range(_COMPETITOR_SITE_MAX_REDIRECTS + 1):
-                    await asyncio.to_thread(validate_url_for_ssrf, url)
                     async with client.stream("GET", url) as response:
                         if not response.is_redirect:
                             return response.status_code == 200

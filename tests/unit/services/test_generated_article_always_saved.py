@@ -1,4 +1,5 @@
-"""A generated article is always saved, whatever its title (G55, revnix/rext-control#498).
+"""A generated article is always saved, whatever its title (G55, revnix/rext-control#498), and
+under a slug of its own even when another save takes the slug it chose (G58, #510).
 
 The title step offers the same titles for a keyword, so two articles on one keyword can share a
 title. A title stays unique only among the live articles written by hand; a generated article (it
@@ -252,6 +253,78 @@ async def test_a_hand_written_article_may_not_be_renamed_to_a_title_in_use(sessi
         await ContentService(session).update_content(
             by_hand.id, owner.workspace.id, owner.user.id, ContentUpdate(title=TITLE)
         )
+
+
+def _stale_slug_reads(monkeypatch, stale, times=1):
+    """generate_unique_slug answers `stale` for its first `times` calls, as a read that ran before
+    another save's insert of that slug would; then it reads again for real (G58)."""
+    real = service_module.generate_unique_slug
+    calls = []
+
+    async def reads(*args, **kwargs):
+        calls.append(kwargs.get("exclude_id"))
+        if len(calls) <= times:
+            return stale
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(service_module, "generate_unique_slug", reads)
+    return calls
+
+
+SLUG = "understanding-content-marketing-roi-for-small-business"
+
+
+@pytest.mark.asyncio
+async def test_a_slug_taken_meanwhile_is_saved_under_the_next_one(session, owner, monkeypatch):
+    # Another run's article with the title, saved after this save read the slugs in use.
+    session.add(_article(owner, thread=uuid4(), slug=SLUG))
+    await session.flush()
+    calls = _stale_slug_reads(monkeypatch, SLUG)
+
+    saved = await ContentService(session).create_content(
+        owner.workspace.id, owner.user.id, _generated()
+    )
+
+    assert len(calls) == 2
+    assert saved.slug == f"{SLUG}-1"
+    # The failed insert was undone on its own; the transaction carries on.
+    assert len(await _rows(session, owner)) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_rename_whose_slug_is_taken_meanwhile_gets_the_next_one(
+    session, owner, monkeypatch
+):
+    session.add(_article(owner, thread=uuid4(), slug=SLUG))
+    renamed = _article(owner, title="Another title", thread=uuid4(), slug="another-title")
+    session.add(renamed)
+    await session.flush()
+    _stale_slug_reads(monkeypatch, SLUG)
+
+    updated = await ContentService(session).update_content(
+        renamed.id,
+        owner.workspace.id,
+        owner.user.id,
+        ContentUpdate(title=TITLE, body_markdown="Edited."),
+    )
+
+    assert updated.slug == f"{SLUG}-1"
+    assert updated.title == TITLE
+    assert updated.body_markdown == "Edited."
+
+
+@pytest.mark.asyncio
+async def test_the_slug_is_tried_a_few_times_then_the_save_fails(session, owner, monkeypatch):
+    session.add(_article(owner, thread=uuid4(), slug=SLUG))
+    await session.flush()
+    calls = _stale_slug_reads(monkeypatch, SLUG, times=service_module.SLUG_ATTEMPTS)
+
+    with pytest.raises(IntegrityError):
+        await ContentService(session).create_content(
+            owner.workspace.id, owner.user.id, _generated()
+        )
+
+    assert len(calls) == service_module.SLUG_ATTEMPTS
 
 
 async def _patch(session, owner, content_id, body, monkeypatch):
