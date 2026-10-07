@@ -97,7 +97,8 @@ async def handle_subscription_payment_refunded(
     )
 
     billing_reason = sub_data.get("billing_reason")
-    subscription = await _locked_subscription(db, sub_data.get("subscription_id"))
+    lemonsqueezy_subscription_id = sub_data.get("subscription_id")
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
     if subscription is None or not invoice_id:
         trigger_payment_alert(
             alert_type="refund_unmatched",
@@ -108,10 +109,20 @@ async def handle_subscription_payment_refunded(
             severity="medium",
             context={
                 "invoice_id": str(invoice_id),
-                "subscription": sub_data.get("subscription_id"),
+                "subscription": lemonsqueezy_subscription_id,
             },
             operation="subscription_payment_refunded",
         )
+        if invoice_id and lemonsqueezy_subscription_id:
+            # The refund can come before subscription_created has made the row (that
+            # event delayed, or failed and waiting for its retry). Marked processed,
+            # the refund would be lost and the plan granted in full afterwards, so
+            # the event fails and the reprocessing job runs it again, as
+            # subscription_payment_success does for the same reason.
+            raise ValueError(
+                f"Subscription {lemonsqueezy_subscription_id} not found in "
+                "subscription_payment_refunded - retried once it has been created"
+            )
         return
 
     # The first payment's refund shares its order's key, so order_refunded and this event
