@@ -866,6 +866,10 @@ async def handle_subscription_updated(
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+        # The customer's lock before the first write: this branch ends the customer's local
+        # trial and then settles a duplicate, as subscription_created does.
+        await lock_customer_subscriptions(db, user.id)
+
         # Find plan by variant_id
         stmt = select(SubscriptionPlan).where(
             (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id)

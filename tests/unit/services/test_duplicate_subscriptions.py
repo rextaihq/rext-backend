@@ -381,6 +381,56 @@ async def test_a_new_purchase_takes_the_customer_s_lock_before_any_row_s(
 
 
 @pytest.mark.asyncio
+async def test_an_update_that_stores_the_purchase_takes_the_customer_s_lock_first(
+    session, alerts, monkeypatch
+):
+    """subscription_updated can arrive first and store the purchase itself (#724).
+
+    That branch ends the customer's local trial and then settles, as subscription_created
+    does: the customer's lock comes before it reads or writes any of the customer's rows.
+    """
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    provider = _provider()
+    monkeypatch.setattr(module, "get_payment_provider_singleton", lambda: provider)
+    monkeypatch.setattr(handlers, "grant_promotion_bonus", AsyncMock())
+    user, (newer,) = await _customer_with(session, SubscriptionStatus.ACTIVE)
+    newer.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    plan = await session.get(SubscriptionPlan, newer.plan_id)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{uuid4().hex[:6]}"
+    await session.flush()
+    statements = _record_statements(session, monkeypatch)
+
+    await handlers.handle_subscription_updated(
+        {
+            "data": {
+                "type": "subscriptions",
+                "id": "ls-update-first",
+                "attributes": {
+                    "status": "active",
+                    "variant_id": plan.lemonsqueezy_variant_id_monthly,
+                    "user_email": user.email,
+                    "created_at": "2026-10-06T09:00:00Z",
+                    "updated_at": "2026-10-06T09:00:05Z",
+                },
+            },
+            "custom_data": {"user_id": str(user.id)},
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_updated"),
+        session,
+    )
+
+    customer_lock = next(
+        i for i, (sql, _) in enumerate(statements) if "pg_advisory_xact_lock" in sql
+    )
+    customer_rows = next(
+        i for i, (sql, _) in enumerate(statements) if "WHERE user_subscriptions.user_id" in sql
+    )
+    assert statements[customer_lock][1] == {"key": f"subscriptions:settle:{user.id}"}
+    assert customer_lock < customer_rows
+
+
+@pytest.mark.asyncio
 async def test_a_settled_duplicate_keeps_its_end_when_lemon_squeezy_cancels_it(
     session, alerts, monkeypatch
 ):
