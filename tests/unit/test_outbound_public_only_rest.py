@@ -310,6 +310,14 @@ class _Crawler:
 
     def __init__(self, config=None) -> None:
         self.config = config
+        flags = [
+            "--no-sandbox",
+            "--ignore-certificate-errors",
+            "--ignore-certificate-errors-spki-list",
+        ]
+        self.crawler_strategy = SimpleNamespace(
+            browser_manager=SimpleNamespace(_build_browser_args=lambda: {"args": list(flags)})
+        )
         _Crawler.made.append(self)
 
     async def __aenter__(self):
@@ -348,6 +356,16 @@ async def test_both_browser_renders_go_through_the_proxy_and_check_certificates(
     assert "--proxy-bypass-list=<-loopback>" in crawler.config.extra_args
     assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in crawler.config.extra_args
     assert crawler.config.ignore_https_errors is False
+    # crawl4ai's own launch flags that turn certificate errors off are dropped for this crawler.
+    assert crawler.crawler_strategy.browser_manager._build_browser_args()["args"] == [
+        "--no-sandbox"
+    ]
+
+
+def test_a_crawler_without_the_launch_flags_hook_is_left_alone():
+    """A crawl4ai without _build_browser_args: logged, nothing patched, nothing raised."""
+    crawler = SimpleNamespace(crawler_strategy=SimpleNamespace(browser_manager=None))
+    browser_guard.verify_certificates(crawler)
 
 
 async def test_chromium_reaches_no_private_address_through_the_proxy(servers):
