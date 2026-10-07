@@ -616,3 +616,40 @@ def test_the_writer_is_given_the_target_length_not_3000_words():
 
     assert "3000 words" not in block
     assert "Keep to the target word count" in block
+
+
+def test_each_numbered_run_is_numbered_on_its_own():
+    """Two numbered lists under two H2s stay two lists, each counted from its own start."""
+    outline = _blog_outline()
+    outline["structure"]["sections"] = [
+        _section("Set it up"),
+        _section("1. Install", "H3"),
+        _section("2. Configure", "H3"),
+        _section("Keep it going"),
+        _section("1. Measure", "H3"),
+        _section("2. Iterate", "H3"),
+    ]
+    rows = [{"id": f"structure.sections:{i}"} for i in (0, 2, 1, 3, 4, 5)]  # swap the first two
+
+    edited = apply_section_edits(outline, "blog", rows)
+
+    assert _headings(edited) == [
+        "Set it up",
+        "1. Configure",
+        "2. Install",
+        "Keep it going",
+        "1. Measure",
+        "2. Iterate",
+    ]
+
+
+def test_a_renamed_heading_is_marked_and_the_mark_never_shows():
+    rows = [{"id": BLOG_IDS[i]} for i in range(4)]
+    rows[0]["heading"] = "Why fit matters most"
+
+    edited = apply_section_edits(_blog_outline(), "blog", rows)
+
+    first, second = edited["structure"]["sections"][:2]
+    assert first["heading_edited"] is True and "heading_edited" not in second
+    plan = _format_outline_for_generation(edited, "blog")
+    assert "Heading edited" not in plan and "heading_edited" not in plan

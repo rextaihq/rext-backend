@@ -120,6 +120,9 @@ def _edited_item(item: dict, row: dict) -> dict:
     if field and FAQ_HEADING.search(item[field]):
         item["holds_faqs"] = True
     if field and isinstance(heading, str) and heading.strip():
+        if heading.strip() != item[field].strip():
+            # The user's own wording is written as it is (G70, revnix/rext-control#586).
+            item["heading_edited"] = True
         item[field] = heading.strip()
     level = row.get("heading_level")
     if level in HEADING_LEVELS and item.get("heading_level") in HEADING_LEVELS:
@@ -127,28 +130,55 @@ def _edited_item(item: dict, row: dict) -> dict:
     return item
 
 
+def _number_runs(items: list[dict]) -> list[list[int]]:
+    """The list's runs of numbered headings: consecutive, at one heading level.
+
+    A heading without a number, or at another level (the next H2 after a run of
+    H3s), ends a run, so "1. Install / 2. Configure" under one H2 and "1. Measure /
+    2. Iterate" under the next are two lists, not one of four.
+    """
+    runs: list[list[int]] = []
+    current: list[int] = []
+    level = None
+    for index, item in enumerate(items):
+        field = item_heading_field(item)
+        numbered = bool(field and _NUMBERED_HEADING.match(item[field]))
+        if numbered and current and item.get("heading_level") == level:
+            current.append(index)
+            continue
+        if current:
+            runs.append(current)
+        current = [index] if numbered else []
+        level = item.get("heading_level")
+    if current:
+        runs.append(current)
+    return runs
+
+
 def _renumbered(items: list[dict]) -> list[dict]:
-    """The list's numbered headings ("1. …", "2. …") numbered again in their new order.
+    """Each run of numbered headings ("1. …", "2. …") numbered again in its new order.
 
     A moved item kept its old number ("5. SEO.ai" third), and the writer put it back
-    where its number said (G70, revnix/rext-control#586). Lists with fewer than two
-    numbered headings are left alone: one number is part of its heading.
+    where its number said (G70, revnix/rext-control#586). A run counts from its lowest
+    number; a run of one is left alone, its number being part of its heading.
     """
-    numbered = [
-        index
-        for index, item in enumerate(items)
-        if (field := item_heading_field(item)) and _NUMBERED_HEADING.match(item[field])
-    ]
-    if len(numbered) < 2:
-        return items
     items = list(items)
-    for position, index in enumerate(numbered, 1):
-        item = dict(items[index])
-        field = item_heading_field(item)
-        item[field] = _NUMBERED_HEADING.sub(
-            lambda match, n=position: f"{n}{match.group(2)}{match.group(3)}", item[field], count=1
-        )
-        items[index] = item
+    for run in _number_runs(items):
+        if len(run) < 2:
+            continue
+        numbers = [
+            int(_NUMBERED_HEADING.match(items[index][item_heading_field(items[index])]).group(1))
+            for index in run
+        ]
+        for position, index in enumerate(run, min(numbers)):
+            item = dict(items[index])
+            field = item_heading_field(item)
+            item[field] = _NUMBERED_HEADING.sub(
+                lambda match, n=position: f"{n}{match.group(2)}{match.group(3)}",
+                item[field],
+                count=1,
+            )
+            items[index] = item
     return items
 
 

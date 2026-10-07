@@ -539,11 +539,25 @@ _PROMPT_SUPPRESSED_FIELDS = frozenset(
         # Set by outline_edits on the section that holds the FAQs; the prompts name
         # that section by its heading instead (`faq_section_heading`).
         "holds_faqs",
+        # Set by outline_edits on a heading the user reworded: structured_body keeps it.
+        "heading_edited",
     }
 )
 
-# A section whose heading says it's the FAQ (G71, revnix/rext-control#587).
-FAQ_HEADING = re.compile(r"\b(faqs?|frequently asked)\b", re.IGNORECASE)
+# A section whose heading says it's the FAQ (G71, revnix/rext-control#587): it opens or
+# ends with it ("FAQs on …", "… : FAQs"), so "FAQ-driven content" isn't one.
+FAQ_HEADING = re.compile(
+    r"^\s*(faqs?|frequently asked questions?)\b|\b(faqs?|frequently asked questions?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_faq_section(item: dict) -> bool:
+    """A planned section that holds the approved FAQs: marked through an edit, or so headed."""
+    if item.get("holds_faqs") is True:
+        return True
+    field = item_heading_field(item)
+    return bool(field and FAQ_HEADING.search(item[field]))
 
 
 def faq_section_heading(outline: dict, content_type: str) -> str | None:
@@ -561,10 +575,9 @@ def faq_section_heading(outline: dict, content_type: str) -> str | None:
                 field = item_heading_field(item)
                 if not field:
                     continue
-                heading = item[field].strip()
                 marked = item.get("holds_faqs") is True
-                if marked if mark_only else FAQ_HEADING.search(heading):
-                    return heading
+                if marked if mark_only else is_faq_section(item):
+                    return item[field].strip()
     return None
 
 
