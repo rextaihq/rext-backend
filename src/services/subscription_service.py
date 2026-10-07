@@ -672,6 +672,15 @@ class SubscriptionService:
                     extra={"plan_id": str(new_plan_id), "billing_period": new_billing_period.value},
                 )
 
+        # Lemon Squeezy's call can take a while, and an article can spend credits meanwhile:
+        # the row is read again under a lock before the balance is worked out from it (F8a).
+        await self.db.execute(
+            select(UserSubscription)
+            .where(UserSubscription.id == current_subscription.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
         # Update local subscription
         old_billing_period = current_subscription.billing_period
         on_trial = current_subscription.status == SubscriptionStatus.TRIAL
