@@ -39,4 +39,6 @@ async def test_the_repair_prompt_names_filler_too():
 
     sent = "\n".join(str(message.content) for message in model.ainvoke.call_args.args[0])
     assert '"Essential Tips Here"' in sent
-    assert "Add who it is for, a number, the outcome or the year instead" in sent
+    assert "Add who it is for, a number of steps or items, or the outcome instead" in sent
+    # The repair is given no current year, and may add no date of its own.
+    assert "no year" in sent
