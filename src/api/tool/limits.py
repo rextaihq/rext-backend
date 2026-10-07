@@ -29,6 +29,7 @@ from fastapi import HTTPException, Request, status
 
 from src.api.cache.redis_client import cache
 from src.api.config import get_settings
+from src.api.tool.turnstile import verify_turnstile
 from src.utils.ip_allowlist import proxy_trust_is_spoofable
 from src.utils.logger import logger
 
@@ -235,11 +236,15 @@ async def count_call(request: Request) -> None:
 
 def bounded(endpoint):
     """A free tool's route: counted (count_call) once FastAPI has validated its request, before it
-    runs. A dependency would run before the validation, so an invalid request would be charged."""
+    runs. A dependency would run before the validation, so an invalid request would be charged.
+    A model tool's bot check (turnstile.py) comes first, so a refused token counts nothing."""
 
     @functools.wraps(endpoint)
     async def run(*args, **kwargs):
-        await count_call(kwargs["request"])
+        request = kwargs["request"]
+        if FREE_TOOLS.get(_tool(request), FreeTool()).model_calls:
+            await verify_turnstile(request, _trusted_address(request))
+        await count_call(request)
         return await endpoint(*args, **kwargs)
 
     run.free_tool_bounded = True
