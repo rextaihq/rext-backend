@@ -301,6 +301,11 @@ _TIME_ADVERBS = frozenset(
     }
 )  # fmt: skip
 _TIME_PHRASE_STARTS = frozenset({"this", "next", "last", "every"})
+# Prepositions that take a time as their object, and the times that can be one.
+_TIME_OBJECT_PREPOSITIONS = frozenset(
+    {"for", "until", "till", "since", "by", "before", "after", "from", "during"}
+)
+_TIME_WORDS = frozenset({"today", "now", "tonight", "tomorrow", "soon"})
 _TIME_NOUNS = frozenset(
     {
         "year", "month", "week", "weekend", "season", "quarter", "time", "spring", "summer",
@@ -352,9 +357,15 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     # no object for the trim to cut ("Rely On: A Guide", "Fall Back On in 2026", "Turns To
     # Today"). One before a conjunction may share the object that follows it ("for and by
     # Industry Experts"), so a conjunction proves nothing.
+    # "for", "until" or "since" take a time as their object ("Guide for [Today]"): a time cut
+    # after one of them cut its object; after the others it didn't ("Turns To [Today]").
+    time_was_object = last in _TIME_OBJECT_PREPOSITIONS and (
+        (len(removed) == 1 and removed[0] in _TIME_WORDS)
+        or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS)
+    )
     if (
         words[kept - 1][-1] in _TRAILING_PUNCTUATION
-        or only_time_cut
+        or (only_time_cut and not time_was_object)
         or following in _PREPOSITION_AFTER_VERB
     ):
         return False

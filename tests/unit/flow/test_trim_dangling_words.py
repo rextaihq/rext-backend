@@ -142,6 +142,14 @@ def test_a_preposition_before_an_adverb_keeps_its_place():
     )
 
 
+def test_a_preposition_whose_object_was_a_time_goes():
+    """Here "Today" was the object of "for"; "Turns To Today" keeps its "To"."""
+    title = "SEO Agencies: A Complete Strategic Marketing Guide for Today"  # 60
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: A Complete Strategic Marketing Guide"
+    )
+
+
 def test_a_verb_ending_in_o_keeps_its_preposition():
     title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
     assert _trim_to_max(title, "seo agencies") == (
