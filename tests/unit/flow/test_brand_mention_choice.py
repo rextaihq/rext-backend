@@ -696,7 +696,10 @@ def test_a_call_to_action_may_keep_an_approved_internal_link_or_any_link_when_pr
     outline = _outline("none", internal_links=[{"url": internal, "title": "Garden planner"}])
     article = {**ARTICLE, "cta": {"text": "Read the planner", "url": internal + "/"}}
 
-    assert _checked(article, outline)[0] is article
+    cleaned, spec = _checked(article, outline)
+    assert cleaned is article
+    # And the brand check reads that link the same way: kept by the cleanup, passed by the check.
+    assert check_brand_absent(cleaned, spec)["passed"] is True
     # With a prominent mention the call to action links where the writer put it.
     promoted = {**ARTICLE, "cta": {"text": "Try Acme Tools", "url": "https://acme.test/signup"}}
     cleaned, spec = _checked(promoted, _outline("prominent"))
