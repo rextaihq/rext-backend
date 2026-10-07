@@ -116,6 +116,16 @@ _CITATION_LINK = r"\[[^\]]*\]\(https?://[^)\s]+\)"
 _CITATION_ONLY_RE = re.compile(
     rf"{_CITATION_LINK}(?:(?:[\s,;.&]|\b[Aa]nd\b)*{_CITATION_LINK})*[\s,;.]*"
 )
+# A citation label names its source ("Report A", "Gartner 2024"); a linked sentence says
+# something of its own ("[Acme launched in 2024](url).", "[Contentful costs $300 per
+# month](url)."). Only a label is the source of the claim before it: with a linked sentence's
+# address on it, that claim would be weighed against the wrong source alone.
+_LABEL_MAX_WORDS = 8
+_LABEL_VERB_RE = re.compile(
+    r"\b(?:is|are|was|were|has|have|had|does|did|can|will|costs?|offers?|supports?|launched|"
+    r"includes?|lacks?|provides?|requires?)\b",
+    re.IGNORECASE,
+)
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9.'+-]*")
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -144,6 +154,18 @@ def _sentences(line: str) -> list[str]:
     return sentences
 
 
+def _is_citation_label(part: str) -> bool:
+    """Only links, each one a source's name and not a sentence of its own."""
+    if not _CITATION_ONLY_RE.fullmatch(part):
+        return False
+    return all(
+        len(label.split()) <= _LABEL_MAX_WORDS
+        and not _LABEL_VERB_RE.search(label)
+        and not _numeric_claim_spans(label)
+        for label in (m.group(1) for m in _LINK_RE.finditer(part))
+    )
+
+
 def _units(text: str) -> list[_Unit]:
     """Sentences (and table rows) of prose, headings excluded."""
     cleaned = _HTML_COMMENT_RE.sub(" ", _IMAGE_RE.sub(" ", text or ""))
@@ -158,11 +180,10 @@ def _units(text: str) -> list[_Unit]:
         for part in parts:
             urls = tuple(m.group(2) for m in _LINK_RE.finditer(part))
             visible = _LINK_RE.sub(lambda m: m.group(1), part).strip()
-            if claim_at is not None and _CITATION_ONLY_RE.fullmatch(part.strip()):
+            if claim_at is not None and _is_citation_label(part.strip()):
                 # Split off by the sentence boundary: the claim must keep its own source, or it
                 # is weighed against every source and a number from another one can pass it.
-                # The links' own text stays a unit as well: a fully linked sentence
-                # ("[Contentful costs $300 per month](url).") is a claim, not only a source.
+                # The label's own text stays a unit as well, as it always was.
                 claim = line_units[claim_at]
                 line_units[claim_at] = _Unit(claim.text, claim.cited_urls + urls)
             elif visible:
@@ -279,11 +300,14 @@ _QUALIFIER_AFTER_RE = re.compile(
     r"\s+(?:in|with|without|only|on|under|using|against)\b", re.IGNORECASE
 )
 # After a denial, a clause that asserts the test by leaving the verb out ("I haven't tested
-# it, but we have.", "…, though our team did.") is a testing claim after all. Only a bare
-# auxiliary that ends its clause counts: "but we have a checklist" asserts no test.
+# it, but we have.", "…, though our team did.") or by standing a pro-verb in for it ("…, but
+# we did so on enterprise") is a testing claim after all. A bare auxiliary counts only when it
+# ends its clause: "but we have a checklist" asserts no test, nor does "we do so many checks".
 _ELLIPTICAL_ASSERTION_RE = re.compile(
-    r"\b(?:but|though|although|however|yet)\b[,\s]+(?:we|i|(?:our|my)\s+team)\s+(?:have|has|did|do)\b"
-    r"(?!\s+not\b)(?:\s+(?:too|already|since))?\s*(?:[.!?,;:)\"'\u201d\u2019]|$)",
+    r"\b(?:but|though|although|however|yet)\b[,\s]+(?:we|i|(?:our|my)\s+team)\s+"
+    r"(?:have|has|did|do)\b(?!\s+not\b)(?:\s+done\b)?"
+    r"(?:\s+so\b(?!\s+(?:many|much|few|little|far)\b)"
+    r"|(?:\s+(?:too|already|since))?\s*(?:[.!?,;:)\"'\u201d\u2019]|$))",
     re.IGNORECASE,
 )
 _CLIENT_OUTCOME_RE = re.compile(

@@ -567,9 +567,56 @@ def test_a_fully_linked_sentence_is_still_weighed():
     assert "$300" in claims[0].span
 
 
+def test_a_linked_sentence_is_not_the_source_of_the_claim_before_it():
+    # Its address on the price would have the price weighed against that source alone.
+    text = "The plan costs $300. [Acme launched in 2024](https://b.example)."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("The plan costs $300.", ()),
+        ("Acme launched in 2024.", ("https://b.example",)),
+    ]
+
+
+@pytest.mark.parametrize(
+    "linked",
+    [
+        "[Contentful costs $300 per month](https://b.example).",
+        "[Contentful is the top pick here](https://b.example).",
+        "[The second half of this very long sentence carries on well past a name](https://b.example).",
+    ],
+)
+def test_a_linked_sentence_keeps_its_address_to_itself(linked):
+    units = claim_integrity._units(f"73% of enterprises plan to adopt one. {linked}")
+    assert units[0].cited_urls == ()
+    assert units[1].cited_urls == ("https://b.example",)
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["Report", "Gartner 2024", "Statista (2023)", "State of CMS 2024 report", "G2"],
+)
+def test_a_citation_label_is_the_source_of_the_claim_before_it(label):
+    units = claim_integrity._units(
+        f"73% of enterprises plan to adopt one. [{label}](https://r.example)."
+    )
+    assert units[0].cited_urls == ("https://r.example",)
+
+
+def test_a_label_after_a_linked_sentence_is_that_sentences_source():
+    text = (
+        "Costs vary. [Acme launched in 2024](https://b.example). "
+        "[Press release](https://c.example)."
+    )
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ()
+    assert units[1].cited_urls == ("https://b.example", "https://c.example")
+
+
 @pytest.mark.parametrize(
     "text",
     [
+        "I haven't tested the free tier, but we did so on enterprise yesterday.",
+        "We haven't benchmarked it ourselves, though our team has done so.",
         "I haven't tested it, but we have.",
         "We haven't benchmarked the free plan, though I did.",
         "I have not tested the enterprise tier, but our team has already.",
@@ -587,6 +634,7 @@ def test_a_denial_followed_by_an_elliptical_assertion_is_a_claim(text):
         "We haven't tested it, but we have not ruled it out.",
         "I haven't tested it, but our readers have.",
         "We haven't tested it, and we do not plan to.",
+        "We haven't tested it, but we do so many other checks first.",
     ],
 )
 def test_a_denial_followed_by_another_clause_is_still_a_denial(text):
