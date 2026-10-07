@@ -96,6 +96,7 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "A UX Audit Checklist for Your Website",
         # An all-caps word read as a word, and an acronym's possessive or plural.
         "A ONE-PAGE SEO Checklist for Small Business Websites",
+        "A EURO Currency Guide for Small Business Owners in Europe",
         "A EUROPEAN Guide to SEO for Small Teams",
         "An EU Guide to Content Rules for Small Teams",
         "A URL's Role in SEO: A Guide for Content Marketing Teams",
@@ -157,6 +158,7 @@ def test_what_is_right_or_unsure_is_left_alone(title):
         "Guia para a estratégia de conteúdo em 2026",
         "Les meilleures astuces pour a écrire un blog",
         "Marketing a Efektywna Strategia SEO dla Polskich Firm",
+        "Ideas a Evitar: Plan Marketing Digital SEO Profesional",
         # ASCII, but no English word: not taken for English.
         "Marketing a Efektywna Strategia SEO Polskich Firm",
     ],

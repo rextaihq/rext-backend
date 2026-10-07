@@ -42,12 +42,11 @@ _OTHER = {
 # Common English title words that other languages don't borrow ("SEO" and "marketing" they do):
 # two of them make a title English when it has none of the function words above.
 _ENGLISH_TITLE_WORDS = {
-    "content", "strategy", "plan", "planning", "template", "templates", "checklist", "tools",
-    "tool", "ideas", "examples", "business", "small", "teams", "team", "website", "growth",
-    "customer", "customers", "free", "build", "create", "write", "writing", "make", "start",
-    "choose", "improve", "rank", "search", "keyword", "keywords", "traffic", "page", "pages",
+    "content", "strategy", "template", "templates", "checklist", "tools", "tool", "examples",
+    "small", "website", "growth", "customer", "customers", "build", "create", "write", "writing",
+    "make", "choose", "improve", "search", "keyword", "keywords", "traffic", "page", "pages",
     "framework", "blueprint", "playbook", "explained", "review", "reviews", "benefits",
-    "mistakes", "way", "effective", "simple", "easy", "new", "brief", "post", "posts",
+    "mistakes", "way", "effective", "easy", "new",
 }  # fmt: skip
 # Words an article never comes before, so the "a" in front of them is a letter ("a to z").
 _NOT_AFTER_AN_ARTICLE = {
@@ -145,7 +144,17 @@ def _an_before(word: str) -> bool | None:
     acronym = letters[:-1] if re.fullmatch(r"[A-Z]{2,}s", letters) else letters
     # An all-caps word is a word, not letters, when it's one of the words below: "A ONE-PAGE",
     # "A EUROPEAN", "AN HOURLY" (but "an EU", "a URL").
-    caps_word = lower in ("one", "once") or (
+    caps_word = lower in (
+        "one",
+        "once",
+        "euro",
+        "euros",
+        "unit",
+        "units",
+        "user",
+        "users",
+        "use",
+    ) or (
         len(lower) >= 5
         and lower.startswith((*_YOU_SOUND, *_UNI_YOU, *_UN_I, *_SILENT_H, *_EITHER_H))
     )
