@@ -35,14 +35,16 @@ _FEWER_AFTER = re.compile(
     r"taken\s+out|flattened))\b",
     re.IGNORECASE,
 )
-# A doubt before the term and a "needed" just after it: "I don't think the H3s are needed" asks
-# for fewer, though "are needed" alone asks for more (review round 3 of #890).
+# A doubt up to five words before the term and a "needed" just after it: "I don't think that any
+# of the H3s are needed" asks for fewer, though "are needed" alone asks for more (review round 3 of
+# #890). "Helpful enough" judges quality, not the count, so it isn't a verdict.
 _DOUBT_BEFORE = re.compile(
-    r"\b(?:(?:do|does)\s*n[o']?t\s+(?:think|believe|feel)|doubt|not\s+sure)(?:\s+[\w'-]+){0,3}\s*$",
+    r"\b(?:(?:do|does)\s*n[o']?t\s+(?:think|believe|feel)|doubt|not\s+sure)(?:\s+[\w'-]+){0,5}\s*$",
     re.IGNORECASE,
 )
 _NEEDED_AFTER = re.compile(
-    r"^\W*(?:are|is)\s+(?:really\s+)?(?:needed|necessary|required|useful|helpful|wanted)\b",
+    r"^\W*(?:are|is)\s+(?:really\s+)?(?:needed|necessary|required|useful|helpful|wanted)\b"
+    r"(?!\s+enough)",
     re.IGNORECASE,
 )
 # A request for more: a cue up to four words before the term ("add H3s", "it needs

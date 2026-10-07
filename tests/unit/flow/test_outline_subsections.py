@@ -135,6 +135,7 @@ def test_feedback_asking_for_subsections_is_recognised(feedback):
         "the subsections should be taken out",
         "I don't think the H3s are needed",
         "Not sure the sub-headings are really necessary",
+        "I don't think that any of the H3s are needed",
     ],
 )
 def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
@@ -156,6 +157,8 @@ def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
         "The H3s aren't detailed enough",
         "The H3 is not specific enough",
         "I don't think the H3s are detailed enough",
+        "I don't think the H3s are helpful enough",
+        "Not sure the subsections are useful enough yet",
     ],
 )
 def test_other_feedback_says_nothing_about_subsections(feedback):
