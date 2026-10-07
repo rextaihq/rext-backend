@@ -18,7 +18,6 @@ venv/
 *.json
 .langgraph_api
 .idea
-data/
 my_faiss_index3
 my_faiss_index
 logs
@@ -30,12 +29,10 @@ tests/
 .coverage
 .coveragerc
 
-# Root test scripts & configs
-baseline_pipeline_test.py
+# Root test configs
 conftest.py
 pytest.ini
 tox.ini
 
-# GitHub & Dockerfile backups
+# GitHub
 .github/
-Dockerfile.backup*

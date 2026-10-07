@@ -20,7 +20,6 @@ vector_store/
 .env
 docker-compose.local.yml
 note.txt
-full_blog.csv
 test.py
 secure_uploads/
 .compose.txt
