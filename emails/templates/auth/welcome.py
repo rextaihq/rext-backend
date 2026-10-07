@@ -91,7 +91,7 @@ def render_welcome_email(
             """
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 24px 0;">
             <tr>
-                <td style="padding: 16px; background-color: #fafafa; border-radius: 6px; border-left: 4px solid #f59e0b;">
+                <td style="padding: 16px; background-color: #fafafa; border-radius: 6px; border-left: 4px solid #111a17;">
                     <p style="color: #171717; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         👥 Invite Your Team
                     </p>
@@ -227,7 +227,7 @@ def create_welcome_email(
             """
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 24px 0;">
             <tr>
-                <td style="padding: 16px; background-color: #fafafa; border-radius: 6px; border-left: 4px solid #f59e0b;">
+                <td style="padding: 16px; background-color: #fafafa; border-radius: 6px; border-left: 4px solid #111a17;">
                     <p style="color: #171717; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         👥 Invite Your Team
                     </p>
