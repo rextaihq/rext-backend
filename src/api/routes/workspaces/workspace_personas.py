@@ -232,30 +232,30 @@ def _delete_after_commit(db, object_name: str) -> None:
     unrecoverable if the transaction rolls back, and the row then names a
     picture that no longer exists. A file deleted after is at worst a moment of
     duplication, and if the commit never happens it simply stays - which is why
-    the listener also detaches itself on rollback.
+    a rollback disarms the listener.
     """
     from sqlalchemy import event
 
     from src.utils.storage import storage_service
 
     session = db.sync_session if hasattr(db, "sync_session") else db
+    # The listeners disarm themselves instead of being removed: removing a listener while
+    # SQLAlchemy dispatches its event mutates the list being iterated ("deque mutated during
+    # iteration"), which failed the commit with a 500 after the change had already been
+    # committed (G64). They live as long as the request's session.
+    armed = {"on": True}
 
     def _on_commit(_session) -> None:
+        if not armed["on"]:
+            return
+        armed["on"] = False
         try:
             storage_service.delete_file(object_name)
         except Exception as exc:  # noqa: BLE001 - an orphan is not a failure
             logger.warning("could not delete previous persona avatar %s: %s", object_name, exc)
-        _detach()
 
     def _on_rollback(_session) -> None:
-        _detach()
-
-    def _detach() -> None:
-        for name, fn in (("after_commit", _on_commit), ("after_rollback", _on_rollback)):
-            try:
-                event.remove(session, name, fn)
-            except Exception:  # noqa: BLE001 - already gone
-                pass
+        armed["on"] = False
 
     event.listen(session, "after_commit", _on_commit)
     event.listen(session, "after_rollback", _on_rollback)
