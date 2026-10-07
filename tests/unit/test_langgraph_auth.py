@@ -624,3 +624,50 @@ async def test_runs_that_ended_stop_counting(role, monkeypatch, redis):
 
     _busy(monkeypatch, [])
     assert await _start("t-c") == "admitted"
+
+
+@pytest.mark.parametrize("redis", [False, True], ids=["in process", "redis"])
+async def test_runs_that_ended_unseen_stop_counting_after_the_short_window(
+    role, monkeypatch, redis
+):
+    # Two runs are admitted and end before any later start sees them busy (a fast credit
+    # or empty-search failure). They count only for the window, a few seconds, since the
+    # runtime marks a thread busy in the same call that admits its run (rext-control#604).
+    from src.api.security import run_admission
+
+    if redis:
+        _with_redis(monkeypatch)
+    clock = [1_000.0]
+    monkeypatch.setattr(run_admission.time, "time", lambda: clock[0])
+    _busy(monkeypatch, [])
+    assert [await _start("t-a"), await _start("t-b")] == ["admitted", "admitted"]
+
+    clock[0] += 1
+    assert await _start("t-c") == 429  # just admitted: their runs may not show busy yet
+
+    clock[0] += run_admission.ADMISSION_WINDOW_S
+    assert await _start("t-c") == "admitted"
+    assert run_admission.ADMISSION_WINDOW_S <= 10
+
+
+async def test_a_slow_busy_read_is_cut_off_inside_the_lock(role, monkeypatch):
+    # A busy-thread read that stalls can't keep the lock past its lifetime: it's cut off,
+    # counts none busy as a failed read does, and the lock is released (rext-control#604).
+    from src.api.security import run_admission
+
+    redis = _with_redis(monkeypatch)
+    monkeypatch.setattr(run_admission, "_READ_TIMEOUT_S", 0.05)
+
+    class _Threads:
+        async def search(self, **kwargs):
+            await asyncio.sleep(5)
+            return []
+
+    class _Client:
+        threads = _Threads()
+
+    monkeypatch.setattr("langgraph_sdk.get_client", lambda: _Client())
+
+    assert await asyncio.wait_for(_start("t-a"), 2) == "admitted"
+    assert f"run_admission:lock:{USER}" not in redis.values
+    assert run_admission._READ_TIMEOUT_S * 1000 < run_admission._LOCK_TTL_MS
