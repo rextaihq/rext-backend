@@ -160,6 +160,10 @@ jobs:
     needs: [docker_job, docker_shopify]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # packages: a refused rollback points :latest back at the image production runs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Refuse a rollback
@@ -190,6 +194,16 @@ jobs:
             ahead|identical) echo "Live runs $LIVE; ${{ github.sha }} is $STATUS of it: deploying" ;;
             *)
               echo "::error::Live runs $LIVE, and ${{ github.sha }} is $STATUS of it: refusing to roll production back"
+              # This run's publish already pointed :latest at its image. Point it back at
+              # the one production runs, so a later restart that pulls :latest can't roll
+              # production back either.
+              IMAGE=ghcr.io/${{ github.repository_owner }}/rext-backend
+              echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin > /dev/null
+              if docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:sha-$LIVE"; then
+                echo "Pointed :latest back at sha-$LIVE"
+              else
+                echo "::warning::Could not point :latest back at sha-$LIVE: check :latest in GHCR before any restart"
+              fi
               exit 1
               ;;
           esac
