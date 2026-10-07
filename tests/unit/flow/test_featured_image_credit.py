@@ -13,8 +13,11 @@ from langchain_core.messages import AIMessage
 
 import src.flow.engines.agent.tools.tools as tools_module
 import src.flow.engines.content.generation.content_generation as node
+import src.services.notification_helper as notification_module
+import src.utils.credit_manager as credit_module
 from src.api.config import settings
-from src.utils.credit_manager import STAGE_CREDITS, InsufficientCreditsError
+from src.flow.engines.router.library_router import library_router
+from src.utils.credit_manager import STAGE_CREDITS, InsufficientCreditsError, can_afford_stage
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
 WORKSPACE_ID = "00000000-0000-0000-0000-000000000002"
@@ -79,7 +82,8 @@ def run(monkeypatch):
 
     async def go(*, enabled=True, image=IMAGE_URL, affordable=True, state=None):
         monkeypatch.setattr(settings, "AI_IMAGE_GENERATION_ENABLED", enabled)
-        monkeypatch.setattr(node, "can_afford_stage", AsyncMock(return_value=affordable))
+        if affordable is not None:  # None: the real check, on a patched balance
+            monkeypatch.setattr(node, "can_afford_stage", AsyncMock(return_value=affordable))
 
         async def standalone(*_args, **_kwargs):
             go.images_made += 1
@@ -181,3 +185,52 @@ async def test_a_charge_refused_after_delivery_keeps_the_image(run, monkeypatch)
     assert IMAGE_URL in content["final_content"]["body_markdown"]
     assert not content.get("image_credit_deducted")
     assert not content.get("error")
+
+
+@pytest.mark.asyncio
+async def test_a_balance_that_cannot_be_read_means_no_image_and_a_finished_article(
+    run, monkeypatch
+):
+    """The other stages are already paid: a failed balance read must not end the run."""
+    monkeypatch.setattr(
+        credit_module, "_get_balance", AsyncMock(side_effect=RuntimeError("pool timeout"))
+    )
+
+    charged, content = await run(affordable=None)
+
+    assert run.images_made == 0
+    assert "featured_image" not in [stage for stage, _ in charged]
+    assert not content.get("error")
+    assert content["final_content"]["body_markdown"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("balance", "expected"),
+    [(None, True), (1, True), (0, False), (InsufficientCreditsError("x", 1, 0), False)],
+)
+async def test_can_afford_stage(monkeypatch, balance, expected):
+    if balance is None:
+        assert await can_afford_stage(None, "featured_image") is expected
+        return
+    read = (
+        AsyncMock(side_effect=balance)
+        if isinstance(balance, Exception)
+        else AsyncMock(return_value=balance)
+    )
+    monkeypatch.setattr(credit_module, "_get_balance", read)
+    assert await can_afford_stage(USER_ID, "featured_image", workspace_id=WORKSPACE_ID) is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("balance", "route"), [(15, "serp_engine"), (14, "insufficient_credits")])
+async def test_a_run_still_starts_with_a_full_articles_credits(monkeypatch, balance, route):
+    """The start gate is unchanged: 15 credits in hand, what the site and the dashboard
+    say, even though an article without its image ends up costing 14."""
+    monkeypatch.setattr(credit_module, "_get_balance", AsyncMock(return_value=balance))
+    monkeypatch.setattr(credit_module, "notify_credit_owner", AsyncMock())
+    monkeypatch.setattr(notification_module, "notify_now", AsyncMock())
+
+    state = {"serp_payload": {"query": "q", "user_id": USER_ID, "workspace_id": WORKSPACE_ID}}
+
+    assert await library_router(state) == route
