@@ -54,9 +54,11 @@ async def get_dashboard_details(
         select(func.count()).select_from(Content).where(*in_library, Content.status == "draft")
     )
 
-    # 4. Total personas (deleted personas are removed, not trashed)
+    # 4. Total personas (those in the trash left out)
     total_personas = await db.scalar(
-        select(func.count()).select_from(Persona).where(Persona.workspace_id == ws_uuid)
+        select(func.count())
+        .select_from(Persona)
+        .where(Persona.workspace_id == ws_uuid, Persona.deleted_at.is_(None))
     )
 
     return success(

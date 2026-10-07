@@ -364,6 +364,7 @@ class ContentService:
         content = await self._get_content_or_404(content_id, workspace_id)
         previous_status = content.status
         content.deleted_at = datetime.now(timezone.utc)
+        content.deleted_by = user_id
         await self.db.flush()
 
         # Written while the title is still in hand. This row is the only thing
@@ -527,7 +528,10 @@ class ContentService:
         from src.api.models.knowledge_models.persona_model import Persona
 
         persona = (
-            await self.db.execute(select(Persona).where(Persona.id == persona_id))
+            await self.db.execute(
+                # A persona in the trash credits no one (G45).
+                select(Persona).where(Persona.id == persona_id, Persona.deleted_at.is_(None))
+            )
         ).scalar_one_or_none()
         if persona is None:
             logger.warning(

@@ -791,7 +791,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
                     from uuid import UUID as _UUID
 
                     result = await db.execute(
-                        select(Persona).where(Persona.id == _UUID(str(selected_id)))
+                        select(Persona).where(
+                            Persona.id == _UUID(str(selected_id)), Persona.deleted_at.is_(None)
+                        )
                     )
                     persona = result.scalar_one_or_none()
                     if persona:
@@ -799,7 +801,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 # Fallback: most recently created persona for this workspace
                 result = await db.execute(
                     select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
+                    .where(Persona.workspace_id == workspace_id, Persona.deleted_at.is_(None))
                     .order_by(Persona.created_at.desc())
                     .limit(1)
                 )

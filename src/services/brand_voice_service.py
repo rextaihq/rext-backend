@@ -343,7 +343,11 @@ class BrandVoiceService:
 
         from src.api.models.knowledge_models.persona_model import Persona
 
-        result = await self.db.execute(select(Persona).where(Persona.workspace_id == workspace_id))
+        result = await self.db.execute(
+            select(Persona).where(
+                Persona.workspace_id == workspace_id, Persona.deleted_at.is_(None)
+            )
+        )
         existing = list(result.scalars().all())
 
         def is_selected(persona: Persona) -> bool:

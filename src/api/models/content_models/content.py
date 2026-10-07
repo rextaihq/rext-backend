@@ -28,6 +28,10 @@ class Content(
     created_by_user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False, index=True
     )
+    # Who put it in the trash, for the trash's listing (G45).
+    deleted_by = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Core content fields
     title = Column(Text, nullable=False)
@@ -48,6 +52,13 @@ class Content(
             postgresql_where=text("langgraph_thread_id IS NULL AND deleted_at IS NULL"),
         ),
         UniqueConstraint("workspace_id", "slug", name="uq_content_workspace_slug"),
+        # The workspace's trash, newest first, and the purge of what's been there too long (G45).
+        Index(
+            "ix_content_trash",
+            "workspace_id",
+            "deleted_at",
+            postgresql_where=text("deleted_at IS NOT NULL"),
+        ),
     )
 
     # Metadata and Status

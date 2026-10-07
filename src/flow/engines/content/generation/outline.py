@@ -73,7 +73,7 @@ async def _rank_personas_for_outline(
             async with get_pooled_langgraph_db_context() as db:
                 result = await db.execute(
                     sa_select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
+                    .where(Persona.workspace_id == workspace_id, Persona.deleted_at.is_(None))
                     .order_by(Persona.created_at.desc())
                 )
                 return list(result.scalars().all())
