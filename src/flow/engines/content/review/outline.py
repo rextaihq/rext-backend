@@ -7,6 +7,10 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     recommended_brand_prominence,
 )
 from src.flow.engines.content.generation.brand_slot import apply_brand_slot_to_outline
+from src.flow.engines.content.generation.focus_keyword import (
+    focus_keyword_from_outline,
+    pin_focus_keyword,
+)
 from src.flow.engines.content.review.outline_edits import (
     addable_lists,
     apply_section_edits,
@@ -56,6 +60,27 @@ def _search_sources(state: REXT) -> dict[str, list]:
     except Exception:
         logger.warning("Outline gate: the search evidence could not be read", exc_info=True)
         return {"serp_titles": [], "serp_questions": [], "related_searches": []}
+
+
+# The keywords a user may send back at approval: plain phrases, deduplicated, a sensible number.
+_MAX_KEYWORDS = 20
+_MAX_KEYWORD_CHARS = 80
+
+
+def _clean_keywords(value) -> list[str] | None:
+    """The approved keyword list, or None when the payload has none (keep the outline's)."""
+    if not isinstance(value, list):
+        return None
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        phrase = " ".join(item.split())[:_MAX_KEYWORD_CHARS].strip()
+        if phrase and phrase.casefold() not in seen:
+            seen.add(phrase.casefold())
+            cleaned.append(phrase)
+    return cleaned[:_MAX_KEYWORDS]
 
 
 def review_outline(state: REXT):
@@ -223,6 +248,12 @@ def review_outline(state: REXT):
             outline_update["tone"] = updated_tone
         if updated_audience:
             outline_update["target_audience"] = updated_audience
+        # The keywords the user kept, added or removed in the sidebar (FB2.18,
+        # rext-control#699): the focus keyphrase still leads the list.
+        updated_keywords = _clean_keywords(review_data.get("keywords_to_include"))
+        if updated_keywords is not None:
+            outline_update["keywords_to_include"] = updated_keywords
+            pin_focus_keyword(outline_update, focus_keyword_from_outline(outline_update))
         if updated_word_count is not None:
             outline_update["target_word_count"] = updated_word_count
 
