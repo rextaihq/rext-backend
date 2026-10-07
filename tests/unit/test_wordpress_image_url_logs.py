@@ -21,6 +21,12 @@ from src.web.wordpress import WordPressPublisher, _loggable_url, _redact_urls
 PASSWORD = "s3cretpass"
 TOKEN = "SIGNATURE123"
 IMAGE = f"https://alice:{PASSWORD}@cdn.example.org/media/i.png?X-Amz-Signature={TOKEN}#frag"
+# Parentheses and a quote are legal in a path, and mustn't end the redaction early.
+IMAGES = [
+    IMAGE,
+    f"https://alice:{PASSWORD}@cdn.example.org/media/i(v1).png?X-Amz-Signature={TOKEN}",
+    f"https://alice:{PASSWORD}@cdn.example.org/media/i'v1.png?X-Amz-Signature={TOKEN}",
+]
 
 
 def _publisher() -> WordPressPublisher:
@@ -57,66 +63,82 @@ def test_addresses_inside_a_message_are_redacted():
     assert not _leaks(redacted)
 
 
-async def test_a_download_that_fails_logs_and_raises_no_credentials(monkeypatch, caplog):
-    request = httpx.Request("GET", IMAGE)
+def test_a_path_with_parentheses_is_redacted_whole():
+    address = IMAGES[1]
+    # Found by the pattern alone, and replaced whole when the message names a known address.
+    assert not _leaks(_redact_urls(f"HTTP 403 for {address}"))
+    assert not _leaks(_redact_urls(f"ConnectError('cannot connect to {address}')", address))
+
+
+def test_a_known_address_with_a_quote_is_redacted_whole():
+    address = IMAGES[2]
+    assert not _leaks(_redact_urls(f"HTTP 403 for {address} (refused)", address))
+
+
+@pytest.mark.parametrize("image", IMAGES)
+async def test_a_download_that_fails_logs_and_raises_no_credentials(monkeypatch, caplog, image):
+    request = httpx.Request("GET", image)
     download = AsyncMock(
-        side_effect=httpx.ConnectError(f"cannot connect to {IMAGE}", request=request)
+        side_effect=httpx.ConnectError(f"cannot connect to {image}", request=request)
     )
     monkeypatch.setattr(httpx.AsyncClient, "get", download)
 
     with caplog.at_level(logging.DEBUG, logger="src.web.wordpress"):
         with pytest.raises(RextExternalServiceException) as raised:
-            await _publisher()._upload_featured_image(IMAGE)
+            await _publisher()._upload_featured_image(image)
 
     assert download.await_count == 3
-    assert "cdn.example.org/media/i.png" in str(raised.value)
+    assert "cdn.example.org/media/i" in str(raised.value)
     assert not _leaks(str(raised.value))
     assert raised.value.__cause__ is None and raised.value.__suppress_context__
     assert not _leaks(caplog.text)
 
 
-async def test_a_refused_status_logs_and_raises_no_credentials(monkeypatch, caplog):
-    response = httpx.Response(403, text="denied", request=httpx.Request("GET", IMAGE))
+@pytest.mark.parametrize("image", IMAGES)
+async def test_a_refused_status_logs_and_raises_no_credentials(monkeypatch, caplog, image):
+    response = httpx.Response(403, text="denied", request=httpx.Request("GET", image))
     monkeypatch.setattr(httpx.AsyncClient, "get", AsyncMock(return_value=response))
 
     with caplog.at_level(logging.DEBUG, logger="src.web.wordpress"):
         with pytest.raises(RextExternalServiceException) as raised:
-            await _publisher()._upload_featured_image(IMAGE)
+            await _publisher()._upload_featured_image(image)
 
     assert "403" in str(raised.value)
     assert not _leaks(str(raised.value))
     assert not _leaks(caplog.text)
 
 
-async def test_a_timeout_logs_and_raises_no_credentials(monkeypatch, caplog):
-    request = httpx.Request("GET", IMAGE)
+@pytest.mark.parametrize("image", IMAGES)
+async def test_a_timeout_logs_and_raises_no_credentials(monkeypatch, caplog, image):
+    request = httpx.Request("GET", image)
     monkeypatch.setattr(
         httpx.AsyncClient,
         "get",
-        AsyncMock(side_effect=httpx.ReadTimeout(f"timed out reading {IMAGE}", request=request)),
+        AsyncMock(side_effect=httpx.ReadTimeout(f"timed out reading {image}", request=request)),
     )
 
     with caplog.at_level(logging.DEBUG, logger="src.web.wordpress"):
         with pytest.raises(ExternalServiceTimeoutException) as raised:
-            await _publisher()._upload_featured_image(IMAGE)
+            await _publisher()._upload_featured_image(image)
 
     assert raised.value.__cause__ is None
     assert not _leaks(caplog.text)
 
 
-async def test_a_downloaded_file_that_isnt_an_image_logs_no_credentials(monkeypatch, caplog):
+@pytest.mark.parametrize("image", IMAGES)
+async def test_a_downloaded_file_that_isnt_an_image_logs_no_credentials(monkeypatch, caplog, image):
     # The download succeeds (its final address is logged), then the bytes aren't an image.
     response = httpx.Response(
         200,
         content=b"<html>not an image</html>",
         headers={"content-type": "text/html"},
-        request=httpx.Request("GET", IMAGE),
+        request=httpx.Request("GET", image),
     )
     monkeypatch.setattr(httpx.AsyncClient, "get", AsyncMock(return_value=response))
 
     with caplog.at_level(logging.DEBUG, logger="src.web.wordpress"):
         with pytest.raises(RextExternalServiceException):
-            await _publisher()._upload_featured_image(IMAGE)
+            await _publisher()._upload_featured_image(image)
 
-    assert "cdn.example.org/media/i.png" in caplog.text
+    assert "cdn.example.org/media/i" in caplog.text
     assert not _leaks(caplog.text)
