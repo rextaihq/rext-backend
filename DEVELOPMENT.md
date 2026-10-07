@@ -16,7 +16,7 @@
    docker run -d --name rext-redis -p 6379:6379 redis:7-alpine --maxmemory 128mb
    ```
 
-   MinIO is optional: without it the API serves, the start-up check logs that MinIO can't be reached, `/health` reports storage as unhealthy, and uploads and featured images fail. `REXT_STORAGE_SKIP_BUCKET_CHECK=1` (the tests set it) only skips creating the bucket when the storage module loads: the start-up check and `/health` still try MinIO.
+   MinIO is optional: without it the API serves, the start-up check logs that MinIO can't be reached, `/health` reports storage as unhealthy, and uploads and featured images fail. `REXT_STORAGE_SKIP_BUCKET_CHECK=1` (the tests set it) turns off the bucket's setup everywhere: the existence check, its creation and its public-read policy, when the storage module loads and in every later check. Leave it unset when MinIO runs, or uploads fail until the bucket is made by hand. The start-up check and `/health` still try MinIO either way.
 2. **The environment.** Python 3.11 only (`.python-version`); `uv` installs it if it's missing. `uv sync --frozen` builds the environment from `uv.lock`. It is several GB, since crawl4ai brings torch, transformers and Playwright.
 3. **`.env`.** Copy `.env.example`. Its database and Redis addresses are the containers above:
    - `POSTGRES_URI_CUSTOM=postgresql+asyncpg://rext:rext@localhost:5432/rext_app`;
