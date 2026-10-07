@@ -1115,3 +1115,28 @@ def test_bare_amz_parameters_are_taken_out():
     logged = _loggable_body("canonical: X-Amz-Signature=secret-token&X-Amz-Date=20261007T000000Z")
 
     assert "secret-token" not in logged and "X-Amz-Signature=…" in logged
+
+
+@pytest.mark.asyncio
+async def test_a_200_error_page_echoing_the_signed_address_stays_out_of_the_message(caplog):
+    """A storage or CDN error page served as 200 was quoted in the reason (its body_preview)."""
+    page = (
+        "<html><body>Not found: /images/gone.png?X-Amz-Signature=secret-token"
+        + " pad" * 200
+        + "</body></html>"
+    )
+    publisher = _publisher_downloading(
+        httpx.Response(
+            200,
+            text=page,
+            headers={"content-type": "text/html; charset=utf-8"},
+            request=httpx.Request("GET", _SIGNED),
+        )
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "not a valid image (text/html" in message
+    assert "secret-token" not in message and "Not found" not in message
+    assert len(message) < 300
+    assert "secret-token" not in " ".join(record.getMessage() for record in caplog.records)

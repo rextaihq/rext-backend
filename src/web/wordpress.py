@@ -91,6 +91,8 @@ _S3_REQUEST_DETAILS = re.compile(
 # canonical query string lists them bare).
 _AMZ_PARAMETER = re.compile(r"(X-Amz-[A-Za-z-]+)=[^&\s<'\"]*", re.IGNORECASE)
 _LOGGED_BODY_CHARS = 500
+# A media type as a reason may repeat it ("text/html"); anything else in the header isn't.
+_PLAIN_MEDIA_TYPE = re.compile(r"[a-z0-9][a-z0-9.+-]{0,40}/[a-z0-9][a-z0-9.+-]{0,60}")
 # Read before redacting: enough past the logged length that an address or a query cut at the
 # edge is still whole when the redactors run, and never the whole of a large error page.
 _SCANNED_BODY_CHARS = 4000
@@ -1052,7 +1054,7 @@ class WordPressPublisher:
                     "[WordPress Media Alt] update failed media_id=%s status=%s body=%s",
                     media_id,
                     response.status_code,
-                    response.text[:500],
+                    _loggable_body(response.text),
                 )
             else:
                 logger.info(
@@ -1117,16 +1119,23 @@ class WordPressPublisher:
 
             content_type = image_response.headers.get("content-type", "").split(";", 1)[0].lower()
             if not self._is_image_bytes(image_response.content, content_type):
-                preview = image_response.content[:200].decode("utf-8", errors="replace")
+                # The reason names what came back, never its text: a storage or CDN error page
+                # served as 200 can echo the signed request (G59b, revnix/rext-control#632). The
+                # type is the remote's header, so only a plain media type is repeated.
+                sent = (
+                    content_type if _PLAIN_MEDIA_TYPE.fullmatch(content_type) else "no image type"
+                )
                 reason = (
-                    f"Downloaded resource is not a valid image "
-                    f"(content_type={content_type!r}, bytes={len(image_response.content)}, "
-                    f"body_preview={preview!r})"
+                    f"the image's address sent something that is not a valid image ({sent}, "
+                    f"{len(image_response.content)} bytes)"
                 )
                 logger.error(
-                    "[WordPress Media Upload] validation_failed image=%s reason=%s",
+                    "[WordPress Media Upload] validation_failed image=%s reason=%s preview=%s",
                     _loggable_url(image_url),
                     reason,
+                    _loggable_body(
+                        image_response.content[:2000].decode("utf-8", errors="replace"), image_url
+                    ),
                 )
                 raise RextExternalServiceException(message=reason, service_name="WordPress")
 
@@ -1830,8 +1839,11 @@ class WordPressPublisher:
 
             raw = response.json()
             if not isinstance(raw, dict):
+                logger.error(
+                    "[WordPress Publish] unexpected JSON value: %s", _loggable_body(repr(raw))
+                )
                 raise RextExternalServiceException(
-                    message=f"WordPress Posts API returned an unexpected JSON value: {raw!r}",
+                    message="WordPress Posts API returned an unexpected response",
                     service_name="WordPress",
                 )
             post = raw.get("data") if isinstance(raw.get("data"), dict) else raw
@@ -2067,7 +2079,7 @@ class WordPressPublisher:
                             "[WordPress Tag] create failed name=%s status=%s body=%s",
                             name,
                             create_response.status_code,
-                            create_response.text[:500],
+                            _loggable_body(create_response.text),
                         )
 
             except Exception as e:
