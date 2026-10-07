@@ -1,6 +1,7 @@
 """The free AI tools' bot check (G87): a model tool verifies the site form's Cloudflare Turnstile
 token before the call is counted or run. Cloudflare is a fake here: nothing reaches the network."""
 
+import json
 import logging
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs
@@ -177,3 +178,23 @@ def test_a_refused_token_stays_out_of_the_error_logs(settings, model, cloudflare
 
     assert ask().status_code == 403
     assert recorded == []
+
+
+def test_the_token_counts_toward_neither_the_size_limit_nor_the_cost(settings, model, cloudflare):
+    """A body at the input limit still fits with its token, and the day's budget is charged for
+    the text alone: the token never reaches a prompt."""
+    spec = limits.FREE_TOOLS["question-generator"]
+    text = "a" * (limits.MAX_INPUT_BYTES - len(b'{"text":""}'))
+    without = json.dumps({"text": text}, separators=(",", ":")).encode()
+    assert len(without) == limits.MAX_INPUT_BYTES
+    settings.FREE_TOOLS_DAILY_BUDGET_USD = limits.worst_case_cost(spec, len(without)) / 1_000_000
+    body = {"text": text, "turnstile_token": "t" * turnstile.MAX_TOKEN_LENGTH}
+
+    response = client.post(
+        QUESTIONS,
+        content=json.dumps(body, separators=(",", ":")).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 200
+    assert model.await_count == 1
