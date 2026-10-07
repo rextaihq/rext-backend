@@ -55,8 +55,9 @@ async def _busy_threads(identity: str) -> set[str]:
         threads = await get_client().threads.search(
             metadata={"owner": identity}, status="busy", limit=MAX_ACTIVE_RUNS + 1
         )
-    except Exception:
-        logger.warning("active-run cap: could not count busy threads", exc_info=True)
+    except Exception as exc:
+        # The class only: the error's text can carry the owner id the query was bound with.
+        logger.warning("active-run cap: could not count busy threads (%s)", type(exc).__name__)
         return set()
     return {str(thread.get("thread_id")) for thread in threads}
 

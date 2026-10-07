@@ -197,8 +197,34 @@ async def test_a_new_run_starts_without_an_earlier_runs_error():
     from src.flow.engines.rext import _begin_run
 
     stale = {"content": {"error": "Insufficient credits", "error_code": "insufficient_credits"}}
-    assert await _begin_run(stale) == {"content": {"error": None, "error_code": None}}
+    cleared = {
+        "content": {
+            "error": None,
+            "error_code": None,
+            "credits_deducted": False,
+            "image_credit_deducted": False,
+        }
+    }
+    assert await _begin_run(stale) == cleared
     assert await _begin_run({"content": {"outline": {}}}) == {}
+
+
+async def test_a_new_run_on_a_finished_thread_pays_for_its_drafting():
+    # A finished article's checkpoint keeps its paid marks; generate_content skips the
+    # upfront charges and the image's while they are set, so a new run must clear them.
+    from src.flow.engines.rext import _begin_run
+
+    finished = {
+        "content": {"final_content": {}, "credits_deducted": True, "image_credit_deducted": True}
+    }
+    assert await _begin_run(finished) == {
+        "content": {
+            "error": None,
+            "error_code": None,
+            "credits_deducted": False,
+            "image_credit_deducted": False,
+        }
+    }
 
 
 def test_the_graphs_end_the_run_where_a_charge_is_refused():

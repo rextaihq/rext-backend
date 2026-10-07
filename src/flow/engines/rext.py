@@ -148,12 +148,22 @@ async def _insufficient_credits(state: REXT) -> dict:
     }
 
 
+# The marks a paid run leaves in its content so a resumed node doesn't charge twice
+# (generate_content): the upfront stages, and the featured image on delivery.
+_PAID_MARKS = ("credits_deducted", "image_credit_deducted")
+
+
 async def _begin_run(state: REXT) -> dict:
-    """A new run clears the terminal error an earlier run on this thread left in its content."""
+    """A new run clears what an earlier run on this thread left in its content: its terminal
+    error, and its paid-charge marks, so this run's own charges are made."""
     content = state.get("content") or {}
-    if content.get("error") is None and content.get("error_code") is None:
+    if (
+        content.get("error") is None
+        and content.get("error_code") is None
+        and not any(content.get(mark) for mark in _PAID_MARKS)
+    ):
         return {}
-    return {"content": {"error": None, "error_code": None}}
+    return {"content": {"error": None, "error_code": None, **dict.fromkeys(_PAID_MARKS, False)}}
 
 
 CREDIT_CHECK_FAILED = (
