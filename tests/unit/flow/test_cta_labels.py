@@ -278,6 +278,18 @@ def test_a_case_studys_cta_is_its_action():
     assert spec["outline_cta"]["text"] == "Book a strategy call"
 
 
+def test_a_code_example_inside_a_blockquote_keeps_its_cta_lines():
+    body = (
+        "> Mark up the button like this:\n"
+        "> ```markdown\n"
+        "> **Primary CTA:** Explore Features\n"
+        "> ```\n\n"
+        "**Primary CTA:** Explore Features"
+    )
+    cleaned = strip_cta_label_lines(body, outline_cta_labels(BEST_TOOLS_OUTLINE))
+    assert cleaned == body.rsplit("\n\n", 1)[0]
+
+
 def test_code_examples_keep_their_cta_lines():
     body = (
         "Mark up the button like this:\n\n"
