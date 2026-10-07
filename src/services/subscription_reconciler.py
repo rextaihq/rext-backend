@@ -17,7 +17,7 @@ read goes to the back instead of filling every night's batch (#529).
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +28,7 @@ from src.api.models.subscription_models.subscriptions import (
     not_a_known_duplicate,
 )
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.services.duplicate_subscriptions import settle_duplicate_subscriptions
+from src.services.duplicate_subscriptions import LIVE_STATUSES, settle_duplicate_subscriptions
 from src.services.webhook_handlers.subscription_handlers import (
     cancellation_email_task,
     handle_subscription_updated,
@@ -39,19 +39,25 @@ from src.utils.logger import logger
 _PAUSE_BETWEEN_READS_SECONDS = 0.25
 # When the reconcile last tried a subscription, kept in the row's metadata.
 _RECONCILED_AT = "reconciled_at"
-_RUNNING = (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
 
 
 async def reconcile_subscriptions(
-    db: AsyncSession, provider=None, limit: int = 2000
+    db: AsyncSession,
+    provider=None,
+    limit: int = 2000,
+    deliver: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
 ) -> Dict[str, Any]:
-    """Re-read and apply every unfinished subscription. Returns counts and emails to send."""
+    """Re-read and apply every unfinished subscription. Returns the counts.
+
+    A subscription's email (and in-app notice) is handed to `deliver` right after
+    its own commit, so a later failure in the batch can't lose it; without
+    `deliver` they are returned under "emails".
+    """
     targets = (
         await db.execute(
             select(
                 UserSubscription.id,
                 UserSubscription.lemonsqueezy_subscription_id,
-                UserSubscription.status,
                 UserSubscription.user_id,
             )
             .where(
@@ -72,23 +78,39 @@ async def reconcile_subscriptions(
 
     counts = {"checked": 0, "changed": 0, "failed": 0}
     emails: List[Dict[str, Any]] = []
-    for row_id, ls_id, before, user_id in targets:
+    for row_id, ls_id, user_id in targets:
+        pending: Optional[Dict[str, Any]] = None
+        before = after = None
         try:
             # A failure undoes only this subscription's half-applied changes.
             async with db.begin_nested():
+                # The status now, under the row's lock: a webhook may have changed it
+                # since the batch was read, and its email went out with it.
+                row = (
+                    await db.execute(
+                        select(UserSubscription)
+                        .where(UserSubscription.id == row_id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one()
+                before = row.status
                 attributes = await provider.get_subscription_attributes(ls_id)
                 result = await handle_subscription_updated(
                     _as_webhook(ls_id, attributes), _ReconcileEvent(ls_id), db
                 )
-                row = await db.get(UserSubscription, row_id)
                 after = row.status
-                if after != before and after in _RUNNING:
-                    # A missed recovery can revive an older subscription the customer
-                    # has since replaced: the duplicate check runs as after a webhook.
+                if after != before and after in LIVE_STATUSES:
+                    # A missed recovery or resume can revive an older subscription the
+                    # customer has since replaced, in any state that bills or can bill:
+                    # the duplicate check runs as after a webhook.
                     await settle_duplicate_subscriptions(db, user_id)
-                if after == SubscriptionStatus.CANCELLED and before != after and not result:
-                    # A missed subscription_cancelled: its email and notice, as the webhook's.
+                if after == SubscriptionStatus.CANCELLED and before != after:
+                    # A missed subscription_cancelled: its audit, email and notice, as the
+                    # webhook's, ahead of any plan-change email the update produced.
                     result = await cancellation_email_task(db, row)
+                if result and result.get("send_email"):
+                    pending = result
         except Exception as e:
             counts["failed"] += 1
             logger.warning(
@@ -103,13 +125,19 @@ async def reconcile_subscriptions(
                     "Reconcile: subscription corrected from Lemon Squeezy",
                     extra={"subscription_id": str(row_id), "from": before.value, "to": after.value},
                 )
-            if result and result.get("send_email"):
-                emails.append(result)
         finally:
             await _stamp_attempt(db, row_id)
             await db.commit()
-            # Every read is paced, a failed one too: errors back to back would hit the limit.
-            await _pause()
+        if pending:
+            if deliver is None:
+                emails.append(pending)
+            else:
+                try:
+                    await deliver(pending)
+                except Exception:
+                    logger.error("Reconcile: could not send a notice", exc_info=True)
+        # Every read is paced, a failed one too: errors back to back would hit the limit.
+        await _pause()
 
     return {**counts, "emails": emails}
 
