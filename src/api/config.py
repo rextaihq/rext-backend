@@ -5,6 +5,7 @@ Centralized configuration using environment variables with Pydantic validation.
 Note: dotenv is loaded in src/api/server.py before importing this module.
 """
 
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -17,6 +18,7 @@ from src.config.hidden_secrets import HidesSecrets
 # has shipped, and every value .env.example holds (read where the file sits beside the app).
 _PLACEHOLDER_SECRETS = {"your-secret-key-here", "changeme", "secret", "password"}
 _ENV_EXAMPLE = Path(__file__).resolve().parents[2] / ".env.example"
+_EXAMPLE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=(.*)$")
 
 
 def _env_example_values() -> set:
@@ -26,9 +28,10 @@ def _env_example_values() -> set:
         return set()
     values = set()
     for line in lines:
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            value = line.split("=", 1)[1].strip().strip("'\"")
+        # Commented examples ("# DATABASE_URL=...") are just as public.
+        match = _EXAMPLE_ASSIGNMENT.match(line.strip().lstrip("#").strip())
+        if match:
+            value = match.group(1).strip().strip("'\"")
             if value:
                 values.add(value)
     return values
@@ -638,6 +641,9 @@ class Settings(HidesSecrets, BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
+        # A validation error at startup names the setting, never its value: a rejected
+        # secret, or the whole input for a check across settings, would reach the logs.
+        hide_input_in_errors=True,
     )
 
 
