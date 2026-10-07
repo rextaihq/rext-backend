@@ -68,6 +68,16 @@ class TitleResponse(BaseModel):
     titles: List[str]
 
 
+# How much of a visitor's own input an error message shows back: enough to recognise
+# what they typed, never a page of it.
+_ECHO_LIMIT = 40
+
+
+def _echo(value) -> str:
+    text = " ".join(str(value).split())
+    return text if len(text) <= _ECHO_LIMIT else text[:_ECHO_LIMIT].rstrip() + "..."
+
+
 # Schema Generator Schemas
 class SchemaRequest(BaseModel):
     schema_type: str = Field(
@@ -95,7 +105,7 @@ class SchemaRequest(BaseModel):
             re.IGNORECASE,
         )
         if not url_pattern.match(v):
-            raise ValueError(f"{info.field_name} must be a valid URL. Got: {v}")
+            raise ValueError(f"{info.field_name} must be a valid URL. Got: {_echo(v)}")
         return v
 
     @field_validator("date_published")
@@ -105,7 +115,9 @@ class SchemaRequest(BaseModel):
             return None
         date_pattern = re.compile(r"^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\d{4}$")
         if not date_pattern.match(v):
-            raise ValueError("date_published must be in MM/DD/YYYY format. Got: {v}")
+            raise ValueError(
+                f"Use MM/DD/YYYY for the publish date, for example 10/08/2026. Got: {_echo(v)}"
+            )
         return v
 
 

@@ -160,21 +160,53 @@ jobs:
     needs: [docker_job, docker_shopify]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # packages: a refused rollback points :latest back at the image production runs.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
-      - name: Refuse a stale run
-        # Publishing or deploying an older commit after a newer one would silently
-        # roll production back: a re-run keeps its original commit, and GitHub
-        # doesn't guarantee runs start in push order. Every push to main starts a
-        # run, so this run must be for main's head. Roll back on purpose instead.
+      - name: Refuse a rollback
+        # Deploying a commit older than the one production runs would silently roll
+        # it back: a re-run keeps its original commit, and GitHub doesn't guarantee
+        # runs start in push order. Main moving on during the build is not that:
+        # merges land every few minutes, and refusing every run whose commit is no
+        # longer main's head kept production from deploying at all (2026-10-07).
+        # So this run deploys when its commit is the one live serves or ahead of
+        # it, compared through the GitHub API. If live reports no commit, the run
+        # must be main's head, as before. Roll back on purpose instead.
         env:
           GH_TOKEN: ${{ github.token }}
+          HEALTH_URL: https://api.rext.ai/health/live
         run: |
-          HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
-          if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::This run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
-            exit 1
+          LIVE=$(curl -s --max-time 10 "$HEALTH_URL" | jq -r '.commit // empty' 2>/dev/null || true)
+          if ! [[ "$LIVE" =~ ^[0-9a-f]{7,40}$ ]]; then
+            HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+            if [ "$HEAD" != "${{ github.sha }}" ]; then
+              echo "::error::Live reports no commit, and main is at $HEAD: refusing to deploy ${{ github.sha }}"
+              exit 1
+            fi
+            echo "Live reports no commit; ${{ github.sha }} is main's head: deploying"
+            exit 0
           fi
+          STATUS=$(gh api "repos/${{ github.repository }}/compare/$LIVE...${{ github.sha }}" --jq .status)
+          case "$STATUS" in
+            ahead|identical) echo "Live runs $LIVE; ${{ github.sha }} is $STATUS of it: deploying" ;;
+            *)
+              echo "::error::Live runs $LIVE, and ${{ github.sha }} is $STATUS of it: refusing to roll production back"
+              # This run's publish already pointed :latest at its image. Point it back at
+              # the one production runs, so a later restart that pulls :latest can't roll
+              # production back either.
+              IMAGE=ghcr.io/${{ github.repository_owner }}/rext-backend
+              echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin > /dev/null
+              if docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:sha-$LIVE"; then
+                echo "Pointed :latest back at sha-$LIVE"
+              else
+                echo "::warning::Could not point :latest back at sha-$LIVE: check :latest in GHCR before any restart"
+              fi
+              exit 1
+              ;;
+          esac
 
       - name: Wait for GHCR tag propagation (backend)
         env:
@@ -234,12 +266,14 @@ jobs:
       - name: Wait for production to run this commit
         timeout-minutes: 17
         env:
+          GH_TOKEN: ${{ github.token }}
           HEALTH_URL: https://api.rext.ai/health/live
           EXPECTED: ${{ github.sha }}
         run: |
           # The restart is queued: pulling the image and starting the stack takes
-          # minutes. The deploy counts only when the running server reports the
-          # commit this run built (src/api/build_info.py).
+          # minutes. The deploy counts when the running server reports the commit
+          # this run built (src/api/build_info.py), or a newer one that contains
+          # it: a later run's deploy can land first.
           # A wall-clock deadline: a request that hangs counts against it too.
           DEADLINE=$((SECONDS + 900))
           RUNNING=none
@@ -249,6 +283,10 @@ jobs:
             RUNNING=$(curl -s --max-time 10 "$HEALTH_URL" | jq -r '.commit // "none"' 2>/dev/null || true)
             if [ "$RUNNING" = "$EXPECTED" ]; then
               echo "✅ Production runs $EXPECTED (attempt $i)"; exit 0
+            fi
+            if [[ "$RUNNING" =~ ^[0-9a-f]{7,40}$ ]] \
+              && [ "$(gh api "repos/${{ github.repository }}/compare/$EXPECTED...$RUNNING" --jq .status 2>/dev/null)" = "ahead" ]; then
+              echo "✅ Production runs $RUNNING, which contains $EXPECTED (a later run deployed first)"; exit 0
             fi
             echo "attempt $i: production runs ${RUNNING:-none}, waiting 15s..."
             sleep 15

@@ -6,8 +6,10 @@ from typing import Any, Dict, Optional
 import httpx
 from dotenv import load_dotenv
 
+from src.flow.engines.serp import serp_cache
 from src.flow.states.countries import ISO_TO_COUNTRY, VALID_COUNTRY_CODES
 from src.flow.states.rext import REXT, SERPEngineState
+from src.utils.stage_timing import timed_stage
 
 load_dotenv()
 
@@ -293,6 +295,25 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
         logger.error("DATAFORSEO_SERP_URL not found in environment variables")
         return {"serp_result": _empty_serp_state()}
 
+    with timed_stage("serp") as timing:
+        cache_key = serp_cache.serp_key(query, country)
+        cached = await serp_cache.read(cache_key)
+        if cached:
+            timing["cache"] = "hit"
+            logger.info("SERP from the day's cache")
+            return {"serp_result": cached}
+        timing["cache"] = "miss"
+        serp_data, complete = await _fetch_live(query, country)
+        # Only a task that completed: a failed one can still carry some rows, with what
+        # depends on completion (the AI Overview) unknown.
+        if complete and serp_data["serp_status"] == "ok":
+            await serp_cache.write(cache_key, serp_data)
+        return {"serp_result": serp_data}
+
+
+async def _fetch_live(query: str, country: str | None) -> tuple[SERPEngineState, bool]:
+    """The SERP from DataForSEO, with one retry for a passing failure, and whether its task
+    completed (DataForSEO's 20000)."""
     for attempt in range(1, SERP_ATTEMPTS + 1):
         last_attempt = attempt == SERP_ATTEMPTS
         try:
@@ -305,7 +326,7 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
                 await asyncio.sleep(SERP_RETRY_DELAY_SECONDS)
                 continue
             logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
-            return {"serp_result": _empty_serp_state()}
+            return _empty_serp_state(), False
 
         status_code = _task_status(raw_data)
         if (
@@ -321,4 +342,4 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
         logger.info(
             f"Fetched SERP for query '{query}': Found {len(serp_data['organic_results'])} organic results, {len(serp_data['related_searches'])} related searches, {len(serp_data['people_ask'])} questions."
         )
-        return {"serp_result": serp_data}
+        return serp_data, status_code == 20000

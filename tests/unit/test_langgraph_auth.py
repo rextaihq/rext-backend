@@ -1,5 +1,6 @@
 """LangGraph's own routes refuse anonymous callers and keep each user to their own threads and library."""
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -391,3 +392,235 @@ async def test_a_run_can_only_resume_its_gates(role, command):
         await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
 
     assert exc.value.status_code == 403
+
+
+# --- at most two runs in flight per user (G62, rext-control#524) ----------------------
+
+
+@pytest.fixture(autouse=True)
+def fresh_admissions(monkeypatch):
+    """Each test admits runs from nothing, in process (no Redis), unless it sets one up."""
+    from src.api.security import run_admission
+
+    monkeypatch.setattr(run_admission, "_local_admitted", {})
+    monkeypatch.setattr(run_admission, "_local_locks", {})
+    monkeypatch.setattr(run_admission.cache, "_enabled", False)
+
+
+def _busy(monkeypatch, thread_ids, *, fails=False):
+    """The runtime's answer to "which of this user's threads are busy", through the in-process client."""
+    asked = []
+
+    class _Threads:
+        async def search(self, **kwargs):
+            asked.append(kwargs)
+            if fails:
+                # A database error's text can carry the bound owner id.
+                raise RuntimeError(f"runtime unavailable for owner {kwargs['metadata']['owner']}")
+            return [{"thread_id": t, "status": "busy"} for t in thread_ids]
+
+    class _Client:
+        threads = _Threads()
+
+    monkeypatch.setattr("langgraph_sdk.get_client", lambda: _Client())
+    return asked
+
+
+def _new_run(thread_id="t-new"):
+    return {
+        "thread_id": thread_id,
+        "kwargs": {"input": {"serp_payload": {"workspace_id": WORKSPACE, "query": "q"}}},
+    }
+
+
+async def test_a_third_run_in_flight_is_refused(role, monkeypatch):
+    asked = _busy(monkeypatch, ["t-1", "t-2"])
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), _new_run())
+
+    assert exc.value.status_code == 429
+    assert exc.value.detail == langgraph_auth.TOO_MANY_RUNS
+    # Only the caller's own busy threads are counted.
+    assert asked == [{"metadata": {"owner": USER}, "status": "busy", "limit": 3}]
+
+
+async def test_a_second_run_in_flight_is_allowed(role, monkeypatch):
+    _busy(monkeypatch, ["t-1"])
+
+    scope = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), _new_run())
+
+    assert scope["owner"] == USER
+
+
+async def test_resuming_a_busy_thread_does_not_count_it(role, monkeypatch):
+    _busy(monkeypatch, ["t-1", "t-resumed"])
+    resume = {"thread_id": "t-resumed", "kwargs": {"command": {"resume": {"action": "approve"}}}}
+    resume["metadata"] = {"workspace_id": WORKSPACE}
+
+    await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), resume)
+
+
+async def test_a_resume_is_capped_too(role, monkeypatch):
+    _busy(monkeypatch, ["t-1", "t-2"])
+    resume = {
+        "thread_id": "t-paused",
+        "kwargs": {"command": {"resume": {"action": "approve"}}},
+        "metadata": {"workspace_id": WORKSPACE},
+    }
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), resume)
+    assert exc.value.status_code == 429
+
+
+async def test_a_count_that_cant_be_read_does_not_hold_the_run_up(role, monkeypatch, caplog):
+    _busy(monkeypatch, [], fails=True)
+
+    with caplog.at_level("WARNING"):
+        scope = await langgraph_auth.runs_need_content_create(
+            _ctx("threads", "create_run"), _new_run()
+        )
+
+    assert scope["owner"] == USER
+    # The log names the error's class, never its text or the user.
+    assert "could not count busy threads (RuntimeError)" in caplog.text
+    assert USER not in caplog.text
+
+
+async def test_the_cap_is_counted_only_after_the_workspace_check(role, monkeypatch):
+    asked = _busy(monkeypatch, ["t-1", "t-2"])
+    elsewhere = {
+        "thread_id": "t",
+        "kwargs": {"input": {"serp_payload": {"workspace_id": OTHER, "query": "q"}}},
+    }
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), elsewhere)
+
+    assert exc.value.status_code == 403
+    assert asked == []
+
+
+async def test_three_runs_requested_together_admit_two(role, monkeypatch):
+    # None is busy yet when all three are checked: the admissions count each other.
+    _busy(monkeypatch, [])
+
+    async def start(thread_id):
+        try:
+            await langgraph_auth.runs_need_content_create(
+                _ctx("threads", "create_run"), _new_run(thread_id)
+            )
+            return "admitted"
+        except Auth.exceptions.HTTPException as exc:
+            return exc.status_code
+
+    outcomes = await asyncio.gather(start("t-a"), start("t-b"), start("t-c"))
+
+    assert sorted(outcomes, key=str) == [429, "admitted", "admitted"]
+
+
+class _FakeRedis:
+    """The few Redis calls run admission makes, in memory."""
+
+    def __init__(self):
+        self.values, self.sets = {}, {}
+
+    async def set(self, key, value, nx=False, px=None):
+        if nx and key in self.values:
+            return None
+        self.values[key] = value
+        return True
+
+    async def get(self, key):
+        return self.values.get(key)
+
+    async def delete(self, key):
+        self.values.pop(key, None)
+
+    async def zremrangebyscore(self, key, low, high):
+        self.sets[key] = {m: s for m, s in self.sets.get(key, {}).items() if not low <= s <= high}
+
+    async def zrange(self, key, start, end):
+        return list(self.sets.get(key, {}))
+
+    async def zadd(self, key, mapping):
+        self.sets.setdefault(key, {}).update(mapping)
+
+    async def zrem(self, key, *members):
+        for member in members:
+            self.sets.get(key, {}).pop(member, None)
+
+    async def expire(self, key, seconds):
+        return True
+
+
+async def test_with_redis_the_admissions_hold_across_processes(role, monkeypatch):
+    from src.api.security import run_admission
+
+    redis = _FakeRedis()
+    monkeypatch.setattr(run_admission.cache, "_enabled", True)
+    monkeypatch.setattr(run_admission.cache, "redis", redis)
+    _busy(monkeypatch, [])
+
+    for thread_id in ("t-a", "t-b"):
+        await langgraph_auth.runs_need_content_create(
+            _ctx("threads", "create_run"), _new_run(thread_id)
+        )
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(
+            _ctx("threads", "create_run"), _new_run("t-c")
+        )
+
+    assert exc.value.status_code == 429
+    assert set(redis.sets[f"run_admission:recent:{USER}"]) == {"t-a", "t-b"}
+    assert f"run_admission:lock:{USER}" not in redis.values  # the lock is released
+
+
+def _with_redis(monkeypatch):
+    from src.api.security import run_admission
+
+    redis = _FakeRedis()
+    monkeypatch.setattr(run_admission.cache, "_enabled", True)
+    monkeypatch.setattr(run_admission.cache, "redis", redis)
+    return redis
+
+
+async def _start(thread_id):
+    try:
+        await langgraph_auth.runs_need_content_create(
+            _ctx("threads", "create_run"), _new_run(thread_id)
+        )
+        return "admitted"
+    except Auth.exceptions.HTTPException as exc:
+        return exc.status_code
+
+
+async def test_a_lock_held_by_another_start_refuses_rather_than_admitting_in_process(
+    role, monkeypatch
+):
+    from src.api.security import run_admission
+
+    redis = _with_redis(monkeypatch)
+    monkeypatch.setattr(run_admission, "_LOCK_WAIT_S", 0.1)
+    redis.values[f"run_admission:lock:{USER}"] = "another start"
+    _busy(monkeypatch, [])
+
+    assert await _start("t-a") == 429
+    assert run_admission._local_admitted == {}  # the in-process path never ran
+
+
+@pytest.mark.parametrize("redis", [False, True], ids=["in process", "redis"])
+async def test_runs_that_ended_stop_counting(role, monkeypatch, redis):
+    # Two runs are admitted, then seen in flight, then end: a new run is admitted at once,
+    # not only once the admission window has passed.
+    if redis:
+        _with_redis(monkeypatch)
+    _busy(monkeypatch, [])
+    assert [await _start("t-a"), await _start("t-b")] == ["admitted", "admitted"]
+
+    _busy(monkeypatch, ["t-a", "t-b"])
+    assert await _start("t-c") == 429
+
+    _busy(monkeypatch, [])
+    assert await _start("t-c") == "admitted"

@@ -23,7 +23,12 @@ from bs4 import BeautifulSoup
 from PIL import Image
 
 from src.utils.logger import logger
-from src.utils.url_validator import SSRFValidationError, validate_url_for_ssrf
+from src.utils.url_validator import (
+    SSRFValidationError,
+    loggable_url,
+    public_client,
+    validate_url_for_ssrf,
+)
 
 MAX_FAVICON_BYTES = 256 * 1024
 MAX_PAGE_BYTES = 2 * 1024 * 1024
@@ -99,6 +104,23 @@ def _validated(data: bytes) -> Optional[Tuple[bytes, str]]:
     return data, mime
 
 
+def _client(transport: Optional[httpx.AsyncBaseTransport]) -> httpx.AsyncClient:
+    """The client for a customer's site and the icons it declares.
+
+    The public client connects only to the address its check found public, so a name that
+    resolves to a public address for the check and to a private or metadata one for the
+    connection (DNS rebinding) gets nowhere. A given transport (the tests') takes its place.
+    """
+    options: Dict[str, Any] = {
+        "follow_redirects": False,
+        "timeout": FAVICON_TIMEOUT,
+        "headers": {"User-Agent": "RextAI-Favicon/1.0"},
+    }
+    if transport is not None:
+        return httpx.AsyncClient(transport=transport, **options)
+    return public_client(**options)
+
+
 async def _get_capped(
     url: str, max_bytes: int, transport: Optional[httpx.AsyncBaseTransport] = None
 ) -> Optional[bytes]:
@@ -108,12 +130,7 @@ async def _get_capped(
     and httpx.HTTPError for a failed request; returns None for a non-200 answer,
     a redirect loop or a body over max_bytes.
     """
-    async with httpx.AsyncClient(
-        transport=transport,
-        follow_redirects=False,
-        timeout=FAVICON_TIMEOUT,
-        headers={"User-Agent": "RextAI-Favicon/1.0"},
-    ) as client:
+    async with _client(transport) as client:
         for _ in range(MAX_REDIRECTS + 1):
             await asyncio.to_thread(validate_url_for_ssrf, url)
             async with client.stream("GET", url) as response:
@@ -161,10 +178,10 @@ async def find_favicon(
         try:
             found = await fetch_favicon(candidate, transport=transport)
         except SSRFValidationError as exc:
-            logger.info("[Favicon] refused %s: %s", candidate, exc)
+            logger.info("[Favicon] refused %s: %s", loggable_url(candidate), exc)
             continue
         except httpx.HTTPError as exc:
-            logger.info("[Favicon] %s failed: %s", candidate, type(exc).__name__)
+            logger.info("[Favicon] %s failed: %s", loggable_url(candidate), type(exc).__name__)
             continue
         if found:
             data, mime = found

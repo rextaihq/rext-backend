@@ -195,14 +195,33 @@ def subscription_grants_access(now: Optional[datetime] = None):
     `end_date` hasn't passed yet - cancelling flips `status` to CANCELLED
     immediately (so the UI/re-cancel checks reflect it right away), but the
     user keeps their plan's credits and limits until `end_date`.
+
+    A known duplicate never grants anything: one settled here (`duplicate_of`), or
+    found and left to a person (`duplicate_found_of`). The customer's kept
+    subscription gives the plan, and a refunded duplicate's paid-through end
+    must not give it back (duplicate_subscriptions.py).
     """
     now = now or datetime.now(timezone.utc)
+    return and_(
+        or_(
+            UserSubscription.status.in_(ACCESS_STATUSES),
+            and_(
+                UserSubscription.status == SubscriptionStatus.CANCELLED,
+                UserSubscription.end_date.isnot(None),
+                UserSubscription.end_date > now,
+            ),
+        ),
+        not_a_known_duplicate(),
+    )
+
+
+def not_a_known_duplicate():
+    """SQLAlchemy filter: the row isn't a duplicate settled here or left to a person."""
     return or_(
-        UserSubscription.status.in_(ACCESS_STATUSES),
-        and_(
-            UserSubscription.status == SubscriptionStatus.CANCELLED,
-            UserSubscription.end_date.isnot(None),
-            UserSubscription.end_date > now,
+        UserSubscription.subscription_metadata.is_(None),
+        ~or_(
+            UserSubscription.subscription_metadata.has_key("duplicate_of"),
+            UserSubscription.subscription_metadata.has_key("duplicate_found_of"),
         ),
     )
 
