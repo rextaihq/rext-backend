@@ -7,6 +7,7 @@ Sent when a member is removed from a workspace.
 from typing import Optional
 
 from emails.components import primary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -43,7 +44,7 @@ def render_member_removed_email(
         ... )
     """
     if support_url is None:
-        support_url = f"{frontend_url}/support"
+        support_url = SITE_CONTACT_URL
 
     reason_html = ""
     if reason:
@@ -153,7 +154,7 @@ def create_member_removed_email(
     Returns:
         Complete HTML email string
     """
-    support_url = f"{frontend_url}/support"
+    support_url = SITE_CONTACT_URL
 
     reason_html = ""
     if reason:

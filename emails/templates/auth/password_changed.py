@@ -8,6 +8,7 @@ This is a security notification email.
 from typing import Optional
 
 from emails.components import primary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -90,7 +91,7 @@ def render_password_changed_email(
         """
 
     account_url = f"{frontend_url}/settings/security"
-    support_url = f"{frontend_url}/support"
+    support_url = SITE_CONTACT_URL
 
     email_html = compose_email(
         [
@@ -255,7 +256,7 @@ def create_password_changed_email(
         """
 
     account_url = f"{frontend_url}/settings/security"
-    support_url = f"{frontend_url}/support"
+    support_url = SITE_CONTACT_URL
 
     # Build unsubscribe footer (Note: Security emails typically should NOT be unsubscribable)
     unsubscribe_html = ""
