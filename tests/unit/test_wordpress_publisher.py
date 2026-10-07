@@ -9,6 +9,25 @@ from src.utils.storage import storage_service
 from src.web.wordpress import WordPressPublisher
 
 
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """No test here reaches the network. The publisher sends through client.request (its retry
+    helper), and these tests mock the client's get and post, so a request goes to the mock its
+    method names; anything left unmocked fails here instead of calling example.com."""
+
+    async def request(self, method, url, **kwargs):
+        mocked = self.__dict__.get(method.lower())
+        if mocked is None:
+            raise AssertionError(f"unmocked {method} {url} in a unit test")
+        return await mocked(url, **kwargs)
+
+    async def send(self, request, **kwargs):
+        raise AssertionError(f"network call in a unit test: {request.method} {request.url}")
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", request)
+    monkeypatch.setattr(httpx.AsyncClient, "send", send)
+
+
 @pytest.mark.asyncio
 async def test_downloads_own_minio_image_through_storage_client(monkeypatch):
     publisher = WordPressPublisher(
@@ -42,7 +61,7 @@ async def test_feature_image_download_retries_connect_error_with_exact_reason(
         username="user",
         app_password="pass",
     )
-    request = httpx.Request("GET", "https://cdn.example.com/image.png")
+    request = httpx.Request("GET", "https://cdn.rext.test/image.png")
     download = AsyncMock(
         side_effect=httpx.ConnectError(
             "connection refused",
@@ -56,11 +75,11 @@ async def test_feature_image_download_retries_connect_error_with_exact_reason(
     with pytest.raises(
         RextExternalServiceException,
         match=(
-            r"download network connection failed.*cdn\.example\.com/image\.png"
+            r"download network connection failed.*cdn\.rext\.test/image\.png"
             r".*after 3 attempts.*ConnectError"
         ),
     ):
-        await publisher._upload_featured_image("https://cdn.example.com/image.png")
+        await publisher._upload_featured_image("https://cdn.rext.test/image.png")
 
     assert download.await_count == 3
     assert sleep.await_count == 2
@@ -196,7 +215,7 @@ async def test_publish_post_uploads_feature_image_and_sets_featured_media():
         200,
         content=image_bytes,
         headers={"content-type": "image/png"},
-        request=httpx.Request("GET", "https://cdn.example.com/ai-image.png"),
+        request=httpx.Request("GET", "https://cdn.rext.test/ai-image.png"),
     )
     upload_response = httpx.Response(
         201,
@@ -222,8 +241,8 @@ async def test_publish_post_uploads_feature_image_and_sets_featured_media():
 
     data = ContentCreate(
         title="Hello world",
-        body_markdown="Here is the generated image: ![image](https://cdn.example.com/ai-image.png)",
-        images_data={"feature_image_url": "https://cdn.example.com/ai-image.png"},
+        body_markdown="Here is the generated image: ![image](https://cdn.rext.test/ai-image.png)",
+        images_data={"feature_image_url": "https://cdn.rext.test/ai-image.png"},
     )
 
     result = await publisher.publish_post(data=data, status="publish")
@@ -239,8 +258,9 @@ async def test_publish_post_uploads_feature_image_and_sets_featured_media():
     payload = publish_call.kwargs["json"]
     assert payload["featured_media"] == 42
     assert "featured_image" not in payload
-    assert "https://example.com/wp-content/uploads/2024/07/ai-image.jpg" in payload["content"]
-    assert "https://cdn.example.com/ai-image.png" not in payload["content"]
+    # The theme shows the featured image, so its inline copy is dropped (it would show twice).
+    assert "https://example.com/wp-content/uploads/2024/07/ai-image.jpg" not in payload["content"]
+    assert "https://cdn.rext.test/ai-image.png" not in payload["content"]
 
 
 @pytest.mark.asyncio
@@ -253,7 +273,7 @@ async def test_publish_post_uses_image_from_body_markdown_when_images_data_missi
         200,
         content=b"\x89PNG\r\n\x1a\nfake-image-bytes",
         headers={"content-type": "image/png"},
-        request=httpx.Request("GET", "https://cdn.example.com/body-image.png"),
+        request=httpx.Request("GET", "https://cdn.rext.test/body-image.png"),
     )
     upload_response = httpx.Response(
         201,
@@ -279,7 +299,7 @@ async def test_publish_post_uses_image_from_body_markdown_when_images_data_missi
 
     data = ContentCreate(
         title="Hello body",
-        body_markdown="Here is the generated image: ![image](https://cdn.example.com/body-image.png)",
+        body_markdown="Here is the generated image: ![image](https://cdn.rext.test/body-image.png)",
         images_data={},
     )
 
@@ -289,8 +309,9 @@ async def test_publish_post_uses_image_from_body_markdown_when_images_data_missi
     publish_call = publisher.client.post.await_args
     payload = publish_call.kwargs["json"]
     assert payload["featured_media"] == 77
-    assert "https://example.com/wp-content/uploads/2024/07/body-image.png" in payload["content"]
-    assert "https://cdn.example.com/body-image.png" not in payload["content"]
+    # The theme shows the featured image, so its inline copy is dropped (it would show twice).
+    assert "https://example.com/wp-content/uploads/2024/07/body-image.png" not in payload["content"]
+    assert "https://cdn.rext.test/body-image.png" not in payload["content"]
 
 
 @pytest.mark.asyncio
@@ -375,7 +396,7 @@ async def test_media_upload_failure_prevents_broken_post_from_being_published():
             200,
             content=b"\x89PNG\r\n\x1a\nimage",
             headers={"content-type": "image/png"},
-            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+            request=httpx.Request("GET", "https://cdn.rext.test/image.png"),
         )
     )
     publisher.client.send = AsyncMock(
@@ -390,7 +411,7 @@ async def test_media_upload_failure_prevents_broken_post_from_being_published():
         await publisher.publish_post(
             ContentCreate(
                 title="Upload must succeed",
-                body_html='<img src="https://cdn.example.com/image.png">',
+                body_html='<img src="https://cdn.rext.test/image.png">',
             )
         )
 
@@ -407,7 +428,7 @@ async def test_html_disguised_as_image_is_rejected_before_upload():
             200,
             content=b"<html><body>expired signed URL</body></html>",
             headers={"content-type": "text/html"},
-            request=httpx.Request("GET", "https://cdn.example.com/expired.png"),
+            request=httpx.Request("GET", "https://cdn.rext.test/expired.png"),
         )
     )
     publisher.client.send = AsyncMock()
@@ -417,7 +438,7 @@ async def test_html_disguised_as_image_is_rejected_before_upload():
         await publisher.publish_post(
             ContentCreate(
                 title="Reject HTML",
-                body_html='<img src="https://cdn.example.com/expired.png">',
+                body_html='<img src="https://cdn.rext.test/expired.png">',
             )
         )
 
@@ -435,7 +456,7 @@ async def test_post_must_confirm_featured_media_id():
             200,
             content=b"\x89PNG\r\n\x1a\nimage",
             headers={"content-type": "image/png"},
-            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+            request=httpx.Request("GET", "https://cdn.rext.test/image.png"),
         )
     )
     publisher.client.send = AsyncMock(
@@ -461,7 +482,7 @@ async def test_post_must_confirm_featured_media_id():
         await publisher.publish_post(
             ContentCreate(
                 title="Verify response",
-                body_html='<img src="https://cdn.example.com/image.png">',
+                body_html='<img src="https://cdn.rext.test/image.png">',
             )
         )
 
@@ -478,7 +499,7 @@ async def test_fetches_created_post_when_plugin_response_omits_featured_media():
             200,
             content=b"\x89PNG\r\n\x1a\nimage",
             headers={"content-type": "image/png"},
-            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+            request=httpx.Request("GET", "https://cdn.rext.test/image.png"),
         )
     )
     publisher.client.send = AsyncMock(
@@ -503,7 +524,7 @@ async def test_fetches_created_post_when_plugin_response_omits_featured_media():
     result = await publisher.publish_post(
         ContentCreate(
             title="Plugin response omits field",
-            body_html='<img src="https://cdn.example.com/image.png">',
+            body_html='<img src="https://cdn.rext.test/image.png">',
         )
     )
 
@@ -513,7 +534,8 @@ async def test_fetches_created_post_when_plugin_response_omits_featured_media():
     payload = publisher.client.post.await_args.kwargs["json"]
     assert payload["featured_media"] == 89
     assert payload["featured_image"] == 89
-    publisher.client.get.assert_awaited_once_with(
+    # The created post is read back for its thumbnail (the categories are listed first).
+    publisher.client.get.assert_any_await(
         "https://example.com/wp-json/rext-ai/v1/posts/101",
         timeout=30,
     )
@@ -531,7 +553,7 @@ async def test_confirms_draft_featured_image_from_plugin_response_shape():
             200,
             content=b"\x89PNG\r\n\x1a\nimage",
             headers={"content-type": "image/png"},
-            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+            request=httpx.Request("GET", "https://cdn.rext.test/image.png"),
         )
     )
     publisher.client.send = AsyncMock(
@@ -565,7 +587,7 @@ async def test_confirms_draft_featured_image_from_plugin_response_shape():
     result = await publisher.publish_post(
         ContentCreate(
             title="Draft plugin image",
-            body_html='<img src="https://cdn.example.com/image.png">',
+            body_html='<img src="https://cdn.rext.test/image.png">',
         ),
         status="draft",
     )
@@ -590,7 +612,7 @@ async def test_replaces_html_escaped_signed_image_url():
     publisher = WordPressPublisher(
         site_url="https://example.com", username="user", app_password="pass"
     )
-    signed_url = "https://cdn.example.com/image.png?token=a&expires=123"
+    signed_url = "https://cdn.rext.test/image.png?token=a&expires=123"
     publisher._download_image = AsyncMock(
         return_value=httpx.Response(
             200,
@@ -615,15 +637,18 @@ async def test_replaces_html_escaped_signed_image_url():
     await publisher.publish_post(
         ContentCreate(
             title="Signed URL",
-            body_html=('<img src="https://cdn.example.com/image.png?token=a&amp;expires=123">'),
+            body_html=('<img src="https://cdn.rext.test/image.png?token=a&amp;expires=123">'),
             images_data={"featured_image_url": signed_url},
         )
     )
 
     payload = publisher.client.post.await_args.kwargs["json"]
+    assert payload["featured_media"] == 42
+    # The inline copy, written with &amp;, is recognised as the featured image and dropped (the theme
+    # shows the featured image), so no form of the signed address is left in the post.
     assert signed_url not in payload["content"]
+    assert "token=a&amp;expires" not in payload["content"]
     assert "localhost" not in payload["content"]
-    assert "https://example.com/uploads/image.png" in payload["content"]
 
 
 @pytest.mark.asyncio
@@ -660,7 +685,8 @@ async def test_uses_existing_wordpress_category_by_exact_name():
     )
 
     assert result["success"] is True
-    publisher.client.get.assert_awaited_once_with(
+    # The categories are listed, then searched by name; the exact name wins over "WordPress News".
+    publisher.client.get.assert_any_await(
         "https://example.com/wp-json/wp/v2/categories",
         params={"search": "WordPress", "per_page": 100},
         timeout=30,
