@@ -13,6 +13,9 @@ goes through ``UsageTrackingService.consume_credits``, which
 
 Admin grants are kept apart from the purchase: a refund forfeits only promotion
 grants, and only promotion grants count as credits used for the refund rule.
+They also follow the user, not the subscription row they were added on
+(``_spendable_by``): a checkout or a new start replaces that row, and what
+support gave must not stay behind on the old one.
 """
 
 from dataclasses import dataclass
@@ -125,33 +128,67 @@ def _usable(now: datetime):
     )
 
 
-async def live_grants(
-    db: AsyncSession, subscription_id: UUID, now: Optional[datetime] = None
-) -> list[CreditGrant]:
-    """The subscription's grants with credits left and not expired: those with an
-    expiry, soonest first, then those without, oldest first (``split_cost``'s order
-    around the monthly credits).
+def _spendable_by(subscription_id: UUID):
+    """The grants a subscription spends: its own, and the credits an admin added on
+    any of the same user's subscriptions.
 
-    Callers that spend lock the subscription row first (``consume_credits``),
-    which serialises every change to its grants.
+    A promotion's bonus belongs to the purchase that earned it, so it stays with
+    its subscription. Credits support added belong to the user: subscription_created
+    replaces the row (a trial that subscribes, a new start after a cancellation),
+    and they are still there to spend from the new one.
+    """
+    owner = (
+        select(UserSubscription.user_id)
+        .where(UserSubscription.id == subscription_id)
+        .scalar_subquery()
+    )
+    return or_(
+        CreditGrant.subscription_id == subscription_id,
+        and_(
+            CreditGrant.source == ADMIN_SOURCE,
+            CreditGrant.subscription_id.in_(
+                select(UserSubscription.id).where(UserSubscription.user_id == owner)
+            ),
+        ),
+    )
+
+
+async def live_grants(
+    db: AsyncSession,
+    subscription_id: UUID,
+    now: Optional[datetime] = None,
+    *,
+    lock: bool = False,
+) -> list[CreditGrant]:
+    """The grants the subscription spends (``_spendable_by``) with credits left and
+    not expired: those with an expiry, soonest first, then those without, oldest
+    first (``split_cost``'s order around the monthly credits).
+
+    Callers that change them lock the subscription row first (``consume_credits``)
+    and pass ``lock``: an admin's grant can be reached from two of the user's
+    subscription rows while one replaces the other, so the grant rows are locked
+    too and read as they are once the lock is held.
     """
     now = now or datetime.now(timezone.utc)
-    result = await db.execute(
+    query = (
         select(CreditGrant)
-        .where(CreditGrant.subscription_id == subscription_id, _usable(now))
+        .where(_spendable_by(subscription_id), _usable(now))
         .order_by(CreditGrant.expires_at.asc().nulls_last(), CreditGrant.created_at.asc())
     )
+    if lock:
+        query = query.with_for_update(of=CreditGrant)
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 
 async def grant_balance(
     db: AsyncSession, subscription_id: UUID, now: Optional[datetime] = None
 ) -> int:
-    """Credits left in the subscription's unexpired grants."""
+    """Credits left in the unexpired grants the subscription spends."""
     now = now or datetime.now(timezone.utc)
     result = await db.execute(
         select(func.coalesce(func.sum(CreditGrant.remaining), 0)).where(
-            CreditGrant.subscription_id == subscription_id, _usable(now)
+            _spendable_by(subscription_id), _usable(now)
         )
     )
     return int(result.scalar_one())
@@ -404,8 +441,16 @@ ADMIN_CREDIT_ADJUSTMENT = "admin_credit_adjustment"
 
 
 def _period_key(subscription: Any) -> Optional[str]:
+    """The period an adjustment belongs to: the month, on the plan it was made on.
+
+    A plan change inside the month replaces the monthly credits with the new
+    plan's and keeps the reset date, so the plan is part of the key: what an
+    admin changed on the old plan's credits says nothing about the new plan's.
+    """
     reset_date = subscription.credits_reset_date
-    return as_utc(reset_date).isoformat() if reset_date is not None else None
+    if reset_date is None:
+        return None
+    return f"{as_utc(reset_date).isoformat()}|{getattr(subscription, 'plan_id', None)}"
 
 
 def period_admin_adjustment(subscription: Any) -> int:

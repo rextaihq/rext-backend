@@ -215,9 +215,10 @@ class UsageTrackingService:
 
         # Grants with an expiry (an offer's bonus) are spent first, soonest expiry
         # first, then the monthly credits, then grants without an expiry (credits
-        # an admin added), oldest first; the row lock above serialises every
-        # change to them.
-        grants = await live_grants(self.db, subscription.id)
+        # an admin added), oldest first. The row lock above serialises every
+        # change to this subscription's; the grants are locked too, since what
+        # an admin added is spendable from any of the user's subscription rows.
+        grants = await live_grants(self.db, subscription.id, lock=True)
         expiring = [g for g in grants if g.expires_at is not None]
         lasting = [g for g in grants if g.expires_at is None]
         split = split_cost(

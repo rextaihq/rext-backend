@@ -7,7 +7,7 @@ This module defines Pydantic models for admin subscription operations.
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from src.api.models.subscription_models.credit_grants import (
     ADMIN_CREDIT_MAX_AMOUNT,
@@ -87,7 +87,8 @@ class AdminCreditAdjustment(BaseModel):
     """
 
     action: Literal["add", "deduct", "reset"]
-    amount: Optional[int] = Field(
+    # Strict: JSON true would otherwise be read as 1 credit, and "5" or 5.0 as 5.
+    amount: Optional[StrictInt] = Field(
         None,
         ge=1,
         le=ADMIN_CREDIT_MAX_AMOUNT,

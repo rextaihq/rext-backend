@@ -27,7 +27,13 @@ from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.schema.subscription.admin_schemas import AdminCreditAdjustment
-from src.services.admin_credits import SUPPORT_NAME, adjust_credits, credit_history
+from src.services.admin_credits import (
+    SUPPORT_NAME,
+    adjust_credits,
+    credit_breakdown,
+    credit_history,
+)
+from src.services.audit_logger import audit_logger
 from src.services.credit_grants import (
     forfeit_grants,
     grant_credits_used,
@@ -377,8 +383,9 @@ async def test_a_reset_sets_the_plans_credits_and_records_the_change(session):
         600,
         1000,
     )
+    # Kept for this month on this plan.
     assert subscription.subscription_metadata["admin_credit_adjustment"]["period"] == (
-        subscription.credits_reset_date.isoformat()
+        f"{subscription.credits_reset_date.isoformat()}|{subscription.plan_id}"
     )
 
 
@@ -415,6 +422,98 @@ async def test_a_new_period_starts_without_the_last_ones_adjustment(session):
     subscription.credits_reset_date = subscription.credits_reset_date + timedelta(days=30)
 
     assert period_admin_adjustment(subscription) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_plan_change_in_the_period_starts_without_the_old_plans_adjustment(session):
+    # An upgrade replaces the month's credits with the new plan's and keeps the reset
+    # date: the 300 deducted from the old plan's credits is not owed by the new plan's.
+    user, subscription = await _subscription(session, credits=600)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 300)
+    assert period_admin_adjustment(subscription) == -300
+
+    bigger = SubscriptionPlan(
+        name=f"pro-{uuid4().hex[:8]}", display_name="Pro", credits_per_month=2000
+    )
+    session.add(bigger)
+    await session.flush()
+    subscription.plan_id = bigger.id
+    subscription.current_credits = 2000
+
+    assert period_admin_adjustment(subscription) == 0
+    await session.refresh(subscription, ["plan"])
+    await _adjust(session, user, admin, "deduct", 50)
+    assert period_admin_adjustment(subscription) == -50
+
+
+# --- the subscription row is replaced ------------------------------------------------
+
+
+async def _replaced_by_a_paid_plan(db, user, old) -> UserSubscription:
+    """What subscription_created does at a checkout: the local trial is cancelled and a
+    new row carries the paid plan."""
+    old.status = SubscriptionStatus.CANCELLED
+    old.end_date = NOW - timedelta(minutes=1)
+    plan = SubscriptionPlan(
+        name=f"growth-{uuid4().hex[:8]}", display_name="Growth", credits_per_month=PLAN_CREDITS
+    )
+    db.add(plan)
+    await db.flush()
+    new = UserSubscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status=SubscriptionStatus.ACTIVE,
+        start_date=NOW,
+        current_credits=PLAN_CREDITS,
+        credits_reset_date=NOW + timedelta(days=30),
+        subscription_metadata={},
+    )
+    db.add(new)
+    await db.flush()
+    return new
+
+
+@pytest.mark.asyncio
+async def test_added_credits_follow_the_user_to_the_subscription_that_replaces_theirs(session):
+    user, trial = await _subscription(session, credits=60, plan_credits=60, trial=True)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "add", 200)
+    usage = UsageTrackingService(session)
+    assert await usage.get_credit_balance(user.id) == 260
+
+    paid = await _replaced_by_a_paid_plan(session, user, trial)
+
+    # Spendable from the new row, after its month's credits, and shown as added.
+    assert await usage.get_credit_balance(user.id) == PLAN_CREDITS + 200
+    breakdown = await credit_breakdown(session, user.id)
+    assert breakdown["subscription_id"] == paid.id
+    assert (breakdown["monthly_credits"], breakdown["added_credits"]["credits"]) == (
+        PLAN_CREDITS,
+        200,
+    )
+    assert await usage.consume_credits(user.id, PLAN_CREDITS + 50) is True
+    (grant,) = await _admin_grants(session, trial)
+    assert (paid.current_credits, grant.remaining) == (0, 150)
+
+    # And an admin can still take them back.
+    result = await _adjust(session, user, admin, "deduct", 100)
+    assert (result["amount"], result["balance_after"]) == (100, 50)
+    assert (grant.remaining, grant.forfeited) == (50, 100)
+
+
+@pytest.mark.asyncio
+async def test_only_added_credits_follow_the_user_and_only_their_own(session):
+    user, trial = await _subscription(session, credits=60, plan_credits=60, trial=True)
+    admin = await _user(session)
+    await _bonus(session, trial, 500)  # a promotion's bonus stays with its purchase
+    other, _ = await _subscription(session)
+    await _adjust(session, other, admin, "add", 999)  # someone else's added credits
+
+    await _replaced_by_a_paid_plan(session, user, trial)
+
+    assert await UsageTrackingService(session).get_credit_balance(user.id) == PLAN_CREDITS
+    assert (await credit_breakdown(session, user.id))["added_credits"] is None
 
 
 # --- spending order ----------------------------------------------------------------
@@ -609,6 +708,30 @@ async def test_every_change_is_audited_against_the_user(session):
 
 
 @pytest.mark.asyncio
+async def test_the_reason_is_kept_in_the_audit_entry_and_out_of_the_application_log(
+    session, monkeypatch
+):
+    # The reason is free text: it may name the customer or an incident.
+    user, _ = await _subscription(session)
+    admin = await _user(session)
+    logged = []
+    monkeypatch.setattr(
+        audit_logger.logger,
+        "info",
+        lambda message, *args, **kwargs: logged.append((message, kwargs)),
+    )
+
+    result = await _adjust(session, user, admin, "add", 150, reason="Refund for jane@example.com")
+
+    (line,) = [entry for entry in logged if "admin.credits_adjusted" in entry[0]]
+    assert "jane@example.com" not in line[0]
+    assert "jane@example.com" not in str(line[1])
+    assert '"amount":150' in line[0]
+    entry = await session.get(AuditLog, result["audit_id"])
+    assert entry.audit_metadata["reason"] == "Refund for jane@example.com"
+
+
+@pytest.mark.asyncio
 async def test_no_change_is_made_without_its_audit_entry(session, monkeypatch):
     user, _ = await _subscription(session)
     admin = await _user(session)
@@ -672,6 +795,10 @@ async def test_the_admins_history_names_who_made_each_change(session):
         {"action": "add", "amount": 10, "reason": "  ab  "},
         {"action": "add", "amount": 10},
         {"action": "refund", "amount": 10, "reason": REASON},
+        # Not a whole number in the JSON: true would otherwise be read as 1 credit.
+        {"action": "add", "amount": True, "reason": REASON},
+        {"action": "deduct", "amount": "5", "reason": REASON},
+        {"action": "add", "amount": 5.0, "reason": REASON},
     ],
 )
 def test_the_body_refuses_what_the_action_does_not_take(body):
