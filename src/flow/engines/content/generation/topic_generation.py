@@ -44,6 +44,7 @@ from src.flow.engines.content.generation.seo_title_rules import (
     title_max_chars,
     title_violations,
 )
+from src.flow.engines.content.generation.title_articles import fix_title_articles
 from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.llm_manager import topic_generation_model
 from src.flow.model.structure.topics import SEOTopic, SEOTopics
@@ -285,7 +286,7 @@ async def _repair_invalid_titles(
     try:
         repaired: SEOTopics = await model.ainvoke(repair_messages)
 
-        repaired = _validate_topic_structure(repaired)
+        repaired = fix_title_articles(_validate_topic_structure(repaired), keyphrase)
 
         # We only replace titles for the original invalid indexes, and only when
         # the replacement actually complies. This prevents the repair call from
@@ -368,7 +369,9 @@ async def _generate_and_validate_topics(
     try:
         results: SEOTopics = await model.ainvoke(messages)
 
-        results = _validate_topic_structure(results)
+        # "a" or "an" put right before the titles are checked (G65), so one it lengthens past the
+        # limit goes through the repairs like any other.
+        results = fix_title_articles(_validate_topic_structure(results), keyphrase)
 
         if not results.topics:
             logger.warning("Model returned no topics for query=%r.", query)
