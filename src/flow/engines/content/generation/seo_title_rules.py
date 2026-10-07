@@ -63,6 +63,9 @@ _UNSPACED_SCRIPT_RE = re.compile(
     "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
     "\uf900-\ufaff\uff66-\uff9f\U00020000-\U0003ffff]"
 )
+_SPACE_BESIDE_UNSPACED_RE = re.compile(
+    rf"(?<={_UNSPACED_SCRIPT_RE.pattern}) | (?={_UNSPACED_SCRIPT_RE.pattern})"
+)
 _SURROUNDING_QUOTES = "\"'`“”‘’ "
 
 
@@ -70,6 +73,13 @@ def _nfc(text: Any) -> str:
     """One spelling per character: an accent typed as a separate mark (NFD) is the same
     letter as its precomposed form (NFC), and counts as one character."""
     return unicodedata.normalize("NFC", str(text or ""))
+
+
+def _capitalized(word: str) -> str:
+    """The word with a capital first letter, unless that capital is longer than the letter
+    (Armenian և is ԵՒ, German ß is SS), which would change what the phrase matches."""
+    first = word[:1].upper()
+    return first + word[1:] if len(first) == len(word[:1]) else word
 
 
 def normalize_title(title: Any) -> str:
@@ -91,8 +101,9 @@ def _normalize_for_match(text: Any) -> str:
     # Lowercased, not casefolded: casefolding makes different words equal ("Maße" and "Masse").
     # A capital dotted İ lowercases to "i" plus a combining dot that no lowercase i carries, so
     # the dot goes: Turkish "İstanbul" is "istanbul" in lowercase. A capital Σ lowercases to the
-    # final ς at a word's end, which a user types as σ: both are σ.
-    lowered = _nfc(text).lower().replace("i\u0307", "i").replace("ς", "σ")
+    # final ς at a word's end, which a user types as σ: both are σ. The Armenian ligature և is
+    # եւ, as its capital ԵՒ lowercases.
+    lowered = _nfc(text).lower().replace("i\u0307", "i").replace("ς", "σ").replace("և", "եւ")
     kept: list[str] = []
     base_flattened = False
     for char in lowered:
@@ -108,8 +119,10 @@ def _normalize_for_match(text: Any) -> str:
             continue
         base_flattened = char == "_" or category[0] in "PSZC"
         kept.append(" " if base_flattened else char)
-    flattened = "".join(kept)
-    return f" {' '.join(flattened.split())} "
+    # Beside a script written without spaces, a space (or the punctuation it replaced: "生成AI・
+    # ツール") is no word break, so it goes in both the phrase and the text.
+    spaced = " ".join("".join(kept).split())
+    return f" {_SPACE_BESIDE_UNSPACED_RE.sub('', spaced)} "
 
 
 def contains_keyphrase(text: Any, keyphrase: Any) -> bool:
@@ -351,7 +364,7 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
     if keyphrase and not contains_keyphrase(cleaned, keyphrase):
         # Capitalized for display only; matching is case-insensitive, so the
         # title still contains the user's exact phrase.
-        lead = " ".join(word[:1].upper() + word[1:] for word in keyphrase.split())
+        lead = " ".join(_capitalized(word) for word in keyphrase.split())
         cleaned = f"{lead}: {cleaned}" if cleaned else lead
 
     if len(cleaned) > title_max_chars(keyphrase):
@@ -383,7 +396,7 @@ def keyphrase_title(keyphrase: Any) -> Optional[str]:
     keyphrase = normalize_title(keyphrase)
     if not keyphrase:
         return None
-    title = " ".join(word[:1].upper() + word[1:] for word in keyphrase.split())
+    title = " ".join(_capitalized(word) for word in keyphrase.split())
     return repair_title(title, keyphrase)
 
 
