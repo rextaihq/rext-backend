@@ -55,8 +55,19 @@ def test_a_listicle_gets_no_subsections():
     """ "listicle" runs as a blog, but its items are the H2s."""
     rule = outline_subsection_rule("blog", "Listicle")
 
-    assert rule.startswith("H3 SUBSECTIONS: NONE. This is a list article")
+    assert rule.startswith("H3 SUBSECTIONS: NONE by default. This is a list article")
     assert "EXPECTED" not in rule
+    assert "candidates for its H3s" not in rule
+
+
+@pytest.mark.unit
+def test_a_listicle_gets_h3s_when_the_reviewer_asks():
+    """Review round 2: a listicle runs on the blog schema, which holds H3s."""
+    rule = outline_subsection_rule("blog", "listicle", feedback="Add H3s under each list item")
+
+    assert "this pass MUST contain H3s" in rule
+    assert "can't nest headings" not in rule
+    assert "first candidates for its H3s" in rule
 
 
 @pytest.mark.unit
@@ -67,6 +78,13 @@ def test_fixed_shape_types_get_no_subsections(content_type):
     assert rule.startswith("H3 SUBSECTIONS: NONE for this content type")
     assert "each step, item or block you fill becomes a heading of its own" in rule
     assert "Plan 3-10 steps" not in rule
+    assert "candidates for its H3s" not in rule  # review round 2: no H3s nominated here
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("content_type", ["blog", "pillar-content"])
+def test_the_cluster_sub_topics_are_named_where_h3s_belong(content_type):
+    assert "first candidates for its H3s" in outline_subsection_rule(content_type)
 
 
 @pytest.mark.unit
@@ -92,6 +110,8 @@ def test_step_guides_plan_several_steps(content_type):
         "No, add H3s under the tools",
         "Not detailed enough: add H3s",
         "Drop the H3 under the intro. Add H3s to the tools section.",
+        "The H3s aren't detailed enough",
+        "The H3 is not specific enough",
     ],
 )
 def test_feedback_asking_for_subsections_is_recognised(feedback):
@@ -110,6 +130,7 @@ def test_feedback_asking_for_subsections_is_recognised(feedback):
         "Flatten it: without nested headings",
         "The H3s aren't needed",
         "the subsections are unnecessary",
+        "the sub-headings should go",
     ],
 )
 def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
