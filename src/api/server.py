@@ -248,7 +248,7 @@ if proxy_trust_is_spoofable(getattr(settings, "TRUSTED_PROXY_IPS", None)):
         "reverse proxy's exact address/subnet.",
         ",".join(_trusted_proxy_hosts),
     )
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
+# ProxyHeadersMiddleware itself is added just before CORS below.
 
 # Request tracking middleware
 app.add_middleware(
@@ -289,6 +289,13 @@ app.add_middleware(
     requests_per_day=settings.RATE_LIMIT_PER_DAY,
     enable=settings.RATE_LIMITING_ENABLED,
 )
+
+# Proxy headers: added after every middleware that reads request.client.host,
+# so it runs before them and they see the visitor's address from
+# X-Forwarded-For. Added first, it ran innermost: the rate limiter and request
+# tracker saw Traefik's 10.0.1.2 for everyone and every visitor shared one
+# per-IP budget. It never ends a request early, so CORS stays outermost.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
 
 # CORS middleware (MUST be added last = outermost, so it handles preflight
 # OPTIONS requests before any other middleware can intercept them)
