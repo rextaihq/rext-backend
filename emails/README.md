@@ -59,7 +59,7 @@ html = compose_email([
     simple_header("My Workspace"),
     "<h1>Welcome!</h1>",
     "<p>Thanks for signing up.</p>",
-    primary_button("Get Started", "https://app.rext.com"),
+    primary_button("Get Started", "https://app.rext.ai"),
     simple_footer()
 ], preview_text="Welcome to Rext AI")
 ```
@@ -147,19 +147,14 @@ from emails.components.footer import simple_footer, standard_footer
 footer1 = simple_footer()
 
 # Standard footer with links
-footer2 = standard_footer(
-    company_name="Rext AI",
-    company_address="123 Main St, San Francisco, CA 94105",
-    unsubscribe_url="https://app.rext.com/unsubscribe"
-)
+footer2 = standard_footer(unsubscribe_url="https://app.rext.ai/settings/notifications")
 
 # Custom footer
 from emails.components.footer import footer, FooterProps, FooterLink
 footer3 = footer(FooterProps(
-    company_name="Rext AI",
     links=[
-        FooterLink(text="Help", url="https://help.rext.com"),
-        FooterLink(text="Privacy", url="https://rext.com/privacy")
+        FooterLink(text="Help", url="https://rext.ai/help"),
+        FooterLink(text="Privacy policy", url="https://rext.ai/privacy-policy")
     ]
 ))
 ```
