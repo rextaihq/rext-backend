@@ -35,6 +35,7 @@ remove any of the following — carry each one through into your rewrite:
   and never invent a new one.
 - Every section and its heading. Do not merge two sections into one, do not delete a
   section, and do not reorder them.
+{reader_instruction}
 {brand_instruction}
 {keyword_instruction}
 {length_instruction}

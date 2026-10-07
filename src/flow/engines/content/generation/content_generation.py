@@ -236,12 +236,12 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
     audience = outline.get("target_audience") or outline.get("audience")
     if audience:
         if isinstance(audience, list):
-            audience = ", ".join(str(item) for item in audience[:4])
+            audience = ", ".join(str(item) for item in audience[:8])
         lines.append(f"Audience: {_short_text(audience, 400)}")
 
     keywords = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
     if keywords:
-        lines.append("Keywords: " + ", ".join(str(item) for item in keywords[:12]))
+        lines.append("Keywords: " + ", ".join(str(item) for item in keywords[:20]))
 
     sections = _outline_sections(outline)
     if sections:
@@ -396,15 +396,22 @@ async def generate_content(state: REXT) -> dict:
             keywords_to_include[0] if keywords_to_include else topic
         )
 
+        # The focus keyphrase has its own exact-count rule (the density block below); the other
+        # approved keywords are secondary: each once, naturally (FB2.18, rext-control#699).
+        secondary_keywords = [
+            str(k).strip()
+            for k in keywords_to_include
+            if str(k).strip() and str(k).strip().casefold() != primary_keyword.casefold()
+        ]
         keyword_requirements = ""
-        if keywords_to_include:
+        if secondary_keywords:
             keyword_requirements = (
                 "\nKEYWORD REQUIREMENTS:\n"
-                f"- Approved keywords: {', '.join(keywords_to_include)}\n"
-                "- Use each approved keyword phrase at least once in the article body.\n"
+                f'- Focus keyphrase: "{primary_keyword}" — its exact-phrase rule is given below.\n'
+                f"- Secondary keywords the user approved: {', '.join(secondary_keywords)}\n"
+                "- Use each secondary keyword at least once: in a sentence where it fits naturally, or in a subheading. Never stack several in one sentence, and never repeat one to fill space.\n"
                 "- Prefer exact phrase matches when natural. If a long phrase is awkward, use a close natural variant that preserves the same meaning and word order.\n"
                 "- Do not invent unrelated keywords or introduce new keyword themes.\n"
-                "- If a keyword is used as a variant, the meaning must remain identical to the approved phrase.\n"
             )
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
