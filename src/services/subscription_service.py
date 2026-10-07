@@ -1184,22 +1184,42 @@ class SubscriptionService:
         _refuse_during_payment_retry(unpaid, user_id, message)
 
     async def unfinished_subscription(self, user_id: UUID) -> Optional[UserSubscription]:
-        """The user's newest subscription that billing_action() has an action for."""
-        candidates = await self.db.scalars(
-            select(UserSubscription)
-            .where(
-                UserSubscription.user_id == user_id,
-                UserSubscription.status.in_(
-                    [
-                        *FAILED_PAYMENT_STATUSES,
-                        SubscriptionStatus.PAUSED,
-                        SubscriptionStatus.CANCELLED,
-                    ]
-                ),
+        """The user's newest subscription that billing_action() has an action for.
+
+        A paused or cancelled one isn't offered back to resume while another of the
+        user's Lemon Squeezy subscriptions is active or on trial: a customer who
+        cancelled and subscribed again before the checkout guard holds both, and
+        resuming the old one would bill twice.
+        """
+        rows = (
+            await self.db.scalars(
+                select(UserSubscription)
+                .where(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status.in_(
+                        [
+                            *FAILED_PAYMENT_STATUSES,
+                            SubscriptionStatus.PAUSED,
+                            SubscriptionStatus.CANCELLED,
+                            SubscriptionStatus.ACTIVE,
+                            SubscriptionStatus.TRIAL,
+                        ]
+                    ),
+                )
+                .order_by(UserSubscription.created_at.desc())
             )
-            .order_by(UserSubscription.created_at.desc())
+        ).all()
+        current = any(
+            row.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
+            and row.lemonsqueezy_subscription_id
+            for row in rows
         )
-        return next((row for row in candidates if billing_action(row) is not None), None)
+        for row in rows:
+            action = billing_action(row)
+            if action is None or (current and action["action"] == RESUME):
+                continue
+            return row
+        return None
 
     async def _refuse_while_a_subscription_is_unfinished(self, user_id: UUID) -> None:
         """No new subscription while one isn't finished: the customer gets its action instead.

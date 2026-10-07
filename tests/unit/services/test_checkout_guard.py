@@ -283,6 +283,38 @@ async def test_resume_acts_on_the_banner_s_subscription_never_a_settled_duplicat
 
 
 @pytest.mark.asyncio
+async def test_no_resume_for_an_old_cancellation_while_a_newer_plan_runs(session):
+    """Cancelled, then subscribed again before the guard: resuming the old one would bill twice."""
+    from src.api.routes.subscriptions import subscription_routes
+
+    user, plan = await _user_with(session, SubscriptionStatus.CANCELLED, end=LATER, ls_id="ls-old")
+    old = await session.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+    old.created_at = NOW - timedelta(days=5)
+    session.add(
+        UserSubscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.ACTIVE,
+            lemonsqueezy_subscription_id="ls-current",
+            created_at=NOW - timedelta(days=1),
+        )
+    )
+    await session.flush()
+    provider = SimpleNamespace(uncancel_subscription=AsyncMock(), resume_subscription=AsyncMock())
+
+    assert (
+        await service_module.SubscriptionService(session).unfinished_subscription(user.id) is None
+    )
+    banner = await _call(session, user.id, "GET", "/billing-action")
+    with patch.object(subscription_routes, "get_payment_provider_singleton", lambda: provider):
+        resume = await _call(session, user.id, "POST", "/resume")
+
+    assert banner.json()["data"]["billing_action"] is None
+    assert resume.status_code == 400, resume.text
+    provider.uncancel_subscription.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_resume_refuses_when_there_is_nothing_to_resume(session):
     from src.api.routes.subscriptions import subscription_routes
 
