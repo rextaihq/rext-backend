@@ -131,7 +131,11 @@ def _without_name(text: Any, brand_name: str) -> str:
         return text
     pattern = r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])"
     replaced = re.sub(pattern, "the company", text, flags=re.IGNORECASE)
-    return replaced[:1].upper() + replaced[1:]
+    # A sentence that opened with the name now opens with a capital; nothing else is touched
+    # ("iOS developers" keeps its own first letter).
+    if replaced.startswith("the company") and not text.startswith("the company"):
+        return "The" + replaced[3:]
+    return replaced
 
 
 def format_expertise_for_writer(voice: dict[str, Any]) -> str:
