@@ -18,6 +18,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
@@ -1350,6 +1351,48 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
     )
 
 
+def check_brand_absent(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """The user chose NO brand mention ("None" at the outline gate): the brand appears nowhere a
+    reader or a search result shows, nor does a link to its site (rext-control#700).
+
+    Nothing else holds this: with no approved mention every other brand check skips, and the
+    outline (generated before the choice) may already name the brand in a product list or the
+    call to action. Blocking, so the repair loop rewrites those sentences without it.
+    """
+    excluded = spec.get("excluded_brand")
+    if not excluded:
+        return _pass(
+            "brand_absent", "A mention was approved, or no brand is known; nothing to check."
+        )
+    brand_name = excluded["brand_name"]
+    cta = final_content.get("cta")
+    places = {
+        "title": final_content.get("title"),
+        "meta title": final_content.get("meta_title"),
+        "meta description": final_content.get("meta_description"),
+        "introduction": final_content.get("introduction"),
+        "body": final_content.get("body_markdown"),
+        "call to action": cta.get("text") if isinstance(cta, dict) else None,
+    }
+    host = urlparse(excluded.get("brand_url") or "").hostname or ""
+    host = host[4:] if host.startswith("www.") else host
+    found = [
+        place
+        for place, text in places.items()
+        if isinstance(text, str)
+        and (_brand_occurrences(text, brand_name) or (host and host in text.lower()))
+    ]
+    if not found:
+        return _pass("brand_absent", f"'{brand_name}' is not mentioned, as the user chose.")
+    return _fail(
+        "brand_absent",
+        "blocking",
+        f"The user chose NO brand mention, but '{brand_name}' appears in the {', '.join(found)}. "
+        f"Rewrite those sentences without it (name another real product where a list needs one, "
+        f"or none), and remove any link to its site.",
+    )
+
+
 def check_brand_integration_depth(
     final_content: dict, spec: RequirementsSpec
 ) -> ValidationCheckResult:
@@ -1980,6 +2023,7 @@ CHECK_REGISTRY: list[CheckFn] = [
     check_brand_placement,
     check_brand_placement_policy,
     check_brand_prominence,
+    check_brand_absent,
     check_brand_integration_depth,
     check_brand_factual_grounding,
     check_brand_context_heuristic,
@@ -2023,6 +2067,7 @@ FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     # could ship non-compliant.
     check_brand_placement_policy,
     check_brand_prominence,
+    check_brand_absent,
     check_brand_integration_depth,
     check_brand_factual_grounding,
     # Humanization is told to add voice, not facts — but it is a free-form
