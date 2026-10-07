@@ -83,13 +83,16 @@ def _failed(exc: Exception, what: str) -> HTTPException:
         return exc
     outage = provider_outage(exc)
     if outage is not None:
-        # The model's error hook alerts the team once an hour; every request needn't.
+        # The model's error hook alerts the team once an hour; every request needn't, so the 503 writes
+        # no Error Logs row and no Sentry event (suppress_error_log, as the free tools' 429s).
         logger.warning("%s: %s is unavailable (%s)", what, outage.provider, outage.kind)
-        return HTTPException(
+        busy = HTTPException(
             status_code=503,
             detail=BUSY_MESSAGE,
             headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
         )
+        busy.suppress_error_log = True
+        return busy
     logger.error(what, exc_info=True)
     return HTTPException(status_code=500, detail=FAILED_MESSAGE)
 

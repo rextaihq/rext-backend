@@ -12,6 +12,7 @@ import openai
 import pytest
 from fastapi import HTTPException
 
+from src.api.lib.sentry_config import before_send_filter
 from src.api.tool import limits
 from src.api.tool import routes as tool_routes
 from src.api.tool.schema.schema import QuestionRequest, SEOBlogTitleRequest
@@ -194,6 +195,8 @@ async def test_a_tool_answers_503_with_retry_after_when_the_account_is_empty(
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == BUSY_MESSAGE
     assert exc_info.value.headers == {"Retry-After": str(RETRY_AFTER_SECONDS)}
+    # Alerted once an hour by the model's hook: no Error Logs row or Sentry event per request.
+    assert exc_info.value.suppress_error_log is True
 
 
 async def test_any_other_tool_failure_is_still_a_500(monkeypatch, uncounted):
@@ -240,3 +243,13 @@ async def test_a_stage_the_provider_fails_charges_nothing(monkeypatch):
         await node({"user_id": "6f1c2a52-6c39-4f0e-9a51-6a3c1d0b8e11"})
 
     assert charged == []
+
+
+def test_sentry_drops_an_error_its_code_reports_itself():
+    busy = HTTPException(status_code=503, detail=BUSY_MESSAGE)
+    busy.suppress_error_log = True
+    other = HTTPException(status_code=503, detail="down")
+    event = {"exception": {"values": [{"type": "HTTPException", "value": "503"}]}}
+
+    assert before_send_filter(dict(event), {"exc_info": (HTTPException, busy, None)}) is None
+    assert before_send_filter(dict(event), {"exc_info": (HTTPException, other, None)}) is not None
