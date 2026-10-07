@@ -103,6 +103,8 @@ _CTA_FIELD_PATHS: tuple[tuple[str, Optional[str]], ...] = (
     ("final_cta", "primary_cta"),
     ("cta", "primary_cta"),
     ("cta", None),
+    # The case study's CTA is a message and the action it asks for; the action is the CTA.
+    ("cta", "action"),
     ("hero", "primary_cta"),
     ("offer", "primary_cta"),
 )

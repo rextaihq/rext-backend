@@ -2324,6 +2324,9 @@ async def final_validate_content(state: REXT) -> dict:
         )
         if repaired is not None:
             repaired = apply_density_report(repaired, spec)
+            # The repair writes a new body: a label line it brings back is dropped
+            # before the recheck, so the CTA check never counts it as the CTA.
+            repaired = strip_cta_labels(repaired, outline, stage="final_validate_content repair")
             recheck = [fn(repaired, spec) for fn in FINAL_VALIDATE_CHECKS]
             # Only accept the repair when it did not make things worse overall.
             # A post-humanize repair has no loop behind it to catch a regression,
