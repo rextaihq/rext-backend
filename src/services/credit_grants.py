@@ -82,6 +82,44 @@ def promotion_bonus(
     return Bonus(amount=amount, expires_at=expires_at)
 
 
+# The credits used in the billing period at its last plan change and the balance left then,
+# kept in the subscription's metadata with the period's end (its credits_reset_date).
+_PLAN_CHANGE = "plan_change_credits"
+
+
+def change_plan_credits(
+    subscription: UserSubscription, old_monthly: Optional[int], new_monthly: int
+) -> None:
+    """Set the balance for a plan change within a billing period (F8a, the founder's rule,
+    2026-10-07): the new plan's monthly credits minus the credits already used this period,
+    never below 0. Call it once the subscription's credits_reset_date is the period's end.
+
+    What was used is the old plan's monthly credits minus what is left. After an earlier change
+    in the same period it is what was used then plus what was spent since, so switching down to
+    a smaller plan and back gives nothing back. With the old plan's credits unknown, nothing
+    counts as used. Grants (an offer's bonus) are apart and stay.
+    """
+    period = (
+        as_utc(subscription.credits_reset_date).isoformat()
+        if subscription.credits_reset_date
+        else None
+    )
+    left = subscription.current_credits or 0
+    earlier = (subscription.subscription_metadata or {}).get(_PLAN_CHANGE) or {}
+    if period and earlier.get("period") == period:
+        used = max(0, earlier["used"] + earlier["left"] - left)
+    elif old_monthly is not None:
+        used = max(0, old_monthly - left)
+    else:
+        used = 0
+    subscription.current_credits = max(0, new_monthly - used)
+    # Reassigned, not mutated in place: SQLAlchemy doesn't track a plain JSONB's insides.
+    subscription.subscription_metadata = {
+        **(subscription.subscription_metadata or {}),
+        _PLAN_CHANGE: {"period": period, "used": used, "left": subscription.current_credits},
+    }
+
+
 def split_cost(
     cost: int, grant_remaining: Sequence[int], monthly: int
 ) -> Optional[tuple[list[int], int]]:
