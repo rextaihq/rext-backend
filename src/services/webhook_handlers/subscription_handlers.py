@@ -23,7 +23,7 @@ IMPORTANT: Email sending happens AFTER database commit to prevent orphaned notif
 Handlers return email task data instead of sending emails directly.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
@@ -51,6 +51,7 @@ from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import (
+    as_utc,
     change_plan_credits,
     grant_promotion_bonus,
     order_refunded,
@@ -145,6 +146,9 @@ def _record_paid_invoice(
 # Set when a subscription opened with its first month (it started paid, see _opening_credits):
 # its first invoice is the payment for that month, not a new one (F8e).
 _START_MONTH_GIVEN = "start_month_given"
+# How long after its trial's end a row running paid may still be waiting for its first
+# payment's event (a failed webhook is run again within hours).
+_AWAITS_PAYMENT = timedelta(days=1)
 
 
 def _start_month_given(subscription: UserSubscription) -> bool:
@@ -157,23 +161,31 @@ def _start_month_given(subscription: UserSubscription) -> bool:
     metadata = subscription.subscription_metadata or {}
     if _START_MONTH_GIVEN in metadata:
         return bool(metadata[_START_MONTH_GIVEN])
-    return _last_paid_invoice_at(subscription) is not None or (
-        subscription.trial_end_date is None
-        and subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED)
-    )
+    if _last_paid_invoice_at(subscription) is not None:
+        return True
+    if subscription.status not in (SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED):
+        return False
+    # Running paid: it started paid (no trial date), or its trial was paid for. Lemon Squeezy
+    # charges at the trial's end and marks the row past due when that fails, so a row still
+    # running paid well after its trial has had its month.
+    trial_end = subscription.trial_end_date
+    return trial_end is None or as_utc(trial_end) < datetime.now(timezone.utc) - _AWAITS_PAYMENT
 
 
-def record_start_month(subscription: UserSubscription) -> None:
-    """Write down whether a row from before the marker had its month, while the evidence is
-    still on it. Call it before a change to the status or the trial's end date: a trial that
-    converts (by Lemon Squeezy's update, or in the app) is active with no trial date
-    afterwards, and its first payment would take it for a start that opened paid."""
+def record_start_month(subscription: UserSubscription) -> bool:
+    """Whether the start's month was given, written down for a row from before the marker
+    while the evidence is still on it. Call it before a change to the status or the trial's
+    end date: a trial that converts (by Lemon Squeezy's update, or in the app) is active with
+    no trial date afterwards, and its first payment would take it for a start that opened
+    paid. A plan change reads the answer too: until the month was given, the balance stays as
+    it is and the first payment brings the plan's month."""
     metadata = subscription.subscription_metadata or {}
     if _START_MONTH_GIVEN not in metadata:
         subscription.subscription_metadata = {
             **metadata,
             _START_MONTH_GIVEN: _start_month_given(subscription),
         }
+    return bool(subscription.subscription_metadata[_START_MONTH_GIVEN])
 
 
 def _opening_record(created_at: Optional[str], status: SubscriptionStatus) -> Dict[str, Any]:
@@ -1121,6 +1133,9 @@ async def handle_subscription_updated(
     old_plan = None
     new_plan = None
     old_billing_period = subscription.billing_period
+    # Before the plan, the status and the trial's end date change: a row from before the
+    # start-month marker keeps its answer (a trial hasn't had its month, a paid start has).
+    had_its_month = record_start_month(subscription)
     if lemonsqueezy_variant_id and subscription.lemonsqueezy_variant_id != lemonsqueezy_variant_id:
         # Fetch current plan before updating plan_id
         if subscription.plan_id:
@@ -1157,8 +1172,9 @@ async def handle_subscription_updated(
                     or add_months(utc_now_naive(), 1)
                 )
                 # A plan change keeps what was used this period (F8a). A trial's credits come
-                # with its first payment, so its balance stays as it is.
-                if subscription.status != SubscriptionStatus.TRIAL:
+                # with its first payment, so its balance stays as it is; the same for a trial
+                # already made active whose first payment hasn't come.
+                if subscription.status != SubscriptionStatus.TRIAL and had_its_month:
                     change_plan_credits(
                         subscription,
                         old_plan.credits_per_month if old_plan else None,
@@ -1225,10 +1241,6 @@ async def handle_subscription_updated(
     # CANCELLED with `end_date` still in the future), so the user keeps their
     # credits until `end_date` regardless of the status flip here.
     end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-
-    # Before the status and the trial's end date change: a row from before the start-month
-    # marker keeps its answer (a trial hasn't had its month, a paid start has).
-    record_start_month(subscription)
 
     previous_status = subscription.status
     subscription.status = internal_status
@@ -1709,8 +1721,9 @@ async def handle_subscription_payment_success(
         if _payment_gives_a_month(sub_data.get("billing_reason"), start_month_given):
             subscription.current_credits = plan_row.credits_per_month
             subscription.credits_reset_date = next_period_end
-            if sub_data.get("billing_reason") == "initial":
-                _mark_start_month_given(subscription)
+            # Whatever the invoice calls itself: once a payment has brought a month, the start
+            # has had one, and a plan change works from what was used.
+            _mark_start_month_given(subscription)
 
         # The first payment: a promotion's bonus, if subscription_created did not
         # grant it already (it grants once per subscription and promotion).

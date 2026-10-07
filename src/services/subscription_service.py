@@ -705,11 +705,14 @@ class SubscriptionService:
         # the first payment would then take it for a start that opened paid (F8e).
         from src.services.webhook_handlers.subscription_handlers import record_start_month
 
-        record_start_month(current_subscription)
+        had_its_month = record_start_month(current_subscription)
 
         # Update local subscription
         old_billing_period = current_subscription.billing_period
-        on_trial = current_subscription.status == SubscriptionStatus.TRIAL
+        # A trial's credits come with its first payment. So do those of a trial already made
+        # active whose first payment hasn't come (Lemon Squeezy's update can land while it
+        # answers the change above): until then the balance stays as it is.
+        on_trial = current_subscription.status == SubscriptionStatus.TRIAL or not had_its_month
 
         # Check if upgrading from a trial
         was_trial = (
