@@ -342,3 +342,11 @@ def test_a_planned_faq_section_is_the_only_place_the_faqs_go():
     without_section = _blog_outline(faqs=faqs)
     model, _ = _model(without_section, "blog")
     assert "faqs" in model.model_fields
+
+    # A topic that starts with "FAQ-" isn't the FAQ section: the FAQs keep their own block.
+    topical = _blog_outline(
+        sections=[*SECTIONS, ("FAQ-driven content strategy", ["answer pages"])], faqs=faqs
+    )
+    model, _ = _model(topical, "blog")
+    assert "faqs" in model.model_fields
+    assert "This is the article's FAQ section" not in model.model_fields["structure_4"].description

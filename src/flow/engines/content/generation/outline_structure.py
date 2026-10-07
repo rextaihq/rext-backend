@@ -545,9 +545,11 @@ _PROMPT_SUPPRESSED_FIELDS = frozenset(
 )
 
 # A section whose heading says it's the FAQ (G71, revnix/rext-control#587): it opens or
-# ends with it ("FAQs on …", "… : FAQs"), so "FAQ-driven content" isn't one.
+# ends with it as a word of its own ("FAQs on …", "… : FAQs"). A hyphen joins it to the
+# next word, so "FAQ-driven content strategy" is a topic, not the FAQ (\b alone let it in).
 FAQ_HEADING = re.compile(
-    r"^\s*(faqs?|frequently asked questions?)\b|\b(faqs?|frequently asked questions?)\s*$",
+    r"^\s*(faqs?|frequently asked questions?)(?![\w-])"
+    r"|(?<![\w-])(faqs?|frequently asked questions?)\s*$",
     re.IGNORECASE,
 )
 

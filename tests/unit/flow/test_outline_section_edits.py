@@ -14,6 +14,7 @@ from src.flow.engines.content.generation.content_generation import (
     _format_outline_for_generation,
 )
 from src.flow.engines.content.generation.outline_structure import (
+    is_faq_section,
     resolve_expected_headings,
     resolve_outline_structure,
 )
@@ -586,6 +587,24 @@ def test_a_renamed_faq_section_is_still_where_the_faqs_go():
     block = PersonaInjectionMiddleware()._build_outline_block(edited, "blog")
     assert 'section "Questions agencies ask"' in block
     assert "Holds faqs" not in block and "holds_faqs" not in block
+
+
+@pytest.mark.parametrize(
+    ("heading", "holds_faqs"),
+    [
+        ("FAQs", True),
+        ("FAQ: choosing a CRM", True),
+        ("FAQs on content marketing ROI", True),
+        ("Frequently asked questions about pricing", True),
+        ("Content marketing ROI: FAQs", True),
+        ("FAQ-driven content strategy", False),
+        ("FAQs-first help pages", False),
+        ("Help pages that replace the non-FAQ", False),
+        ("Why FAQ pages rank", False),
+    ],
+)
+def test_a_heading_holds_the_faqs_only_when_faq_is_a_word_of_its_own(heading, holds_faqs):
+    assert is_faq_section({"heading": heading}) is holds_faqs
 
 
 def test_an_outline_without_a_faq_section_keeps_the_faq_at_the_end():
