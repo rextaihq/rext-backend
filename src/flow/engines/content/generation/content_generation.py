@@ -72,7 +72,11 @@ from src.flow.model.structure.outlines.schema_org import (
     format_schema_guidance_for_prompt,
 )
 from src.flow.states.rext import REXT
-from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
+from src.services.content_cluster_mapping_service import (
+    cluster_heading_map_without_keywords,
+    clusters_without_keywords,
+    format_cluster_heading_map_for_prompt,
+)
 from src.utils.credit_manager import (
     STAGE_CREDITS,
     InsufficientCreditsError,
@@ -364,9 +368,14 @@ async def generate_content(state: REXT) -> dict:
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
         outline_str = _format_outline_for_generation(outline, content_type)
-        cluster_heading_map = outline.get("cluster_heading_map") or content_state.get(
-            "cluster_heading_map",
-            {},
+        # The keywords the user took out at the outline gate leave the cluster notes too:
+        # they were built before the gate and still list every phrase as coverage to give.
+        removed_keywords = [
+            str(k).strip() for k in outline.get("removed_keywords") or [] if str(k).strip()
+        ]
+        cluster_heading_map = cluster_heading_map_without_keywords(
+            outline.get("cluster_heading_map") or content_state.get("cluster_heading_map", {}),
+            removed_keywords,
         )
 
         logger.info(f"Outline extracted: {outline_str[:20]}...")
@@ -397,19 +406,34 @@ async def generate_content(state: REXT) -> dict:
             if str(k).strip() and str(k).strip().casefold() != primary_keyword.casefold()
         ]
         keyword_requirements = ""
+        # The cluster rule below says "only the clusters"; a keyword the user added is in no
+        # cluster, so the rule names the user's keywords as allowed whenever there are any.
+        approved_keywords_rule = ""
         if secondary_keywords:
             keyword_requirements = (
                 "\nKEYWORD REQUIREMENTS:\n"
                 f'- Focus keyphrase: "{primary_keyword}" — its exact-phrase rule is given below.\n'
                 f"- Secondary keywords the user approved: {', '.join(secondary_keywords)}\n"
                 "- Use each secondary keyword at least once: in a sentence where it fits naturally, or in a subheading. Never stack several in one sentence, and never repeat one to fill space.\n"
+                "- The user approved these keywords themselves: use each one even when no keyword cluster lists it.\n"
                 "- Prefer exact phrase matches when natural. If a long phrase is awkward, use a close natural variant that preserves the same meaning and word order.\n"
                 "- Do not invent unrelated keywords or introduce new keyword themes.\n"
+            )
+            approved_keywords_rule = (
+                " The secondary keywords the user approved (KEYWORD REQUIREMENTS below) are allowed "
+                "and required as well, whether or not a cluster lists them."
+            )
+        if removed_keywords:
+            keyword_requirements += (
+                f"\nKEYWORDS THE USER REMOVED: {', '.join(removed_keywords)}\n"
+                "- Do not target these phrases: no heading built on one, and no sentence written to fit one in.\n"
             )
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
         seo_result = state.get("seo_result", {})
-        keyword_clusters = seo_result.get("keyword_clusters", [])
+        keyword_clusters = clusters_without_keywords(
+            seo_result.get("keyword_clusters", []), removed_keywords
+        )
         keyword_clusters_context = _format_keyword_clusters_for_generation(keyword_clusters)
         cluster_heading_map_context = (
             format_cluster_heading_map_for_prompt(cluster_heading_map)
@@ -871,7 +895,8 @@ async def generate_content(state: REXT) -> dict:
             f"STRUCTURE FIDELITY — CRITICAL: follow the EXACT structure, section order, and headings given in "
             f"the 'Approved Outline' section above (including its Hero Angle and Structural Plan, when present) "
             f"— do not invent a different structure, reorder sections, merge them, or skip any listed there.\n"
-            f"CRITICAL KEYWORD INSTRUCTION: Use only the approved keyword clusters above. "
+            f"CRITICAL KEYWORD INSTRUCTION: Use only the approved keyword clusters above."
+            f"{approved_keywords_rule} "
             f"The cluster-to-heading map assigns KEYWORDS to sections — it does not define the sections "
             f"themselves. Place each cluster's keywords into whichever Structural Plan section covers that "
             f"topic; do NOT create a new section, rename one, or reorder them to match a suggested heading. "

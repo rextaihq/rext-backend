@@ -16,6 +16,12 @@ from src.flow.engines.content.generation.validation import check_secondary_keywo
 from src.flow.engines.content.review.outline import _clean_keywords
 from src.flow.prompts.human.humanize import get_humanize_prompt
 from src.flow.prompts.system.humanize import HUMANIZE_SYSTEM_PROMPT
+from src.services.check_wording import user_detail
+from src.services.content_cluster_mapping_service import (
+    cluster_heading_map_without_keywords,
+    clusters_without_keywords,
+    format_cluster_heading_map_for_prompt,
+)
 
 FOCUS = "content calendar template"
 ARTICLE = {
@@ -35,21 +41,33 @@ def test_the_keyword_list_is_cleaned():
     ) == ["editorial calendar", "social media plan"]
     assert _clean_keywords("not a list") is None
     assert len(_clean_keywords([f"keyword {i}" for i in range(40)])) == 20
-    assert len(_clean_keywords(["x" * 200])[0]) == 80
 
 
-def _approve(monkeypatch, response):
+def test_a_phrase_over_the_limit_is_dropped_not_cut():
+    assert _clean_keywords(["x" * 200, "posting schedule"]) == ["posting schedule"]
+
+
+def test_the_focus_keyphrase_is_left_out_of_the_secondary_keywords():
+    assert _clean_keywords([f" {FOCUS.upper()} ", "posting schedule"], FOCUS) == [
+        "posting schedule"
+    ]
+
+
+def _approve(monkeypatch, response, outline=None, **state):
     monkeypatch.setattr(review_module, "interrupt", lambda _payload: response)
     state = {
+        **state,
         "content": {
+            **state.get("content", {}),
             "content_type": "blog",
             "outline": {
                 "title": ARTICLE["title"],
                 "sections": [],
                 "focus_keyphrase": FOCUS,
                 "keywords_to_include": [FOCUS, "editorial calendar"],
+                **(outline or {}),
             },
-        }
+        },
     }
     return review_module.review_outline(state)["content"]["outline"]
 
@@ -69,6 +87,136 @@ def test_without_a_keyword_list_the_outlines_stay(monkeypatch):
     outline = _approve(monkeypatch, {"action": "approve"})
 
     assert outline["keywords_to_include"] == [FOCUS, "editorial calendar"]
+    assert "removed_keywords" not in outline
+
+
+@pytest.mark.unit
+def test_a_long_focus_keyphrase_stays_whole_and_only_once(monkeypatch):
+    long_focus = "how to plan a content calendar for a small marketing team " * 2
+    long_focus = " ".join(long_focus.split())
+    assert len(long_focus) > 80
+
+    outline = _approve(
+        monkeypatch,
+        {"action": "approve", "keywords_to_include": [long_focus, "posting schedule"]},
+        outline={"focus_keyphrase": long_focus, "keywords_to_include": [long_focus]},
+    )
+
+    assert outline["keywords_to_include"] == [long_focus, "posting schedule"]
+
+
+@pytest.mark.unit
+def test_the_runs_own_keyphrase_is_pinned_not_an_older_outlines(monkeypatch):
+    """An outline saved before pinning can carry the model's phrase; the run's state has
+    the user's. The screen showed the model's as the primary and sends it back."""
+    outline = _approve(
+        monkeypatch,
+        {"action": "approve", "keywords_to_include": ["calendar planning", "posting schedule"]},
+        outline={
+            "focus_keyphrase": "calendar planning",
+            "keywords_to_include": ["calendar planning"],
+        },
+        content={"focus_keyword": FOCUS},
+    )
+
+    assert outline["focus_keyphrase"] == FOCUS
+    assert outline["keywords_to_include"] == [FOCUS, "posting schedule"]
+    assert outline["removed_keywords"] == []
+
+
+@pytest.mark.unit
+def test_the_keywords_the_user_took_out_are_recorded(monkeypatch):
+    outline = _approve(
+        monkeypatch,
+        {"action": "approve", "keywords_to_include": [FOCUS, "posting schedule"]},
+        outline={"keywords_to_include": [FOCUS, "editorial calendar", "content calendar"]},
+    )
+
+    # "content calendar" is part of the focus keyphrase: the writer can't avoid it.
+    assert outline["removed_keywords"] == ["editorial calendar"]
+
+
+@pytest.mark.unit
+def test_the_screens_copy_of_the_outline_follows_the_sidebar_edits(monkeypatch):
+    outline = _approve(
+        monkeypatch,
+        {
+            "action": "approve",
+            "keywords_to_include": [FOCUS, "posting schedule"],
+            "tone": "Practical",
+            "target_audience": ["Marketing leads"],
+        },
+        outline={"_render": {"keywords_to_include": [FOCUS, "editorial calendar"], "tone": ""}},
+    )
+
+    assert outline["_render"]["keywords_to_include"] == [FOCUS, "posting schedule"]
+    assert outline["_render"]["tone"] == "Practical"
+
+
+# -- The cluster notes: a removed keyword leaves them ------------------------------------
+
+
+def _cluster_map():
+    return {
+        "enabled": True,
+        "h1": {"suggested_heading": ARTICLE["title"], "primary_keyword": FOCUS},
+        "h2_sections": [
+            {
+                "suggested_heading": "Plan the month",
+                "cluster_name": "planning",
+                "primary_keyword": "monthly content plan",
+                "supporting_keywords": ["editorial calendar", "posting schedule"],
+                "h3_topics": ["editorial calendar", "Themes first"],
+            },
+            {
+                "suggested_heading": "Editorial calendars",
+                "cluster_name": "editorial calendar",
+                "primary_keyword": "editorial calendar",
+                "supporting_keywords": [],
+            },
+        ],
+        "h3_sections": [],
+        "body_copy_clusters": [
+            {
+                "suggested_heading": "Tools",
+                "primary_keyword": "Editorial Calendar",
+                "supporting_keywords": ["calendar tools"],
+            }
+        ],
+        "additional_keywords": ["editorial calendar", "calendar tools"],
+    }
+
+
+def test_a_removed_keyword_leaves_the_cluster_map():
+    trimmed = cluster_heading_map_without_keywords(_cluster_map(), ["Editorial  calendar"])
+
+    assert [s["suggested_heading"] for s in trimmed["h2_sections"]] == ["Plan the month"]
+    assert trimmed["h2_sections"][0]["supporting_keywords"] == ["posting schedule"]
+    assert trimmed["h2_sections"][0]["h3_topics"] == ["Themes first"]
+    assert trimmed["body_copy_clusters"][0]["primary_keyword"] == ""
+    assert trimmed["additional_keywords"] == ["calendar tools"]
+    assert "editorial calendar" not in format_cluster_heading_map_for_prompt(trimmed).lower()
+
+
+def test_without_removed_keywords_the_cluster_map_is_the_same_one():
+    cluster_map = _cluster_map()
+
+    assert cluster_heading_map_without_keywords(cluster_map, []) is cluster_map
+    assert cluster_heading_map_without_keywords(None, ["x"]) is None
+
+
+def test_a_removed_keyword_leaves_the_keyword_clusters():
+    clusters = [
+        {"cluster_name": "a", "keywords": [{"keyword": "editorial calendar"}, {"keyword": "x"}]},
+        {"cluster_name": "b", "keywords": [{"keyword": "Editorial Calendar"}]},
+    ]
+
+    kept = clusters_without_keywords(clusters, ["editorial calendar"])
+
+    assert [(c["cluster_name"], [k["keyword"] for k in c["keywords"]]) for c in kept] == [
+        ("a", ["x"])
+    ]
+    assert clusters_without_keywords(clusters, []) is clusters
 
 
 # -- The spec and the check -------------------------------------------------------------
@@ -95,6 +243,32 @@ def test_a_missing_secondary_keyword_is_a_warning_not_a_block():
 
     assert result["passed"] is False and result["severity"] == "warning"
     assert "'batching'" in result["detail"] and "editorial calendar" not in result["detail"]
+
+
+def test_the_checklist_names_the_missing_keywords():
+    one = check_secondary_keywords(ARTICLE, _spec([FOCUS, "editorial calendar", "batching"]))
+    line = user_detail("secondary_keywords", one["detail"])
+
+    assert line == "A keyword you approved is missing: batching."
+    # A row saved in these words reads the same on the way out of the API.
+    assert user_detail("secondary_keywords", line) == line
+
+    many = check_secondary_keywords(
+        ARTICLE, _spec([FOCUS, *[f"missing phrase {i}" for i in range(6)], "writer's block"])
+    )
+    line = user_detail("secondary_keywords", many["detail"])
+
+    assert line == (
+        "Keywords you approved are missing: missing phrase 0, missing phrase 1, "
+        "missing phrase 2, missing phrase 3 and 3 more."
+    )
+    assert user_detail("secondary_keywords", line) == line
+
+
+def test_a_detail_in_other_words_gets_the_plain_line():
+    assert user_detail("secondary_keywords", "Something else.") == (
+        "Some keywords you approved don't appear in the article as written."
+    )
 
 
 # -- What the writer is told ------------------------------------------------------------
@@ -145,7 +319,29 @@ async def test_the_writer_gets_the_focus_keyphrase_apart_from_the_secondary_keyw
                 "outline": {
                     "focus_keyphrase": FOCUS,
                     "keywords_to_include": [FOCUS, "editorial calendar", "posting schedule"],
+                    "removed_keywords": ["calendar tools"],
+                    "cluster_heading_map": {
+                        **_cluster_map(),
+                        "h2_sections": [
+                            {
+                                "suggested_heading": "Plan the month",
+                                "cluster_name": "planning",
+                                "primary_keyword": "monthly content plan",
+                                "supporting_keywords": ["calendar tools"],
+                            }
+                        ],
+                        "body_copy_clusters": [],
+                        "additional_keywords": [],
+                    },
                 },
+            },
+            "seo_result": {
+                "keyword_clusters": [
+                    {
+                        "cluster_name": "planning",
+                        "keywords": [{"keyword": "calendar tools"}, {"keyword": "theme days"}],
+                    }
+                ]
             },
             "serp_payload": {"user_id": "u", "workspace_id": "w", "keyword": FOCUS},
         }
@@ -155,6 +351,15 @@ async def test_the_writer_gets_the_focus_keyphrase_apart_from_the_secondary_keyw
     assert f'Focus keyphrase: "{FOCUS}"' in message
     assert "Secondary keywords the user approved: editorial calendar, posting schedule" in message
     assert "Use each secondary keyword at least once" in message
+    # A keyword the user added is in no cluster: the cluster rule names it as allowed.
+    assert (
+        "Use only the approved keyword clusters above. The secondary keywords the user" in message
+    )
+    assert "use each one even when no keyword cluster lists it" in message
+    # A keyword the user removed is named once, as removed, and is in no cluster note.
+    assert message.count("calendar tools") == 1
+    assert "KEYWORDS THE USER REMOVED: calendar tools" in message
+    assert "Keywords: theme days" in message
 
 
 # -- What the rewrite is told -----------------------------------------------------------
