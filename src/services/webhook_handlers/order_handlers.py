@@ -113,6 +113,35 @@ async def handle_order_created(
     )
 
 
+async def _subscription_of_order(
+    db: AsyncSession, lemonsqueezy_order_id: Any
+) -> UserSubscription | None:
+    """The local subscription Lemon Squeezy says this order created, or None.
+
+    For an order with no local record (it predates order recording). A failed
+    lookup counts as none found: the caller then alerts a person on a full refund.
+    """
+    if not lemonsqueezy_order_id:
+        return None
+    try:
+        ls_ids = await get_payment_provider().subscription_ids_for_order(str(lemonsqueezy_order_id))
+    except Exception as exc:
+        logger.warning(
+            f"Could not ask Lemon Squeezy for the subscription of order {lemonsqueezy_order_id}: {exc}"
+        )
+        return None
+    for ls_id in ls_ids:
+        result = await db.execute(
+            select(UserSubscription)
+            .where(UserSubscription.lemonsqueezy_subscription_id == ls_id)
+            .with_for_update()
+        )
+        found = result.scalar_one_or_none()
+        if found is not None:
+            return found
+    return None
+
+
 async def handle_order_refunded(
     webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> None:
@@ -176,10 +205,22 @@ async def handle_order_refunded(
     order_service = OrderService(db)
     order = await order_service.get_by_lemonsqueezy_id(lemonsqueezy_order_id)
 
-    # Need at least one to process refund
+    # A customer from before orders were recorded here: Lemon Squeezy still knows which
+    # subscription the order created, so its refund ends that one too (F8c.2,
+    # revnix/rext-control#593), as any other full refund does.
     if not subscription and not order:
+        subscription = await _subscription_of_order(db, lemonsqueezy_order_id)
+
+    if not subscription and not order:
+        if total_amount > 0 and provider_refunded_total >= total_amount:
+            # Fully refunded and found nowhere: left active at Lemon Squeezy, it would
+            # renew and charge the customer again, so a person checks it.
+            no_subscription_to_end(
+                order_id=str(lemonsqueezy_order_id),
+                user_id=f"lemonsqueezy customer {order_data.get('customer_id') or 'unknown'}",
+            )
         logger.warning(f"No order or subscription found for refunded order {lemonsqueezy_order_id}")
-        return  # Not an error - the order may predate local order recording
+        return
 
     if subscription:
         user_id = subscription.user_id
