@@ -521,7 +521,6 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
 # A step guide's whole body is its steps. On staging one How-To came back with one step and
 # another with none (rext-control#603); the schema can't require them without failing the run,
 # since structured output here isn't strict.
-_STEP_GUIDES = frozenset({"how-to-guide", "tutorial"})
 _MIN_STEPS = 3
 
 
@@ -542,17 +541,43 @@ def _summed_word_target(model_schema, sections: list) -> int:
     return total
 
 
+# What each step guide is built from, the least of it an outline can have, and what the second
+# attempt is asked for. A tutorial is built from its required modules: its `steps` are an optional
+# deeper breakdown, so their absence isn't a fault (review of #922).
+_STRUCTURE = {
+    "how-to-guide": (
+        "steps",
+        "step",
+        _MIN_STEPS,
+        f"{_MIN_STEPS}-10 steps, each with its title and description, in the order a reader "
+        "takes them",
+    ),
+    "tutorial": (
+        "modules",
+        "module",
+        1,
+        "its modules, each with its title and what it teaches, in the order a learner takes them",
+    ),
+}
+
+
+def _structure_count(content_type: str, outline: dict) -> int:
+    key = _STRUCTURE[content_type][0]
+    block = outline.get(key)
+    if isinstance(block, dict):
+        block = block.get(key)
+    return len(block) if isinstance(block, list) else 0
+
+
 def _thin_structure(content_type: str, outline: dict) -> str | None:
     """What a generated outline is missing that makes it unusable, or None."""
-    if content_type not in _STEP_GUIDES:
+    if content_type not in _STRUCTURE:
         return None
-    steps = outline.get("steps")
-    if isinstance(steps, dict):
-        steps = steps.get("steps")
-    count = len(steps) if isinstance(steps, list) else 0
-    if count >= _MIN_STEPS:
+    _, name, least, _ = _STRUCTURE[content_type]
+    count = _structure_count(content_type, outline)
+    if count >= least:
         return None
-    return f"had {count} step{'' if count == 1 else 's'}"
+    return f"had {count} {name}{'' if count == 1 else 's'}"
 
 
 @deduct_credits("generate_outline")
@@ -710,12 +735,23 @@ async def generate_outline(state: REXT) -> dict:
             retry_note = HumanMessage(
                 content=(
                     f"A first attempt at this outline {thin}. A {content_type} needs "
-                    f"{_MIN_STEPS}-10 steps, each with its title and description, in the order a "
-                    "reader takes them. Return the complete outline again with every step filled."
+                    f"{_STRUCTURE[content_type][3]}. Return the complete outline again with "
+                    "every one filled."
                 )
             )
-            generated_outline = await outline_model.ainvoke([*messages, retry_note])
-            outline_dict = generated_outline.model_dump()
+            # The first outline stays unless the second is at least as full: a failed or thinner
+            # second attempt never costs the run what it already had.
+            try:
+                retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
+            except Exception:
+                logger.warning(
+                    "The second outline attempt failed; keeping the first", exc_info=True
+                )
+            else:
+                if _structure_count(content_type, retried) >= _structure_count(
+                    content_type, outline_dict
+                ):
+                    outline_dict = retried
 
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
