@@ -57,7 +57,7 @@ from src.services.duplicate_subscriptions import (
     provider_created_record,
     settle_duplicate_subscriptions,
 )
-from src.services.refund_cancellation import is_ended_by_refund
+from src.services.refund_cancellation import is_ended_by_refund, refund_ended_at
 from src.services.trial_service import TrialService
 from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
@@ -179,10 +179,19 @@ def _ignore_payment_after_refund(
     """A payment on a subscription a full refund ended charged the customer again.
 
     It gives no plan and no credits back (F8c, revnix/rext-control#538); a person
-    refunds it and cancels the subscription at Lemon Squeezy.
+    refunds it and cancels the subscription at Lemon Squeezy. A payment made before
+    the refund and delivered late is the one refunded: it's ignored without an alert.
     """
     if not is_ended_by_refund(subscription):
         return False
+    paid_at = _provider_time(sub_data.get("created_at") or sub_data.get("updated_at"))
+    ended_at = refund_ended_at(subscription)
+    if paid_at is not None and ended_at is not None and paid_at < ended_at:
+        logger.info(
+            f"{event}: ignored, a payment from before the full refund that ended the subscription",
+            extra={"subscription_id": str(subscription.id)},
+        )
+        return True
     trigger_payment_alert(
         alert_type="refund_cancel_failed",
         message=(
