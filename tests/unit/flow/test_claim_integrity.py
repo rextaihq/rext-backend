@@ -619,3 +619,54 @@ def test_a_sentence_ends_after_a_closing_quote():
         "He said “done.”",
         "Then we left.",
     ]
+
+
+# --- the claims check's rarer sentence shapes (G54.1, rext-control#571) ------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A denial that is itself denied asserts the test.
+        "It's not true that we never tested the products ourselves.",
+        "It isn't that we haven't tested the tools, it's that the tests were short.",
+        # "Never" scoping a qualifier, not the testing itself.
+        "We never tested in isolation; every benchmark used production data.",
+        "We never tested without production data.",
+        "We never tested only one tier.",
+    ],
+)
+def test_a_denied_denial_or_a_qualified_never_is_still_a_testing_claim(text):
+    claims = find_unsupported_claims(text, {})
+    assert [(c.category, c.span) for c in claims] == [("fabricated_experience", "tested")]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We never tested these products ourselves.",
+        "We have never personally tested these tools, so read the ratings as a guide.",
+    ],
+)
+def test_a_plain_never_stays_a_disclosure(text):
+    assert [c.category for c in find_unsupported_claims(text, {})] == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The company (Contentful Inc.) Enterprise plan lacks SSO.",
+        "Contentful Inc. Enterprise plan lacks SSO.",
+    ],
+)
+def test_an_abbreviation_ends_no_sentence(text):
+    assert [u.text for u in claim_integrity._units(text)] == [text]
+    assert "[competitor_claim]" in _flagged(_check("comparison", text))
+
+
+def test_a_sentence_after_an_abbreviation_still_ends_at_its_own_full_stop():
+    text = "We compared Acme Inc. and Beta Ltd. on price. Then we chose."
+    assert [u.text for u in claim_integrity._units(text)] == [
+        "We compared Acme Inc. and Beta Ltd. on price.",
+        "Then we chose.",
+    ]

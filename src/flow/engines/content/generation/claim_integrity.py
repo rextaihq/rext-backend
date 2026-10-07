@@ -102,6 +102,12 @@ _SENTENCE_SPLIT_RE = re.compile(
     rf"(?:(?<=[.!?])|(?<=[.!?]{_CLOSERS})|(?<=[.!?]{_CLOSERS}{_CLOSERS}))"
     r"\s+(?=[\"'(\[*_\u201c\u2018]?[A-Z0-9])"
 )
+# A full stop after a company suffix or a title ends no sentence: "The company (Contentful
+# Inc.) Enterprise plan lacks SSO." is one sentence, so its subject and its claim stay in
+# one unit. "etc." is left out: it ends sentences as often as not.
+_ABBREVIATION_END_RE = re.compile(
+    rf"\b(?:Inc|Ltd|Co|Corp|LLC|LLP|PLC|GmbH|Pty|Bros|Mr|Mrs|Ms|Dr|St|Jr|Sr|vs)\.{_CLOSERS}{{0,2}}$"
+)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
 # A piece that is only citations ("… CMS.” [Report](url)", "… [A](url) and [B](url)") is the
@@ -127,6 +133,17 @@ class _Unit:
     cited_urls: tuple[str, ...]
 
 
+def _sentences(line: str) -> list[str]:
+    """The line's sentences; a split after an abbreviation's full stop is joined back."""
+    sentences: list[str] = []
+    for part in _SENTENCE_SPLIT_RE.split(line):
+        if sentences and _ABBREVIATION_END_RE.search(sentences[-1]):
+            sentences[-1] = f"{sentences[-1]} {part}"
+        else:
+            sentences.append(part)
+    return sentences
+
+
 def _units(text: str) -> list[_Unit]:
     """Sentences (and table rows) of prose, headings excluded."""
     cleaned = _HTML_COMMENT_RE.sub(" ", _IMAGE_RE.sub(" ", text or ""))
@@ -135,7 +152,7 @@ def _units(text: str) -> list[_Unit]:
         stripped = line.strip()
         if not stripped or _HEADING_RE.match(line) or _TABLE_SEPARATOR_RE.match(stripped):
             continue
-        parts = [stripped] if _TABLE_ROW_RE.match(stripped) else _SENTENCE_SPLIT_RE.split(stripped)
+        parts = [stripped] if _TABLE_ROW_RE.match(stripped) else _sentences(stripped)
         line_units: list[_Unit] = []
         claim_at: Optional[int] = None  # the last unit that isn't only citation links
         for part in parts:
@@ -248,6 +265,18 @@ _NEGATION_BEFORE_RE = re.compile(
     r"(?:\b(?:not|never)\b|n['\u2019]t\b)"
     rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
     re.IGNORECASE,
+)
+# A denial that is itself denied asserts the test: "it's not true that we never tested",
+# "it isn't that we haven't tested".
+_NEGATED_FRAME_RE = re.compile(
+    r"(?:\bnot\b|n['\u2019]t\b)\s+(?:(?:true|the\s+case|correct|accurate)\s+)?that\s+"
+    r"(?:[\w'\u2019-]+\s+){0,4}[\w'\u2019-]*$",
+    re.IGNORECASE,
+)
+# "Never" followed by a qualifier denies the qualifier, not the test: "we never tested in
+# isolation", "never tested without production data", "never tested only one tier".
+_QUALIFIER_AFTER_RE = re.compile(
+    r"\s+(?:in|with|without|only|on|under|using|against)\b", re.IGNORECASE
 )
 # After a denial, a clause that asserts the test by leaving the verb out ("I haven't tested
 # it, but we have.", "…, though our team did.") is a testing claim after all. Only a bare
@@ -553,20 +582,27 @@ def _numeric_claim_spans(text: str) -> dict[str, list[str]]:
     return spans
 
 
+def _denies(text: str, testing: re.Match) -> bool:
+    """Whether a negation right before the testing word denies that a test was run."""
+    before = text[: testing.start()]
+    negation = _NEGATION_BEFORE_RE.search(before)
+    if not negation:
+        return False
+    if _NEGATED_FRAME_RE.search(before[: negation.start()]):
+        return False
+    return not (
+        negation.group(0).lower().startswith("never")
+        and _QUALIFIER_AFTER_RE.match(text, testing.end())
+    )
+
+
 def _fabricated_experience(unit: _Unit, index: _EvidenceIndex) -> Optional[str]:
     text = unit.text
     if not _FIRST_PERSON_RE.search(text):
         return None
     # The first testing word the sentence doesn't deny ("we haven't tested every product,
     # but we tested the top five" is still a claim).
-    testing = next(
-        (
-            m
-            for m in _TESTING_RE.finditer(text)
-            if not _NEGATION_BEFORE_RE.search(text[: m.start()])
-        ),
-        None,
-    )
+    testing = next((m for m in _TESTING_RE.finditer(text) if not _denies(text, m)), None)
     if testing is None:
         testing = next(
             (
