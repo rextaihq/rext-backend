@@ -24,7 +24,11 @@ from src.utils.logger import logger
 
 
 class DataCleanupService:
-    """Service for cleaning up old data based on retention policies."""
+    """Service for cleaning up old data based on retention policies.
+
+    Deletes run in batches and commit each batch, so no transaction stays open
+    across a large table, and a run that fails part-way keeps what it deleted.
+    """
 
     def __init__(self, db: AsyncSession, dry_run: bool = False):
         """
@@ -36,6 +40,62 @@ class DataCleanupService:
         """
         self.db = db
         self.dry_run = dry_run
+
+    async def _delete_in_batches(self, model, *conditions) -> int:
+        """
+        Delete the rows that match the conditions, one batch at a time.
+
+        PostgreSQL has no DELETE ... LIMIT, so each batch deletes the ids a
+        limited select picks, and is committed before the next one starts.
+        "fetch" takes the deleted rows out of the session too, so a caller that
+        loaded one doesn't still see it.
+
+        Returns:
+            Number of records deleted (or would be deleted in dry-run mode)
+        """
+        if self.dry_run:
+            count_result = await self.db.execute(
+                select(func.count()).select_from(model).where(*conditions)
+            )
+            return count_result.scalar() or 0
+
+        deleted_total = 0
+        batch_size = cleanup_config.CLEANUP_BATCH_SIZE
+
+        while True:
+            batch = select(model.id).where(*conditions).limit(batch_size)
+            result = await self.db.execute(
+                delete(model)
+                .where(model.id.in_(batch))
+                .execution_options(synchronize_session="fetch")
+            )
+            await self.db.commit()
+
+            deleted_batch = result.rowcount
+            deleted_total += deleted_batch
+
+            logger.debug(
+                f"Deleted batch of {deleted_batch} rows from {model.__tablename__} "
+                f"(total: {deleted_total})"
+            )
+
+            if deleted_batch < batch_size:
+                return deleted_total
+
+    def _log_result(self, count: int, records: str, **context) -> None:
+        """Log what a cleanup step deleted, or would delete in dry-run mode."""
+        if self.dry_run:
+            logger.info(
+                f"[DRY RUN] Would delete {count} {records}",
+                extra={"would_delete": count, **context},
+            )
+        elif count:
+            logger.info(
+                f"Deleted {count} {records}",
+                extra={"deleted_count": count, **context},
+            )
+        else:
+            logger.info(f"No {records} to clean up")
 
     async def cleanup_audit_logs(self, retention_days: Optional[int] = None) -> int:
         """
@@ -55,56 +115,9 @@ class DataCleanupService:
             extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()},
         )
 
-        # Count records to be deleted
-        count_result = await self.db.execute(
-            select(func.count(AuditLog.id)).where(AuditLog.created_at < cutoff_date)
-        )
-        record_count = count_result.scalar()
-
-        if record_count == 0:
-            logger.info("No audit logs to clean up")
-            return 0
-
-        if not self.dry_run:
-            # Delete in batches to avoid long-running transactions
-            deleted_total = 0
-            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
-
-            while True:
-                # Delete a batch
-                result = await self.db.execute(
-                    delete(AuditLog)
-                    .where(AuditLog.created_at < cutoff_date)
-                    .execution_options(synchronize_session=False)
-                    .returning(AuditLog.id)
-                    .limit(batch_size)
-                )
-                deleted_batch = len(result.fetchall())
-
-                if deleted_batch == 0:
-                    break
-
-                deleted_total += deleted_batch
-                await self.db.flush()
-
-                logger.debug(
-                    f"Deleted batch of {deleted_batch} audit logs (total: {deleted_total})"
-                )
-
-                if deleted_batch < batch_size:
-                    break
-
-            logger.info(
-                f"Deleted {deleted_total} audit logs",
-                extra={"deleted_count": deleted_total, "retention_days": retention_days},
-            )
-            return deleted_total
-        else:
-            logger.info(
-                f"[DRY RUN] Would delete {record_count} audit logs",
-                extra={"would_delete": record_count, "retention_days": retention_days},
-            )
-            return record_count
+        deleted = await self._delete_in_batches(AuditLog, AuditLog.created_at < cutoff_date)
+        self._log_result(deleted, "audit logs", retention_days=retention_days)
+        return deleted
 
     async def cleanup_error_logs(self, retention_days: Optional[int] = None) -> int:
         """
@@ -133,58 +146,16 @@ class DataCleanupService:
             },
         )
 
-        count_result = await self.db.execute(
-            select(func.count(ErrorLog.id)).where(ErrorLog.timestamp < cutoff_date)
-        )
-        record_count = count_result.scalar()
-
-        if record_count == 0:
-            logger.info("No error logs to clean up")
-            return 0
-
-        if not self.dry_run:
-            # Delete in batches to avoid long-running transactions
-            deleted_total = 0
-            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
-
-            while True:
-                result = await self.db.execute(
-                    delete(ErrorLog)
-                    .where(ErrorLog.timestamp < cutoff_date)
-                    .execution_options(synchronize_session=False)
-                    .returning(ErrorLog.id)
-                    .limit(batch_size)
-                )
-                deleted_batch = len(result.fetchall())
-
-                if deleted_batch == 0:
-                    break
-
-                deleted_total += deleted_batch
-                await self.db.flush()
-
-                logger.debug(
-                    f"Deleted batch of {deleted_batch} error logs (total: {deleted_total})"
-                )
-
-                if deleted_batch < batch_size:
-                    break
-
-            logger.info(
-                f"Deleted {deleted_total} error logs",
-                extra={"deleted_count": deleted_total, "retention_days": retention_days},
-            )
-            return deleted_total
-        else:
-            logger.info(
-                f"[DRY RUN] Would delete {record_count} error logs",
-                extra={"would_delete": record_count, "retention_days": retention_days},
-            )
-            return record_count
+        deleted = await self._delete_in_batches(ErrorLog, ErrorLog.timestamp < cutoff_date)
+        self._log_result(deleted, "error logs", retention_days=retention_days)
+        return deleted
 
     async def cleanup_email_logs(self, retention_days: Optional[int] = None) -> int:
         """
-        Clean up old email logs and associated events.
+        Clean up old email logs.
+
+        Their events are kept with email_log_id set to NULL (ON DELETE SET NULL),
+        and cleanup_email_events deletes those orphans once they are old enough.
 
         Args:
             retention_days: Number of days to retain (default from config)
@@ -200,55 +171,9 @@ class DataCleanupService:
             extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()},
         )
 
-        # Count records to be deleted
-        count_result = await self.db.execute(
-            select(func.count(EmailLog.id)).where(EmailLog.created_at < cutoff_date)
-        )
-        record_count = count_result.scalar()
-
-        if record_count == 0:
-            logger.info("No email logs to clean up")
-            return 0
-
-        if not self.dry_run:
-            # EmailEvents will be deleted via CASCADE
-            deleted_total = 0
-            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
-
-            while True:
-                result = await self.db.execute(
-                    delete(EmailLog)
-                    .where(EmailLog.created_at < cutoff_date)
-                    .execution_options(synchronize_session=False)
-                    .returning(EmailLog.id)
-                    .limit(batch_size)
-                )
-                deleted_batch = len(result.fetchall())
-
-                if deleted_batch == 0:
-                    break
-
-                deleted_total += deleted_batch
-                await self.db.flush()
-
-                logger.debug(
-                    f"Deleted batch of {deleted_batch} email logs (total: {deleted_total})"
-                )
-
-                if deleted_batch < batch_size:
-                    break
-
-            logger.info(
-                f"Deleted {deleted_total} email logs (events deleted via CASCADE)",
-                extra={"deleted_count": deleted_total, "retention_days": retention_days},
-            )
-            return deleted_total
-        else:
-            logger.info(
-                f"[DRY RUN] Would delete {record_count} email logs",
-                extra={"would_delete": record_count, "retention_days": retention_days},
-            )
-            return record_count
+        deleted = await self._delete_in_batches(EmailLog, EmailLog.created_at < cutoff_date)
+        self._log_result(deleted, "email logs", retention_days=retention_days)
+        return deleted
 
     async def cleanup_email_events(self, retention_days: Optional[int] = None) -> int:
         """
@@ -268,56 +193,11 @@ class DataCleanupService:
             extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()},
         )
 
-        # Count orphaned records (email_log_id is NULL) to be deleted
-        count_result = await self.db.execute(
-            select(func.count(EmailEvent.id)).where(
-                EmailEvent.created_at < cutoff_date, EmailEvent.email_log_id.is_(None)
-            )
+        deleted = await self._delete_in_batches(
+            EmailEvent, EmailEvent.created_at < cutoff_date, EmailEvent.email_log_id.is_(None)
         )
-        record_count = count_result.scalar()
-
-        if record_count == 0:
-            logger.info("No orphaned email events to clean up")
-            return 0
-
-        if not self.dry_run:
-            deleted_total = 0
-            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
-
-            while True:
-                result = await self.db.execute(
-                    delete(EmailEvent)
-                    .where(EmailEvent.created_at < cutoff_date, EmailEvent.email_log_id.is_(None))
-                    .execution_options(synchronize_session=False)
-                    .returning(EmailEvent.id)
-                    .limit(batch_size)
-                )
-                deleted_batch = len(result.fetchall())
-
-                if deleted_batch == 0:
-                    break
-
-                deleted_total += deleted_batch
-                await self.db.flush()
-
-                logger.debug(
-                    f"Deleted batch of {deleted_batch} orphaned email events (total: {deleted_total})"
-                )
-
-                if deleted_batch < batch_size:
-                    break
-
-            logger.info(
-                f"Deleted {deleted_total} orphaned email events",
-                extra={"deleted_count": deleted_total, "retention_days": retention_days},
-            )
-            return deleted_total
-        else:
-            logger.info(
-                f"[DRY RUN] Would delete {record_count} orphaned email events",
-                extra={"would_delete": record_count, "retention_days": retention_days},
-            )
-            return record_count
+        self._log_result(deleted, "orphaned email events", retention_days=retention_days)
+        return deleted
 
     async def cleanup_inactive_sessions(self, inactive_days: Optional[int] = None) -> int:
         """
@@ -338,69 +218,22 @@ class DataCleanupService:
             extra={"inactive_days": inactive_days, "cutoff_date": cutoff_date.isoformat()},
         )
 
-        # Count records to be deleted (inactive OR expired OR revoked)
-        count_result = await self.db.execute(
-            select(func.count(UserSession.id)).where(
-                (UserSession.last_activity_at < cutoff_date)
-                | (UserSession.expires_at < now)
-                | (UserSession.revoked_at.isnot(None))
-            )
+        # Inactive OR expired OR revoked
+        deleted = await self._delete_in_batches(
+            UserSession,
+            (UserSession.last_activity_at < cutoff_date)
+            | (UserSession.expires_at < now)
+            | (UserSession.revoked_at.isnot(None)),
         )
-        record_count = count_result.scalar()
-
-        if record_count == 0:
-            logger.info("No inactive sessions to clean up")
-            return 0
-
-        if not self.dry_run:
-            deleted_total = 0
-            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
-
-            while True:
-                result = await self.db.execute(
-                    delete(UserSession)
-                    .where(
-                        (UserSession.last_activity_at < cutoff_date)
-                        | (UserSession.expires_at < now)
-                        | (UserSession.revoked_at.isnot(None))
-                    )
-                    .execution_options(synchronize_session=False)
-                    .returning(UserSession.id)
-                    .limit(batch_size)
-                )
-                deleted_batch = len(result.fetchall())
-
-                if deleted_batch == 0:
-                    break
-
-                deleted_total += deleted_batch
-                await self.db.flush()
-
-                logger.debug(
-                    f"Deleted batch of {deleted_batch} inactive sessions (total: {deleted_total})"
-                )
-
-                if deleted_batch < batch_size:
-                    break
-
-            logger.info(
-                f"Deleted {deleted_total} inactive/expired sessions",
-                extra={"deleted_count": deleted_total, "inactive_days": inactive_days},
-            )
-            return deleted_total
-        else:
-            logger.info(
-                f"[DRY RUN] Would delete {record_count} inactive/expired sessions",
-                extra={"would_delete": record_count, "inactive_days": inactive_days},
-            )
-            return record_count
+        self._log_result(deleted, "inactive/expired sessions", inactive_days=inactive_days)
+        return deleted
 
     async def cleanup_webhook_events(self, retention_days: Optional[int] = None) -> int:
         """
         Clean up old webhook events (processed events older than retention period).
 
         Args:
-            retention_days: Number of days to retain (default 90 days)
+            retention_days: Number of days to retain (default from config)
 
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
@@ -414,56 +247,12 @@ class DataCleanupService:
             extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()},
         )
 
-        # Count records to be deleted (only processed events)
-        count_result = await self.db.execute(
-            select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.created_at < cutoff_date, WebhookEvent.processed.is_(True)
-            )
+        # Only processed events: an unprocessed one may still need attention
+        deleted = await self._delete_in_batches(
+            WebhookEvent, WebhookEvent.created_at < cutoff_date, WebhookEvent.processed.is_(True)
         )
-        record_count = count_result.scalar()
-
-        if record_count == 0:
-            logger.info("No webhook events to clean up")
-            return 0
-
-        if not self.dry_run:
-            deleted_total = 0
-            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
-
-            while True:
-                result = await self.db.execute(
-                    delete(WebhookEvent)
-                    .where(WebhookEvent.created_at < cutoff_date, WebhookEvent.processed.is_(True))
-                    .execution_options(synchronize_session=False)
-                    .returning(WebhookEvent.id)
-                    .limit(batch_size)
-                )
-                deleted_batch = len(result.fetchall())
-
-                if deleted_batch == 0:
-                    break
-
-                deleted_total += deleted_batch
-                await self.db.flush()
-
-                logger.debug(
-                    f"Deleted batch of {deleted_batch} webhook events (total: {deleted_total})"
-                )
-
-                if deleted_batch < batch_size:
-                    break
-
-            logger.info(
-                f"Deleted {deleted_total} processed webhook events",
-                extra={"deleted_count": deleted_total, "retention_days": retention_days},
-            )
-            return deleted_total
-        else:
-            logger.info(
-                f"[DRY RUN] Would delete {record_count} processed webhook events",
-                extra={"would_delete": record_count, "retention_days": retention_days},
-            )
-            return record_count
+        self._log_result(deleted, "processed webhook events", retention_days=retention_days)
+        return deleted
 
     async def anonymize_cancelled_subscriptions(self, retention_days: Optional[int] = None) -> int:
         """
@@ -473,8 +262,12 @@ class DataCleanupService:
         NOTE: This does NOT delete subscriptions (required for 7-year financial record retention).
         It only anonymizes them by setting user_id to NULL.
 
+        Not run by cleanup_all: user_subscriptions.user_id is NOT NULL, so the
+        update can't be stored until the anonymization is designed (a migration,
+        and a decision about which financial records keep their owner).
+
         Args:
-            retention_days: Number of days to retain user link (default 90 days after cancellation)
+            retention_days: Number of days to retain user link (default from config)
 
         Returns:
             Number of records anonymized (or would be anonymized in dry-run mode)
@@ -545,14 +338,13 @@ class DataCleanupService:
             "error_logs": await self.cleanup_error_logs(),
             "user_sessions": await self.cleanup_inactive_sessions(),
             "webhook_events": await self.cleanup_webhook_events(),
-            "cancelled_subscriptions_anonymized": await self.anonymize_cancelled_subscriptions(),
             "cleanup_expired_tokens": await self.cleanup_expired_tokens(),
         }
 
         total_deleted = sum(results.values())
 
         logger.info(
-            f"{'[DRY RUN] ' if self.dry_run else ''}Data cleanup completed: {total_deleted} total records {'would be ' if self.dry_run else ''}deleted/anonymized",
+            f"{'[DRY RUN] ' if self.dry_run else ''}Data cleanup completed: {total_deleted} total records {'would be ' if self.dry_run else ''}deleted",
             extra={"results": results, "total": total_deleted},
         )
 
@@ -570,21 +362,8 @@ class DataCleanupService:
         """
         cutoff_date = datetime.now(timezone.utc)
 
-        if self.dry_run:
-            count_stmt = (
-                select(func.count())
-                .select_from(TokenBlacklist)
-                .where(TokenBlacklist.expires_at < cutoff_date)
-            )
-            result = await self.db.execute(count_stmt)
-            count = result.scalar() or 0
-            logger.info(f"[DRY RUN] Would delete {count} expired tokens from blacklist")
-            return count
-
-        stmt = delete(TokenBlacklist).where(TokenBlacklist.expires_at < cutoff_date)
-        result = await self.db.execute(stmt)
-        deleted = result.rowcount
-        await self.db.flush()
-
-        logger.info(f"Cleaned up {deleted} expired tokens from blacklist")
+        deleted = await self._delete_in_batches(
+            TokenBlacklist, TokenBlacklist.expires_at < cutoff_date
+        )
+        self._log_result(deleted, "expired tokens from blacklist")
         return deleted
