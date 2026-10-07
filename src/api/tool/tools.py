@@ -60,8 +60,9 @@ def _get_model(tool: str):
 # The pairs a model wraps a line in: straight double and single, curly double and single quotes.
 _QUOTE_PAIRS = (('"', '"'), ("'", "'"), ("“", "”"), ("‘", "’"))
 
-# A list item's marker: "1." or "1)", "-", "*" or "•", then space.
-_LIST_MARKER = re.compile(r"^(?:\d+[\.\)]|[\-\*•])\s+")
+# A list's bullet ("-", "*" or "•") and its number ("1." or "1)"), each followed by a space.
+_BULLET = re.compile(r"^[\-\*•]\s+")
+_NUMBER = re.compile(r"^(\d+)[\.\)]\s+")
 
 
 def _unquote(text: str) -> str:
@@ -75,9 +76,21 @@ def _unquote(text: str) -> str:
 
 
 def _list_items(raw_content: str) -> List[str]:
-    """A model's list as clean items: one per line, without list markers or wrapping quotes."""
-    items = (_unquote(_LIST_MARKER.sub("", line.strip())) for line in raw_content.split("\n"))
-    return [item for item in items if item]
+    """A model's list as clean items: one per line, without bullets, numbering or wrapping quotes.
+    A number counts as numbering only when it continues the list's count from 1, so a title that
+    starts with one ("2026. What changes") keeps it."""
+    items: List[str] = []
+    expected = 1
+    for line in raw_content.split("\n"):
+        item = _BULLET.sub("", line.strip())
+        number = _NUMBER.match(item)
+        if number and int(number.group(1)) == expected:
+            item = item[number.end() :]
+            expected += 1
+        item = _unquote(item)
+        if item:
+            items.append(item)
+    return items
 
 
 def count_text_metrics(text: str):
