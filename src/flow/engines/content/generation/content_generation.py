@@ -14,6 +14,7 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
+from src.api.config import settings
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
@@ -71,6 +72,7 @@ from src.utils.credit_manager import (
     STAGE_CREDITS,
     InsufficientCreditsError,
     _emit_credit_event,
+    can_afford_stage,
     consume_stage_credits,
 )
 from src.utils.image_placeholder import build_placeholder_marker
@@ -299,6 +301,27 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
                 lines.append(f"  A: {_short_text(faq['answer'], 400)}")
 
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
+
+
+async def _charge_delivered_image(content_state: dict, user_id, workspace_id) -> dict:
+    """Charge the featured image's credit once the image is in the article.
+
+    Once per run (image_credit_deducted), like the upfront stages. A run that can't
+    pay was told not to generate one; if the balance still fell short meanwhile, or
+    the charge failed, the image stays in the article and nobody is charged for it.
+    """
+    if content_state.get("image_credit_deducted"):
+        return content_state
+    stage = "featured_image"
+    try:
+        await consume_stage_credits(user_id, STAGE_CREDITS[stage], stage, workspace_id=workspace_id)
+    except InsufficientCreditsError:
+        logger.warning("generate_content: featured image delivered without its credit")
+        return content_state
+    except Exception:
+        logger.exception("generate_content: charging the featured image failed")
+        return content_state
+    return {**content_state, "image_credit_deducted": True}
 
 
 async def generate_content(state: REXT) -> dict:
@@ -824,11 +847,12 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
-        # Deduct all content stages before agent invoke (once, upfront). Guarded
+        # Deduct the content stages before agent invoke (once, upfront). Guarded
         # by credits_deducted so a checkpoint-driven resume of this node (e.g.
         # after a transient failure later in the function) doesn't deduct twice.
+        # The featured image is charged only once it is delivered (below).
         if not content_state.get("credits_deducted"):
-            for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
+            for _stage in ("content_drafting", "humanization", "deep_research"):
                 try:
                     await consume_stage_credits(
                         user_id, STAGE_CREDITS[_stage], _stage, workspace_id=workspace_id
@@ -856,6 +880,19 @@ async def generate_content(state: REXT) -> dict:
         # and to hand validate_content real citation ground truth via
         # generation_meta.searched_results.
         counters = {"search": [0], "image_task": None, "search_results": []}
+
+        # The image is charged on delivery, so check now that the run can pay for
+        # it: without the credit the writer gets the manual-upload placeholder
+        # instead of a paid image nobody is charged for.
+        if (
+            settings.AI_IMAGE_GENERATION_ENABLED
+            and not content_state.get("image_credit_deducted")
+            and not await can_afford_stage(user_id, "featured_image", workspace_id=workspace_id)
+        ):
+            counters["image_allowed"] = False
+            logger.info(
+                "generate_content: no credit left for the featured image; not generating it"
+            )
 
         # Current facts from the official sites of the brand and every product the
         # outline names, fetched before writing. The calls count against the SAME
@@ -1209,6 +1246,7 @@ async def generate_content(state: REXT) -> dict:
                 )
                 content_dict["images"] = images_list
                 logger.info("generate_content: image injected -> %s", image_url)
+                content_state = await _charge_delivered_image(content_state, user_id, workspace_id)
             else:
                 logger.info(
                     "generate_content: image task returned no valid URL; skipping injection."
