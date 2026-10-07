@@ -25,12 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.subscription_models.subscriptions import (
     SubscriptionStatus,
     UserSubscription,
-    not_a_known_duplicate,
+    not_a_settled_duplicate,
 )
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.duplicate_subscriptions import (
     LIVE_STATUSES,
     is_known_duplicate,
+    lock_customer_subscriptions,
     settle_duplicate_subscriptions,
 )
 from src.services.webhook_handlers.subscription_handlers import (
@@ -67,9 +68,11 @@ async def reconcile_subscriptions(
             .where(
                 UserSubscription.lemonsqueezy_subscription_id.is_not(None),
                 UserSubscription.status != SubscriptionStatus.EXPIRED,
-                # Known duplicates (settled here, or left to a person) are left out before
-                # the limit: skipped afterwards, they would fill every batch for good.
-                not_a_known_duplicate(),
+                # Duplicates settled here are ended for good and left out before the limit:
+                # skipped afterwards, they would fill every batch. One found and left to a
+                # person is still live at Lemon Squeezy, so it is read like any other: its
+                # cancellation there, when the webhook was missed, is caught up here (#724).
+                not_a_settled_duplicate(),
             )
             .order_by(
                 UserSubscription.subscription_metadata[_RECONCILED_AT].astext.asc().nulls_first(),
@@ -91,6 +94,9 @@ async def reconcile_subscriptions(
             attributes = await provider.get_subscription_attributes(ls_id)
             # A failure undoes only this subscription's half-applied changes.
             async with db.begin_nested():
+                # The customer's lock before the row's, the order every path that may
+                # settle a duplicate takes them in (lock_customer_subscriptions).
+                await lock_customer_subscriptions(db, user_id)
                 # The status now, under the row's lock: a webhook may have changed it
                 # since the batch was read, and its email went out with it.
                 row = (

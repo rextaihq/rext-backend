@@ -89,6 +89,21 @@ class _NeedsAPerson(Exception):
     """The settlement can't decide the amount itself."""
 
 
+async def lock_customer_subscriptions(db: AsyncSession, user_id: UUID) -> None:
+    """One settlement per customer at a time: held until the caller's transaction ends.
+
+    A caller that may settle after changing a subscription takes this before it locks
+    that subscription's row. Storing a new purchase takes this lock and then writes the
+    customer's older rows; a caller that held one of those rows and then waited here
+    would deadlock with it (revnix/rext-control#724). Taking it again in the same
+    transaction costs nothing.
+    """
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"subscriptions:settle:{user_id}"},
+    )
+
+
 async def settle_duplicate_subscriptions(
     db: AsyncSession, user_id: UUID, provider=None
 ) -> List[UUID]:
@@ -100,10 +115,7 @@ async def settle_duplicate_subscriptions(
     # One settlement per customer at a time. Two subscription_created webhooks for one
     # customer can run at once, each seeing only its own new row: the second waits here
     # until the first commits, then reads both (each statement reads what's committed).
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"subscriptions:settle:{user_id}"},
-    )
+    await lock_customer_subscriptions(db, user_id)
     live = sorted(
         (
             await db.scalars(

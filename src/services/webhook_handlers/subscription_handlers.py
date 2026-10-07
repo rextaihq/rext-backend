@@ -55,6 +55,7 @@ from src.services.duplicate_subscriptions import (
     LIVE_STATUSES,
     is_known_duplicate,
     is_settled_duplicate,
+    lock_customer_subscriptions,
     provider_created_record,
     settle_duplicate_subscriptions,
 )
@@ -294,6 +295,24 @@ async def _locked_subscription(
     return result.scalar_one_or_none()
 
 
+async def _lock_customer_of(db: AsyncSession, lemonsqueezy_subscription_id: Optional[str]) -> None:
+    """The settlement lock of the subscription's customer, taken before its row is locked.
+
+    For a handler that may settle a duplicate after changing the row (see
+    lock_customer_subscriptions for the order and why). A subscription we don't have has
+    no customer to lock; its handler deals with that itself.
+    """
+    user_id = (
+        await db.execute(
+            select(UserSubscription.user_id).where(
+                UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
+            )
+        )
+    ).scalar_one_or_none()
+    if user_id is not None:
+        await lock_customer_subscriptions(db, user_id)
+
+
 def _still_paid_through(subscription: UserSubscription) -> bool:
     """The plan runs: active or on trial, or cancelled with its paid period not over."""
     if subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL):
@@ -483,6 +502,9 @@ async def handle_subscription_created(
     )
 
     internal_status = lemonsqueezy_status(status)
+
+    # The customer's lock before any row's: this handler settles a duplicate further down.
+    await lock_customer_subscriptions(db, user.id)
 
     # Check if subscription already exists (shouldn't happen due to idempotency, but be safe)
     existing_sub = await _locked_subscription(db, lemonsqueezy_subscription_id)
@@ -1812,6 +1834,9 @@ async def handle_subscription_payment_recovered(
     sub_data = extract_subscription_data(webhook_data)
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
     renews_at = sub_data.get("renews_at")
+
+    # The customer's lock before the row's: a recovery can end in a settlement (below).
+    await _lock_customer_of(db, lemonsqueezy_subscription_id)
 
     # Find subscription
     subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
