@@ -569,11 +569,16 @@ def _structure_count(content_type: str, outline: dict) -> int:
     return len(block) if isinstance(block, list) else 0
 
 
-def _thin_structure(content_type: str, outline: dict) -> str | None:
-    """What a generated outline is missing that makes it unusable, or None."""
+def _thin_structure(content_type: str, outline: dict, reviewed: bool = False) -> str | None:
+    """What a generated outline is missing that makes it unusable, or None.
+
+    ``reviewed`` is a regeneration after a person's feedback: their own ask sets the length
+    ("combine it into two steps"), so only an empty structure is thin then."""
     if content_type not in _STRUCTURE:
         return None
     _, name, least, _ = _STRUCTURE[content_type]
+    if reviewed:
+        least = 1
     count = _structure_count(content_type, outline)
     if count >= least:
         return None
@@ -729,7 +734,8 @@ async def generate_outline(state: REXT) -> dict:
         outline_dict = generated_outline.model_dump()
 
         # Asked once more, only when the outline can't be written from: one extra model call.
-        thin = _thin_structure(content_type, outline_dict)
+        reviewed = str(outline_rejected_reason or "None").strip().lower() not in ("", "none")
+        thin = _thin_structure(content_type, outline_dict, reviewed=reviewed)
         if thin:
             logger.warning("Outline %s for content_type=%s; asking once more", thin, content_type)
             retry_note = HumanMessage(
@@ -743,7 +749,11 @@ async def generate_outline(state: REXT) -> dict:
             # second attempt never costs the run what it already had.
             try:
                 retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
-            except Exception:
+            except Exception as error:
+                # An outage is the run's to report (the handler below), not a reason to return,
+                # and charge for, an outline already known to be thin.
+                if provider_outage(error) is not None:
+                    raise
                 logger.warning(
                     "The second outline attempt failed; keeping the first", exc_info=True
                 )
