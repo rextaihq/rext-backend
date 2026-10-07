@@ -2379,10 +2379,12 @@ async def _scrape_site(
         return blog_pages
 
     # SINGLE HTTP CLIENT CONTEXT: Kept strictly open for the entire multi-stage scrape
-    # Every page and redirect is checked and connects only to the address checked, and the
-    # certificate is verified: a site whose certificate fails goes to the browser fallback.
+    # Every page and redirect is checked and connects only to the address checked. Certificates
+    # aren't checked: competitor discovery calls this scrape with no browser fallback, and a site
+    # with an expired or incomplete chain would give it nothing. The address check doesn't rely
+    # on TLS.
     async with public_client(
-        headers=headers, follow_redirects=True, timeout=REQUEST_TIMEOUT
+        headers=headers, verify=False, follow_redirects=True, timeout=REQUEST_TIMEOUT
     ) as client:
         home_html = await fetch(client, url, sem)
         if not home_html:

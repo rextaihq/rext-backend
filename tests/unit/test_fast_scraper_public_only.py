@@ -80,10 +80,11 @@ async def test_the_scrape_never_follows_the_homepage_to_a_private_address(sent, 
 
 
 @pytest.mark.asyncio
-async def test_the_scrape_checks_certificates_and_reads_a_public_site(sent):
+async def test_the_scrape_reads_a_public_site_through_the_public_client(sent):
     result = await scrape_site(PUBLIC, budget_seconds=5)
 
     assert sent and sent[0] == PUBLIC
     assert result.get("raw_home_html", "").startswith("<html>")
-    # The scrape's client verifies certificates; only the reachability check doesn't.
-    assert sent.verify == [True]
+    # One public client, without certificate checks: competitor discovery has no browser
+    # fallback for a site with an expired or incomplete chain.
+    assert sent.verify == [False]
