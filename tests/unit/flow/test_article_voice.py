@@ -35,6 +35,11 @@ def test_voice_keeps_the_traits_and_the_customer_profile():
         "persona_tone": "Calm, plain-spoken.",
         "brand_traits": ["Technical", "Informative", "Community-driven"],
         "customer_profile": "Developers and marketing teams at small software companies.",
+        "brand_name": "",
+        "about": "",
+        "selling_position": "",
+        "target_audience": [],
+        "content_pillars": [],
     }
 
 
@@ -77,7 +82,17 @@ async def test_profile_read_returns_traits_and_customer_profile(monkeypatch):
     async def fake_db():
         yield SimpleNamespace(
             execute=AsyncMock(
-                return_value=SimpleNamespace(first=lambda: (["Technical"], "Developers."))
+                return_value=SimpleNamespace(
+                    first=lambda: (
+                        ["Technical"],
+                        "Developers.",
+                        "Acme CMS",
+                        "Acme CMS is a headless CMS.",
+                        "Fast to set up.",
+                        ["Developers"],
+                        "not a list",
+                    )
+                )
             )
         )
 
@@ -86,7 +101,15 @@ async def test_profile_read_returns_traits_and_customer_profile(monkeypatch):
 
     profile = await fetch_brand_voice_profile("9eda8ec9-f71c-480a-8226-8d8361a31391")
 
-    assert profile == {"traits": ["Technical"], "customer_profile": "Developers."}
+    assert profile == {
+        "traits": ["Technical"],
+        "customer_profile": "Developers.",
+        "brand_name": "Acme CMS",
+        "about": "Acme CMS is a headless CMS.",
+        "selling_position": "Fast to set up.",
+        "target_audience": ["Developers"],
+        "content_pillars": [],
+    }
 
 
 async def test_profile_read_never_raises(monkeypatch):
@@ -214,3 +237,58 @@ def test_the_rhythm_rules_stay():
 def test_the_style_defaults_defer_to_the_voice():
     assert "unless the article's voice at the end of this prompt" in HUMANIZE_SYSTEM_PROMPT
     assert HUMANIZE_SYSTEM_PROMPT.count("unless the article's voice") == 2
+
+
+# --- what the company knows and offers (FB2.21, rext-control#702) ------------------
+
+FULL_PROFILE = {
+    **PROFILE,
+    "brand_name": "Acme CMS",
+    "about": "Acme CMS is a headless CMS for small software teams. acme cms ships with previews.",
+    "selling_position": "The quickest way to move a marketing site off a monolith.",
+    "target_audience": ["Developers", "Marketing leads", ""],
+    "content_pillars": ["Headless CMS", "Content operations"],
+}
+
+
+def test_the_writer_gets_what_the_company_knows_and_offers():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    block = format_expertise_for_writer(article_voice(None, FULL_PROFILE))
+
+    assert block.startswith("## WHAT THE COMPANY BEHIND THIS SITE KNOWS AND OFFERS")
+    assert "**What it offers:** The quickest way to move a marketing site off a monolith." in block
+    assert "**What it writes about:** Headless CMS; Content operations" in block
+    assert "**Who it serves:** Developers; Marketing leads" in block
+    assert "write as a practitioner at this company would" in block
+
+
+def test_the_companys_own_name_is_not_put_in_front_of_the_writer():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    block = format_expertise_for_writer(article_voice(None, FULL_PROFILE))
+
+    assert "Acme CMS" not in block and "acme cms" not in block
+    assert (
+        "**What it does:** The company is a headless CMS for small software teams. the company ships"
+        in block
+    )
+    # Knowing the company is never permission to name it: the mention has its own rules.
+    assert "permission to name the company or its product" in block
+    assert "With neither, do not name it." in block
+
+
+def test_the_writers_block_carries_the_voice_then_the_expertise():
+    block = format_voice_for_writer(article_voice("Calm.", FULL_PROFILE))
+
+    voice_at = block.index("## THE BRAND'S VOICE")
+    expertise_at = block.index("## WHAT THE COMPANY BEHIND THIS SITE KNOWS AND OFFERS")
+    assert voice_at < expertise_at
+    # A profile with only the offer still reaches the writer; one with nothing adds nothing.
+    only_offer = format_voice_for_writer(article_voice(None, {"selling_position": "Fast."}))
+    assert only_offer.startswith("## WHAT THE COMPANY BEHIND THIS SITE KNOWS AND OFFERS")
+    assert format_voice_for_writer(article_voice(None, {})) == ""
+
+
+def test_the_rewrite_is_not_given_the_offer():
+    assert "monolith" not in format_voice_for_rewrite(article_voice("Calm.", FULL_PROFILE))

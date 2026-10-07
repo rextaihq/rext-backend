@@ -17,6 +17,7 @@ while rewriting instead of imposing its own.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 from uuid import UUID
 
@@ -25,6 +26,8 @@ logger = logging.getLogger(__name__)
 MAX_TRAITS = 8
 MAX_TRAIT_CHARS = 60
 MAX_TEXT_CHARS = 600
+MAX_LIST_ITEMS = 6
+MAX_ITEM_CHARS = 80
 
 
 def _clip(text: Any, limit: int) -> str:
@@ -44,11 +47,26 @@ def article_voice(persona_tone: Any, profile: Optional[dict]) -> dict[str, Any]:
         "persona_tone": _clip(persona_tone, MAX_TEXT_CHARS),
         "brand_traits": traits,
         "customer_profile": _clip(profile.get("customer_profile"), MAX_TEXT_CHARS),
+        # What the company knows and offers (FB2.21, rext-control#702): the writer's expertise.
+        "brand_name": _clip(profile.get("brand_name"), MAX_ITEM_CHARS),
+        "about": _clip(profile.get("about"), MAX_TEXT_CHARS),
+        "selling_position": _clip(profile.get("selling_position"), MAX_TEXT_CHARS),
+        "target_audience": _short_list(profile.get("target_audience")),
+        "content_pillars": _short_list(profile.get("content_pillars")),
     }
 
 
+def _short_list(values: Any) -> list[str]:
+    return [
+        _clip(value, MAX_ITEM_CHARS)
+        for value in (values if isinstance(values, list) else [])
+        if isinstance(value, str) and value.strip()
+    ][:MAX_LIST_ITEMS]
+
+
 async def fetch_brand_voice_profile(workspace_id: Any) -> Optional[dict[str, Any]]:
-    """The workspace's voice traits and customer profile, or None. Never raises."""
+    """The workspace's Brand Voice Profile as the writer reads it (the voice traits, the
+    customer profile, and what the company knows and offers), or None. Never raises."""
     if not workspace_id:
         return None
     try:
@@ -61,9 +79,15 @@ async def fetch_brand_voice_profile(workspace_id: Any) -> Optional[dict[str, Any
         async def _fetch():
             async with get_pooled_langgraph_db_context() as db:
                 result = await db.execute(
-                    select(BrandVoice.brand_voice, BrandVoice.customer_profile).where(
-                        BrandVoice.workspace_id == UUID(str(workspace_id))
-                    )
+                    select(
+                        BrandVoice.brand_voice,
+                        BrandVoice.customer_profile,
+                        BrandVoice.brand_name,
+                        BrandVoice.about,
+                        BrandVoice.selling_position,
+                        BrandVoice.target_audience,
+                        BrandVoice.content_pillar,
+                    ).where(BrandVoice.workspace_id == UUID(str(workspace_id)))
                 )
                 return result.first()
 
@@ -73,15 +97,76 @@ async def fetch_brand_voice_profile(workspace_id: Any) -> Optional[dict[str, Any
         return None
     if row is None:
         return None
-    traits, customer_profile = row
+    traits, customer_profile, brand_name, about, selling_position, audience, pillars = row
     return {
         "traits": traits if isinstance(traits, list) else [],
         "customer_profile": customer_profile or "",
+        "brand_name": brand_name or "",
+        "about": about or "",
+        "selling_position": selling_position or "",
+        "target_audience": audience if isinstance(audience, list) else [],
+        "content_pillars": pillars if isinstance(pillars, list) else [],
     }
 
 
+def _without_name(text: str, brand_name: str) -> str:
+    """``text`` with the company's own name replaced by "the company".
+
+    The profile's own sentences name the brand ("Acme Tools is a planner for …"). Read as
+    written, they put the name in front of the writer on every article, whatever the user
+    chose about mentioning it. What the company knows is the point here, not what it is called.
+    """
+    name = (brand_name or "").strip()
+    if not name or not text:
+        return text or ""
+    pattern = r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])"
+    replaced = re.sub(pattern, "the company", text, flags=re.IGNORECASE)
+    return replaced[:1].upper() + replaced[1:]
+
+
+def format_expertise_for_writer(voice: dict[str, Any]) -> str:
+    """What the company knows and offers, as the writer's expertise; empty when the profile
+    holds none of it. Never a reason to name the brand: the mention has its own rules."""
+    name = voice.get("brand_name") or ""
+    about = _without_name(voice.get("about") or "", name)
+    offer = _without_name(voice.get("selling_position") or "", name)
+    pillars = voice.get("content_pillars") or []
+    audiences = voice.get("target_audience") or []
+    if not (about or offer or pillars or audiences):
+        return ""
+    lines = [
+        "## WHAT THE COMPANY BEHIND THIS SITE KNOWS AND OFFERS (your expertise, not a pitch)",
+        "",
+    ]
+    if about:
+        lines.append(f"- **What it does:** {about}")
+    if offer:
+        lines.append(f"- **What it offers:** {offer}")
+    if pillars:
+        lines.append(f"- **What it writes about:** {'; '.join(pillars)}")
+    if audiences:
+        lines.append(f"- **Who it serves:** {'; '.join(audiences)}")
+    lines.append(
+        "- **How to use this:** write as a practitioner at this company would: choose the "
+        "examples, the level of detail and the angle its customers need, and where the article "
+        "touches what the company does, speak from that knowledge."
+    )
+    lines.append(
+        "- **What this is not:** permission to name the company or its product, or to pitch "
+        "it. Whether the brand is mentioned, and where, is set only by the brand rules of this "
+        "prompt (a PRODUCT-LED MENTION or a BRAND EXCLUSION block). With neither, do not name it."
+    )
+    return "\n".join(lines)
+
+
 def format_voice_for_writer(voice: dict[str, Any]) -> str:
-    """The writer's system-prompt block; empty when the profile holds nothing."""
+    """The writer's system-prompt block: the brand's voice, then what the company knows and
+    offers; empty when the profile holds nothing."""
+    blocks = [_format_voice_block(voice), format_expertise_for_writer(voice)]
+    return "\n\n".join(block for block in blocks if block)
+
+
+def _format_voice_block(voice: dict[str, Any]) -> str:
     traits = voice.get("brand_traits") or []
     customer = voice.get("customer_profile") or ""
     if not traits and not customer:
