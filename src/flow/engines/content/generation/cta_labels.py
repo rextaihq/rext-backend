@@ -37,8 +37,9 @@ _LABEL_LINE = re.compile(
     r"(?P<label>[^:*\n]{1,60}?)[ \t]*"
     r"(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*(?P<value>.*?)[ \t]*$"
 )
-# A fenced code block opens and closes with ``` or ~~~; an indented one is four spaces or a tab.
-_FENCE = re.compile(r"^[ \t]{0,3}(```|~~~)")
+# A fenced code block opens and closes with ``` or ~~~, in a blockquote too ("> ```");
+# an indented one is four spaces or a tab.
+_FENCE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*(```|~~~)")
 _INDENTED_CODE = re.compile(r"^(?: {4}|\t)")
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
