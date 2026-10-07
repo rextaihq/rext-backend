@@ -90,6 +90,31 @@ def test_acronyms_and_title_case_short_words():
     assert display_keyphrase("what it costs") == "What It Costs"  # "it" is a word, not IT
 
 
+def test_each_part_of_a_joined_word_is_cased():
+    assert recase_keyphrase(
+        "The Complete Guide to seo-friendly content for Small Business Teams",
+        "seo-friendly content",
+    ) == ("The Complete Guide to SEO-Friendly Content for Small Business Teams")
+    assert recase_keyphrase(
+        "Why every team needs seo-friendly content in their plan", "seo-friendly content"
+    ) == ("Why every team needs SEO-friendly content in their plan")
+    assert display_keyphrase("ai-powered tools") == "AI-Powered Tools"
+    assert display_keyphrase("step-by-step seo guide") == "Step-by-Step SEO Guide"
+
+
+def test_a_keyphrase_written_against_chinese_characters_is_recased():
+    """Matching takes "seo" in "最佳seo工具" as a word, so the recase does too."""
+    assert recase_keyphrase("最佳seo工具推荐: Complete Guide for Small Business Teams", "seo") == (
+        "最佳SEO工具推荐: Complete Guide for Small Business Teams"
+    )
+
+
+def test_the_users_capitals_belong_to_the_word_they_typed():
+    """The user typed the acronym "IT" and the word "it": each keeps its own case."""
+    assert display_keyphrase("what it costs for IT teams") == "What It Costs for IT Teams"
+    assert display_keyphrase("how US taxes affect us abroad") == "How US Taxes Affect Us Abroad"
+
+
 def test_the_repairs_keyphrase_lead_and_the_fallback_title_use_it():
     assert repair_title("The complete guide to hiring the right partner", "seo agency") == (
         "SEO Agency: The complete guide to hiring the right partner"
