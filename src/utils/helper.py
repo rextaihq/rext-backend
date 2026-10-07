@@ -14,13 +14,30 @@ from langchain_core.documents import Document
 from src.api.lib.logger import auto_logger
 
 # === Project-specific imports ===
-from src.utils.browser_guard import guard_crawler
+from src.utils.browser_guard import PROXY_BROWSER_ARGS, PublicOnlyProxy
 from src.utils.content_quality import assess_content_quality, build_thin_content_document
 from src.utils.multi_page_scraper import discover_relevant_links, scrape_extra_pages
 from src.utils.splitter import split_data
 from src.utils.url_validator import validate_url_for_ssrf
 
 logger = auto_logger()
+
+
+def _browser_config(proxy: PublicOnlyProxy) -> BrowserConfig:
+    """A normal headless Chromium (no stealth) whose every connection goes through ``proxy``,
+    which lets it reach public addresses only (G88, revnix/rext-control#661)."""
+    return BrowserConfig(
+        headless=True,
+        enable_stealth=False,
+        browser_type="chromium",
+        viewport_width=1280,
+        viewport_height=800,
+        # crawl4ai's default is True: a certificate error is a refusal, as it is for httpx.
+        ignore_https_errors=False,
+        proxy_config={"server": proxy.url},
+        extra_args=PROXY_BROWSER_ARGS,
+    )
+
 
 _BLOCKED_CONTENT_MARKERS = (
     "just a moment",
@@ -119,15 +136,6 @@ async def render_pages(
     if not queue or budget_seconds <= 0:
         return {}
 
-    browser_config = BrowserConfig(
-        headless=True,
-        enable_stealth=False,
-        browser_type="chromium",
-        viewport_width=1280,
-        viewport_height=800,
-        # crawl4ai's default is True: a certificate error is a refusal, as it is for httpx.
-        ignore_https_errors=False,
-    )
     run_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
         page_timeout=int(max(3.0, min(12.0, budget_seconds)) * 1000),
@@ -138,9 +146,10 @@ async def render_pages(
         rendered: Dict[str, str] = {}
         seen = set(queue)
         sem = asyncio.Semaphore(concurrency)
-        async with AsyncWebCrawler(config=browser_config) as crawler:
-            # Every request the browser makes, redirects and subresources included.
-            guard_crawler(crawler)
+        async with (
+            PublicOnlyProxy() as proxy,
+            AsyncWebCrawler(config=_browser_config(proxy)) as crawler,
+        ):
 
             async def _one(url: str) -> Tuple[str, str]:
                 async with sem:
@@ -212,17 +221,6 @@ async def web_page_scraper(urls: list[str]) -> tuple[list, list]:
     target_url = urls[0]
     extra_content = ""
 
-    # This is a normal browser renderer, not an anti-bot evasion mechanism.
-    browser_config = BrowserConfig(
-        headless=True,
-        enable_stealth=False,
-        browser_type="chromium",
-        viewport_width=1280,
-        viewport_height=800,
-        # crawl4ai's default is True: a certificate error is a refusal, as it is for httpx.
-        ignore_https_errors=False,
-    )
-
     # Fast initial run config (16s cap to respect pipeline budget)
     run_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
@@ -233,8 +231,10 @@ async def web_page_scraper(urls: list[str]) -> tuple[list, list]:
 
     async def _crawl() -> list:
         nonlocal extra_content
-        async with AsyncWebCrawler(config=browser_config) as crawler:
-            guard_crawler(crawler)
+        async with (
+            PublicOnlyProxy() as proxy,
+            AsyncWebCrawler(config=_browser_config(proxy)) as crawler,
+        ):
             results = await crawler.arun(url=target_url, config=run_config)
 
             first = next((r for r in results if getattr(r, "success", False)), None)
