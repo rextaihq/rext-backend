@@ -19,11 +19,39 @@ jobs:
     uses: ./.github/workflows/ci-quality.yaml
 
   # ──────────────────────────────────────────────
+  # ⏳ Stage 1b — One deploy per merge window
+  # ──────────────────────────────────────────────
+  window:
+    name: ⏳ Merge Window
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the merge window to close
+        # Merges reach main in two windows an hour, minutes 00-09 and 30-39 UTC, so
+        # that production restarts once a window, not after every merge. A build
+        # takes minutes: a run that went ahead at once deployed the window's first
+        # merges, and its later ones brought a second restart. So a run started
+        # inside a window waits here for its end (and 20 seconds more, for a merge
+        # begun in its last second). By then main holds every merge of the window,
+        # the stale check below refuses all but the newest run, and that one
+        # deploys them together. The quality gate runs meanwhile. Outside a window
+        # (an urgent fix) there is nothing to wait for, and a manual run never waits.
+        if: github.event_name == 'push'
+        run: |
+          INTO=$(( $(date -u +%s) % 1800 ))
+          if [ "$INTO" -lt 600 ]; then
+            WAIT=$(( 620 - INTO ))
+            echo "Inside a merge window: waiting ${WAIT}s for it to close, so that one run deploys all of its merges"
+            sleep "$WAIT"
+          else
+            echo "Outside a merge window: no wait"
+          fi
+
+  # ──────────────────────────────────────────────
   # 🐳 Stage 2a — Build & Push Backend Image to GHCR
   # ──────────────────────────────────────────────
   docker_job:
     name: 🐳 Build & Push Backend
-    needs: quality
+    needs: [quality, window]
     # Only main publishes :latest: a manual run on another ref must not reach production.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -106,7 +134,7 @@ jobs:
   # ──────────────────────────────────────────────
   docker_shopify:
     name: 🐳 Build & Push Shopify App
-    needs: quality
+    needs: [quality, window]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
