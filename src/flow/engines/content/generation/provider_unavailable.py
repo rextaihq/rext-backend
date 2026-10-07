@@ -10,6 +10,8 @@ The team is alerted by the model's error hook (G75), once an hour.
 
 Credits: the outline is charged only after it succeeds, so an outline the provider fails costs nothing.
 The article's stages are charged before it is written; their refund is F18's (revnix/rext-control#500).
+The notice keeps the marks of the stages already charged (StoppedAfterCharge), so a retry on the same
+thread doesn't charge them again.
 """
 
 import inspect
@@ -28,6 +30,16 @@ PROVIDER_UNAVAILABLE_MESSAGE = (
     "The writing service is busy right now, so this run stopped before it finished. "
     "Please try again in a few minutes."
 )
+
+
+class StoppedAfterCharge(Exception):
+    """An outage a step's catch-all lets through, carrying the step's content: the notice checkpoints its
+    marks (credits_deducted, image_credit_deducted), as the catch-all's own error answer did, so a retry
+    on this thread doesn't charge those stages again. Raise it `from` the outage."""
+
+    def __init__(self, content: Dict[str, Any]):
+        super().__init__("the AI provider is unavailable")
+        self.content = content
 
 
 def _without_old_notice(state: REXT, result: Any) -> Any:
@@ -73,8 +85,10 @@ def stop_on_outage(node: Callable) -> Callable:
                 outage.provider,
                 outage.kind,
             )
+            kept = error.content if isinstance(error, StoppedAfterCharge) else {}
             return {
                 "content": {
+                    **kept,
                     "error": PROVIDER_UNAVAILABLE_MESSAGE,
                     "error_code": PROVIDER_UNAVAILABLE_CODE,
                 }
