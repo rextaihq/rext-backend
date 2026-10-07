@@ -222,6 +222,24 @@ async def save_keyword_research(state: REXT, config, *, runtime) -> Any:
         print(f"❌ Store error: {e}")
         return {"seo_result": {KEYWORD_RESEARCH_KEY: None}}
 
+    # The search results the later steps read, beside the item under the same
+    # key, so a Library start within a week reuses them (E24, rext-control#496).
+    # Without them a start reads the search results again, so a failure here
+    # costs a SERP later, not the item.
+    try:
+        from src.flow.engines.seo.library_item import (
+            library_research_namespace,
+            research_snapshot,
+        )
+
+        await store.aput(
+            namespace=library_research_namespace(user_id, workspace_id),
+            key=unique_key,
+            value=research_snapshot(state, timestamp),
+        )
+    except Exception as e:  # noqa: BLE001 - the item is saved; reuse is a saving, not a need
+        logger.warning("The keyword's search results were not kept: %s", type(e).__name__)
+
     return {"seo_result": {KEYWORD_RESEARCH_KEY: unique_key}}
 
 

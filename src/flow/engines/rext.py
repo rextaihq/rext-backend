@@ -53,12 +53,14 @@ def create_rext_engine():
         },
     )
 
-    # A Library start: the item's stored research, then a fresh SERP; an item
-    # that is not in the caller's Library ends the run (E17, rext-control#368).
+    # A Library start: the item's stored research, then a fresh SERP, or straight
+    # to its charges when the analysis's search results are fresh (E24,
+    # rext-control#496); an item that is not in the caller's Library ends the
+    # run (E17, rext-control#368).
     flow.add_conditional_edges(
         "load_library_item",
         library_item_router,
-        {"serp_engine": "serp_engine", "end": END},
+        {"serp_engine": "serp_engine", "charge_library_start": "charge_library_start", "end": END},
     )
 
     # A search with no organic result ends the run here, before seo_engine
