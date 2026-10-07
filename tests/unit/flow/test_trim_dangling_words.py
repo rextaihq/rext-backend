@@ -120,6 +120,13 @@ def test_a_particle_keeps_the_preposition_only_after_a_phrasal_verb():
     )
 
 
+def test_every_common_preposition_whose_object_was_cut_goes():
+    title = "SEO Agencies: A Complete Guide for Small Businesses Without Hidden Costs"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: A Complete Guide for Small Businesses"
+    )
+
+
 def test_a_verb_ending_in_o_keeps_its_preposition():
     title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
     assert _trim_to_max(title, "seo agencies") == (
