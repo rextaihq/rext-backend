@@ -30,6 +30,7 @@ from src.flow.engines.content.generation.focus_keyword import (
     focus_keyword_from_outline,
     normalize_focus_keyword,
 )
+from src.flow.engines.content.generation.link_integrity import normalize_url
 from src.flow.engines.content.generation.outline_structure import (
     planned_sections,
     resolve_expected_headings,
@@ -199,12 +200,14 @@ def is_excluded_brand_link(
     brand_site = site_host((excluded or {}).get("brand_url") or "")
     if not brand_site or not on_site(site_host(url), brand_site):
         return False
+    # The same key the rest of the link pipeline compares by: an approved page linked with a
+    # "#section" or a tracking parameter is still that approved page.
     approved = {
-        (link.get("url") or "").rstrip("/")
+        normalize_url(link.get("url") or "")
         for link in approved_internal_links or []
         if isinstance(link, dict)
     }
-    return (url or "").rstrip("/") not in approved
+    return normalize_url(url) not in approved
 
 
 def brand_named_in(text: str, brand_name: str) -> bool:
