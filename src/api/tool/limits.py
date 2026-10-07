@@ -29,7 +29,7 @@ from fastapi import HTTPException, Request, status
 
 from src.api.cache.redis_client import cache
 from src.api.config import get_settings
-from src.api.tool.turnstile import verify_turnstile
+from src.api.tool.turnstile import token_bytes, verify_turnstile
 from src.utils.ip_allowlist import proxy_trust_is_spoofable
 from src.utils.logger import logger
 
@@ -199,10 +199,15 @@ def _visitor(request: Request) -> str:
     return hashlib.sha256(address.encode()).hexdigest()[:16]
 
 
+async def _model_input_bytes(request: Request) -> int:
+    """The body's size, less the bot check's token (turnstile.py), which never reaches a prompt."""
+    return len(await request.body()) - await token_bytes(request)
+
+
 async def free_tool_size(request: Request) -> None:
     """The tools router's dependency: a model tool's body is at most MAX_INPUT_BYTES."""
     if FREE_TOOLS.get(_tool(request), FreeTool()).model_calls:
-        if len(await request.body()) > MAX_INPUT_BYTES:
+        if await _model_input_bytes(request) > MAX_INPUT_BYTES:
             raise _refuse(status.HTTP_413_CONTENT_TOO_LARGE, TOO_LONG_MESSAGE)
 
 
@@ -215,7 +220,7 @@ async def count_call(request: Request) -> None:
     day, ttl = _today()
     if spec.model_calls:
         limit = settings.FREE_TOOLS_MODEL_CALLS_PER_DAY
-        cost = worst_case_cost(spec, len(await request.body()))
+        cost = worst_case_cost(spec, await _model_input_bytes(request))
     else:
         limit, cost = settings.FREE_TOOLS_CALLS_PER_DAY, 0
     budget = round(settings.FREE_TOOLS_DAILY_BUDGET_USD * 1_000_000)

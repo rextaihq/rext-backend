@@ -67,6 +67,15 @@ async def _token(request: Request) -> Optional[str]:
     return token if isinstance(token, str) and token else None
 
 
+async def token_bytes(request: Request) -> int:
+    """The bytes a well-formed token's field takes in the body, `,"turnstile_token":"..."`. None of
+    it reaches a prompt, so the input limit and the worst-case cost leave it out."""
+    token = await _token(request)
+    if not token or len(token) > MAX_TOKEN_LENGTH:
+        return 0
+    return len(token.encode()) + len(TOKEN_FIELD) + len(',"":""')
+
+
 async def verify_turnstile(request: Request, remote_ip: Optional[str]) -> None:
     """Refuse the call (403) unless Cloudflare accepts its token. `remote_ip` is the visitor's
     address when the server can trust it, which Cloudflare checks the token against."""
