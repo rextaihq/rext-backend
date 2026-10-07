@@ -19,6 +19,7 @@ from src.flow.engines.competitors.constants import (
 from src.flow.engines.competitors.domain_utils import normalize_domain
 from src.flow.engines.competitors.llm_client import call_openai_json_array
 from src.flow.engines.competitors.scraping import USER_AGENT, fetch, visible_text
+from src.utils.url_validator import public_client
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ async def mine_all_listicles(results: list) -> list:
         return []
     sem = asyncio.Semaphore(CONCURRENCY)
     headers = {"User-Agent": USER_AGENT}
-    async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True) as client:
+    # Ranking pages are third-party: every hop is checked, and certificates are verified.
+    async with public_client(headers=headers, follow_redirects=True) as client:
         mined = await asyncio.gather(*[mine_listicle(client, r, sem) for r in listicle_results])
     return [d for batch in mined for d in batch]

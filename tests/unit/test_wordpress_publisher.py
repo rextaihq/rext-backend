@@ -1082,39 +1082,136 @@ async def test_an_unexpected_json_shape_is_a_plain_reason():
     assert "secret-token" not in raised.value.message and len(raised.value.message) < 300
 
 
-def test_a_huge_error_page_is_cut_before_it_is_scanned():
-    from src.web.wordpress import _loggable_body
+def _response(body, status=500, content_type="application/json"):
+    return httpx.Response(
+        status,
+        content=body if isinstance(body, bytes) else body.encode(),
+        headers={"content-type": content_type},
+        request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+    )
 
-    body = "<p>" + "x" * 5_000_000 + "?X-Amz-Signature=secret-token</p>"
 
-    logged = _loggable_body(body)
+def test_a_logged_body_is_a_summary_never_its_text():
+    """G59b's redactors knew addresses and S3's fields; a secret under any other name went to the
+    log as is (G59c, revnix/rext-control#636)."""
+    from src.web.wordpress import _body_summary
 
-    assert len(logged) <= 501 and "secret-token" not in logged
+    body = '{"code": "rest_forbidden", "authorization": "Bearer secret-token"}'
+
+    logged = _body_summary(_response(body, 403))
+
+    assert logged == f"{len(body)} bytes, application/json, code rest_forbidden"
 
 
-def test_a_protected_field_cut_by_the_scan_limit_is_still_taken_out():
-    """A CanonicalRequest opening early and closing past the limit kept its first part."""
-    from src.web.wordpress import _loggable_body
+def test_an_s3_error_names_its_code_and_nothing_of_the_request():
+    from src.web.wordpress import _body_summary
 
     body = (
         "<Error><Code>SignatureDoesNotMatch</Code><CanonicalRequest>GET\n/images/gone.png\n"
-        "X-Amz-Credential=AKIAEXAMPLEKEY%2F20261007&X-Amz-Signature=secret-token\n"
-        + "h" * 10_000
-        + "</CanonicalRequest></Error>"
+        "X-Amz-Credential=AKIAEXAMPLEKEY%2F20261007&X-Amz-Signature=secret-token"
+        "</CanonicalRequest></Error>"
     )
 
-    logged = _loggable_body(body)
+    logged = _body_summary(_response(body, 403, "application/xml"))
 
-    assert "SignatureDoesNotMatch" in logged
+    assert logged.endswith("application/xml, code SignatureDoesNotMatch")
     assert "AKIAEXAMPLEKEY" not in logged and "secret-token" not in logged
 
 
-def test_bare_amz_parameters_are_taken_out():
-    from src.web.wordpress import _loggable_body
+@pytest.mark.parametrize(
+    ("body", "content_type"),
+    [
+        ('{"code": "4f9a2b7c1e"}', "application/json"),  # an OAuth reply's code is a credential
+        ('{"code": "secret-token"}', "application/json"),  # letters only, still not an error
+        ('{"code": "secrettoken"}', "application/json"),
+        ("<Error><Code>SecretToken</Code></Error>", "application/xml"),
+    ],
+)
+def test_a_code_that_is_not_a_known_error_is_left_out(body, content_type):
+    """Review round 1 of #898: a token can be letters only, so a code is logged only when it's a
+    WordPress REST error or one of S3's."""
+    from src.web.wordpress import _body_summary
 
-    logged = _loggable_body("canonical: X-Amz-Signature=secret-token&X-Amz-Date=20261007T000000Z")
+    logged = _body_summary(_response(body, 400, content_type))
 
-    assert "secret-token" not in logged and "X-Amz-Signature=…" in logged
+    assert "code" not in logged and "ecret" not in logged
+
+
+def test_a_huge_error_page_is_measured_not_read():
+    from src.web.wordpress import _body_summary
+
+    body = b"<p>" + b"x" * 5_000_000 + b'"code": "late_code"</p>'
+
+    logged = _body_summary(_response(body, 404, "text/html; charset=utf-8"))
+
+    assert logged == f"{len(body)} bytes, text/html"  # the code past the scanned bytes isn't read
+
+
+@pytest.mark.parametrize(
+    "content_type", ["text/html, secret-token", "application/secret-token", "text/x-secret"]
+)
+def test_a_media_type_that_is_not_a_known_one_is_left_out(content_type):
+    """Review round 2 of #898: the header is the remote's text, whatever its shape."""
+    from src.web.wordpress import _body_summary
+
+    assert _body_summary(_response("x", 500, content_type)) == "1 bytes"
+
+
+def test_an_unexpected_json_value_is_described_by_its_shape():
+    from src.web.wordpress import _json_shape
+
+    assert _json_shape(["https://cdn.rext.test/a.png?X-Amz-Signature=s"] * 3) == "a list of 3 items"
+    assert _json_shape("secret-token") == "a string of 12 characters"
+    assert _json_shape({"id": "x", "access-token-abc": 1, "source_url": "s"}) == (
+        "an object with 3 keys (expected ones: id, source_url)"
+    )
+    assert _json_shape({"access-token-abc": 1}) == "an object with 1 key (expected ones: none)"
+    assert _json_shape(None) == "NoneType"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_upload_logs_its_code_and_no_field_of_its_body(caplog):
+    caplog.set_level("INFO")
+    publisher = _publisher_uploading(
+        httpx.Response(
+            500,
+            json={"code": "rest_upload_error", "authorization": "Bearer secret-token"},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped"):
+        await publisher.publish_post(
+            ContentCreate(title="Refused", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "code rest_upload_error" in logged
+    assert "secret-token" not in logged and "authorization" not in logged
+
+
+@pytest.mark.asyncio
+async def test_no_publish_step_decodes_a_whole_body(monkeypatch):
+    """`response.text` decoded a body whole before a log line cut it: a large error page was
+    decoded for nothing."""
+
+    def decoded_whole(self):
+        raise AssertionError("a response body was decoded whole")
+
+    monkeypatch.setattr(httpx.Response, "text", property(decoded_whole))
+    publisher = _publisher_uploading(
+        httpx.Response(
+            413,
+            content=b"<html>" + b"x" * 1_000_000 + b"</html>",
+            headers={"content-type": "text/html"},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="HTTP 413"):
+        await publisher.publish_post(
+            ContentCreate(title="Too big", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
 
 
 @pytest.mark.asyncio
@@ -1140,3 +1237,22 @@ async def test_a_200_error_page_echoing_the_signed_address_stays_out_of_the_mess
     assert "secret-token" not in message and "Not found" not in message
     assert len(message) < 300
     assert "secret-token" not in " ".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_media_type_is_named_neither_in_the_reason_nor_the_log(caplog):
+    caplog.set_level("INFO")
+    publisher = _publisher_downloading(
+        httpx.Response(
+            200,
+            text="not an image",
+            headers={"content-type": "application/secret-token"},
+            request=httpx.Request("GET", _SIGNED),
+        )
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "not a valid image (another type, 12 bytes)" in message
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "secret-token" not in message and "application/secret-token" not in logged

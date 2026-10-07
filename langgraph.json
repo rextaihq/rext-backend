@@ -10,7 +10,10 @@
   "api_version": "0.12.6",
   "pip_installer": "uv",
   "http": {
-    "app": "src/api/server.py:app"
+    "app": "src/api/server.py:app",
+    "cors": {
+      "allow_origins": []
+    }
   },
   "auth": {
     "path": "./src/api/security/auth.py:auth",
