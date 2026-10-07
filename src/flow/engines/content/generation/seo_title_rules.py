@@ -178,16 +178,39 @@ def title_is_valid(title: Any, keyphrase: Any = "") -> bool:
     return not title_violations(title, keyphrase)
 
 
-def _trim_to_max(title: str, keyphrase: str) -> str:
-    """Drop trailing words until the title fits, never cutting the keyphrase."""
+# Words a trimmed title must not end on: a trim that stops just after one leaves the phrase
+# hanging ("Innovations in AI content writing tools for agencies in", G69a).
+_DANGLING_END_WORDS = frozenset(
+    {
+        "a", "an", "the", "and", "or", "but", "nor", "&", "for", "of", "in", "on", "at", "to",
+        "by", "with", "from", "into", "onto", "over", "under", "about", "as", "via", "per",
+        "than", "vs", "versus", "your", "our", "their", "its", "my", "this", "that", "these",
+        "those", "is", "are",
+    }
+)  # fmt: skip
+
+
+def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
+    """Drop trailing words until the title fits, never cutting the keyphrase; with
+    ``tidy_end``, never stop on a dangling word either."""
     words = title.split()
     max_chars = title_max_chars(keyphrase)
+    trimmed = False
     while len(words) > 1 and len(" ".join(words)) > max_chars:
         candidate = " ".join(words[:-1]).rstrip(" ,;:-–—")
         # Never trim away the user's keyphrase to satisfy the length rule.
         if keyphrase and not contains_keyphrase(candidate, keyphrase):
             break
         words = candidate.split()
+        trimmed = True
+    if trimmed and tidy_end:
+        # A trim that stopped after "in", "for" or "the" drops it too; the minimum, if it is
+        # missed now, is met by the claim-free padding.
+        while len(words) > 1 and words[-1].lower().strip(",;:-–—") in _DANGLING_END_WORDS:
+            candidate = " ".join(words[:-1]).rstrip(" ,;:-–—")
+            if keyphrase and not contains_keyphrase(candidate, keyphrase):
+                break
+            words = candidate.split()
     return " ".join(words).rstrip(" ,;:-–—")
 
 
@@ -228,7 +251,16 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
         cleaned = f"{lead}: {cleaned}" if cleaned else lead
 
     if len(cleaned) > title_max_chars(keyphrase):
-        cleaned = _trim_to_max(cleaned, keyphrase)
+        tidy = _trim_to_max(cleaned, keyphrase)
+        if len(tidy) < TITLE_MIN_CHARS:
+            tidy = _pad_to_min(tidy, title_max_chars(keyphrase))
+        # The tidy ending, when it still makes a valid title; otherwise the plain trim, so a
+        # title is never lost for the sake of its last word.
+        cleaned = (
+            tidy
+            if title_is_valid(tidy, keyphrase)
+            else _trim_to_max(cleaned, keyphrase, tidy_end=False)
+        )
 
     if len(cleaned) < TITLE_MIN_CHARS:
         cleaned = _pad_to_min(cleaned, title_max_chars(keyphrase))
