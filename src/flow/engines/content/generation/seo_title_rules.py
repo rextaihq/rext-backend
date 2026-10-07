@@ -90,8 +90,9 @@ def _normalize_for_match(text: Any) -> str:
     # Devanagari's vowel signs); punctuation, symbols, separators and the underscore become spaces.
     # Lowercased, not casefolded: casefolding makes different words equal ("Maße" and "Masse").
     # A capital dotted İ lowercases to "i" plus a combining dot that no lowercase i carries, so
-    # the dot goes: Turkish "İstanbul" is "istanbul" in lowercase.
-    lowered = _nfc(text).lower().replace("i\u0307", "i")
+    # the dot goes: Turkish "İstanbul" is "istanbul" in lowercase. A capital Σ lowercases to the
+    # final ς at a word's end, which a user types as σ: both are σ.
+    lowered = _nfc(text).lower().replace("i\u0307", "i").replace("ς", "σ")
     flattened = "".join(
         " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char for char in lowered
     )
@@ -231,10 +232,21 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
 }  # fmt: skip
 
 
-# Words that follow a preposition without being its object ("Turns To Today", "Sign Up Now").
+# Words that follow a preposition without being its object ("Turns To Today", "Sign Up Now"),
+# and the time phrases that do the same ("Catch Up On This Year").
 _TIME_ADVERBS = frozenset(
     {"today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon", "anyway"}
 )
+_TIME_PHRASE_STARTS = frozenset({"this", "next", "last", "every"})
+_TIME_NOUNS = frozenset(
+    {
+        "year", "month", "week", "weekend", "season", "quarter", "time", "spring", "summer",
+        "fall", "autumn", "winter",
+    }
+)  # fmt: skip
+# Particles a verb takes before its preposition ("Catch Up On", "Fall Back On"). Not before "of"
+# or "to", which make compound prepositions of them ("Out Of", "Up To 50%").
+_PARTICLES = frozenset({"up", "out", "down", "back", "off", "away", "along", "ahead"})
 
 
 def _bare(word: str) -> str:
@@ -254,14 +266,18 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     # Today"). One before a conjunction may share the object that follows it ("for and by
     # Industry Experts"), so a conjunction proves nothing.
     following = _bare(words[kept]) if kept < len(words) else ""
+    after_that = _bare(words[kept + 1]) if kept + 1 < len(words) else ""
     if (
         words[kept - 1][-1] in _TRAILING_PUNCTUATION
         or not following
         or following in _PREPOSITION_AFTER_VERB
         or following in _TIME_ADVERBS
+        or (following in _TIME_PHRASE_STARTS and after_that in _TIME_NOUNS)
     ):
         return False
     verb = _bare(words[kept - 2]) if kept > 1 else ""
+    if verb in _PARTICLES and last not in ("of", "to"):
+        return False
     return verb not in _PREPOSITION_AFTER_VERB[last]
 
 

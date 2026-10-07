@@ -65,6 +65,9 @@ def _nfd(text: str) -> str:
         ("İstanbul'da En İyi SEO Ajansları", "istanbul", True),
         ("ISTANBUL İÇİN SEO REHBERİ", "İstanbul", True),
         ("ıstanbul için seo", "istanbul", False),
+        # Greek: a capital Σ at a word's end lowercases to ς, which the user types as σ.
+        ("ΟΔΗΓΟΣ SEO ΓΙΑ ΜΙΚΡΕΣ ΕΠΙΧΕΙΡΗΣΕΙΣ", "οδηγοσ seo", True),
+        ("Οδηγός SEO για μικρές επιχειρήσεις", "οδηγός seo", True),
         # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
         ("𠀀𠀁𠀂", "𠀁", True),
         ("2026年𠮷野家の店舗", "𠮷野家", True),
