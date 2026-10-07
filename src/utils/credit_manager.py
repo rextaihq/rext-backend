@@ -217,6 +217,11 @@ async def can_afford_stage(user_id, stage: str, workspace_id: Optional[UUID] = N
     except InsufficientCreditsError:
         # Not a member of the workspace: nobody's credits to charge.
         return False
+    except Exception:
+        # The balance can't be read now: the stage's work isn't started, so a run
+        # that has paid for its other stages still finishes.
+        logger.warning("credit_manager: balance unreadable for %s; treated as unaffordable", stage)
+        return False
 
 
 async def consume_stage_credits(
