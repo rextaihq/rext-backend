@@ -182,20 +182,22 @@ def title_is_valid(title: Any, keyphrase: Any = "") -> bool:
 
 _TRAILING_PUNCTUATION = " ,;:-–—"
 # Words a trimmed title must not end on: a trim that stops just after one leaves the phrase
-# hanging ("Innovations in AI content writing tools for agencies in", G69a).
+# hanging ("Innovations in AI content writing tools for agencies in", G69a). Not "is", "are",
+# "this", "these" or "those": they can close a clause ("Who We Are", "Why You Need This").
 _DANGLING_END_WORDS = frozenset(
     {
         "a", "an", "the", "and", "or", "but", "nor", "&", "via", "per", "than", "vs", "versus",
-        "your", "our", "their", "its", "my", "this", "that", "these", "those", "is", "are",
+        "your", "our", "their", "its", "my", "that",
     }
 )  # fmt: skip
-_CONJUNCTIONS = frozenset({"and", "or", "but", "nor", "&"})
 
 
 def _verb_forms(verb: str) -> set[str]:
     """A regular verb's written forms ("rely": relies, relied, relying), for the table below."""
     stem = verb[:-1] if verb.endswith("e") else verb
     forms = {verb, f"{verb}s", f"{stem}ed", f"{stem}ing"}
+    if re.search(r"[^aeiou][aeiou][^aeiouwxy]$", verb):  # commit: committed, committing
+        forms |= {f"{verb}{verb[-1]}ed", f"{verb}{verb[-1]}ing"}
     if verb.endswith("y") and verb[-2:-1] not in ("a", "e", "i", "o", "u"):
         forms |= {f"{verb[:-1]}ies", f"{verb[:-1]}ied"}
     if verb.endswith(("s", "sh", "ch", "x")):
@@ -210,12 +212,12 @@ def _verb_forms(verb: str) -> set[str]:
 _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
     preposition: frozenset(form for verb in verbs for form in _verb_forms(verb))
     for preposition, verbs in {
-        "on": ("rely", "depend", "count", "focus", "build", "built", "bet", "betting", "insist"),
+        "on": ("rely", "depend", "count", "focus", "build", "built", "bet", "insist"),
         "for": ("look", "ask", "pay", "paid", "wait", "prepare", "apply", "use", "know", "known"),
         "about": ("care", "talk", "think", "thought", "worry", "know", "known", "learn", "hear", "heard"),
         "by": ("swear", "swore", "sworn", "stand", "stood", "live"),
         "with": ("deal", "dealt", "agree", "cope"),
-        "in": ("believe", "invest", "specialize", "specialise"),
+        "in": ("believe", "invest", "specialize", "specialise", "sign", "log", "opt"),
         "of": ("make", "made", "consist", "approve"),
         "to": ("listen", "switch", "migrate", "stick", "commit", "subscribe"),
         "at": ("look", "aim"),
@@ -241,14 +243,14 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
         return True
     if last not in _PREPOSITION_AFTER_VERB:
         return False
-    # A preposition that ended a clause, or stood before another one or a conjunction, had no
-    # object for the trim to cut ("Rely On: A Guide", "Fall Back On in 2026", "Sign In and").
+    # A preposition that ended a clause, or stood before another one, had no object for the trim
+    # to cut ("Rely On: A Guide", "Fall Back On in 2026"). One before a conjunction may share the
+    # object that follows it ("for and by Industry Experts"), so a conjunction proves nothing.
     following = _bare(words[kept]) if kept < len(words) else ""
     if (
         words[kept - 1][-1] in _TRAILING_PUNCTUATION
         or not following
         or following in _PREPOSITION_AFTER_VERB
-        or following in _CONJUNCTIONS
     ):
         return False
     verb = _bare(words[kept - 2]) if kept > 1 else ""
