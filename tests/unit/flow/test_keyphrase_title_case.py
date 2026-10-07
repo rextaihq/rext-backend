@@ -72,6 +72,13 @@ def test_a_sentence_case_title_changes_only_acronyms_names_and_its_opening():
     ) == ("Best coffee shops in London for remote work in 2026")
 
 
+def test_names_in_a_sentence_case_title_dont_make_it_title_case():
+    title = "Why seo tools work with Google, Microsoft, and Apple today"
+    assert recase_keyphrase(title, "seo tools") == (
+        "Why SEO tools work with Google, Microsoft, and Apple today"
+    )
+
+
 def test_the_users_own_capitals_and_the_models_own_casing_are_kept():
     # Typed with capitals: those stay, and the rest follows the title.
     assert recase_keyphrase("Find the Best SEO agency in London for 2026", "SEO agency") == (
@@ -99,6 +106,9 @@ def test_each_part_of_a_joined_word_is_cased():
         "Why every team needs seo-friendly content in their plan", "seo-friendly content"
     ) == ("Why every team needs SEO-friendly content in their plan")
     assert display_keyphrase("ai-powered tools") == "AI-Powered Tools"
+    assert display_keyphrase("seo's benefits") == "SEO's Benefits"
+    assert display_keyphrase("seo–friendly tools") == "SEO–Friendly Tools"
+    assert display_keyphrase("don't skip seo") == "Don't Skip SEO"
     assert display_keyphrase("step-by-step seo guide") == "Step-by-Step SEO Guide"
 
 
