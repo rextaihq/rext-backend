@@ -5,6 +5,7 @@ from uuid import UUID
 from langchain_core.runnables import RunnableConfig
 
 from src.flow.engines.content.generation.cta_labels import strip_cta_labels
+from src.flow.engines.content.generation.requirements_spec import approved_secondary_keywords
 from src.flow.states.rext import REXT
 from src.services.check_wording import user_detail
 from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
@@ -198,7 +199,13 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         # (keyword_density.py). The column already existed and was never
         # populated, so the UI had no density to show.
         keyphrase_density=_as_float(final.get("keyphrase_density")),
-        secondary_keywords=final.get("secondary_keywords") or [],
+        # The list the user approved at the outline, not the copy the model may or may not
+        # have written back; the model's only for an outline that listed none.
+        secondary_keywords=approved_secondary_keywords(
+            content_state.get("outline") or {}, focus_keyphrase
+        )
+        or final.get("secondary_keywords")
+        or [],
         seo_score=_as_float(on_page.get("seo_health_score")),
         readability_score=_as_float(
             readability.get("flesch_reading_ease") or readability.get("score")

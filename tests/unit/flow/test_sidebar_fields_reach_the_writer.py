@@ -137,6 +137,18 @@ def test_the_keywords_the_user_took_out_are_recorded(monkeypatch):
 
 
 @pytest.mark.unit
+def test_a_removed_keyword_is_part_of_another_only_as_whole_words(monkeypatch):
+    outline = _approve(
+        monkeypatch,
+        {"action": "approve", "keywords_to_include": [FOCUS, "email marketing"]},
+        outline={"keywords_to_include": [FOCUS, "AI", "email marketing"]},
+    )
+
+    # "ai" is inside "email marketing" as letters, not as a word: it was removed.
+    assert outline["removed_keywords"] == ["AI"]
+
+
+@pytest.mark.unit
 def test_the_screens_copy_of_the_outline_follows_the_sidebar_edits(monkeypatch):
     outline = _approve(
         monkeypatch,
@@ -198,6 +210,17 @@ def test_a_removed_keyword_leaves_the_cluster_map():
     assert "editorial calendar" not in format_cluster_heading_map_for_prompt(trimmed).lower()
 
 
+def test_a_removed_keyword_leaves_the_maps_h1_entry_too():
+    cluster_map = {**_cluster_map(), "h1": {"suggested_heading": "T", "primary_keyword": "AI"}}
+
+    trimmed = cluster_heading_map_without_keywords(cluster_map, ["ai"])
+
+    assert trimmed["h1"] == {"suggested_heading": "T", "primary_keyword": ""}
+    prompt = format_cluster_heading_map_for_prompt(trimmed)
+    assert "H1 keyword focus: T\n" in prompt and "Primary keyword" not in prompt
+    assert "| Primary keyword: " + FOCUS in format_cluster_heading_map_for_prompt(_cluster_map())
+
+
 def test_without_removed_keywords_the_cluster_map_is_the_same_one():
     cluster_map = _cluster_map()
 
@@ -243,6 +266,35 @@ def test_a_missing_secondary_keyword_is_a_warning_not_a_block():
 
     assert result["passed"] is False and result["severity"] == "warning"
     assert "'batching'" in result["detail"] and "editorial calendar" not in result["detail"]
+
+
+@pytest.mark.parametrize(
+    ("keyword", "text", "appears"),
+    [
+        ("C++", "We use C# here.", False),
+        ("C++", "We use C++ here.", True),
+        (".NET", "It runs on the net.", False),
+        (".NET", "It runs on .NET 8.", True),
+        ("node.js", "Built with Node.js and care.", True),
+        ("what is a content calendar?", "So, what is a content calendar, really", True),
+        ("editorial calendar", "An editorial-calendar helps.", True),
+    ],
+)
+def test_a_keyword_with_a_symbol_is_matched_as_written(keyword, text, appears):
+    article = {"title": "T", "body_markdown": text}
+
+    assert check_secondary_keywords(article, _spec([FOCUS, keyword]))["passed"] is appears
+
+
+def test_the_saved_article_keeps_the_approved_secondary_keywords():
+    from src.flow.engines.content.generation.requirements_spec import (
+        approved_secondary_keywords,
+    )
+
+    outline = {"keywords_to_include": [FOCUS, " editorial calendar ", "", FOCUS.upper()]}
+
+    assert approved_secondary_keywords(outline, FOCUS) == ["editorial calendar"]
+    assert approved_secondary_keywords({}, FOCUS) == []
 
 
 def test_the_checklist_names_the_missing_keywords():
@@ -381,6 +433,14 @@ def test_the_rewrite_gets_the_reader_the_tone_and_the_secondary_keywords():
     assert "editorial calendar" in data["keyword_instruction"]
     human = get_humanize_prompt().format_messages(**data)[1].content
     assert "READER AND TONE" in human
+
+
+def test_the_chosen_tone_wins_over_the_rewrites_casual_style():
+    assert "the tone given in the message below, asks for a formal register" in (
+        HUMANIZE_SYSTEM_PROMPT
+    )
+    assert "that tone is formal, the tone wins" in HUMANIZE_SYSTEM_PROMPT
+    assert "or the tone in the message below, says otherwise" in HUMANIZE_SYSTEM_PROMPT
 
 
 def test_the_rewrite_template_has_no_unfilled_placeholders():

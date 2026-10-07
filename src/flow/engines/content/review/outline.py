@@ -105,13 +105,20 @@ def _removed_keywords(outline: dict, kept: list[str], *focus_keywords: str) -> l
     so generation needs their names to leave them out (content_generation.py).
 
     A phrase that is part of one that stays ("content calendar" inside the focus keyphrase
-    "content calendar template") is not listed: the writer can't avoid it and use the other."""
-    staying = [phrase.casefold() for phrase in (*focus_keywords, *kept) if phrase]
+    "content calendar template") is not listed: the writer can't avoid it and use the other.
+    Part of it as whole words: "AI" is not part of "email marketing"."""
+    staying = [phrase.casefold().split() for phrase in (*focus_keywords, *kept) if phrase]
     return [
         phrase
         for phrase in _distinct(outline.get("keywords_to_include"), _MAX_KEYWORDS * 2)
-        if not any(phrase.casefold() in other for other in staying)
+        if not any(_words_inside(phrase.casefold().split(), other) for other in staying)
     ]
+
+
+def _words_inside(words: list[str], other: list[str]) -> bool:
+    """Whether `words` runs somewhere inside `other`, word for word."""
+    span = len(words)
+    return any(other[i : i + span] == words for i in range(len(other) - span + 1))
 
 
 def review_outline(state: REXT):
