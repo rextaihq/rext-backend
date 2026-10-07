@@ -15,7 +15,7 @@ _FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue'
 
 def _role_badge(role_name: str) -> str:
     return f"""
-    <div style="display:inline-block; background-color:#eef0fe; color:#3641f5;
+    <div style="display:inline-block; background-color:#111a17; color:#cff88a;
                 font-size:13px; font-weight:600; padding:4px 12px; border-radius:9999px;
                 font-family:{_FONT}; letter-spacing:0.01em;">
         {role_name}
@@ -35,9 +35,9 @@ def render_workspace_invitation_email(
     description_html = ""
     if workspace_description:
         description_html = f"""
-        <div style="margin:24px 0; padding:16px 20px; background-color:#f8f9ff;
-                    border-radius:8px; border-left:3px solid #3641f5;">
-            <p style="color:#344054; font-size:14px; line-height:22px; margin:0;
+        <div style="margin:24px 0; padding:16px 20px; background-color:#fafafa;
+                    border-radius:8px; border-left:3px solid #111a17;">
+            <p style="color:#404040; font-size:14px; line-height:22px; margin:0;
                       font-family:{_FONT};">
                 <strong>About this workspace:</strong><br>{workspace_description}
             </p>
@@ -48,46 +48,42 @@ def render_workspace_invitation_email(
         [
             simple_header(workspace_name),
             f"""
-        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+        <h1 style="color:#171717; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
-            You've been invited to join<br><span style="color:#3641f5;">{workspace_name}</span>
+            You've been invited to join<br><span style="color:#171717;">{workspace_name}</span>
         </h1>
         """,
             f"""
-        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 24px 0;
+        <p style="color:#525252; font-size:16px; line-height:26px; margin:0 0 24px 0;
                   font-family:{_FONT};">
-            <strong style="color:#101828;">{inviter_name}</strong> has invited you to
-            collaborate on <strong style="color:#101828;">{workspace_name}</strong>.
+            <strong style="color:#171717;">{inviter_name}</strong> has invited you to
+            collaborate on <strong style="color:#171717;">{workspace_name}</strong>.
             You'll be joining as:
         </p>
         """,
             _role_badge(role_name),
             description_html,
             f"""
-        <p style="color:#475467; font-size:15px; line-height:24px; margin:28px 0 8px 0;
+        <p style="color:#525252; font-size:15px; line-height:24px; margin:28px 0 8px 0;
                   font-family:{_FONT};">
             Accept the invitation to get started:
         </p>
         """,
-            button(
-                ButtonProps(
-                    text="Accept Invitation", url=invitation_url, background_color="#3641f5"
-                )
-            ),
+            button(ButtonProps(text="Accept Invitation", url=invitation_url)),
             f"""
-        <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:24px 0 0 0;
+        <p style="color:#737373; font-size:13px; line-height:20px; margin:24px 0 0 0;
                   font-family:{_FONT};">
-            This invitation expires in <strong style="color:#475467;">{expiry_days} days</strong>.
+            This invitation expires in <strong style="color:#525252;">{expiry_days} days</strong>.
             If the button above doesn't work, copy and paste this link into your browser:
         </p>
-        <p style="color:#3641f5; font-size:12px; line-height:20px; margin:6px 0 0 0;
+        <p style="color:#171717; font-size:12px; line-height:20px; margin:6px 0 0 0;
                   font-family:'Courier New', monospace; word-break:break-all;">
             {invitation_url}
         </p>
         """,
             f"""
-        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
-            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e5e5e5;">
+            <p style="color:#737373; font-size:13px; line-height:20px; margin:0;
                       font-family:{_FONT};">
                 If you don't know {inviter_name} or weren't expecting this, you can safely ignore this email.
             </p>
@@ -117,9 +113,9 @@ def create_workspace_invitation_email(
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
         <div style="margin-top:24px; text-align:center;">
-            <p style="margin:0; font-size:12px; color:#98a2b3; font-family:{_FONT};">
+            <p style="margin:0; font-size:12px; color:#737373; font-family:{_FONT};">
                 Don't want these emails?
-                <a href="{unsubscribe_url}" style="color:#98a2b3; text-decoration:underline;">Unsubscribe</a>
+                <a href="{unsubscribe_url}" style="color:#737373; text-decoration:underline;">Unsubscribe</a>
             </p>
         </div>
         """
@@ -127,9 +123,9 @@ def create_workspace_invitation_email(
     description_html = ""
     if workspace_description:
         description_html = f"""
-        <div style="margin:24px 0; padding:16px 20px; background-color:#f8f9ff;
-                    border-radius:8px; border-left:3px solid #3641f5;">
-            <p style="color:#344054; font-size:14px; line-height:22px; margin:0;
+        <div style="margin:24px 0; padding:16px 20px; background-color:#fafafa;
+                    border-radius:8px; border-left:3px solid #111a17;">
+            <p style="color:#404040; font-size:14px; line-height:22px; margin:0;
                       font-family:{_FONT};">
                 <strong>About this workspace:</strong><br>{workspace_description}
             </p>
@@ -140,46 +136,42 @@ def create_workspace_invitation_email(
         [
             simple_header(workspace_name),
             f"""
-        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+        <h1 style="color:#171717; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
-            You've been invited to join<br><span style="color:#3641f5;">{workspace_name}</span>
+            You've been invited to join<br><span style="color:#171717;">{workspace_name}</span>
         </h1>
         """,
             f"""
-        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 24px 0;
+        <p style="color:#525252; font-size:16px; line-height:26px; margin:0 0 24px 0;
                   font-family:{_FONT};">
-            <strong style="color:#101828;">{inviter_name}</strong> has invited you to
-            collaborate on <strong style="color:#101828;">{workspace_name}</strong>.
+            <strong style="color:#171717;">{inviter_name}</strong> has invited you to
+            collaborate on <strong style="color:#171717;">{workspace_name}</strong>.
             You'll be joining as:
         </p>
         """,
             _role_badge(role_name),
             description_html,
             f"""
-        <p style="color:#475467; font-size:15px; line-height:24px; margin:28px 0 8px 0;
+        <p style="color:#525252; font-size:15px; line-height:24px; margin:28px 0 8px 0;
                   font-family:{_FONT};">
             Accept the invitation to get started:
         </p>
         """,
-            button(
-                ButtonProps(
-                    text="Accept Invitation", url=invitation_url, background_color="#3641f5"
-                )
-            ),
+            button(ButtonProps(text="Accept Invitation", url=invitation_url)),
             f"""
-        <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:24px 0 0 0;
+        <p style="color:#737373; font-size:13px; line-height:20px; margin:24px 0 0 0;
                   font-family:{_FONT};">
-            This invitation expires in <strong style="color:#475467;">{expiry_days} days</strong>.
+            This invitation expires in <strong style="color:#525252;">{expiry_days} days</strong>.
             If the button above doesn't work, copy and paste this link into your browser:
         </p>
-        <p style="color:#3641f5; font-size:12px; line-height:20px; margin:6px 0 0 0;
+        <p style="color:#171717; font-size:12px; line-height:20px; margin:6px 0 0 0;
                   font-family:'Courier New', monospace; word-break:break-all;">
             {invitation_url}
         </p>
         """,
             f"""
-        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
-            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e5e5e5;">
+            <p style="color:#737373; font-size:13px; line-height:20px; margin:0;
                       font-family:{_FONT};">
                 If you don't know {inviter_name} or weren't expecting this, you can safely ignore this email.
             </p>

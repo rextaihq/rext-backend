@@ -200,8 +200,6 @@ tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug
 tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug_increments_counter_multiple_times
 tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug_returns_base_when_unique
 tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug_uses_custom_slug_field
-tests/unit/test_wordpress_publisher.py::test_html_disguised_as_image_is_rejected_before_upload  # G59 #520: a body image that can't be uploaded is published with its original address
-tests/unit/test_wordpress_publisher.py::test_media_upload_failure_prevents_broken_post_from_being_published  # G59 #520: a body image that can't be uploaded is published with its original address
 tests/utils/test_ip_allowlist.py::test_cidr_range_is_supported
 tests/utils/test_ip_allowlist.py::test_empty_allowlist_matches_nothing
 tests/utils/test_ip_allowlist.py::test_fully_invalid_allowlist_matches_nothing

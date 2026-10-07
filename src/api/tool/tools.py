@@ -57,6 +57,42 @@ def _get_model(tool: str):
 # Word Counter Tool
 
 
+# The pairs a model wraps a line in: straight double and single, curly double and single quotes.
+_QUOTE_PAIRS = (('"', '"'), ("'", "'"), ("“", "”"), ("‘", "’"))
+
+# A list's bullet ("-", "*" or "•") and its number ("1." or "1)"), each followed by a space.
+_BULLET = re.compile(r"^[\-\*•]\s+")
+_NUMBER = re.compile(r"^(\d+)[\.\)]\s+")
+
+
+def _unquote(text: str) -> str:
+    """The text without one surrounding pair of matching quotes ("...", '...', or curly), which
+    models add to titles and lines; quotes inside it stay."""
+    stripped = text.strip()
+    for opening, closing in _QUOTE_PAIRS:
+        if len(stripped) >= 2 and stripped[0] == opening and stripped[-1] == closing:
+            return stripped[1:-1].strip()
+    return stripped
+
+
+def _list_items(raw_content: str) -> List[str]:
+    """A model's list as clean items: one per line, without bullets, numbering or wrapping quotes.
+    A number counts as numbering only when it continues the list's count from 1, so a title that
+    starts with one ("2026. What changes") keeps it."""
+    items: List[str] = []
+    expected = 1
+    for line in raw_content.split("\n"):
+        item = _BULLET.sub("", line.strip())
+        number = _NUMBER.match(item)
+        if number and int(number.group(1)) == expected:
+            item = item[number.end() :]
+            expected += 1
+        item = _unquote(item)
+        if item:
+            items.append(item)
+    return items
+
+
 def count_text_metrics(text: str):
     """Core logic to handle numbers, sentences, and paragraph breaks."""
     if not text or not text.strip():
@@ -108,7 +144,7 @@ async def generate_meta_description(page_title: str, target_keywords: List[str])
     result = await chain.ainvoke({"page_title": page_title, "keywords": keywords_str})
 
     # Clean up the result (remove any extra whitespace or quotes)
-    meta_description = result.strip().strip('"').strip("'")
+    meta_description = _unquote(result)
 
     # Ensure it's within character limits
     if len(meta_description) > 160:
@@ -150,7 +186,7 @@ async def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -
         cleaned = raw_line.strip()
         cleaned = re.sub(r"^(?:\d+[\.\)]|[\-\*])\s*", "", cleaned)
         cleaned = re.sub(r"\s*\(\d+\s*char(?:acter)?s?\)\s*$", "", cleaned, flags=re.IGNORECASE)
-        cleaned = cleaned.strip("\"'").strip()
+        cleaned = _unquote(cleaned)
         if not cleaned:
             return None
         try:
@@ -877,7 +913,10 @@ async def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorRes
     prompt = idea_prompt.format(
         ideas_count=data.ideas_count, topic=data.topic, content_type=data.content_type
     )
-    return await structured_llm.ainvoke(prompt)
+    result = await structured_llm.ainvoke(prompt)
+    # A structured answer can still wrap each idea in quotes.
+    result.ideas = [idea for idea in (_unquote(i) for i in result.ideas) if idea]
+    return result
 
 
 # Hook Generater Tool
@@ -894,7 +933,7 @@ async def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
     response = await llm.ainvoke(formatted_prompt)
 
     raw_content = response.content if hasattr(response, "content") else str(response)
-    hooks = [line.strip("- ").strip() for line in raw_content.split("\n") if line.strip()]
+    hooks = _list_items(raw_content)
 
     return HookGeneratorResponse(
         topic=data.topic_description, hooks=hooks[: data.number_of_variations]
@@ -916,7 +955,7 @@ async def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleRes
     response = await llm.ainvoke(formatted_prompt)
 
     raw_content = response.content if hasattr(response, "content") else str(response)
-    titles = [line.strip("- ").strip() for line in raw_content.split("\n") if line.strip()]
+    titles = _list_items(raw_content)
 
     return SEOBlogTitleResponse(keyword=data.keyword, blog_titles=titles[: data.number_of_topics])
 
@@ -930,7 +969,7 @@ async def generate_questions(text: str) -> List[str]:
     response = await llm.ainvoke(formatted_prompt)
 
     raw_content = response.content if hasattr(response, "content") else str(response)
-    questions = [line.strip("- ").strip() for line in raw_content.split("\n") if line.strip()]
+    questions = _list_items(raw_content)
 
     return questions
 

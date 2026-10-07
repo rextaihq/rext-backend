@@ -142,14 +142,15 @@ async def test_a_shorter_keyword_chosen_after_the_message_is_the_one_used(monkey
 
 
 def test_a_keyword_is_measured_as_titles_match_it():
-    # 58 characters: quotes or doubled punctuation around it don't count, because
-    # a title contains the phrase without them (contains_keyphrase).
-    keyword = "content marketing roi measurement for small local business"
-    assert len(keyword) == 58
+    # 75 characters, the longest a title may be (G69): quotes or doubled punctuation
+    # around it don't count, because a title contains the phrase without them
+    # (contains_keyphrase).
+    keyword = "content marketing roi measurement for small local business owners in the uk"
+    assert len(keyword) == 75
     assert keyphrase_fits_a_title(keyword)
     assert keyphrase_fits_a_title(f'"{keyword}"')
     assert keyphrase_fits_a_title(f"{keyword} --")
-    assert not keyphrase_fits_a_title(keyword + " uk")
+    assert not keyphrase_fits_a_title(keyword + "s")
 
 
 async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatch):

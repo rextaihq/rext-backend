@@ -7,6 +7,7 @@ Move from src/services/wordpress_publisher.py to src/web/wordpress.py.
 
 import asyncio
 import html
+import http
 import json
 import logging
 import mimetypes
@@ -74,6 +75,78 @@ def _redact_urls(text: str, *addresses: object) -> str:
         for form in sorted(forms, key=len, reverse=True):
             text = text.replace(form, shown)
     return _ADDRESS_IN_TEXT.sub(lambda match: _loggable_url(match.group(0)), text)
+
+
+# What a remote server's error body may echo of a signed request, besides whole addresses: a
+# query on a bare path ("/images/x.png?X-Amz-Signature=…", as Google's and nginx's 404 pages
+# write it) and an S3 or MinIO error's request details.
+_QUERY_IN_TEXT = re.compile(r"\?[^\s'\"<>]+")
+# A field cut off by the scan limit has no closing tag: it's taken out to the end.
+_S3_REQUEST_DETAILS = re.compile(
+    r"<(SignatureProvided|StringToSign|StringToSignBytes|CanonicalRequest|CanonicalRequestBytes"
+    r"|AWSAccessKeyId|HostId|RequestId)>.*?(?:</\1>|$)",
+    re.DOTALL,
+)
+# A signed request's parameters wherever they stand, with or without a "?" before them (a
+# canonical query string lists them bare).
+_AMZ_PARAMETER = re.compile(r"(X-Amz-[A-Za-z-]+)=[^&\s<'\"]*", re.IGNORECASE)
+_LOGGED_BODY_CHARS = 500
+# A media type as a reason may repeat it ("text/html"); anything else in the header isn't.
+_PLAIN_MEDIA_TYPE = re.compile(r"[a-z0-9][a-z0-9.+-]{0,40}/[a-z0-9][a-z0-9.+-]{0,60}")
+# Read before redacting: enough past the logged length that an address or a query cut at the
+# edge is still whole when the redactors run, and never the whole of a large error page.
+_SCANNED_BODY_CHARS = 4000
+
+
+def _loggable_body(text: str, *addresses: object) -> str:
+    """A remote server's response body as a log line may show it: shortened, with every address,
+    any query and an S3 error's request details taken out. Never for a person to read: a reason
+    they see names the status only (G59b, revnix/rext-control#632)."""
+    text = _redact_urls((text or "")[:_SCANNED_BODY_CHARS], *addresses)
+    text = _S3_REQUEST_DETAILS.sub(lambda match: f"<{match.group(1)}>…</{match.group(1)}>", text)
+    text = _AMZ_PARAMETER.sub(lambda match: f"{match.group(1)}=…", text)
+    text = _QUERY_IN_TEXT.sub("?…", text)
+    text = " ".join(text.split())
+    return text[:_LOGGED_BODY_CHARS] + ("…" if len(text) > _LOGGED_BODY_CHARS else "")
+
+
+class BodyImageUploadError(RextExternalServiceException):
+    """A publish stopped on an image in the post's body that couldn't be copied to the site's
+    media library. Published anyway, the image would keep its original address, often a signed
+    storage address that expires, and the live post would show it broken.
+
+    ``notice`` says it for the person (an email, a notification): the image's file name and what
+    to do, without the technical reason the message carries. ``transient`` keeps whether the
+    upload's own failure may pass on a retry (a timeout, the network, HTTP 429 or 5xx), so a
+    scheduled publish doesn't retry a refusal that will repeat."""
+
+    def __init__(self, image_url: str, reason: str, transient: bool = False):
+        self.transient = transient
+        name = os.path.basename(urlparse(image_url).path) or _loggable_url(image_url)
+        self.notice = (
+            f"An image in the article ({name}) couldn't be copied to your WordPress media "
+            "library. Replace or remove it, then publish again."
+        )
+        super().__init__(
+            message=(
+                f"Publishing stopped: an image in the article ({_loggable_url(image_url)}) "
+                "couldn't be copied to the site's media library. Replace or remove it, then "
+                f"publish again. Reason: {reason}"
+            ),
+            service_name="WordPress",
+        )
+
+
+def _body_image_refusal(error: Exception, image_url: str) -> BodyImageUploadError:
+    reason = _redact_urls(getattr(error, "message", None) or str(error), image_url)
+    transient = isinstance(error, ExternalServiceTimeoutException) or bool(
+        (getattr(error, "context", None) or {}).get("transient")
+    )
+    return BodyImageUploadError(image_url, reason, transient=transient)
+
+
+def _retryable_status(status_code: int) -> bool:
+    return status_code == 429 or status_code >= 500
 
 
 # Domains that only ever show up when an image URL was hallucinated by the
@@ -661,9 +734,10 @@ class WordPressPublisher:
         image's alt text is carried over to the WordPress media library, and an
         image embedded without any alt text gets one derived from the article so
         it isn't published with an empty alt attribute. Images already uploaded
-        as the featured image are reused instead of being uploaded twice. A
-        failure on one image is logged and skipped (its original URL is kept) so
-        one bad image can't fail the whole publish.
+        as the featured image are reused instead of being uploaded twice. An
+        image that can't be copied stops the publish with the reason
+        (_body_image_refusal): left in, its original address would break on the
+        live post.
         """
         media_by_source = dict(uploaded_media or {})
         resolved_alt_by_src: Dict[str, str] = {}
@@ -686,12 +760,12 @@ class WordPressPublisher:
             if media_info is None:
                 try:
                     media_info = await self._upload_featured_image(image_url, alt_text=alt_text)
-                except Exception:
-                    logger.exception(
-                        "[WordPress Publish] failed to sync embedded image=%s; keeping original URL",
+                except Exception as exc:
+                    logger.error(
+                        "[WordPress Publish] failed to sync embedded image=%s; stopping the publish",
                         _loggable_url(image_url),
                     )
-                    continue
+                    raise _body_image_refusal(exc, image_url) from None
                 media_by_source[image_url] = media_info
             elif alt_text and media_info.get("media_id"):
                 # Reused (e.g. the featured image) but embedded with alt text —
@@ -980,7 +1054,7 @@ class WordPressPublisher:
                     "[WordPress Media Alt] update failed media_id=%s status=%s body=%s",
                     media_id,
                     response.status_code,
-                    response.text[:500],
+                    _loggable_body(response.text),
                 )
             else:
                 logger.info(
@@ -1045,16 +1119,23 @@ class WordPressPublisher:
 
             content_type = image_response.headers.get("content-type", "").split(";", 1)[0].lower()
             if not self._is_image_bytes(image_response.content, content_type):
-                preview = image_response.content[:200].decode("utf-8", errors="replace")
+                # The reason names what came back, never its text: a storage or CDN error page
+                # served as 200 can echo the signed request (G59b, revnix/rext-control#632). The
+                # type is the remote's header, so only a plain media type is repeated.
+                sent = (
+                    content_type if _PLAIN_MEDIA_TYPE.fullmatch(content_type) else "no image type"
+                )
                 reason = (
-                    f"Downloaded resource is not a valid image "
-                    f"(content_type={content_type!r}, bytes={len(image_response.content)}, "
-                    f"body_preview={preview!r})"
+                    f"the image's address sent something that is not a valid image ({sent}, "
+                    f"{len(image_response.content)} bytes)"
                 )
                 logger.error(
-                    "[WordPress Media Upload] validation_failed image=%s reason=%s",
+                    "[WordPress Media Upload] validation_failed image=%s reason=%s preview=%s",
                     _loggable_url(image_url),
                     reason,
+                    _loggable_body(
+                        image_response.content[:2000].decode("utf-8", errors="replace"), image_url
+                    ),
                 )
                 raise RextExternalServiceException(message=reason, service_name="WordPress")
 
@@ -1125,31 +1206,47 @@ class WordPressPublisher:
             if media_response is None:
                 raise RuntimeError("WordPress media upload retry loop exited unexpectedly")
             logger.info("[WordPress Media Upload] upload_status=%s", media_response.status_code)
-            logger.info("[WordPress Media Upload] upload_body=%s", media_response.text[:4000])
+            logger.info(
+                "[WordPress Media Upload] upload_body=%s",
+                _loggable_body(media_response.text, image_url),
+            )
 
             if media_response.status_code != 201:
                 reason = (
                     f"WordPress media API returned HTTP {media_response.status_code}; "
-                    f"expected HTTP 201; body={media_response.text[:4000]}"
+                    "expected HTTP 201"
                 )
                 logger.error(
-                    "[WordPress Media Upload] failed status=%s reason=%s",
+                    "[WordPress Media Upload] failed status=%s reason=%s body=%s",
                     media_response.status_code,
                     reason,
+                    _loggable_body(media_response.text, image_url),
                 )
-                raise RextExternalServiceException(message=reason, service_name="WordPress")
+                raise RextExternalServiceException(
+                    message=reason,
+                    service_name="WordPress",
+                    context={"transient": _retryable_status(media_response.status_code)},
+                )
 
             try:
                 raw = media_response.json()
             except ValueError as exc:
-                reason = f"WordPress media API returned invalid JSON: {media_response.text[:4000]}"
-                logger.error("[WordPress Media Upload] failed reason=%s", reason)
+                reason = "WordPress media API returned invalid JSON"
+                logger.error(
+                    "[WordPress Media Upload] failed reason=%s body=%s",
+                    reason,
+                    _loggable_body(media_response.text, image_url),
+                )
                 raise RextExternalServiceException(
                     message=reason, service_name="WordPress"
                 ) from exc
             if not isinstance(raw, dict):
+                logger.error(
+                    "[WordPress Media Upload] unexpected JSON value: %s",
+                    _loggable_body(repr(raw), image_url),
+                )
                 raise RextExternalServiceException(
-                    message=f"WordPress media API returned an unexpected JSON value: {raw!r}",
+                    message="WordPress media API returned an unexpected response",
                     service_name="WordPress",
                 )
             media_data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
@@ -1159,7 +1256,10 @@ class WordPressPublisher:
             )
 
             if not isinstance(media_id, int) or media_id <= 0:
-                logger.error("[WordPress Media Upload] response has no valid media id: %s", raw)
+                logger.error(
+                    "[WordPress Media Upload] response has no valid media id: %s",
+                    _loggable_body(repr(raw), image_url),
+                )
                 raise RextExternalServiceException(
                     message="WordPress media upload response did not include a valid media id",
                     service_name="WordPress",
@@ -1212,21 +1312,42 @@ class WordPressPublisher:
             raise RextExternalServiceException(
                 message=reason,
                 service_name="WordPress",
+                context={"transient": True},
             ) from None
         except httpx.HTTPStatusError as e:
-            body = e.response.text[:4000] if e.response is not None else ""
-            reason = _redact_urls(
-                f"Image request failed: {e}; body={body}",
-                image_url,
-                e.request.url if e.request is not None else None,
-                e.response.url if e.response is not None else None,
+            # The reason says the status only: it reaches the person's notice and the publish
+            # error, and a remote's error page (HTML, or S3's XML) can echo the signed request.
+            # The body goes to the log, shortened and redacted (G59b, revnix/rext-control#632).
+            status = e.response.status_code if e.response is not None else None
+            # Our own words for the status: the response's reason phrase is the remote's text.
+            try:
+                phrase = http.HTTPStatus(status).phrase if status else ""
+            except ValueError:
+                phrase = ""
+            reason = (
+                f"the image's address answered HTTP {status} {phrase}".rstrip()
+                if status
+                else "the image couldn't be downloaded"
             )
             logger.error(
-                "[WordPress Media Upload] failed image=%s reason=%s",
+                "[WordPress Media Upload] failed image=%s reason=%s body=%s",
                 _loggable_url(image_url),
                 reason,
+                _loggable_body(
+                    e.response.text if e.response is not None else "",
+                    image_url,
+                    e.request.url if e.request is not None else None,
+                    e.response.url if e.response is not None else None,
+                ),
             )
-            raise RextExternalServiceException(message=reason, service_name="WordPress") from None
+            raise RextExternalServiceException(
+                message=reason,
+                service_name="WordPress",
+                context={
+                    "transient": e.response is not None
+                    and _retryable_status(e.response.status_code)
+                },
+            ) from None
         except RextExternalServiceException:
             raise
         except SSRFValidationError as e:
@@ -1534,7 +1655,8 @@ class WordPressPublisher:
             # Resolve alt text while the image is still in the body — the alt the
             # user typed in the editor lives on the <img>, and the inline copy is
             # stripped below before the embedded-image sync could ever see it.
-            body_alt = dict(self._extract_images_with_alt(content)).get(image_url, "")
+            body_images = dict(self._extract_images_with_alt(content))
+            body_alt = body_images.get(image_url, "")
             featured_alt = build_image_alt_text(
                 user_alt=images_data_alt or body_alt,
                 title=title,
@@ -1543,7 +1665,19 @@ class WordPressPublisher:
             logger.info("[WordPress Publish] featured image alt=%r", featured_alt)
             try:
                 media_info = await self._upload_featured_image(image_url, alt_text=featured_alt)
-            except Exception:
+            except Exception as exc:
+                if image_url in body_images and not self._is_existing_wordpress_media_url(
+                    image_url
+                ):
+                    # It's in the body too, where it can't stay with its original
+                    # address: stop now rather than download it a second time. One
+                    # already in this site's media library stays as it is.
+                    logger.error(
+                        "[WordPress Publish] failed to upload featured image=%s, which the body "
+                        "shows too; stopping the publish",
+                        _loggable_url(image_url),
+                    )
+                    raise _body_image_refusal(exc, image_url) from None
                 # A missing/broken featured image (e.g. deleted from storage)
                 # must not abort the whole publish - post without one instead.
                 logger.exception(
@@ -1705,8 +1839,11 @@ class WordPressPublisher:
 
             raw = response.json()
             if not isinstance(raw, dict):
+                logger.error(
+                    "[WordPress Publish] unexpected JSON value: %s", _loggable_body(repr(raw))
+                )
                 raise RextExternalServiceException(
-                    message=f"WordPress Posts API returned an unexpected JSON value: {raw!r}",
+                    message="WordPress Posts API returned an unexpected response",
                     service_name="WordPress",
                 )
             post = raw.get("data") if isinstance(raw.get("data"), dict) else raw
@@ -1942,7 +2079,7 @@ class WordPressPublisher:
                             "[WordPress Tag] create failed name=%s status=%s body=%s",
                             name,
                             create_response.status_code,
-                            create_response.text[:500],
+                            _loggable_body(create_response.text),
                         )
 
             except Exception as e:

@@ -5,13 +5,45 @@ Centralized configuration using environment variables with Pydantic validation.
 Note: dotenv is loaded in src/api/server.py before importing this module.
 """
 
+import re
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.config.hidden_secrets import HidesSecrets
+
+# Signing secrets that are public, so never a secret: the placeholders this repository
+# has shipped, and every value .env.example holds (read where the file sits beside the app).
+_PLACEHOLDER_SECRETS = {"your-secret-key-here", "changeme", "secret", "password"}
+_ENV_EXAMPLE = Path(__file__).resolve().parents[2] / ".env.example"
+_EXAMPLE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=(.*)$")
+
+
+def _env_example_values() -> set:
+    try:
+        lines = _ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    values = set()
+    for line in lines:
+        # Commented examples ("# DATABASE_URL=...") are just as public.
+        match = _EXAMPLE_ASSIGNMENT.match(line.strip().lstrip("#").strip())
+        if match:
+            value = match.group(1).strip().strip("'\"")
+            if value:
+                values.add(value)
+    return values
+
+
+def _is_public_secret(value: str) -> bool:
+    folded = value.strip().lower()
+    return (
+        folded in _PLACEHOLDER_SECRETS
+        or folded.startswith("replace_with")
+        or value.strip() in _env_example_values()
+    )
 
 
 class Settings(HidesSecrets, BaseSettings):
@@ -438,6 +470,30 @@ class Settings(HidesSecrets, BaseSettings):
             )
         return ",".join(origins)
 
+    @field_validator("SECRET_KEY", "REFRESH_SECRET_KEY", mode="before")
+    @classmethod
+    def refuse_public_secrets(cls, v, info):
+        """A signing secret anyone can read is refused, whatever its length: the
+        placeholders this repository has shipped, any "replace_with…" value, and any
+        value in .env.example (which is public)."""
+        if isinstance(v, str) and _is_public_secret(v):
+            raise ValueError(
+                f"{info.field_name} contains an insecure placeholder value. "
+                "Generate one with `openssl rand -hex 32`."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def refuse_one_secret_for_both_tokens(self):
+        """Access and refresh tokens are signed with different secrets, so one can't
+        stand in for the other."""
+        if self.SECRET_KEY == self.REFRESH_SECRET_KEY:
+            raise ValueError(
+                "SECRET_KEY and REFRESH_SECRET_KEY must differ. "
+                "Generate each with `openssl rand -hex 32`."
+            )
+        return self
+
     @field_validator("SECRET_KEY", "REFRESH_SECRET_KEY")
     @classmethod
     def validate_secret_strength(cls, v: str, info) -> str:
@@ -457,12 +513,6 @@ class Settings(HidesSecrets, BaseSettings):
         if not v or len(v) < 32:
             raise ValueError(
                 f"{info.field_name} must be at least 32 characters long. "
-                f"Use scripts/generate_jwt_secret.py to generate a secure key."
-            )
-        # Warn if using obvious placeholder values
-        if v in ["your-secret-key-here", "changeme", "secret", "password"]:
-            raise ValueError(
-                f"{info.field_name} contains an insecure placeholder value. "
                 f"Use scripts/generate_jwt_secret.py to generate a secure key."
             )
         return v
@@ -591,6 +641,9 @@ class Settings(HidesSecrets, BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
+        # A validation error at startup names the setting, never its value: a rejected
+        # secret, or the whole input for a check across settings, would reach the logs.
+        hide_input_in_errors=True,
     )
 
 

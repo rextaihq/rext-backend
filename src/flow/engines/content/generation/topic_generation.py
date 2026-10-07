@@ -4,7 +4,8 @@ Two rules are non-negotiable and are enforced deterministically after the
 model, never by trusting the prompt alone:
 
 * Every title contains the EXACT focus keyphrase the user entered.
-* Every title is 50-59 characters inclusive.
+* Every title is 50-59 characters inclusive, or up to the keyphrase plus 20 for a long
+  keyphrase, never over 75 (``seo_title_rules.title_max_chars``).
 * Every title reads as the selected content type, for the selected intent.
 
 The enforcement ladder is: strong system prompt + schema guidance -> LLM
@@ -33,17 +34,19 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.engines.content.generation.seo_title_rules import (
-    TITLE_MAX_CHARS,
+    TITLE_MAX_CHARS_CEILING,
     TITLE_MIN_CHARS,
     keyphrase_fits_a_title,
+    keyphrase_title,
     normalize_title,
     repair_title,
     title_is_valid,
+    title_max_chars,
     title_violations,
 )
 from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.llm_manager import topic_generation_model
-from src.flow.model.structure.topics import SEOTopics
+from src.flow.model.structure.topics import SEOTopic, SEOTopics
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -57,10 +60,10 @@ TOPICS_FAILED_CODE = "topic_generation_failed"
 TOPICS_FAILED_MESSAGE = (
     "Title ideas could not be written for this keyword just now. Please try again in a few minutes."
 )
-# Every title must contain the keyphrase and stay within TITLE_MAX_CHARS, so a
+# Every title must contain the keyphrase and stay within TITLE_MAX_CHARS_CEILING, so a
 # longer keyphrase can never produce one: the user has to shorten it.
 KEYWORD_TOO_LONG_MESSAGE = (
-    f"This keyword is longer than a title can be ({TITLE_MAX_CHARS} characters), "
+    f"This keyword is longer than a title can be ({TITLE_MAX_CHARS_CEILING} characters), "
     "so no title can contain it. Try a shorter keyword."
 )
 
@@ -130,9 +133,12 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
 
 
 # A topic set must still be usable after invalid titles are dropped. Below this
-# the set is treated as a failed generation so the caller keeps the previous
-# valid one instead of showing the user a near-empty picker.
-_MIN_USABLE_TOPICS = 2
+# the set is treated as a failed generation. On the first generation one title is
+# enough to go on: a long keyphrase leaves room for few, and stopping the run is
+# worse than a short picker (G69, rext-control #585). A regeneration needs two, as
+# before, or the caller keeps the previous valid set rather than shrink it.
+_MIN_USABLE_TOPICS = 1
+_MIN_USABLE_REGENERATED_TOPICS = 2
 
 
 def _is_regenerate_request(response: Any) -> bool:
@@ -243,7 +249,7 @@ async def _repair_invalid_titles(
                 "You are repairing article titles for SEO.\n\n"
                 "STRICT TITLE LENGTH REQUIREMENT:\n"
                 f"Every repaired title MUST contain between {TITLE_MIN_CHARS} and "
-                f"{TITLE_MAX_CHARS} characters inclusive.\n"
+                f"{title_max_chars(keyphrase)} characters inclusive.\n"
                 "Count spaces and punctuation as characters.\n\n"
                 "STRICT FOCUS KEYPHRASE REQUIREMENT:\n"
                 f'Every repaired title MUST contain the exact focus keyphrase "{keyphrase}" '
@@ -262,7 +268,7 @@ async def _repair_invalid_titles(
                 "Only repair the supplied invalid titles. "
                 "Do not modify titles that are already valid.\n\n"
                 "Before returning each repaired title, internally count its "
-                f"characters and verify the result is {TITLE_MIN_CHARS}-{TITLE_MAX_CHARS} "
+                f"characters and verify the result is {TITLE_MIN_CHARS}-{title_max_chars(keyphrase)} "
                 "characters and still contains the exact focus keyphrase."
             )
         ),
@@ -347,6 +353,7 @@ async def _generate_and_validate_topics(
     messages: List[Any],
     query: str,
     keyphrase: str,
+    regenerating: bool = False,
 ) -> Optional[SEOTopics]:
     """
     Generate topics and apply the non-breaking SEO validation/repair layer.
@@ -377,7 +384,18 @@ async def _generate_and_validate_topics(
 
         results = _apply_deterministic_title_repair(results, keyphrase)
 
-        if len(results.topics) < _MIN_USABLE_TOPICS:
+        if not results.topics and not regenerating:
+            # Every title was dropped: the keyphrase itself is offered as the one title
+            # rather than ending the run (G69). A regeneration keeps the previous set.
+            fallback = keyphrase_title(keyphrase)
+            if fallback:
+                logger.warning(
+                    "No generated title survived for query=%r; offering the keyphrase.", query
+                )
+                results.topics = [SEOTopic(title=fallback, recommended=True)]
+
+        minimum = _MIN_USABLE_REGENERATED_TOPICS if regenerating else _MIN_USABLE_TOPICS
+        if len(results.topics) < minimum:
             logger.warning(
                 "Only %d usable title(s) survived validation for query=%r.",
                 len(results.topics),
@@ -448,18 +466,18 @@ def _build_system_prompt(
         "==================================================\n"
         "STRICT SEO TITLE LENGTH REQUIREMENT\n"
         "==================================================\n"
-        f"EVERY TITLE MUST BE BETWEEN {TITLE_MIN_CHARS} AND {TITLE_MAX_CHARS} "
+        f"EVERY TITLE MUST BE BETWEEN {TITLE_MIN_CHARS} AND {title_max_chars(keyphrase)} "
         "CHARACTERS INCLUSIVE.\n\n"
         "This is a strict requirement.\n"
         f"- Minimum: {TITLE_MIN_CHARS} characters.\n"
-        f"- Maximum: {TITLE_MAX_CHARS} characters.\n"
+        f"- Maximum: {title_max_chars(keyphrase)} characters.\n"
         "- Count spaces as characters.\n"
         "- Count punctuation as characters.\n"
         "- Count the final title before returning it.\n"
         "- If the first draft is outside the range, rewrite it before returning "
         "the final answer.\n\n"
         f"Do NOT add meaningless filler just to reach {TITLE_MIN_CHARS} characters.\n"
-        f"Do NOT remove important meaning just to stay below {TITLE_MAX_CHARS} characters.\n"
+        f"Do NOT remove important meaning just to stay below {title_max_chars(keyphrase)} characters.\n"
         "The final title must be natural, readable, and useful.\n\n"
         "==================================================\n"
         "CONTENT TYPE AND SEARCH INTENT\n"
@@ -524,7 +542,7 @@ def _build_system_prompt(
         "Before returning the structured result, verify EVERY title:\n"
         f'1. Does it contain the exact phrase "{keyphrase}"?\n'
         f"2. Is it at least {TITLE_MIN_CHARS} characters?\n"
-        f"3. Is it at most {TITLE_MAX_CHARS} characters?\n"
+        f"3. Is it at most {title_max_chars(keyphrase)} characters?\n"
         f"4. Does it read like a {selected_content_type} for {selected_intent} intent?\n"
         "5. Is it readable and natural?\n"
         "6. Does it avoid keyword stuffing?\n"
@@ -646,7 +664,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
         logger.warning(
             "Keyphrase of %d characters can fit no title of at most %d.",
             len(keyphrase),
-            TITLE_MAX_CHARS,
+            TITLE_MAX_CHARS_CEILING,
         )
         return _topics_failed(KEYWORD_TOO_LONG_MESSAGE)
 
@@ -694,7 +712,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
                     f"{feedback}\n\n"
                     "Keep ALL strict requirements from the system prompt. In "
                     f"particular, every title must still contain the exact phrase "
-                    f'"{keyphrase}" and be {TITLE_MIN_CHARS}-{TITLE_MAX_CHARS} '
+                    f'"{keyphrase}" and be {TITLE_MIN_CHARS}-{title_max_chars(keyphrase)} '
                     "characters, and the anti-hallucination rules still apply. "
                     "User feedback can change the angle, wording or emphasis of a "
                     "title -- it can NEVER change or remove the focus keyphrase."
@@ -707,6 +725,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
         messages=messages,
         query=query,
         keyphrase=keyphrase,
+        regenerating=regenerating,
     )
 
     if results is None:
@@ -802,7 +821,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     # -- Selection is FINAL from here on ---------------------------------
     #
     # Every title offered in the picker has already been through the full
-    # contract: exact focus keyphrase, 50-59 characters, content type and
+    # contract: exact focus keyphrase, its length range, content type and
     # search intent. That is deliberately the ONLY place a title is ever
     # repaired. The moment the user picks one it is frozen: no outline,
     # generation, repair, humanization or validation stage may reword,

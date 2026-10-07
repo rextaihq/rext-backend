@@ -8,6 +8,8 @@ Follows email client best practices with table-based layout and inline styles.
 from dataclasses import dataclass
 from typing import Optional
 
+from emails.palette import INK, PAGE, WHITE
+
 
 @dataclass
 class EmailLayoutProps:
@@ -15,8 +17,8 @@ class EmailLayoutProps:
 
     preview_text: Optional[str] = None  # Text shown in email preview
     title: str = "Rext AI"
-    background_color: str = "#f6f9fc"
-    content_background: str = "#ffffff"
+    background_color: str = PAGE
+    content_background: str = WHITE
 
 
 def email_layout(content: str, props: Optional[EmailLayoutProps] = None) -> str:
@@ -85,7 +87,7 @@ def email_layout(content: str, props: Optional[EmailLayoutProps] = None) -> str:
             -ms-interpolation-mode: bicubic;
         }}
         a {{
-            color: #3b82f6;
+            color: {INK};
             text-decoration: underline;
         }}
     </style>
