@@ -411,15 +411,15 @@ async def update_notification_preferences(
             for cat, value in categories.items():
                 if cat in mapping:
                     for db_field in mapping[cat]:
-                        if hasattr(preferences, db_field):
-                            current_value = getattr(preferences, db_field)
-                            if current_value != value:
-                                old_values[db_field] = current_value
-                                new_values[db_field] = value
-                                setattr(preferences, db_field, value)
-                                logger.debug(
-                                    f"Updated category preference '{cat}' -> '{db_field}' to {value}"
-                                )
+                        # A category key lives in JSONB, not as an attribute (G61, #523).
+                        current_value = preferences.get_preference(db_field)
+                        if current_value != value:
+                            old_values[db_field] = current_value
+                            new_values[db_field] = value
+                            preferences.set_preference(db_field, value)
+                            logger.debug(
+                                f"Updated category preference '{cat}' -> '{db_field}' to {value}"
+                            )
 
     # Handle all other fields directly
     jsonb_fields = set(DEFAULT_CATEGORY_PREFERENCES.keys())
