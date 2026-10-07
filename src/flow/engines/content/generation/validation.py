@@ -1374,7 +1374,11 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
 
 
 def _host(url: str) -> str:
-    host = (urlparse(url or "").hostname or "").lower()
+    try:
+        host = (urlparse(url or "").hostname or "").lower()
+    except ValueError:
+        # A malformed address ("https://[bad") names no host: the check reports, never raises.
+        return ""
     return host[4:] if host.startswith("www.") else host
 
 

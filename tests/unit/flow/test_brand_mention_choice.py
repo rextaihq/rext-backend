@@ -362,3 +362,18 @@ def test_the_runs_own_keyphrase_decides_not_a_stale_outline_copy():
     spec = build_requirements_spec(_outline("none"), "blog", focus_keyword="acme tools login")
 
     assert spec["excluded_brand"] is None
+
+
+@pytest.mark.parametrize("prominence", ["none", "subtle"])
+def test_a_malformed_address_is_no_brand_link_and_never_stops_the_check(prominence):
+    from src.flow.engines.content.generation.validation import check_brand_prominence
+
+    article = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\nSee https://[bad for the chart.",
+        "cta": {"text": "Get started", "url": "https://[bad"},
+    }
+    spec = build_requirements_spec(_outline(prominence), "blog")
+
+    assert check_brand_absent(article, spec)["passed"] is True
+    assert isinstance(check_brand_prominence(article, spec)["passed"], bool)
