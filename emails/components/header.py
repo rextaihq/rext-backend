@@ -5,17 +5,36 @@ Provides branded header with logo and optional workspace customization.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from emails.palette import INK, LINE, MUTED
 from src.utils.storage import storage_service
 
-# Object key for the official Rext AI logo in MinIO storage (see scripts/upload_branding_logo.py).
+# Object key for the official Rext AI logo in MinIO storage, and the file it's published from.
 LOGO_OBJECT_NAME = "branding/rext-logo.png"
+LOGO_FILE = Path(__file__).resolve().parent.parent / "assets" / "rext-logo.png"
+
+# True once this process has published LOGO_FILE to storage (publish_logo, at the server's start). Until then, and
+# whenever publishing fails, the header writes the name as text: an email never shows a broken image.
+_logo_published = False
+
+
+def publish_logo() -> bool:
+    """Upload LOGO_FILE to storage under LOGO_OBJECT_NAME; True when the copy there is the current one."""
+    global _logo_published
+    _logo_published = bool(
+        storage_service.upload_file(
+            LOGO_FILE.read_bytes(), LOGO_OBJECT_NAME, content_type="image/png"
+        )
+    )
+    return _logo_published
 
 
 def _default_logo_url() -> Optional[str]:
-    """Resolve the current public URL for the official Rext AI logo from storage."""
+    """The official logo's URL in storage, or None while it isn't published there."""
+    if not _logo_published:
+        return None
     return storage_service.get_file_url(LOGO_OBJECT_NAME) or None
 
 
