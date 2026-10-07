@@ -286,6 +286,7 @@ class UsageTrackingService:
         refunded_total: int,
         original_amount: int,
         latest: Optional[bool] = None,
+        subscription_id: Optional[UUID] = None,
     ) -> Optional[Dict[str, Any]]:
         """Shrink the unused part of a partially refunded period's credits.
 
@@ -324,6 +325,9 @@ class UsageTrackingService:
             latest: Whether the refunded payment is the current period's. None asks
                 the orders table (the account's newest order); a renewal's invoice,
                 which has no order, is judged by its caller.
+            subscription_id: The refunded subscription, when the caller knows it (a
+                renewal's invoice belongs to one). None takes the account's newest
+                subscription that grants access, as an order's refund does.
 
         Returns:
             A summary of the adjustment for the caller to log and audit, or
@@ -341,10 +345,15 @@ class UsageTrackingService:
         if not latest:
             return None
 
+        owner = (
+            UserSubscription.id == subscription_id
+            if subscription_id is not None
+            else UserSubscription.user_id == user_id
+        )
         result = await self.db.execute(
             select(UserSubscription)
             .options(selectinload(UserSubscription.plan))
-            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
+            .where(and_(owner, subscription_grants_access()))
             .order_by(UserSubscription.start_date.desc())
             .limit(1)
             # The same row lock as consume_credits: grants change under it only.
@@ -363,9 +372,11 @@ class UsageTrackingService:
 
         # The balance is stale and due to be replenished for a new period, so
         # the refunded period's entitlement is already gone.
-        if subscription.credits_reset_date and subscription.credits_reset_date < datetime.now(
-            timezone.utc
-        ):
+        reset = subscription.credits_reset_date
+        if reset and reset.tzinfo is None:
+            # Set earlier in this transaction (utc_now_naive), it has no zone yet: it's UTC.
+            reset = reset.replace(tzinfo=timezone.utc)
+        if reset and reset < datetime.now(timezone.utc):
             return None
 
         meta = {**(subscription.subscription_metadata or {})}
