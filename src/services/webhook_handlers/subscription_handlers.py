@@ -173,6 +173,36 @@ def _ignore_ended_by_refund(
     return True
 
 
+def _ignore_payment_after_refund(
+    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+) -> bool:
+    """A payment on a subscription a full refund ended charged the customer again.
+
+    It gives no plan and no credits back (F8c, revnix/rext-control#538); a person
+    refunds it and cancels the subscription at Lemon Squeezy.
+    """
+    if not is_ended_by_refund(subscription):
+        return False
+    trigger_payment_alert(
+        alert_type="refund_cancel_failed",
+        message=(
+            f"Fully refunded subscription {subscription.lemonsqueezy_subscription_id} for user "
+            f"{subscription.user_id} was charged again ({event}): refund this payment and "
+            "cancel the subscription in Lemon Squeezy"
+        ),
+        severity="critical",
+        context={"lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id},
+        user_id=str(subscription.user_id),
+        subscription_id=str(subscription.id),
+        operation=event,
+    )
+    logger.warning(
+        f"{event}: ignored, a full refund ended the subscription",
+        extra={"subscription_id": str(subscription.id)},
+    )
+    return True
+
+
 def _ignore_settled_duplicate(
     subscription: UserSubscription, sub_data: Dict[str, Any], event: str
 ) -> bool:
@@ -1389,6 +1419,9 @@ async def handle_subscription_payment_success(
         )
         raise ValueError(error_msg)
 
+    if _ignore_payment_after_refund(subscription, sub_data, "subscription_payment_success"):
+        return None
+
     # A payment older than the state stored since (a delayed or retried event) never
     # changes the status. Its credits still come while the plan runs: a renewal can
     # race its own subscription_updated. Over a stopped plan it changes nothing.
@@ -1730,6 +1763,9 @@ async def handle_subscription_payment_recovered(
         error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
         logger.error(error_msg)
         raise ValueError(error_msg)
+
+    if _ignore_payment_after_refund(subscription, sub_data, "subscription_payment_recovered"):
+        return None
 
     # A recovery older than a stopped state stored since belongs to an earlier
     # renewal: it doesn't bring the plan back.

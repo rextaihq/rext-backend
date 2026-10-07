@@ -19,7 +19,11 @@ as a settled duplicate does (`subscription_handlers`), so they can't give the pl
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.sentry_config import trigger_payment_alert
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
@@ -28,6 +32,63 @@ from src.utils.logger import logger
 # The record on the subscription's metadata: which order's refund ended it, when,
 # and what happened to the cancel at Lemon Squeezy.
 ENDED_BY_REFUND = "ended_by_refund"
+
+
+async def refunded_subscription(
+    db: AsyncSession,
+    *,
+    order_id: str,
+    user_id: UUID,
+    order: Any = None,
+    subscription_id: Optional[UUID] = None,
+) -> Optional[UserSubscription]:
+    """The subscription a full refund of `order_id` ends, or None when none can be told.
+
+    What the order itself leads to comes first: the subscription its row names, the
+    one with its Lemon Squeezy subscription id, the one created from it. A
+    `subscription_id` sent with the request is used only when the order leads
+    nowhere. Either way it must be the refunded customer's: a refund of one
+    customer's order never ends another's plan.
+    """
+
+    async def one(*conditions) -> Optional[UserSubscription]:
+        result = await db.execute(select(UserSubscription).where(*conditions).limit(1))
+        return result.scalar_one_or_none()
+
+    found = None
+    if order is not None and getattr(order, "subscription_id", None):
+        found = await db.get(UserSubscription, order.subscription_id)
+    if found is None and order is not None and getattr(order, "lemonsqueezy_subscription_id", None):
+        found = await one(
+            UserSubscription.lemonsqueezy_subscription_id == str(order.lemonsqueezy_subscription_id)
+        )
+    if found is None:
+        found = await one(UserSubscription.lemonsqueezy_order_id == str(order_id))
+    if found is None and subscription_id:
+        found = await db.get(UserSubscription, subscription_id)
+    if found is not None and str(found.user_id) != str(user_id):
+        logger.error(
+            "Full refund: the subscription found isn't the refunded customer's; not ended",
+            extra={"order_id": str(order_id), "subscription_id": str(found.id)},
+        )
+        return None
+    return found
+
+
+def no_subscription_to_end(*, order_id: str, user_id: Any) -> None:
+    """A full refund whose subscription can't be told: a person checks Lemon Squeezy."""
+    trigger_payment_alert(
+        alert_type="refund_cancel_failed",
+        message=(
+            f"Order {order_id} of user {user_id} was fully refunded, but no subscription of "
+            "theirs could be found to cancel: check Lemon Squeezy, and cancel it there if it "
+            "is still active, or it renews and charges again"
+        ),
+        severity="critical",
+        context={"order_id": str(order_id)},
+        user_id=str(user_id),
+        operation="cancel_subscription_for_refund",
+    )
 
 
 def is_ended_by_refund(subscription: UserSubscription) -> bool:
@@ -45,6 +106,18 @@ def _save(subscription: UserSubscription, record: dict) -> None:
         **(subscription.subscription_metadata or {}),
         ENDED_BY_REFUND: record,
     }
+
+
+async def _cancelled_at_provider(provider, ls_id: str) -> bool:
+    """Lemon Squeezy says the subscription is cancelled or over (False when it can't be asked)."""
+    read = getattr(provider, "get_subscription_attributes", None)
+    if read is None:
+        return False
+    try:
+        attributes = await read(ls_id)
+    except Exception:
+        return False
+    return bool(attributes.get("cancelled")) or attributes.get("status") in ("cancelled", "expired")
 
 
 def end_for_refund(
@@ -91,6 +164,13 @@ async def cancel_at_provider_for_refund(
     try:
         await provider.cancel_subscription(ls_id)
     except Exception as e:
+        # Cancelled there already (the other refund path got there first, or a person
+        # did it in the dashboard): that is the outcome wanted, not a failure.
+        if await _cancelled_at_provider(provider, ls_id):
+            record["provider_cancelled_at"] = now.isoformat()
+            record["provider_found_cancelled"] = True
+            _save(subscription, record)
+            return
         record["provider_cancel_failed"] = str(e)[:500]
         trigger_payment_alert(
             alert_type="refund_cancel_failed",
