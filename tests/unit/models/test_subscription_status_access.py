@@ -72,7 +72,9 @@ async def session():
     await engine.dispose()
 
 
-async def _subscription(db, status, *, end=None, credits=600, reset=None, ls_id=None):
+async def _subscription(
+    db, status, *, end=None, credits=600, reset=None, ls_id=None, trial_end=None
+):
     plan = SubscriptionPlan(
         name=f"growth-{uuid4().hex[:8]}",
         display_name="Growth",
@@ -91,6 +93,7 @@ async def _subscription(db, status, *, end=None, credits=600, reset=None, ls_id=
         current_credits=credits,
         credits_reset_date=reset,
         lemonsqueezy_subscription_id=ls_id,
+        trial_end_date=trial_end,
     )
     db.add(subscription)
     await db.flush()
@@ -205,6 +208,88 @@ async def test_credits_endpoint_keeps_the_plan_while_past_due(session):
     data = response.json()["data"]
     assert data["current_credits"] == 600
     assert data["plan_name"] == "Growth"
+
+
+# --- a trial ends on its own date, not when the expiry job runs (F16a, #480) --------
+
+
+@pytest.mark.parametrize(
+    ("trial_end", "ls_id", "expected"),
+    [
+        (NOW + timedelta(minutes=1), None, True),  # just before its end
+        (NOW - timedelta(minutes=1), None, False),  # just after: the job hasn't run yet
+        # A paid plan's trial days at Lemon Squeezy: Lemon Squeezy converts or ends them.
+        (NOW - timedelta(minutes=1), "ls-trial", True),
+        (None, None, True),  # a trial row with no end date keeps today's rule
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_trial_grants_access_until_its_own_end(session, trial_end, ls_id, expected):
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.TRIAL, trial_end=trial_end, ls_id=ls_id
+    )
+
+    assert await _grants(session, subscription) is expected
+
+
+@pytest.mark.parametrize(
+    ("minutes_left", "spent"),
+    [(1, True), (-1, False)],
+)
+@pytest.mark.asyncio
+async def test_a_trial_spends_until_its_end_and_not_after(session, minutes_left, spent):
+    from src.services.usage_tracking_service import UsageTrackingService
+
+    trial_end = datetime.now(timezone.utc) + timedelta(minutes=minutes_left)
+    user, _, subscription = await _subscription(
+        session, SubscriptionStatus.TRIAL, credits=60, trial_end=trial_end
+    )
+
+    assert await UsageTrackingService(session).consume_credits(user.id, 15) is spent
+    remaining = (await _row(session, subscription)).current_credits
+    assert remaining == (45 if spent else 60)
+
+
+@pytest.mark.asyncio
+async def test_an_ended_trial_is_refused_as_an_expired_plan_is(session):
+    """The same refusal the expiry job's EXPIRED row gets, before the job has run."""
+    from src.services.usage_tracking_service import UsageTrackingService
+
+    ended, _, _ = await _subscription(
+        session, SubscriptionStatus.TRIAL, credits=60, trial_end=NOW - timedelta(minutes=1)
+    )
+    expired, _, _ = await _subscription(session, SubscriptionStatus.EXPIRED, credits=60)
+    service = UsageTrackingService(session)
+
+    assert await service.consume_credits(ended.id, 15) is False
+    assert await service.consume_credits(expired.id, 15) is False
+
+
+@pytest.mark.asyncio
+async def test_the_credits_endpoint_answers_an_ended_trial_as_no_plan(session):
+    from src.api.server import app
+
+    user, _, _ = await _subscription(
+        session, SubscriptionStatus.TRIAL, credits=60, trial_end=NOW - timedelta(minutes=1)
+    )
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_async_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: {"identity": str(user.id)}
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/subscriptions/credits")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["current_credits"] == 0
+    assert data["articles_remaining"] == 0
+    assert data["plan_name"] is None
+    assert data["credits_per_month"] is None
 
 
 # --- credits and new subscriptions while a renewal is unpaid ----------------------
