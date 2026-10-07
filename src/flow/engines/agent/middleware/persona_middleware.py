@@ -325,7 +325,7 @@ FACTS RULE:
 ========================
 CORE SEO REQUIREMENTS
 ========================
-- Use the user-selected page title VERBATIM (already 50–59 characters) — never rewrite it
+- Use the user-selected page title VERBATIM (its length already checked) — never rewrite it
 - Include the primary keyword naturally in:
   - Title
   - First 100 words (introduction)

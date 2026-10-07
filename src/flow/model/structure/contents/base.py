@@ -148,7 +148,7 @@ class BaseGeneratedContent(BaseModel):
 
     title: str = Field(
         description=(
-            "The user-selected page title, copied VERBATIM from the prompt (it is already 50–59 characters and contains the focus keyphrase). "
+            "The user-selected page title, copied VERBATIM from the prompt (its length is already checked and it contains the focus keyphrase). "
             "Never reword, shorten, lengthen or re-case it."
         )
     )
@@ -159,8 +159,8 @@ class BaseGeneratedContent(BaseModel):
     meta_title: Optional[str] = Field(
         default=None,
         description=(
-            "SEO meta title: identical to `title` — the user-selected title, verbatim "
-            "(50–59 chars). Do not write a different one."
+            "SEO meta title: identical to `title` — the user-selected title, verbatim. "
+            "Do not write a different one."
         ),
     )
     meta_description: Optional[str] = Field(

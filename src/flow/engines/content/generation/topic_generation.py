@@ -4,7 +4,8 @@ Two rules are non-negotiable and are enforced deterministically after the
 model, never by trusting the prompt alone:
 
 * Every title contains the EXACT focus keyphrase the user entered.
-* Every title is 50-59 characters inclusive.
+* Every title is 50-59 characters inclusive, or up to the keyphrase plus 20 for a long
+  keyphrase, never over 75 (``seo_title_rules.title_max_chars``).
 * Every title reads as the selected content type, for the selected intent.
 
 The enforcement ladder is: strong system prompt + schema guidance -> LLM
@@ -132,10 +133,12 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
 
 
 # A topic set must still be usable after invalid titles are dropped. Below this
-# the set is treated as a failed generation so the caller keeps the previous
-# valid one. One title is enough to go on: a long keyphrase leaves room for few,
-# and stopping the run is worse than a short picker (G69, rext-control #585).
+# the set is treated as a failed generation. On the first generation one title is
+# enough to go on: a long keyphrase leaves room for few, and stopping the run is
+# worse than a short picker (G69, rext-control #585). A regeneration needs two, as
+# before, or the caller keeps the previous valid set rather than shrink it.
 _MIN_USABLE_TOPICS = 1
+_MIN_USABLE_REGENERATED_TOPICS = 2
 
 
 def _is_regenerate_request(response: Any) -> bool:
@@ -350,6 +353,7 @@ async def _generate_and_validate_topics(
     messages: List[Any],
     query: str,
     keyphrase: str,
+    regenerating: bool = False,
 ) -> Optional[SEOTopics]:
     """
     Generate topics and apply the non-breaking SEO validation/repair layer.
@@ -380,9 +384,9 @@ async def _generate_and_validate_topics(
 
         results = _apply_deterministic_title_repair(results, keyphrase)
 
-        if not results.topics:
+        if not results.topics and not regenerating:
             # Every title was dropped: the keyphrase itself is offered as the one title
-            # rather than ending the run (G69).
+            # rather than ending the run (G69). A regeneration keeps the previous set.
             fallback = keyphrase_title(keyphrase)
             if fallback:
                 logger.warning(
@@ -390,7 +394,8 @@ async def _generate_and_validate_topics(
                 )
                 results.topics = [SEOTopic(title=fallback, recommended=True)]
 
-        if len(results.topics) < _MIN_USABLE_TOPICS:
+        minimum = _MIN_USABLE_REGENERATED_TOPICS if regenerating else _MIN_USABLE_TOPICS
+        if len(results.topics) < minimum:
             logger.warning(
                 "Only %d usable title(s) survived validation for query=%r.",
                 len(results.topics),
@@ -720,6 +725,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
         messages=messages,
         query=query,
         keyphrase=keyphrase,
+        regenerating=regenerating,
     )
 
     if results is None:
@@ -815,7 +821,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     # -- Selection is FINAL from here on ---------------------------------
     #
     # Every title offered in the picker has already been through the full
-    # contract: exact focus keyphrase, 50-59 characters, content type and
+    # contract: exact focus keyphrase, its length range, content type and
     # search intent. That is deliberately the ONLY place a title is ever
     # repaired. The moment the user picks one it is frozen: no outline,
     # generation, repair, humanization or validation stage may reword,
