@@ -30,6 +30,16 @@ from src.flow.model.structure.topics import SEOTopics
             "An Effective Content Strategy Blueprint: Marketing Plan",
         ),
         ("A Unidentified Risk in Your Content Plan", "An Unidentified Risk in Your Content Plan"),
+        ("A Unindexed Page Guide for SEO Teams", "An Unindexed Page Guide for SEO Teams"),
+        # A single letter by its name.
+        (
+            "A X-Ray Guide for Medical Content Teams and Writers",
+            "An X-Ray Guide for Medical Content Teams and Writers",
+        ),
+        (
+            "An U-Turn Strategy for Content Marketing Teams Today",
+            "A U-Turn Strategy for Content Marketing Teams Today",
+        ),
         (
             "A Éclair Guide for Bakers and Pastry Shops",
             "An Éclair Guide for Bakers and Pastry Shops",
@@ -74,6 +84,15 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "How to Uninstall a Plugin: An Uninstall Checklist",
         "A Unidirectional Data Flow Architecture for React Apps",
         "A Unimodal Analytics Model for Modern Marketing Teams",
+        "An Unindexed Page Guide for SEO Teams and Site Owners",
+        # A "uni" word it doesn't know: unsure.
+        "A Unigram Model Guide for Search Teams",
+        "An Unigram Model Guide for Search Teams",
+        # Said either way by dialect.
+        "An Herb Gardening Guide for First-Time Home Growers",
+        "A Herb Gardening Guide for First-Time Home Growers",
+        # A digit that isn't 0-9: unsure, and no error.
+        "A ①-Step Guide to Better Content Briefs",
         "An Éclair Guide for Bakers and Pastry Shops Everywhere",
         # A capital "A" or "An" inside a title may be a letter: left as written.
         "Point A Explained: What It Means for Your Marketing Plan",
@@ -109,6 +128,9 @@ def test_what_is_right_or_unsure_is_left_alone(title):
         "Briefe an Kunden schreiben: Tipps und Vorlagen",
         "Guia para a estratégia de conteúdo em 2026",
         "Les meilleures astuces pour a écrire un blog",
+        "Marketing a Efektywna Strategia SEO dla Polskich Firm",
+        # ASCII, but no English word: not taken for English.
+        "Marketing a Efektywna Strategia SEO Polskich Firm",
     ],
 )
 def test_a_title_in_another_language_is_left_alone(title):
