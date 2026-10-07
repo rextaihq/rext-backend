@@ -23,7 +23,26 @@ from src.flow.model.structure.topics import SEOTopics
         ("Why You Need a Hour-by-Hour Content Plan", "Why You Need an Hour-by-Hour Content Plan"),
         ("A Honest Review of the Best SEO Tools", "An Honest Review of the Best SEO Tools"),
         ("An One-Page SEO Checklist for Your Site", "A One-Page SEO Checklist for Your Site"),
-        ("How to Build An URL Structure That Ranks", "How to Build A URL Structure That Ranks"),
+        ("How to build an URL structure that ranks", "How to build a URL structure that ranks"),
+        # No word from the short English list, and all ASCII: English.
+        (
+            "A Effective Content Strategy Blueprint: Marketing Plan",
+            "An Effective Content Strategy Blueprint: Marketing Plan",
+        ),
+        ("A Unidentified Risk in Your Content Plan", "An Unidentified Risk in Your Content Plan"),
+        (
+            "A Éclair Guide for Bakers and Pastry Shops",
+            "An Éclair Guide for Bakers and Pastry Shops",
+        ),
+        # After an opening quote, its quote kept.
+        (
+            "How to Build “a Effective Content Strategy” for Growth",
+            "How to Build “an Effective Content Strategy” for Growth",
+        ),
+        (
+            "SEO Basics: A Effective Plan for Small Teams",
+            "SEO Basics: An Effective Plan for Small Teams",
+        ),
         ("A 8-Step Guide to Better Content Briefs", "An 8-Step Guide to Better Content Briefs"),
         ("A 11-Point Checklist for Your Blog Posts", "An 11-Point Checklist for Your Blog Posts"),
         (
@@ -53,6 +72,12 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "A UX Audit Checklist for Your Website",
         "An SEO Brief Template for Your Team",
         "How to Uninstall a Plugin: An Uninstall Checklist",
+        "A Unidirectional Data Flow Architecture for React Apps",
+        "A Unimodal Analytics Model for Modern Marketing Teams",
+        "An Éclair Guide for Bakers and Pastry Shops Everywhere",
+        # A capital "A" or "An" inside a title may be a letter: left as written.
+        "Point A Explained: What It Means for Your Marketing Plan",
+        "How to Build An URL Structure That Ranks",
         # A letter, not an article.
         "Vitamin A Explained: What It Does for You",
         "Plan A or Plan B: How to Choose for Your Blog",
@@ -63,6 +88,11 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "A FAQ Page Template for Your SaaS Website",
         "An FAQ Page Template for Your SaaS Website",
         "A SQL Guide for Marketers and Analysts",
+        "A REST API Guide for Developers and Product Teams",
+        "A RADAR Chart Guide for Product Teams",
+        # A four-digit 11… or 18… may be a year: "an 1800s", "a 1,800".
+        "An 1800s Fashion Guide for Historical Costume Designers",
+        "A 1800s Fashion Guide for Historical Costume Designers",
         "A SaaS Marketing Plan for the Year Ahead",
         # Not a letter or a digit next.
         "How to Plan a $500 Content Budget for Your Team",
@@ -115,7 +145,8 @@ def test_every_title_is_put_right_but_never_at_the_keyphrases_cost():
     ]
 
     # The user's own keyphrase says "a effective guide": its "a" stays, or the title would no
-    # longer carry it.
-    title = "A Effective Guide: What a Effective Guide Covers in 2026"
-    kept = fix_title_articles(_topics(title), "a effective guide")
-    assert kept.topics[0].title == title
+    # longer carry it. The title's other articles are still put right.
+    kept = fix_title_articles(
+        _topics("A Effective Guide: How to Write a SEO Brief for Teams"), "a effective guide"
+    )
+    assert kept.topics[0].title == "A Effective Guide: How to Write an SEO Brief for Teams"
