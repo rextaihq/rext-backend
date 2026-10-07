@@ -242,3 +242,86 @@ def test_a_direct_address_is_probed_with_a_short_timeout(monkeypatch):
     migration_engine().dispose()
 
     assert (SAME_NAME_ELSEWHERE.port, {"connect_timeout": 5}) in made
+
+
+# --- a database the squash left behind, and a new one (G85, rext-control#653) ------------
+
+
+def test_a_revision_the_squash_retired_stops_the_start():
+    retired = next(iter(sorted(migrate_on_start.RETIRED_REVISIONS)))
+    scripts, context, upgrade_patch = _alembic(retired, known=False)
+    with scripts, context, upgrade_patch as upgrade, pytest.raises(MigrationFailed) as failed:
+        upgrade_to_head(MagicMock())
+
+    assert retired in str(failed.value) and "3c9e1e5d5028" in str(failed.value)
+    upgrade.assert_not_called()
+
+
+def test_the_retired_revisions_are_none_of_the_live_ones():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config(str(migrate_on_start.ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(migrate_on_start.ROOT / "alembic"))
+    live = {script.revision for script in ScriptDirectory.from_config(config).walk_revisions()}
+
+    assert "3c9e1e5d5028" in live  # the baseline keeps the preserved head's id
+    assert not live & migrate_on_start.RETIRED_REVISIONS
+    assert len(migrate_on_start.RETIRED_REVISIONS) > 200
+
+
+@pytest.mark.asyncio
+async def test_a_database_with_no_plan_is_seeded(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from scripts.seeds import run_all
+
+    seeds = AsyncMock()
+    monkeypatch.setattr(run_all, "run_all_seeds", seeds)
+    monkeypatch.setattr(migrate_on_start, "_has_no_plans", AsyncMock(return_value=True))
+
+    assert await migrate_on_start.seed_a_new_database() is True
+    seeds.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_database_with_plans_is_never_seeded(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from scripts.seeds import run_all
+
+    seeds = AsyncMock()
+    monkeypatch.setattr(run_all, "run_all_seeds", seeds)
+    monkeypatch.setattr(migrate_on_start, "_has_no_plans", AsyncMock(return_value=False))
+
+    assert await migrate_on_start.seed_a_new_database() is False
+    seeds.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_seed_that_fails_stops_the_start(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from scripts.seeds import run_all
+
+    monkeypatch.setattr(run_all, "run_all_seeds", AsyncMock(side_effect=RuntimeError("boom")))
+    monkeypatch.setattr(migrate_on_start, "_has_no_plans", AsyncMock(return_value=True))
+
+    with pytest.raises(MigrationFailed, match="could not be seeded"):
+        await migrate_on_start.seed_a_new_database()
+
+
+@pytest.mark.asyncio
+async def test_the_start_seeds_after_migrating(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    order = []
+    monkeypatch.setattr(migrate_on_start, "migrate", lambda: order.append("migrate") or "head")
+    monkeypatch.setattr(
+        migrate_on_start,
+        "seed_a_new_database",
+        AsyncMock(side_effect=lambda: order.append("seed")),
+    )
+
+    assert await apply_pending_migrations() == "head"
+    assert order == ["migrate", "seed"]
