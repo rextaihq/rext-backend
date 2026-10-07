@@ -226,8 +226,12 @@ _DANGLING_END_WORDS = frozenset(
 
 def _verb_forms(verb: str) -> set[str]:
     """A regular verb's written forms ("rely": relies, relied, relying), for the table below."""
-    stem = verb[:-1] if verb.endswith("e") else verb
-    forms = {verb, f"{verb}s", f"{stem}ed", f"{stem}ing"}
+    past = f"{verb}d" if verb.endswith("e") else f"{verb}ed"
+    # "care": caring, but "agree": agreeing.
+    progressive = (
+        f"{verb[:-1]}ing" if verb.endswith("e") and not verb.endswith("ee") else f"{verb}ing"
+    )
+    forms = {verb, f"{verb}s", past, progressive}
     if re.search(r"[^aeiou][aeiou][^aeiouwxy]$", verb):  # commit: committed, committing
         forms |= {f"{verb}{verb[-1]}ed", f"{verb}{verb[-1]}ing"}
     if verb.endswith("y") and verb[-2:-1] not in ("a", "e", "i", "o", "u"):
@@ -278,6 +282,18 @@ _TIME_NOUNS = frozenset(
 # Particles a verb takes before its preposition ("Catch Up On", "Fall Back On"). Not before "of"
 # or "to", which make compound prepositions of them ("Out Of", "Up To 50%").
 _PARTICLES = frozenset({"up", "out", "down", "back", "off", "away", "along", "ahead"})
+# The verbs those particles make phrasal verbs of; a particle after anything else is part of a
+# noun ("Round Up For Teams" lost its object).
+_PHRASAL_VERBS = frozenset(
+    form
+    for verb in (
+        "catch", "fall", "look", "sign", "keep", "cut", "set", "follow", "show", "end", "give",
+        "come", "stand", "check", "reach", "figure", "find", "work", "carry", "go", "get", "turn",
+        "line", "team", "build", "open", "sum", "log", "opt", "speak", "think", "start", "hold",
+        "put", "take", "bring", "call", "pick", "run", "sort", "point", "back", "clean", "move",
+    )
+    for form in _verb_forms(verb)
+)  # fmt: skip
 
 
 def _bare(word: str) -> str:
@@ -291,11 +307,13 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     if last in _DANGLING_END_WORDS:
         return True
     following = _bare(words[kept]) if kept < len(words) else ""
-    after_that = _bare(words[kept + 1]) if kept + 1 < len(words) else ""
+    # What the trim cut, all of it: only a time ("Today", "This Year") leaves a word whole;
+    # "for Today and Tomorrow" was the preposition's object.
+    removed = [word for word in (_bare(word) for word in words[kept:]) if word]
     only_time_cut = (
-        not following
-        or following in _TIME_ADVERBS
-        or (following in _TIME_PHRASE_STARTS and after_that in _TIME_NOUNS)
+        not removed
+        or (len(removed) == 1 and removed[0] in _TIME_ADVERBS)
+        or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS and removed[1] in _TIME_NOUNS)
     )
     if last == "that":
         return not only_time_cut
@@ -312,7 +330,8 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     ):
         return False
     verb = _bare(words[kept - 2]) if kept > 1 else ""
-    if verb in _PARTICLES and last not in ("of", "to"):
+    before_particle = _bare(words[kept - 3]) if kept > 2 else ""
+    if verb in _PARTICLES and before_particle in _PHRASAL_VERBS and last not in ("of", "to"):
         return False
     return verb not in _PREPOSITION_AFTER_VERB[last]
 

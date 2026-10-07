@@ -323,6 +323,9 @@ def _apply_deterministic_title_repair(parsed: SEOTopics, keyphrase: str) -> SEOT
     kept = []
 
     for topic in parsed.topics:
+        # The title as validation measures it (NFC, whitespace and quotes trimmed), so what the
+        # picker shows is exactly what passed.
+        topic.title = normalize_title(topic.title)
         if title_is_valid(topic.title, keyphrase):
             kept.append(topic)
             continue

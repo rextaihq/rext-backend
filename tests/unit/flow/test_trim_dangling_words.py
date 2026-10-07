@@ -97,6 +97,29 @@ def test_that_closing_a_clause_stays_and_a_relative_that_goes():
     ) == ("SEO Agencies: The Proven Tools Small Businesses Need")
 
 
+def test_a_time_word_counts_only_when_it_is_all_the_trim_cut():
+    """The trim cut "Today and Tomorrow", the object of "for", not a time after it."""
+    title = "SEO Agencies: The Complete Strategic Marketing Plan for Today and Tomorrow"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: The Complete Strategic Marketing Plan"
+    )
+
+
+def test_agreeing_keeps_its_preposition():
+    title = "SEO Agencies: These Choices Businesses Are Agreeing With Their Advisors"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: These Choices Businesses Are Agreeing With"
+    )
+
+
+def test_a_particle_keeps_the_preposition_only_after_a_phrasal_verb():
+    """Here "Round Up" is a noun, and "For" lost its object."""
+    title = "SEO Agencies: The Complete Detailed Expert Round Up For Teams Everywhere"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: The Complete Detailed Expert Round Up"
+    )
+
+
 def test_a_verb_ending_in_o_keeps_its_preposition():
     title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
     assert _trim_to_max(title, "seo agencies") == (
