@@ -17,7 +17,12 @@ setting of its own, and a checkout's tests and `langgraph dev` never migrate.
   blocking work, and psycopg keeps the address's sslmode and channel_binding as given.
 - A migration that fails stops the start, so no code serves against a schema it
   doesn't match. A database newer than the image (an older image started to roll
-  back) is left alone: the image starts and says so.
+  back) is left alone: the image starts and says so. A database on a revision the
+  2026-10 squash retired never reached the preserved head, so the start refuses it.
+- A database with no subscription plan yet (a brand-new one, or one whose first seed
+  didn't finish) gets the rows every database needs from scripts/seeds once it's
+  migrated: the plans, roles and permissions, email templates and the super admin.
+  The seeds only insert what's missing; a database with plans is never seeded.
 """
 
 import asyncio
@@ -34,6 +39,7 @@ from sqlalchemy import create_engine, pool, text
 from sqlalchemy.engine import URL, Connection, Engine, make_url
 
 from alembic import command
+from src.api.database.retired_revisions import RETIRED_REVISIONS
 from src.utils.logger import logger
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -138,6 +144,12 @@ def upgrade_to_head(connection: Connection) -> Outcome:
     head = scripts.get_current_head()
     before = MigrationContext.configure(connection).get_current_revision()
     if before is not None and not _knows(scripts, before):
+        if before in RETIRED_REVISIONS:
+            raise MigrationFailed(
+                f"the database is at {before}, a revision the 2026-10 squash retired: it never "
+                f"reached the preserved head 3c9e1e5d5028. Bring it there with an image from "
+                f"before the squash, then start this one"
+            )
         return Outcome(before, before, head, ahead=True)
     if before != head:
         logger.info(f"Database migration: from {before} to {head}")
@@ -205,6 +217,37 @@ def migrate(
     return outcome.after
 
 
+async def _has_no_plans() -> bool:
+    from src.api.database.async_database import get_async_db_context
+
+    async with get_async_db_context() as db:
+        found = await db.execute(text("SELECT EXISTS (SELECT 1 FROM subscription_plans)"))
+        return not found.scalar()
+
+
+async def seed_a_new_database() -> bool:
+    """The rows every database needs, when it has no subscription plan yet; whether it seeded.
+
+    Raises:
+        MigrationFailed: the seeds failed; the next start tries again
+    """
+    if not await _has_no_plans():
+        return False
+    from scripts.seeds.run_all import run_all_seeds
+
+    logger.info("Database seeding: no subscription plan yet, a new database: seeding it")
+    try:
+        await run_all_seeds()
+    except Exception as e:
+        raise MigrationFailed(f"the new database could not be seeded: {_summary(e)}") from None
+    logger.info("Database seeding: done")
+    return True
+
+
 async def apply_pending_migrations() -> Optional[str]:
-    """migrate() off the event loop: the server's start waits for it, nothing else does."""
-    return await asyncio.to_thread(migrate)
+    """migrate() off the event loop, then the seeds for a new database: the server's start
+    waits for both, nothing else does."""
+    revision = await asyncio.to_thread(migrate)
+    if revision is not None:
+        await seed_a_new_database()
+    return revision
