@@ -57,6 +57,7 @@ def test_the_brief_holds_each_fact_once():
         "brand_name": "Acme Tools",
         "call_to_action": "Start planning today",
         "call_to_action_links": False,
+        "call_to_action_reworded": False,
     }
 
 
@@ -105,12 +106,12 @@ def test_the_wording_is_the_same_at_every_stage_but_for_the_stages_own_line():
         (
             "subtle",
             f"- Brand: Acme Tools, subtle: {BRAND_CHOICE_LINES['subtle']}",
-            '- Call to action: "Start planning today" (without the brand, and with no link)',
+            '- Call to action: "Start planning today" (with no link)',
         ),
         (
             "none",
             f"- Brand: Acme Tools, none: {BRAND_CHOICE_LINES['none']}",
-            '- Call to action: "Start planning today" (without the brand, and with no link)',
+            '- Call to action: "Start planning today" (with no link)',
         ),
     ],
 )
@@ -152,3 +153,23 @@ def test_an_empty_fact_adds_no_line():
         f'- Title (fixed, the user chose it): "{TITLE}"',
         "- Content type: blog",
     ]
+
+
+@pytest.mark.parametrize("prominence", ["none", "subtle"])
+def test_a_call_to_action_that_names_the_brand_is_given_as_an_intent_to_reword(prominence):
+    outline = _outline(prominence, final_cta={"primary_cta": "Get started with Acme Tools"})
+    brief, _ = _brief(outline)
+    text = render_generation_brief(brief, stage="rewrite")
+
+    assert brief["call_to_action_reworded"] is True and brief["call_to_action_links"] is False
+    assert (
+        '- Call to action: the same intent as the outline\'s ("Get started with Acme Tools"), '
+        "in new words without Acme Tools, and with no link"
+    ) in text
+    # With a prominent mention the same call to action is kept as written, link and all.
+    kept, _ = _brief(
+        _outline("prominent", final_cta={"primary_cta": "Get started with Acme Tools"})
+    )
+    assert '- Call to action: "Get started with Acme Tools"' in (
+        render_generation_brief(kept, stage="rewrite").splitlines()
+    )
