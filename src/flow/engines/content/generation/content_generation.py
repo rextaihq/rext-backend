@@ -41,6 +41,7 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_guidance_blocks,
     resolve_outline_structure,
 )
+from src.flow.engines.content.generation.provider_unavailable import StoppedAfterCharge
 from src.flow.engines.content.generation.repair_content import enforce_subheadings_for_spec
 from src.flow.engines.content.generation.requirements_spec import (
     build_requirements_spec,
@@ -1358,9 +1359,10 @@ async def generate_content(state: REXT) -> dict:
         }
 
     except Exception as e:
-        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1).
+        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1). The notice
+        # keeps the marks of the stages charged above, so a retry on this thread doesn't charge them again.
         if provider_outage(e) is not None:
-            raise
+            raise StoppedAfterCharge(content_state) from e
         logger.exception(f"Error generating content: {str(e)}")
         return {
             "content": {

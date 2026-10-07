@@ -17,6 +17,7 @@ from src.flow.engines.content.generation.provider_unavailable import (
     PROVIDER_UNAVAILABLE_CODE,
     PROVIDER_UNAVAILABLE_MESSAGE,
     PROVIDER_UNAVAILABLE_NODE,
+    StoppedAfterCharge,
     provider_unavailable,
     stop_on_outage,
     unless_outage,
@@ -167,7 +168,66 @@ async def test_the_article_lets_an_outage_through_to_the_notice(monkeypatch):
     monkeypatch.setattr(content_module, "_format_outline_for_generation", outage)
     state = {"content": {"selected_topic": "How to plan a garden", "outline": {"title": "x"}}}
 
-    assert await stop_on_outage(content_module.generate_content)(state) == NOTICE
+    result = await stop_on_outage(content_module.generate_content)(state)
+
+    assert result["content"]["error_code"] == PROVIDER_UNAVAILABLE_CODE
+    assert result["content"]["error"] == PROVIDER_UNAVAILABLE_MESSAGE
+    assert "credits_deducted" not in result["content"]
+    assert unless_outage("validate_content")(result) == PROVIDER_UNAVAILABLE_NODE
+
+
+async def test_an_article_stopped_after_its_charge_is_not_charged_again_on_a_retry(monkeypatch):
+    # From the review of #887: the notice keeps credits_deducted, so a retry on this thread skips the charge.
+    charged = []
+
+    async def consume(user_id, credits, stage, workspace_id=None):
+        charged.append(stage)
+
+    def outage(*args, **kwargs):
+        raise out_of_credits()
+
+    monkeypatch.setattr(content_module, "consume_stage_credits", consume)
+    monkeypatch.setattr(content_module, "build_requirements_spec", outage)
+    step = stop_on_outage(content_module.generate_content)
+    state = {"content": {"selected_topic": "How to plan a garden", "outline": {"title": "x"}}}
+
+    first = await step(state)
+    retry = await step({"content": {**state["content"], **first["content"]}})
+
+    assert charged == ["content_drafting", "humanization", "deep_research"]
+    assert first["content"]["credits_deducted"] is True
+    assert first["content"]["error_code"] == PROVIDER_UNAVAILABLE_CODE
+    assert retry["content"]["credits_deducted"] is True
+    assert retry["content"]["error_code"] == PROVIDER_UNAVAILABLE_CODE
+
+
+async def test_a_step_stopped_after_a_charge_keeps_its_marks_in_the_notice():
+    @stop_on_outage
+    async def step(state):
+        try:
+            raise out_of_credits()
+        except Exception as error:
+            raise StoppedAfterCharge(
+                {"credits_deducted": True, "image_credit_deducted": True}
+            ) from error
+
+    assert await step({}) == {
+        "content": {
+            "credits_deducted": True,
+            "image_credit_deducted": True,
+            "error": PROVIDER_UNAVAILABLE_MESSAGE,
+            "error_code": PROVIDER_UNAVAILABLE_CODE,
+        }
+    }
+
+
+async def test_a_stop_after_a_charge_without_an_outage_still_raises():
+    @stop_on_outage
+    async def step(state):
+        raise StoppedAfterCharge({"credits_deducted": True})
+
+    with pytest.raises(StoppedAfterCharge):
+        await step({})
 
 
 STALE = {
