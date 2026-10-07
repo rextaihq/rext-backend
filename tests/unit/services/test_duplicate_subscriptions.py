@@ -1,7 +1,9 @@
 """Two live Lemon Squeezy subscriptions: the newer stays, the older is cancelled and refunded.
 
 F11, revnix/rext-control#336. Checked on the test PostgreSQL inside a rolled-back
-transaction, with Lemon Squeezy and the alert replaced by mocks.
+transaction, with Lemon Squeezy and the alert replaced by mocks. The cancel and the
+refund run only with BILLING_AUTO_SETTLE_DUPLICATES=true (off by default, founder
+2026-10-07): these tests turn it on, except the ones about it being off.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -50,6 +52,11 @@ async def session():
             yield db
         await transaction.rollback()
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def auto_settle(monkeypatch):
+    monkeypatch.setenv("BILLING_AUTO_SETTLE_DUPLICATES", "true")
 
 
 @pytest.fixture
@@ -322,3 +329,38 @@ async def test_a_settled_duplicate_keeps_its_end_when_lemon_squeezy_cancels_it(
     await session.refresh(older)
     assert older.status == SubscriptionStatus.CANCELLED
     assert handler_alerts.call_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.parametrize("setting", [None, "false"])
+@pytest.mark.asyncio
+async def test_while_automatic_settlement_is_off_a_person_is_asked_once(
+    session, alerts, monkeypatch, setting
+):
+    """Off by default: nothing is cancelled or refunded, no access changes, one alert."""
+    if setting is None:
+        monkeypatch.delenv("BILLING_AUTO_SETTLE_DUPLICATES", raising=False)
+    else:
+        monkeypatch.setenv("BILLING_AUTO_SETTLE_DUPLICATES", setting)
+    user, (older, newer) = await _customer_with(
+        session, SubscriptionStatus.ACTIVE, SubscriptionStatus.ACTIVE
+    )
+    provider = _provider()
+
+    assert await module.settle_duplicate_subscriptions(session, user.id, provider) == []
+    assert await module.settle_duplicate_subscriptions(session, user.id, provider) == []
+
+    provider.cancel_subscription.assert_not_called()
+    provider.latest_invoice.assert_not_called()
+    provider.refund_subscription_invoice.assert_not_called()
+    await session.refresh(older)
+    assert older.status == SubscriptionStatus.ACTIVE
+    assert older.end_date is None
+    assert older.subscription_metadata["duplicate_found_of"] == str(newer.id)
+    assert "duplicate_of" not in older.subscription_metadata
+    assert newer.status == SubscriptionStatus.ACTIVE
+    assert alerts.call_count == 1
+    assert alerts.call_args.kwargs["severity"] == "critical"
+    # Once a person cancels it by hand, it isn't offered back as "resume" either.
+    older.status = SubscriptionStatus.CANCELLED
+    older.end_date = NOW + timedelta(days=20)
+    assert billing_action(older) is None
