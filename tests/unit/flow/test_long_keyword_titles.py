@@ -123,8 +123,9 @@ async def test_when_no_title_survives_the_keyphrase_is_offered(monkeypatch):
 
     assert result is not None
     [topic] = result.topics
-    # Each word capitalized, as the repair's keyphrase lead is; matching ignores case.
-    assert topic.title.startswith("Best Project Management Software For Small Teams")
+    # In Title Case, as the repair's keyphrase lead is, short words in lowercase (G49);
+    # matching ignores case.
+    assert topic.title.startswith("Best Project Management Software for Small Teams")
     assert title_is_valid(topic.title, LONG), topic.title
     assert topic.recommended
 

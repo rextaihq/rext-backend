@@ -18,6 +18,7 @@ from src.flow.engines.content.review.outline_edits import (
     editable_sections,
 )
 from src.flow.engines.serp.serp_evidence import build_serp_titles
+from src.flow.model.structure.outlines import WRITER_MAX_TARGET_WORDS, target_word_count_range
 from src.flow.model.structure.outlines.render import normalize_outline
 from src.flow.states.rext import REXT
 
@@ -216,9 +217,25 @@ def review_outline(state: REXT):
                 logger.warning(f"Ignoring invalid target_word_count: {updated_word_count}")
                 updated_word_count = None
             else:
-                if not (500 <= updated_word_count <= 5000):
-                    logger.warning(f"Ignoring out-of-range target_word_count: {updated_word_count}")
+                shortest, longest = target_word_count_range(content_type)
+                if not (shortest <= updated_word_count <= longest):
+                    logger.warning(
+                        "Ignoring target_word_count %s: %s takes %s to %s",
+                        updated_word_count,
+                        content_type or "this content type",
+                        shortest,
+                        longest,
+                    )
                     updated_word_count = None
+                elif updated_word_count > WRITER_MAX_TARGET_WORDS:
+                    # Inside the type's range (a white paper goes to 15,000) but more than the
+                    # writer can return in one response: the most it can write, not a cut-off one.
+                    logger.warning(
+                        "target_word_count %s is more than the writer can return: using %s",
+                        updated_word_count,
+                        WRITER_MAX_TARGET_WORDS,
+                    )
+                    updated_word_count = WRITER_MAX_TARGET_WORDS
 
         # Use user-selected internal links if provided, else keep all
         selected_links = review_data.get("selected_internal_links")

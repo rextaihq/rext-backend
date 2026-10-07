@@ -8,10 +8,6 @@ class SEOIntentOutput(BaseModel):
         description="Primary SEO search intent"
     )
 
-    confidence: Literal["low", "medium", "high"] = Field(
-        description="Confidence level of the intent classification"
-    )
-
     is_brand: bool = Field(description="Whether the content is brand-focused or generic")
 
 

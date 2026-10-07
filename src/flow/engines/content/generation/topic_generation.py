@@ -37,8 +37,10 @@ from src.flow.engines.content.generation.seo_title_rules import (
     TITLE_MAX_CHARS_CEILING,
     TITLE_MIN_CHARS,
     keyphrase_fits_a_title,
+    keyphrase_spellings,
     keyphrase_title,
     normalize_title,
+    recase_keyphrase,
     repair_title,
     title_is_valid,
     title_max_chars,
@@ -349,6 +351,31 @@ def _apply_deterministic_title_repair(parsed: SEOTopics, keyphrase: str) -> SEOT
     return _validate_topic_structure(parsed) if kept else parsed
 
 
+def _recase_keyphrase_in_titles(parsed: SEOTopics, keyphrase: str) -> None:
+    """Each title writes the keyphrase in its own case (G49): the model copies the user's
+    lowercase into a Title Case title ("Find the Best seo agency for small business")."""
+    spellings = keyphrase_spellings([topic.title for topic in parsed.topics], keyphrase)
+    for topic in parsed.topics:
+        recased = recase_keyphrase(topic.title, keyphrase, spellings)
+        if recased != topic.title and title_is_valid(recased, keyphrase):
+            topic.title = recased
+
+
+def _fix_articles_keeping_valid(parsed: SEOTopics, keyphrase: str) -> None:
+    """The articles once more, after the last recasing: a repaired title's keyphrase may have
+    changed case since the first pass ("a seo agency" is now "a SEO Agency"). Nothing checks the
+    titles after this, so a change that would make a valid title invalid is taken back."""
+    written = [topic.title for topic in parsed.topics]
+    fix_title_articles(parsed, keyphrase)
+    for topic, was in zip(parsed.topics, written):
+        if (
+            topic.title != was
+            and title_is_valid(was, keyphrase)
+            and not title_is_valid(topic.title, keyphrase)
+        ):
+            topic.title = was
+
+
 async def _generate_and_validate_topics(
     model: Any,
     messages: List[Any],
@@ -369,9 +396,13 @@ async def _generate_and_validate_topics(
     try:
         results: SEOTopics = await model.ainvoke(messages)
 
-        # "a" or "an" put right before the titles are checked (G65), so one it lengthens past the
-        # limit goes through the repairs like any other.
-        results = fix_title_articles(_validate_topic_structure(results), keyphrase)
+        # The keyphrase in each title's case first (G49), so the article is judged by the word as
+        # the title will show it ("an SEO agency", where the model copied "seo"). Then "a" or "an"
+        # (G65), right before the titles are checked, so one it lengthens past the limit goes
+        # through the repairs like any other.
+        results = _validate_topic_structure(results)
+        _recase_keyphrase_in_titles(results, keyphrase)
+        results = fix_title_articles(results, keyphrase)
 
         if not results.topics:
             logger.warning("Model returned no topics for query=%r.", query)
@@ -396,6 +427,9 @@ async def _generate_and_validate_topics(
                     "No generated title survived for query=%r; offering the keyphrase.", query
                 )
                 results.topics = [SEOTopic(title=fallback, recommended=True)]
+
+        _recase_keyphrase_in_titles(results, keyphrase)
+        _fix_articles_keeping_valid(results, keyphrase)
 
         minimum = _MIN_USABLE_REGENERATED_TOPICS if regenerating else _MIN_USABLE_TOPICS
         if len(results.topics) < minimum:
@@ -460,6 +494,8 @@ def _build_system_prompt(
         f'THE EXACT FOCUS KEYPHRASE IS: "{keyphrase}"\n\n'
         "EVERY SINGLE TITLE MUST CONTAIN THIS EXACT PHRASE, WORD FOR WORD.\n"
         "- Use the phrase verbatim, in this exact word order.\n"
+        "- Only its case may change: write it in the title's own case, capitalized like the "
+        "rest of a Title Case title, with acronyms such as SEO in capitals.\n"
         "- Do NOT substitute a synonym, abbreviation, singular/plural variant, "
         "reordering, or any reworded version.\n"
         "- Do NOT invent, choose, or substitute a different focus keyword.\n"
