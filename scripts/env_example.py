@@ -41,10 +41,14 @@ EXTERNAL = {
     "TAVILY_API_KEY": "read by langchain-tavily",
     "PGBOUNCER_HOST": "documented for when the app goes through PgBouncer",
 }
-# Per-plan Lemon Squeezy IDs, read by name pattern (src/config/lemonsqueezy_plan_config.py).
-DYNAMIC = re.compile(
-    r"^LEMONSQUEEZY_(STARTER|GROWTH|PRO|AGENCY)_(PRODUCT_ID|VARIANT_ID_MONTHLY|VARIANT_ID_YEARLY|STORE_ID)$"
-)
+# The per-plan Lemon Squeezy IDs, read by a name built from each plan's name
+# (src/config/lemonsqueezy_plan_config.py), for the plans scripts/seeds/ creates.
+PLAN_TOKENS = ("STARTER", "GROWTH", "PRO", "AGENCY")
+PLAN_NAMES = {
+    f"LEMONSQUEEZY_{plan}_{key}": key
+    for plan in PLAN_TOKENS
+    for key in ("PRODUCT_ID", "VARIANT_ID_MONTHLY", "VARIANT_ID_YEARLY", "STORE_ID")
+}
 # A secret's default never goes into the example.
 SECRET = re.compile(r"(SECRET|PASSWORD|_KEY$|_KEY_ID$|TOKEN|DSN)")
 
@@ -82,6 +86,17 @@ def settings_fields() -> list[tuple[str, str, list[tuple[str, str | None, bool, 
                 for b in cls.bases
             ):
                 continue
+            # A case-sensitive class reads its fields' names as written; the others match any case.
+            case_sensitive = any(
+                isinstance(item, ast.Assign)
+                and any(getattr(t, "id", None) == "model_config" for t in item.targets)
+                and isinstance(item.value, ast.Call)
+                and any(
+                    k.arg == "case_sensitive" and _literal(k.value)[0] is True
+                    for k in item.value.keywords
+                )
+                for item in cls.body
+            )
             fields = []
             for item in cls.body:
                 if not (isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)):
@@ -114,7 +129,9 @@ def settings_fields() -> list[tuple[str, str, list[tuple[str, str | None, bool, 
                 else:
                     default, known = _literal(value)
                 text = _env_value(default) if known and not SECRET.search(env.upper()) else None
-                fields.append((env.upper(), text, required, description or ""))
+                fields.append(
+                    (env if case_sensitive else env.upper(), text, required, description or "")
+                )
             sections.append((rel, cls.name, fields))
     return sections
 
@@ -173,7 +190,16 @@ def generated(head_names: set[str]) -> str:
     if rest:
         lines += ["", "# Read directly (os.getenv / os.environ)"]
         for name, src, default in rest:
+            seen.add(name)
             lines.append(f"# {name}={default or ''}   ({src})")
+    plans = [name for name in PLAN_NAMES if name not in seen]
+    if plans:
+        lines += [
+            "",
+            "# Per plan (src/config/lemonsqueezy_plan_config.py); a plan's STORE_ID falls back to",
+            "# LEMONSQUEEZY_STORE_ID when it's sold from the same store",
+        ]
+        lines += [f"# {name}=" for name in plans]
     return "\n".join(lines) + "\n"
 
 
@@ -189,7 +215,7 @@ def head_problems(head: str) -> list[str]:
     read = {name for _, _, fields in settings_fields() for name, *_ in fields} | set(direct_reads())
     problems = []
     for name in sorted(set(NAME_LINE.findall(head))):
-        if name not in read and name not in EXTERNAL and not DYNAMIC.match(name):
+        if name not in read and name not in EXTERNAL and name not in PLAN_NAMES:
             problems.append(f".env.example names {name}, which nothing reads: remove it")
     return problems
 

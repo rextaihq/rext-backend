@@ -15,7 +15,12 @@
 
    MinIO is optional: without it the API serves, `/health` reports storage as unhealthy, and uploads and featured images fail. Set `REXT_STORAGE_SKIP_BUCKET_CHECK=1` to skip the bucket check at start.
 2. **The environment.** Python 3.11 only (`.python-version`); `uv` installs it if it's missing. `uv sync --frozen` builds the environment from `uv.lock`. It is several GB, since crawl4ai brings torch, transformers and Playwright.
-3. **`.env`.** Copy `.env.example`, fill in its top part (the database addresses, the two secrets, the OpenAI, Tavily and DataForSEO keys), and keep these for a local checkout:
+3. **`.env`.** Copy `.env.example`. Its database and Redis addresses are the containers above:
+   - `POSTGRES_URI_CUSTOM=postgresql+asyncpg://rext:rext@localhost:5432/rext_app`;
+   - `DATABASE_URI=postgresql://rext:rext@localhost:5432/rext_app_runtime`;
+   - `REDIS_URL=redis://localhost:6379/0`.
+
+   Fill in the two secrets and the OpenAI, Tavily and DataForSEO keys, and keep these for a local checkout:
    - `ENVIRONMENT=development`;
    - `REQUIRE_EMAIL_VERIFICATION=false`, so accounts log in without email;
    - `EMAIL_PROVIDER=mock`;
