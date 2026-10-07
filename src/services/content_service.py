@@ -128,6 +128,10 @@ def _host_of(address: Optional[str]) -> Optional[str]:
     return host or None
 
 
+# A Markdown image embed and an HTML image tag: addresses in them are no links.
+_IMAGES = r"!\[[^]]*\]\([^)]*\)|<img[^>]*>"
+
+
 def _own_site_link(hosts: List[str]) -> str:
     """A PostgreSQL pattern for a link to the workspace's own site, in Markdown or HTML:
 
@@ -520,41 +524,42 @@ class ContentService:
         `no_internal_links` is None when the workspace has no address to look for (no website
         and no connected site): "every article" would be a count of nothing.
         """
-        published = (
-            Content.workspace_id == workspace_id,
-            Content.deleted_at.is_(None),
-            Content.status == "published",
-        )
-        total = await self.db.scalar(select(func.count()).select_from(Content).where(*published))
         # A description of spaces, tabs or line breaks only is no description.
         has_description = ContentSEOData.meta_description.op("~")(r"\S")
-        missing_meta = await self.db.scalar(
-            select(func.count())
-            .select_from(Content)
-            .outerjoin(ContentSEOData, ContentSEOData.content_id == Content.id)
-            .where(
-                *published,
-                or_(ContentSEOData.meta_description.is_(None), not_(has_description)),
-            )
-        )
-        no_internal_links = None
+        counts = [
+            func.count(),
+            func.count().filter(
+                or_(ContentSEOData.meta_description.is_(None), not_(has_description))
+            ),
+        ]
         hosts = await self._own_hosts(workspace_id)
         if hosts:
             # The published article is its introduction and its body: the Markdown body, or the
-            # HTML one when there is no Markdown (as the publishers choose).
+            # HTML one when there is no Markdown (as the WordPress publisher chooses). An image
+            # is no link, so image embeds are taken out before the search.
             own_site_link = _own_site_link(hosts)
             body = func.coalesce(func.nullif(Content.body_markdown, ""), Content.body_html, "")
-            links_to_own_site = or_(
-                func.coalesce(Content.introduction, "").op("~*")(own_site_link),
-                body.op("~*")(own_site_link),
+            text = func.regexp_replace(
+                func.concat(func.coalesce(Content.introduction, ""), " ", body), _IMAGES, " ", "gi"
             )
-            no_internal_links = await self.db.scalar(
-                select(func.count()).select_from(Content).where(*published, not_(links_to_own_site))
+            counts.append(func.count().filter(not_(text.op("~*")(own_site_link))))
+        # One statement, so the counts are of one moment and agree with each other.
+        row = (
+            await self.db.execute(
+                select(*counts)
+                .select_from(Content)
+                .outerjoin(ContentSEOData, ContentSEOData.content_id == Content.id)
+                .where(
+                    Content.workspace_id == workspace_id,
+                    Content.deleted_at.is_(None),
+                    Content.status == "published",
+                )
             )
+        ).one()
         return {
-            "published": total or 0,
-            "missing_meta_description": missing_meta or 0,
-            "no_internal_links": no_internal_links,
+            "published": row[0] or 0,
+            "missing_meta_description": row[1] or 0,
+            "no_internal_links": (row[2] or 0) if hosts else None,
         }
 
     async def _own_hosts(self, workspace_id: UUID) -> List[str]:

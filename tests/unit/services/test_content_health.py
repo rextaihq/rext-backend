@@ -145,6 +145,10 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
     # From the site's root, and without a scheme: links to the site all the same.
     await _article(session, user, workspace, body="See [pricing](/pricing) for the plans.")
     await _article(session, user, workspace, body="A [guide](//example.com/guide) to read.")
+    # An image and a link: the link counts.
+    await _article(
+        session, user, workspace, body="![Hero](/images/hero.jpg) Then [pricing](/pricing)."
+    )
     # No Markdown body: the HTML one is what gets published.
     await _article(session, user, workspace, body=None, html='<a href="/pricing">Pricing</a>')
     await _article(
@@ -160,6 +164,12 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
     await _article(session, user, workspace, body="A [lookalike](https://example.com.au/article).")
     await _article(session, user, workspace, body="A [shop](https://shop.example.com/item).")
     await _article(session, user, workspace, body="Elsewhere: [x](//other.com/x), and/or 1/2.")
+    # An image on the site is no link to it, in Markdown or in HTML.
+    await _article(session, user, workspace, body="![Hero](/images/hero.jpg) and text.")
+    await _article(session, user, workspace, body="![Hero](https://example.com/hero.jpg)")
+    await _article(
+        session, user, workspace, body=None, html='<p><img src="https://example.com/a.png"></p>'
+    )
     # Markdown is what gets published: an older HTML copy with a link doesn't count.
     await _article(session, user, workspace, body="No link.", html='<a href="/pricing">Pricing</a>')
     await _article(session, user, workspace, body="No link at all.")
@@ -167,8 +177,8 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
 
     health = await ContentService(session).content_health(workspace.id)
 
-    assert health["published"] == 17
-    assert health["no_internal_links"] == 8
+    assert health["published"] == 21
+    assert health["no_internal_links"] == 11
 
 
 @pytest.mark.asyncio
