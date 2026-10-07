@@ -8,7 +8,11 @@ A preposition stays when the verb before it needs it ("Depend On", "Look For") o
 no object for the trim to cut ("Fall Back On in 2026").
 """
 
-from src.flow.engines.content.generation.seo_title_rules import repair_title, title_is_valid
+from src.flow.engines.content.generation.seo_title_rules import (
+    _trim_to_max,
+    repair_title,
+    title_is_valid,
+)
 
 
 def test_the_reported_title_ends_on_a_whole_phrase():
@@ -63,6 +67,29 @@ def test_a_preposition_with_no_object_of_its_own_stays():
     repaired = repair_title(title, "seo tools")
 
     assert repaired == "SEO Tools: The Platforms Small Agencies Fall Back On"
+
+
+def test_a_verb_that_doubles_its_last_consonant_keeps_its_preposition():
+    title = "SEO Agencies: A Strategy Your Whole Team Is Committed To Today"  # 62
+    repaired = repair_title(title, "seo agencies")
+
+    assert repaired == "SEO Agencies: A Strategy Your Whole Team Is Committed To"
+
+
+def test_a_clause_ending_on_is_or_are_stays():
+    title = "SEO Agencies: A Clear Guide to Understanding Who We Are Today"  # 61
+    repaired = repair_title(title, "seo agencies")
+
+    assert repaired == "SEO Agencies: A Clear Guide to Understanding Who We Are"
+
+
+def test_prepositions_sharing_a_cut_object_all_go():
+    """The conjunction after "for" shares the object that was cut ("for and by Industry Experts"),
+    so "for" lost it too. (repair_title then keeps the plain trim: 48 characters, and no
+    qualifier fits within 59.)"""
+    title = "SEO Agencies: A Complete Practical Guide Written for and by Industry Experts"
+
+    assert _trim_to_max(title, "seo agencies") == "SEO Agencies: A Complete Practical Guide Written"
 
 
 def test_a_preposition_after_a_noun_still_goes():
