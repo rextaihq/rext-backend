@@ -560,7 +560,9 @@ class ContentService:
 
         The id arrives as the caller sent it, from the outline step or the API. Another
         workspace's persona is never saved as an article's author: publishing would
-        credit it by name. An article is saved either way, with no author persona.
+        credit it by name. The save goes through either way: a new article is saved
+        with no author persona, and an update leaves the article's author as it was
+        (a rejected value changes nothing, like any other field sent empty).
         """
         if not persona_id:
             return None
