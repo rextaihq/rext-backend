@@ -27,12 +27,12 @@ _ENGLISH = {
     "the", "how", "and", "with", "your", "you", "what", "why", "when", "ways", "from", "that",
     "this", "should", "our", "into", "without", "about", "than", "using", "steps", "beginners",
 }  # fmt: skip
-# English words that other languages write too ("in Italia", "guide complete", "of" is Dutch for
-# "or", "to" is Polish): one alone proves nothing, so they count with the title words below.
-_SHARED = {
-    "to", "for", "of", "in", "on", "is", "are", "best", "guide", "tips", "by", "it", "or", "vs",
-    "can", "will", "my", "more", "step", "complete", "ultimate",
-}  # fmt: skip
+# English words that other languages write too ("of" is Dutch for "or", "to" is Polish): one alone
+# proves nothing, so they count with the title words below.
+_SHARED = {"to", "for", "of", "on", "is", "are", "by", "it", "or", "can", "will", "my"}
+# Words the Romance languages write or borrow ("in Italia", "guide complete", "best marketing"):
+# they count only beside a word from the two sets around them.
+_BORROWED = {"in", "best", "guide", "tips", "vs", "more", "step", "complete", "ultimate"}
 # Words of the other languages that write "a" or "an" as a word of their own, and are no English
 # words: one of them means the title isn't English.
 _OTHER = {
@@ -47,7 +47,8 @@ _OTHER = {
     "til", "med", "är", "att",
 }  # fmt: skip
 # Common English title words that other languages don't borrow ("SEO" and "marketing" they do):
-# two of them, or of the shared words, make a title English when it has none of the words above.
+# two words of these three sets, one of them a title word or a shared one, make a title English
+# when it has none of the words above.
 _ENGLISH_TITLE_WORDS = {
     "content", "strategy", "template", "templates", "checklist", "tools", "tool", "examples",
     "small", "website", "growth", "customer", "customers", "build", "create", "write", "writing",
@@ -84,6 +85,10 @@ _ONE_WUN = ("once", "oneself", "oneness", "onetime", "onesie", "onefold")
 # "Ouagadougou", "Ewing", and "Euler" ("oiler"). Left as written.
 _UNSURE_VOWEL = ("oui", "oua", "oax", "euler")
 _X_EX = ("xbox", "xfinity", "xcode", "xperia")
+_UNIT_WORDS = {
+    "unit", "units", "unity", "unite", "united", "unites", "uniting", "unitary", "unitard",
+    "unitarian", "unitarians",
+}  # fmt: skip
 # Silent h: "an hour", "an honest". Said either way by dialect ("an herb" in America): left.
 _SILENT_H = ("hour", "honest", "honor", "honour", "heir")
 _EITHER_H = ("herb", "homage", "historic", "humble")
@@ -109,7 +114,9 @@ def _is_english(words: list[str]) -> bool:
         return False
     if lowered & _ENGLISH:
         return True
-    return len(lowered & (_ENGLISH_TITLE_WORDS | _SHARED)) >= 2
+    # Borrowed words alone prove nothing ("in Italia: best marketing").
+    own = len(lowered & (_ENGLISH_TITLE_WORDS | _SHARED))
+    return own >= 1 and own + len(lowered & _BORROWED) >= 2
 
 
 def _base_letter(char: str) -> str | None:
@@ -119,6 +126,8 @@ def _base_letter(char: str) -> str | None:
 
 
 def _number_takes_an(digits: str) -> bool | None:
+    if digits.startswith("0"):
+        return None  # "oh-eight" or "zero eight"
     if digits.startswith("8"):
         return True
     if digits[:2] in ("11", "18"):
@@ -186,7 +195,12 @@ def _an_before(word: str) -> bool | None:
     if lower in ("one", "ones") or lower.startswith(_ONE_WUN):
         return False
     if lower.startswith("uni"):
-        return True if lower.startswith(_UN_I) else False if lower.startswith(_UNI_YOU) else None
+        if lower.startswith(_UN_I):
+            return True
+        if lower.startswith("unit"):
+            # "A unit", "a united"; any other "unit…" may be a negation ("an unitalicized").
+            return False if lower in _UNIT_WORDS else None
+        return False if lower.startswith(_UNI_YOU) else None
     if lower.startswith(_YOU_SOUND) or lower.startswith(_U_YOU):
         return False
     if lower.startswith("ew"):
@@ -202,6 +216,8 @@ def _an_before(word: str) -> bool | None:
         and re.match(r"u[^aeiou][aeiouy]", lower)
     ):
         return None  # "u", one consonant, a vowel: "you" as often as not (utensil, uber)
+    if re.match(r"u[aeiouy]", lower):
+        return None  # "u" and a vowel or y: "w" in "Uyghur" and "Uighur"
     return first.lower() in "aeiou"
 
 
