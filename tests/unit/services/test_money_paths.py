@@ -1209,6 +1209,43 @@ async def test_a_trial_from_before_the_marker_that_converts_gets_its_month_when_
     assert (await _subscription_of(db, ls_id)).current_credits == 400
 
 
+async def test_a_converted_trial_changing_plan_before_it_pays_keeps_its_balance(db):
+    """Lemon Squeezy's update made the trial active; a plan change arrives before the first
+    payment. The balance stays as it is, and the payment brings the new plan's month. After
+    that a plan change works from what was used."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    now = datetime.now(timezone.utc)
+    user, ls_id = await _trial_from_before_the_marker(db, starter, now)
+    period_end = now + timedelta(days=30)
+    await _change_plan(
+        db, user, ls_id, starter, at=now - timedelta(minutes=9), period_end=period_end
+    )
+    before = (await _subscription_of(db, ls_id)).current_credits
+
+    await _change_plan(
+        db, user, ls_id, growth, at=now - timedelta(minutes=8), period_end=period_end
+    )
+    assert (await _subscription_of(db, ls_id)).current_credits == before
+
+    # The first paid invoice, whatever Lemon Squeezy calls it, brings the month and settles it.
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now - timedelta(minutes=7), billing_reason="renewal"),
+        None,
+        db,
+    )
+    paid = await _subscription_of(db, ls_id)
+    assert paid.current_credits == 1000
+    assert paid.subscription_metadata["start_month_given"] is True
+
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 100)
+    await _change_plan(
+        db, user, ls_id, starter, at=now - timedelta(minutes=5), period_end=period_end
+    )
+    assert await usage.get_credit_balance(user.id) == 300  # 400 less the 100 used
+
+
 async def test_an_in_app_change_then_lemon_squeezys_change_back_stay_in_one_period(db, monkeypatch):
     """The dashboard's change keeps the stored period end; Lemon Squeezy's next change brings
     its renews_at. Both are one period: 900 spent, down to Starter and back up leaves 100."""
