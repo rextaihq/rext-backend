@@ -120,6 +120,9 @@ def review_outline(state: REXT):
             "section_additions": addable_lists(outline_dict, content_type),
             # serp_titles, serp_questions and related_searches, for Sources.
             **_search_sources(state),
+            # The ranking pages' H2 and H3, for Sources (rext-control#476):
+            # [{url, title, headings: [{level, text}]}], empty when none could be read.
+            "competitor_headings": list(content_state.get("competitor_headings") or []),
             "instruction": (
                 "Please approve the outline, or reject/regenerate it with "
                 "feedback on what should change — your feedback will be "

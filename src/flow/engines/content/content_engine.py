@@ -32,6 +32,9 @@ def create_content_engine():
     Credits are deducted inline inside each node function — no wrapper nodes.
     """
     from src.flow.engines.content.generation.cluster_mapping import map_keyword_clusters
+    from src.flow.engines.content.generation.competitor_headings import (
+        read_competitor_headings,
+    )
     from src.flow.engines.content.generation.content_generation import generate_content
     from src.flow.engines.content.generation.content_type import (
         content_type,
@@ -67,6 +70,7 @@ def create_content_engine():
     graph.add_node("topics_failed", topics_failed)
     graph.add_node("keyword_clustering", keyword_clustering_node)
     graph.add_node("map_keyword_clusters", map_keyword_clusters)
+    graph.add_node("read_competitor_headings", read_competitor_headings)
     graph.add_node("generate_outline", generate_outline)
     graph.add_node("review_outline", review_outline)
     graph.add_node("generate_content", generate_content, retry_policy=_LLM_RETRY_POLICY)
@@ -95,7 +99,10 @@ def create_content_engine():
         {"generate_topics": "generate_topics", "keyword_clustering": "keyword_clustering"},
     )
     graph.add_edge("keyword_clustering", "map_keyword_clusters")
-    graph.add_edge("map_keyword_clusters", "generate_outline")
+    # The ranking pages' headings for the outline gate's Sources view, read once per run
+    # (rext-control#476); a regenerated outline loops back to generate_outline, not here.
+    graph.add_edge("map_keyword_clusters", "read_competitor_headings")
+    graph.add_edge("read_competitor_headings", "generate_outline")
     graph.add_edge("generate_outline", "review_outline")
 
     graph.add_conditional_edges(

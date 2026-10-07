@@ -340,6 +340,19 @@ class ContentReview(TypedDict, total=False):
     repair_history: list[RepairAttempt]
 
 
+class CompetitorHeading(TypedDict):
+    level: int  # 2 or 3
+    text: str
+
+
+class CompetitorPageHeadings(TypedDict):
+    """One ranking page's H2 and H3, in its order (rext-control#476)."""
+
+    url: str
+    title: str
+    headings: list[CompetitorHeading]
+
+
 class CONTENT(TypedDict, total=False):
     """
     Main LangGraph state for AI-powered SEO content engine
@@ -355,6 +368,9 @@ class CONTENT(TypedDict, total=False):
     # src/flow/engines/content/generation/focus_keyword.py.
     focus_keyword: str
     cluster_heading_map: ClusterHeadingMap
+    # The ranking pages' headings, read once before the outline (read_competitor_headings),
+    # for the outline gate's Sources view; [] when none could be read.
+    competitor_headings: list[CompetitorPageHeadings]
     outline: OutlineState
     review: ContentReview
     final_content: FinalContentState
