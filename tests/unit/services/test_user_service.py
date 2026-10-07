@@ -228,7 +228,7 @@ class TestUserServiceChangePassword:
         """Should successfully change password when current password is correct"""
         # Arrange
         current_password = "Oldpassword123"
-        new_password = "Newpassword456"
+        new_password = "Newpassword456!"  # the rule asks for a special character
         password_hash = bcrypt.hashpw(current_password.encode("utf-8"), bcrypt.gensalt()).decode(
             "utf-8"
         )
@@ -299,7 +299,7 @@ class TestUserServiceChangePassword:
 
         # Act
         result = await service.change_password(
-            user_id=user.id, current_password=current_password, new_password="Newpassword123"
+            user_id=user.id, current_password=current_password, new_password="Newpassword123!"
         )
 
         # Assert
@@ -434,6 +434,12 @@ class TestUserServiceReactivateAccount:
 @pytest.mark.unit
 class TestUserServiceUpdateLastLogin:
     """Test update_last_login method"""
+
+    @pytest.fixture(autouse=True)
+    def commit_as_flush(self, db_session, monkeypatch):
+        """update_last_login commits; inside the test's rolled-back transaction the
+        commit becomes a flush, so its writes stay there."""
+        monkeypatch.setattr(db_session, "commit", db_session.flush)
 
     async def test_update_last_login_success(self, db_session, setup_factories):
         """Should update last_login_at and increment login_count"""
