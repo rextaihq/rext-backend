@@ -16,7 +16,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.subscription_models.subscriptions import (
-    SubscriptionStatus,
     UserSubscription,
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
@@ -34,6 +33,7 @@ from src.services.order_service import (
 from src.services.order_service import (
     _parse_datetime as _parse_ls_datetime,
 )
+from src.services.refund_cancellation import end_for_refund
 from src.services.refund_service import RefundService
 from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.lemonsqueezy_webhook import (
@@ -290,12 +290,17 @@ async def handle_order_refunded(
             )
         return
 
-    # Cancel subscription
+    # Cancel subscription. Marked as ended by this refund, with provider_updated_at
+    # moved on, so a later subscription event from Lemon Squeezy (still active there
+    # until it's cancelled, or cancelled with a grace period) can't give the plan
+    # back (F8c, revnix/rext-control#538). The cancel at Lemon Squeezy itself is made
+    # where the refund is issued (admin/refund_routes.py, _issue_refund).
+    # The subscription found by the order id is set on only some rows; the order
+    # names it otherwise.
+    if subscription is None and subscription_id:
+        subscription = await db.get(UserSubscription, subscription_id)
     if subscription:
-        subscription.status = SubscriptionStatus.CANCELLED
-        subscription.cancelled_at = datetime.now(timezone.utc)
-        subscription.end_date = datetime.now(timezone.utc)
-        subscription.updated_at = datetime.now(timezone.utc)
+        end_for_refund(subscription, order_id=str(lemonsqueezy_order_id))
         await db.flush()
 
         logger.info(
