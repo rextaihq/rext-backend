@@ -70,7 +70,16 @@ async def _workspace(session, *, url=None, sites=()):
 
 
 async def _article(
-    session, user, workspace, *, status="published", body="", intro=None, meta=..., trashed=False
+    session,
+    user,
+    workspace,
+    *,
+    status="published",
+    body="",
+    html=None,
+    intro=None,
+    meta=...,
+    trashed=False,
 ):
     """An article; `meta` left out means no SEO row at all."""
     article = Content(
@@ -81,6 +90,7 @@ async def _article(
         status=status,
         body_markdown=body,
         introduction=intro,
+        body_html=html,
         deleted_at=datetime.now(timezone.utc) if trashed else None,
     )
     session.add(article)
@@ -132,6 +142,14 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
     await _article(session, user, workspace, body="Read [this](http://www.example.com/a) too.")
     await _article(session, user, workspace, body="On [the blog](https://blog.example.org/p).")
     await _article(session, user, workspace, body="Ends on a bare address: https://example.com")
+    # From the site's root, and without a scheme: links to the site all the same.
+    await _article(session, user, workspace, body="See [pricing](/pricing) for the plans.")
+    await _article(session, user, workspace, body="A [guide](//example.com/guide) to read.")
+    # No Markdown body: the HTML one is what gets published.
+    await _article(session, user, workspace, body=None, html='<a href="/pricing">Pricing</a>')
+    await _article(
+        session, user, workspace, body="", html='<a href="https://example.com/a">Read on</a>'
+    )
     # The article is its introduction and its body: a link in either counts.
     await _article(
         session, user, workspace, intro="From [our guide](https://example.com/guide).", body="Text."
@@ -141,13 +159,16 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
     await _article(session, user, workspace, body="A [source](https://other.com/example.com).")
     await _article(session, user, workspace, body="A [lookalike](https://example.com.au/article).")
     await _article(session, user, workspace, body="A [shop](https://shop.example.com/item).")
+    await _article(session, user, workspace, body="Elsewhere: [x](//other.com/x), and/or 1/2.")
+    # Markdown is what gets published: an older HTML copy with a link doesn't count.
+    await _article(session, user, workspace, body="No link.", html='<a href="/pricing">Pricing</a>')
     await _article(session, user, workspace, body="No link at all.")
     await _article(session, user, workspace, body=None)
 
     health = await ContentService(session).content_health(workspace.id)
 
-    assert health["published"] == 11
-    assert health["no_internal_links"] == 6
+    assert health["published"] == 17
+    assert health["no_internal_links"] == 8
 
 
 @pytest.mark.asyncio
