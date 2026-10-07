@@ -439,7 +439,11 @@ def _title_style(title: str, skip: tuple[int, int]) -> Optional[str]:
         votes.append(word[:1].isupper())
     if not votes:
         return None
-    return "title" if sum(votes) * 2 > len(votes) else "sentence"
+    # Names keep their capitals in a sentence-case title ("…work with Google, Microsoft and
+    # Apple today"), while a Title Case title leaves almost nothing in lowercase: Title Case only
+    # when its capitals outnumber its lowercase words more than three to one.
+    capitals = sum(votes)
+    return "title" if capitals > 3 * (len(votes) - capitals) else "sentence"
 
 
 def keyphrase_spellings(titles: Iterable[Any], keyphrase: Any) -> dict[int, str]:
@@ -478,15 +482,18 @@ def _cased_keyphrase(
         if index in spellings:
             words.append(_same_length_case(word, spellings[index]))
             continue
-        # Each part of a joined word on its own: "seo-friendly" is "SEO-Friendly" in Title Case.
-        parts = re.split(r"([-/])", word)
+        # Each part of a joined word on its own: "seo-friendly" is "SEO-Friendly" in Title Case,
+        # "seo's" is "SEO's"; nothing after an apostrophe is capitalized ("Don't").
+        parts = re.split(r"(\W+)", word)
         for part_index in range(0, len(parts), 2):
             part = parts[part_index]
             acronym = _acronym(part)
+            after_apostrophe = part_index > 0 and parts[part_index - 1] in ("'", "’")
             if acronym:
                 parts[part_index] = _same_length_case(part, acronym)
-            elif (index == 0 and part_index == 0 and opens) or (
-                style == "title" and part.lower() not in _TITLE_CASE_SMALL_WORDS
+            elif not after_apostrophe and (
+                (index == 0 and part_index == 0 and opens)
+                or (style == "title" and part.lower() not in _TITLE_CASE_SMALL_WORDS)
             ):
                 parts[part_index] = _capitalized(part)
         words.append("".join(parts))
