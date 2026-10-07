@@ -351,6 +351,18 @@ async def test_workspace_pipeline_persona_partial_insertion_rolls_back() -> None
         )
         return (["chunk"], [result])
 
+    # A fake extraction: the default one calls the model, and this test is about the rollback.
+    async def fake_brand_voice_generator(content: str) -> BrandSchema:
+        return BrandSchema(
+            about="About text",
+            customer_profile="Profile",
+            selling_position="Position",
+            target_audience=["Audience"],
+            brand_voice=["Voice"],
+            competitors=["Competitor"],
+            content_pillar=["Pillar"],
+        )
+
     pipeline = WorkspacePipeline(
         db=db_session,
         operation_id="op-123",
@@ -358,7 +370,9 @@ async def test_workspace_pipeline_persona_partial_insertion_rolls_back() -> None
         user_id=uuid4(),
         url="https://example.com",
         scraper=fake_scraper,
+        brand_voice_generator=fake_brand_voice_generator,
     )
+    pipeline._discover_competitors = AsyncMock(return_value=None)
 
     # Inject fake personas to trigger deletion + insert
     pipeline._persist_personas = AsyncMock(side_effect=Exception("constraint violation"))

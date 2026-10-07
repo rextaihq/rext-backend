@@ -14,6 +14,12 @@ from src.api.schema.response.email_preference_responses import (
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
+from src.services.email_preferences_service import (
+    EMAIL_TYPE_TO_COLUMN,
+    PREFERENCE_FIELD_TO_COLUMN,
+    read_preference,
+    write_preference,
+)
 from src.services.notification_preferences_service import NotificationPreferencesService
 from src.utils.audit_helper import create_audit_log
 from src.utils.response_utils import success
@@ -95,28 +101,6 @@ async def update_preferences(
     """
     user_id = UUID(current_user["identity"])
 
-    # Build update dict mapping request fields to NotificationPreferences columns
-    field_mapping = {
-        "workspace_invitation": "ws_invite_received",
-        "invitation_accepted": "ws_invite_accepted",
-        "role_changed": "ws_role_changed",
-        "member_removed": "ws_member_removed",
-        "content_generation_started": "gen_started",
-        "content_generation_completed": "gen_completed",
-        "content_generation_failed": "gen_failed",
-        "content_published": "gen_published",
-        "payment_succeeded": "billing_payment_success",
-        "payment_failed": "billing_payment_failed",
-        "subscription_cancelled": "billing_subscription_canceled",
-        "subscription_expiring_soon": "billing_subscription_expiring",
-        "trial_ending_soon": "billing_trial_ending",
-        "usage_limit_warning": "billing_usage_limit_warning",
-        "usage_limit_exceeded": "billing_usage_limit_exceeded",
-        "digest_enabled": "digest_enabled",
-        "digest_frequency": "digest_frequency",
-        "marketing": "marketing_updates",
-    }
-
     # Use model_dump(exclude_unset=True) instead of .dict() as per Task 080
     update_data = preferences_update.model_dump(exclude_unset=True)
 
@@ -131,15 +115,16 @@ async def update_preferences(
     old_values = {}
     new_values = {}
 
-    # Apply updates
+    # Apply updates: category keys live in JSONB, so they're read and written through the
+    # service's helpers, never as attributes (G61, rext-control #523).
     for field, value in update_data.items():
-        mapped_field = field_mapping.get(field, field)
-        if hasattr(prefs, mapped_field):
-            current_value = getattr(prefs, mapped_field)
-            if current_value != value:
-                old_values[mapped_field] = current_value
-                new_values[mapped_field] = value
-                setattr(prefs, mapped_field, value)
+        mapped_field = PREFERENCE_FIELD_TO_COLUMN.get(field)
+        if mapped_field is None:
+            continue
+        current_value = read_preference(prefs, mapped_field)
+        if current_value != value and write_preference(prefs, mapped_field, value):
+            old_values[mapped_field] = current_value
+            new_values[mapped_field] = value
 
     await db.flush()
 
@@ -196,38 +181,15 @@ async def unsubscribe(
             new_values["email_notifications"] = False
             prefs.email_notifications = False
     else:
-        # Map email types to NotificationPreferences preference keys
-        type_mapping = {
-            "workspace_invitation": "ws_invite_received",
-            "invitation_accepted": "ws_invite_accepted",
-            "role_changed": "ws_role_changed",
-            "member_removed": "ws_member_removed",
-            "content_generation_started": "gen_started",
-            "content_generation_completed": "gen_completed",
-            "content_generation_failed": "gen_failed",
-            "content_published": "gen_published",
-            "payment_succeeded": "billing_payment_success",
-            "payment_failed": "billing_payment_failed",
-            "subscription_cancelled": "billing_subscription_cancelled",
-            "subscription_expiring_soon": "billing_subscription_expiring",
-            "trial_ending_soon": "billing_trial_ending",
-            "usage_limit_warning": "billing_usage_limit_warning",
-            "usage_limit_exceeded": "billing_usage_limit_exceeded",
-            "marketing": "marketing_updates",
-        }
-
-        _COLUMN_FIELDS = {"marketing_updates"}
-
-        # Disable specified email types
+        # Disable specified email types (category keys live in JSONB; G61, rext-control #523)
         for email_type in unsubscribe_data.email_types:
-            if email_type in type_mapping:
-                field_name = type_mapping[email_type]
-                if hasattr(prefs, field_name):
-                    current_value = getattr(prefs, field_name)
-                    if current_value is not False:
-                        old_values[field_name] = current_value
-                        new_values[field_name] = False
-                        setattr(prefs, field_name, False)
+            field_name = EMAIL_TYPE_TO_COLUMN.get(email_type)
+            if field_name is None:
+                continue
+            current_value = read_preference(prefs, field_name)
+            if current_value is not False and write_preference(prefs, field_name, False):
+                old_values[field_name] = current_value
+                new_values[field_name] = False
 
     await db.flush()
 

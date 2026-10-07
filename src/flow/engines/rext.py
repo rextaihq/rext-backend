@@ -32,18 +32,24 @@ def create_rext_engine():
     flow.add_node("serp_engine", create_serp_engine())
     flow.add_node("seo_engine", create_seo_engine())
     flow.add_node("content_engine", create_content_engine())
+    flow.add_node("begin_run", _begin_run)
     flow.add_node("insufficient_credits", _insufficient_credits)
+    flow.add_node("credit_check_failed", _credit_check_failed)
     flow.add_node("no_serp_data", _no_serp_data)
     flow.add_node("load_library_item", load_library_item)
     flow.add_node("charge_library_start", charge_library_start)
 
+    # A new run on a thread starts clean: an earlier run's terminal error (out of
+    # credits, say) must not end this one (rext-control#524).
+    flow.add_edge(START, "begin_run")
     flow.add_conditional_edges(
-        START,
+        "begin_run",
         library_router,
         {
             "serp_engine": "serp_engine",
             "load_library_item": "load_library_item",
             "insufficient_credits": "insufficient_credits",
+            "credit_check_failed": "credit_check_failed",
         },
     )
 
@@ -79,17 +85,38 @@ def create_rext_engine():
     flow.add_conditional_edges(
         "seo_engine",
         keyword_router,
-        {"SERP_ENGINE": "serp_engine", "END": "content_engine", "NO_SERP": "no_serp_data"},
+        {
+            "SERP_ENGINE": "serp_engine",
+            "END": "content_engine",
+            "NO_SERP": "no_serp_data",
+            "INSUFFICIENT": "insufficient_credits",
+        },
     )
     flow.add_edge("content_engine", END)
     flow.add_edge("insufficient_credits", END)
+    flow.add_edge("credit_check_failed", END)
     flow.add_edge("no_serp_data", END)
 
     return flow.compile()
 
 
+def _blocked_at(state: REXT) -> str:
+    """Where a run ran out of credits, for the operators' record."""
+    from src.flow.engines.router.credits import OUT_OF_CREDITS, serp_unpaid
+
+    is_library = bool((state.get("serp_payload") or {}).get("is_library"))
+    if is_library and (state.get("content") or {}).get("error_code") == OUT_OF_CREDITS:
+        return "library start charges"
+    keyword_recs = (state.get("seo_result") or {}).get("keyword_recommendations") or {}
+    if keyword_recs.get("titles_unpaid"):
+        return "title_generation charge"
+    if not is_library and serp_unpaid(state):
+        return "serp_seo charge"
+    return "library_router credit gate"
+
+
 async def _insufficient_credits(state: REXT) -> dict:
-    """Terminal node for runs blocked by the credit gate in library_router."""
+    """Terminal node for runs that ran out of credits: the start's gate, or a refused stage charge."""
     # This returns a successful response carrying an error payload, so no
     # exception handler ever sees it and the event was recorded nowhere. The
     # equivalent limit on workspaces raises and is logged as a warning; the
@@ -107,7 +134,7 @@ async def _insufficient_credits(state: REXT) -> dict:
             metadata={
                 "error_code": "insufficient_credits",
                 "workspace_id": str(state.get("workspace_id") or ""),
-                "blocked_at": "library_router credit gate",
+                "blocked_at": _blocked_at(state),
             },
         )
     except Exception:  # noqa: BLE001 - reporting never breaks the flow
@@ -119,6 +146,52 @@ async def _insufficient_credits(state: REXT) -> dict:
             "error_code": "insufficient_credits",
         }
     }
+
+
+# The marks a paid run leaves in its content so a resumed node doesn't charge twice
+# (generate_content): the upfront stages, and the featured image on delivery.
+_PAID_MARKS = ("credits_deducted", "image_credit_deducted")
+
+
+async def _begin_run(state: REXT) -> dict:
+    """A new run clears what an earlier run on this thread left in its content: its terminal
+    error, and its paid-charge marks, so this run's own charges are made."""
+    content = state.get("content") or {}
+    if (
+        content.get("error") is None
+        and content.get("error_code") is None
+        and not any(content.get(mark) for mark in _PAID_MARKS)
+    ):
+        return {}
+    return {"content": {"error": None, "error_code": None, **dict.fromkeys(_PAID_MARKS, False)}}
+
+
+CREDIT_CHECK_FAILED = (
+    "We couldn't check your credits just now, so the run didn't start. Try again in a moment."
+)
+
+
+async def _credit_check_failed(state: REXT) -> dict:
+    """Terminal node for a run whose credit check couldn't be read (library_router fails closed).
+
+    Like no_serp_data, the message reaches the user twice: as a custom stream event (type "run",
+    step "run.failed") for the generation view that is streaming, and as content.error in the
+    thread state, which the dock's status poll reads (the dashboard's E27, rext-control#570).
+    """
+    try:
+        from langgraph.config import get_stream_writer
+
+        get_stream_writer()(
+            {
+                "type": "run",
+                "step": "run.failed",
+                "error_code": "credit_check_failed",
+                "message": CREDIT_CHECK_FAILED,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
+        logger.warning("credit_check_failed stream emit failed: %s", type(exc).__name__)
+    return {"content": {"error": CREDIT_CHECK_FAILED, "error_code": "credit_check_failed"}}
 
 
 # What the user reads when a run ends for want of search results, by the

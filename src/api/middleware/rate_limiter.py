@@ -29,7 +29,7 @@ from fastapi import HTTPException, Request, status
 
 from src.api.cache.redis_client import cache
 from src.api.lib.log_policy import get_event_level, log_with_level
-from src.utils.ip_allowlist import mask_ip
+from src.utils.ip_allowlist import limiter_client_host, mask_ip
 from src.utils.logger import logger
 
 SECONDS_PER_MINUTE = 60
@@ -225,15 +225,15 @@ class RateLimiter:
         """
         Generate a unique key for the client.
 
-        Prefers user ID if authenticated, falls back to IP address.
-        Uses request.client.host (set by ProxyHeadersMiddleware for proxied requests).
+        Prefers user ID if authenticated, falls back to IP address: the visitor's
+        (set by ProxyHeadersMiddleware for proxied requests), or the direct peer when
+        the trusted-proxy setting is a catch-all (limiter_client_host).
         """
         user_id = getattr(request.state, "user_id", None)
         if user_id:
             return f"user:{user_id}"
 
-        client_ip = request.client.host if request.client else "unknown"
-        return f"ip:{client_ip}"
+        return f"ip:{limiter_client_host(request)}"
 
     def cleanup_old_entries(self) -> int:
         """
@@ -409,7 +409,7 @@ class EndpointRateLimiter:
         """
         # Get client identifier
         user_id = getattr(request.state, "user_id", None)
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = limiter_client_host(request)
 
         # Base key is IP-based
         client_key = f"ip:{client_ip}"

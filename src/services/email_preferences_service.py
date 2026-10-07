@@ -5,13 +5,16 @@ Manages user email notification preferences and unsubscribe functionality.
 """
 
 import secrets
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Set
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.api.models.user_models.notification_preferences import (
+    DEFAULT_CATEGORY_PREFERENCES,
+    NotificationPreferences,
+)
 from src.utils.logger import logger
 
 # Single source of truth: maps email type strings to NotificationPreferences column names
@@ -60,6 +63,43 @@ PREFERENCE_FIELD_TO_COLUMN: Dict[str, str] = {
 
 VALID_EMAIL_TYPES: Set[str] = set(EMAIL_TYPE_TO_COLUMN.keys())
 
+# The preferences that are columns of NotificationPreferences. Every other one is a category
+# preference in its JSONB, read and written with get_preference / set_preference: reading it as an
+# attribute finds nothing, so an opt-out was never seen (G61, rext-control #523).
+COLUMN_PREFERENCES: frozenset[str] = frozenset(
+    {
+        "email_notifications",
+        "in_app_notifications",
+        "marketing_updates",
+        "digest_enabled",
+        "digest_frequency",
+    }
+)
+
+
+def read_preference(prefs: NotificationPreferences, key: str) -> Any:
+    """A preference's value, a column or a category key alike (a category's default if unset)."""
+    if key in COLUMN_PREFERENCES:
+        return getattr(prefs, key)
+    return prefs.get_preference(key)
+
+
+def write_preference(prefs: NotificationPreferences, key: str, value: Any) -> bool:
+    """Set a preference, a column or a category key; False for a key that is neither.
+
+    A null (an optional field a client sent as null) changes nothing and gives False: stored in
+    the JSONB, it would read as an opt-out when sending, and the columns don't take one.
+    """
+    if value is None:
+        return False
+    if key in COLUMN_PREFERENCES:
+        setattr(prefs, key, value)
+        return True
+    if key in DEFAULT_CATEGORY_PREFERENCES:
+        prefs.set_preference(key, value)
+        return True
+    return False
+
 
 class EmailPreferencesService:
     """Service for managing email preferences."""
@@ -100,7 +140,7 @@ class EmailPreferencesService:
             )
             return True
 
-        return getattr(prefs, column_name, True)
+        return bool(read_preference(prefs, column_name))
 
     async def update_preferences(
         self, user_id: UUID, preferences: Dict[str, bool]
@@ -109,9 +149,7 @@ class EmailPreferencesService:
         prefs = await self.get_or_create_preferences(user_id)
 
         for field, value in preferences.items():
-            mapped_field = PREFERENCE_FIELD_TO_COLUMN.get(field, field)
-            if hasattr(prefs, mapped_field):
-                setattr(prefs, mapped_field, value)
+            write_preference(prefs, PREFERENCE_FIELD_TO_COLUMN.get(field, field), value)
 
         await self.db.flush()
         await self.db.refresh(prefs)
@@ -135,9 +173,7 @@ class EmailPreferencesService:
             prefs.email_notifications = False
         else:
             for email_type in email_types:
-                mapped_field = EMAIL_TYPE_TO_COLUMN.get(email_type, email_type)
-                if hasattr(prefs, mapped_field):
-                    setattr(prefs, mapped_field, False)
+                write_preference(prefs, EMAIL_TYPE_TO_COLUMN.get(email_type, email_type), False)
 
         await self.db.flush()
         logger.info(f"Unsubscribed user from {email_types if email_types else 'all emails'}")

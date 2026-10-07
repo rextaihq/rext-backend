@@ -17,6 +17,7 @@ Security notes:
   resolve to "not allowlisted", so the account-creation cap stays in force.
 """
 
+from functools import lru_cache
 from ipaddress import (
     IPv4Network,
     IPv6Network,
@@ -164,6 +165,51 @@ def proxy_trust_is_spoofable(trusted_proxy_ips: Optional[str]) -> bool:
         except ValueError:
             continue
     return False
+
+
+# The connection's own peer, kept in the ASGI scope before ProxyHeadersMiddleware
+# replaces scope["client"] with an X-Forwarded-For entry.
+DIRECT_PEER_SCOPE_KEY = "rext.direct_peer"
+
+
+class DirectPeerMiddleware:
+    """Keeps the connection's own peer address in the scope, for limiter_client_host().
+
+    Added outside ProxyHeadersMiddleware (src/api/server.py), so it runs first.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] in ("http", "websocket"):
+            client = scope.get("client")
+            scope[DIRECT_PEER_SCOPE_KEY] = client[0] if client else None
+        await self.app(scope, receive, send)
+
+
+@lru_cache(maxsize=8)
+def _trust_is_spoofable(trusted_proxy_ips: Optional[str]) -> bool:
+    return proxy_trust_is_spoofable(trusted_proxy_ips)
+
+
+def limiter_client_host(request: Any) -> str:
+    """
+    The address the rate limiters and the request log key a visitor on.
+
+    It's ``request.client.host`` (the visitor's address, from ``X-Forwarded-For``
+    through a trusted proxy), unless ``TRUSTED_PROXY_IPS`` is a catch-all: then
+    that address is whatever the caller wrote, so a caller could pick a fresh
+    key for every request. Under that setting it's the connection's own peer
+    instead, and every visitor behind the proxy shares one key until the setting
+    names the proxy (``src/api/server.py`` logs the error at start).
+    """
+    from src.api.config import get_settings
+
+    if _trust_is_spoofable(get_settings().TRUSTED_PROXY_IPS):
+        return request.scope.get(DIRECT_PEER_SCOPE_KEY) or "unknown"
+    client = getattr(request, "client", None)
+    return getattr(client, "host", None) or "unknown"
 
 
 def get_verified_client_ip(request: Any) -> Optional[str]:

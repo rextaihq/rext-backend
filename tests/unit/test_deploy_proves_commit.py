@@ -81,7 +81,13 @@ def test_the_deploy_restarts_with_the_latest_images(name: str, secret: str, heal
 
 
 def _wait_step(name: str) -> dict:
-    (wait,) = [s for s in _jobs(name)["deploy"]["steps"] if "/health/live" in str(s.get("env"))]
+    # The step that waits for the running commit: production's rollback guard reads
+    # /health/live too, but expects no commit.
+    (wait,) = [
+        s
+        for s in _jobs(name)["deploy"]["steps"]
+        if "/health/live" in str(s.get("env")) and "EXPECTED" in (s.get("env") or {})
+    ]
     return wait
 
 
@@ -89,7 +95,8 @@ def _wait_step(name: str) -> dict:
 def test_the_deploy_waits_for_the_running_commit(name: str, secret: str, health: str) -> None:
     steps = _jobs(name)["deploy"]["steps"]
     wait = _wait_step(name)
-    assert wait["env"] == {"HEALTH_URL": health, "EXPECTED": "${{ github.sha }}"}
+    assert wait["env"]["HEALTH_URL"] == health
+    assert wait["env"]["EXPECTED"] == "${{ github.sha }}"
     assert "jq -r '.commit" in wait["run"]
     # After the restart that it waits for.
     (restart,) = [
@@ -135,8 +142,16 @@ def test_a_stale_run_is_refused_first(name: str, branch: str, job: str) -> None:
     # A re-run keeps its commit and runs can start out of push order: on every
     # attempt, an older commit must not publish or deploy over a newer one.
     first = _jobs(name)[job]["steps"][0]
-    assert first["name"] == "Refuse a stale run"
     assert "if" not in first
+    if (name, job) == ("production.yaml", "deploy"):
+        # Merges land every few minutes: production deploys unless it would go back.
+        assert first["name"] == "Refuse a rollback"
+        assert "compare/$LIVE...${{ github.sha }}" in first["run"]
+        assert "ahead|identical)" in first["run"]
+        # No commit from production: the run must be main's head, as before.
+        assert 'commits/main" --jq .sha' in first["run"]
+        return
+    assert first["name"] == "Refuse a stale run"
     if branch == "main":
         assert 'commits/main" --jq .sha' in first["run"]
         assert '"$HEAD" != "${{ github.sha }}"' in first["run"]
@@ -350,3 +365,18 @@ def test_production_deploys_the_shopify_app_once_its_secret_exists(tmp_path: Pat
     assert done.returncode == 0
     assert (tmp_path / "called").exists()
     assert "Shopify app deployment triggered" in done.stdout
+
+
+def test_a_refused_rollback_points_latest_back_at_what_production_runs() -> None:
+    # The publish already moved :latest: a later restart pulling it must not roll back.
+    deploy = _jobs("production.yaml")["deploy"]
+    guard = deploy["steps"][0]["run"]
+    assert 'imagetools create -t "$IMAGE:latest" "$IMAGE:sha-$LIVE"' in guard
+    assert deploy["permissions"] == {"contents": "read", "packages": "write"}
+
+
+def test_production_counts_a_newer_commit_that_contains_this_one() -> None:
+    # A later run's deploy can land first: the wait accepts a commit ahead of this one.
+    run = _wait_step("production.yaml")["run"]
+    assert 'compare/$EXPECTED...$RUNNING" --jq .status' in run
+    assert '= "ahead" ]' in run

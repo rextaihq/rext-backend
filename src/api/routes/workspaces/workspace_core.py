@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.dependencies.feature_gate import RequireFeature
 from src.api.middleware.exceptions import (
     RextValidationException,
 )
@@ -63,12 +62,11 @@ async def get_status(request: Request):
 # -------------------------
 @router.post(
     "/",
-    dependencies=[Depends(RequireFeature("workspaces"))],
     response_model=SuccessResponse[WorkspaceResponseSchema],
 )
 # No permission gate: every authenticated account may create workspaces.
-# Access control here is the feature flag (RequireFeature), the plan-based
-# check_workspace_limit() quota, and authentication itself — the former
+# Access control here is the plan's workspace limit (check_workspace_limit(), the
+# one gate: its 429 is what the dashboard shows) and authentication itself — the former
 # workspace.create permission was redundant because every user held it via the
 # irrevocable platform-floor "user" role.
 @db_transaction_handler("create workspace", auto_commit=True)
