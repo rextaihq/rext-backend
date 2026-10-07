@@ -211,10 +211,17 @@ async def test_a_prominent_call_to_action_keeps_its_exact_text(writer_message):
 
 
 def test_the_system_prompt_states_the_exclusion():
-    block = PersonaInjectionMiddleware()._build_brand_placement_block(_outline("none"), "blog")
+    outline = _outline("none")
+    block = PersonaInjectionMiddleware()._build_brand_placement_block(
+        outline, "blog", excluded_brand_of(outline)
+    )
 
     assert block.startswith("## BRAND EXCLUSION — MANDATORY")
     assert "NO mention of Acme Tools" in block
+    # The human message keeps the approved internal links; the system prompt says so too.
+    assert "the approved internal links you are given stay" in block
+    # The caller decides from the run's own title and keyphrase; with none excluded, no block.
+    assert PersonaInjectionMiddleware()._build_brand_placement_block(outline, "blog", None) == ""
 
 
 def test_the_rewrite_is_told_to_keep_the_brand_out():
@@ -377,3 +384,181 @@ def test_a_malformed_address_is_no_brand_link_and_never_stops_the_check(prominen
 
     assert check_brand_absent(article, spec)["passed"] is True
     assert isinstance(check_brand_prominence(article, spec)["passed"], bool)
+
+
+# -- The conflicts a repair couldn't resolve (rext-control#760) ---------------------------
+
+
+def _checked(article, outline, generation_meta=None):
+    """The article as a validation pass sees it, and the spec it is checked against."""
+    from src.flow.engines.content.generation.validation import restore_links_for_spec
+
+    spec = build_requirements_spec(outline, "blog", generation_meta=generation_meta)
+    return restore_links_for_spec(article, spec, stage="test"), spec
+
+
+def test_links_to_the_excluded_brands_site_are_removed_in_code():
+    article = {
+        **ARTICLE,
+        "body_markdown": (
+            "## Choose the spot\n\nSee [the sun chart](https://app.acme.test/chart) and "
+            "[a soil guide](https://soil.example/guide). ![chart](https://acme.test/chart.png)"
+        ),
+        "cta": {"text": "Start planning your garden today", "url": "https://acme.test/signup"},
+    }
+
+    cleaned, spec = _checked(article, _outline("none"))
+
+    # The words stay, the address goes; another site's link and an image are left alone.
+    assert (
+        "See the sun chart and [a soil guide](https://soil.example/guide)."
+        in (cleaned["body_markdown"])
+    )
+    assert "![chart](https://acme.test/chart.png)" in cleaned["body_markdown"]
+    assert cleaned["cta"] == {"text": "Start planning your garden today", "url": None}
+    assert check_brand_absent({**cleaned, "body_markdown": "## Choose the spot\n\nSun."}, spec)[
+        "passed"
+    ]
+    assert article["cta"]["url"] == "https://acme.test/signup"  # the input isn't changed
+
+
+def test_an_approved_internal_link_on_the_brands_site_stays_linked():
+    internal = "https://www.acme.test/blog/garden-planner"
+    outline = _outline("none", internal_links=[{"url": internal, "title": "Garden planner"}])
+    article = {**ARTICLE, "body_markdown": f"See [our planner]({internal}) first."}
+
+    cleaned, _ = _checked(article, outline)
+
+    assert cleaned is article
+
+
+@pytest.mark.parametrize("prominence", ["prominent", "subtle"])
+def test_with_a_mention_approved_no_link_is_removed(prominence):
+    article = {**ARTICLE, "body_markdown": "Try [Acme Tools](https://acme.test) for the map."}
+
+    cleaned, _ = _checked(article, _outline(prominence))
+
+    assert cleaned is article
+
+
+def test_a_citation_to_the_excluded_brands_site_is_not_kept_or_put_back():
+    from src.flow.engines.content.generation.validation import (
+        check_links_preserved,
+        protected_links,
+    )
+
+    brand_page = "https://acme.test/blog/soil"
+    record = {
+        "url": brand_page,
+        "anchor_text": "a soil study",
+        "sentence": "A soil study shows why.",
+        "section": "Choose the spot",
+        "field": "body_markdown",
+        "kind": "citation",
+    }
+    searched = [{"url": brand_page, "title": "Soil"}]
+    article = {**ARTICLE, "body_markdown": "## Choose the spot\n\nA soil study shows why."}
+
+    cleaned, spec = _checked(article, _outline("none"), {"link_inventory": [record]})
+
+    # Not in the inventory, so it is not put back and "a link was lost" has nothing to report.
+    assert spec["link_inventory"] == []
+    assert "acme.test" not in cleaned["body_markdown"]
+    assert check_links_preserved(cleaned, spec)["passed"] is True
+    # And a draft that still links it does not get that link protected.
+    linked = {**ARTICLE, "body_markdown": f"## Choose the spot\n\n[A soil study]({brand_page})."}
+    assert protected_links(linked, spec, searched) == []
+    # With a mention approved the same citation is kept, as before.
+    kept = build_requirements_spec(
+        _outline("subtle"), "blog", generation_meta={"link_inventory": [record]}
+    )
+    assert [r["url"] for r in kept["link_inventory"]] == [brand_page]
+
+
+def test_a_planned_heading_that_names_the_brand_is_met_without_the_name():
+    from src.flow.engines.content.generation.validation import check_required_sections
+
+    spec = build_requirements_spec(_outline("none"), "blog")
+    spec["planned_sections"] = [
+        {
+            "heading": "Acme Tools pricing",
+            "level": 2,
+            "position": 1,
+            "of": 2,
+            "required": True,
+            "plan": "",
+        },
+        # The brand's own entry in a list: another product is named there, or none.
+        {"heading": "Acme Tools", "level": 2, "position": 2, "of": 2, "required": True, "plan": ""},
+    ]
+    article = {**ARTICLE, "body_markdown": "## Pricing\n\nPlans start small."}
+
+    assert check_required_sections(article, spec)["passed"] is True
+    assert check_brand_absent(article, spec)["passed"] is True
+    # With a mention approved the name is part of what the heading must say.
+    named = build_requirements_spec(_outline("subtle"), "blog")
+    named["planned_sections"] = spec["planned_sections"][:1]
+    assert check_required_sections(article, named)["passed"] is False
+    # With the heading missing altogether, the repair is told to write it without the name.
+    missing = check_required_sections({**ARTICLE, "body_markdown": "## Soil\n\nDig."}, spec)
+    assert missing["passed"] is False
+    assert "write its heading without that name" in missing["detail"]
+
+
+def test_a_hero_that_names_the_brand_is_met_without_the_name():
+    from src.flow.engines.content.generation.validation import check_hero_presence
+
+    hero = {"headline": "Acme Tools for gardens", "subheadline": ""}
+    article = {**ARTICLE, "introduction": "Plan your gardens before you dig, bed by bed."}
+
+    spec = build_requirements_spec(_outline("none", hero=hero), "blog")
+    assert check_hero_presence(article, spec)["passed"] is True
+    # With a mention approved the name is part of the hero the opening must carry.
+    named = build_requirements_spec(_outline("subtle", hero=hero), "blog")
+    assert check_hero_presence(article, named)["passed"] is False
+
+
+def test_the_repair_is_told_about_the_exclusion_and_shown_the_call_to_action():
+    from src.flow.engines.content.generation.repair_content import _build_exclusion_block
+
+    failed = [{"name": "brand_absent", "detail": "…"}]
+    article = {**ARTICLE, "cta": {"text": "Try Acme Tools today"}}
+
+    block = _build_exclusion_block(failed, dict(BRAND), article)
+
+    assert block.startswith("BRAND EXCLUSION — the user chose NO mention of Acme Tools.")
+    assert 'The call to action reads "Try Acme Tools today".' in block
+    assert "return `cta.text` reworded without it" in block
+    # Only when that check failed, and only for an excluded brand.
+    assert _build_exclusion_block([{"name": "cta_presence"}], dict(BRAND), article) == ""
+    assert _build_exclusion_block(failed, None, article) == ""
+
+
+def test_a_persona_named_like_the_excluded_brand_is_recognised():
+    from types import SimpleNamespace
+
+    from src.flow.engines.agent.middleware.persona_middleware import _is_named
+
+    assert _is_named(SimpleNamespace(full_name="Acme  Tools", name="acme"), "acme tools")
+    assert _is_named(SimpleNamespace(full_name=None, name="ACME TOOLS"), "Acme Tools")
+    assert not _is_named(SimpleNamespace(full_name="Sara Ortiz", name="sara"), "Acme Tools")
+    assert not _is_named(SimpleNamespace(full_name=None, name=None), "")
+
+
+def test_tags_and_alt_text_that_name_the_excluded_brand_are_cleaned_in_code():
+    article = {
+        **ARTICLE,
+        "tags": ["Gardening", "Acme Tools", "acme tools tips"],
+        "images": [
+            {"image_url": "https://cdn.example/a.png", "alt_text": "Acme Tools' sun chart"},
+            {"image_url": "https://cdn.example/b.png", "alt_text": "A raised bed"},
+        ],
+    }
+
+    cleaned, _ = _checked(article, _outline("none"))
+
+    assert cleaned["tags"] == ["Gardening"]
+    assert [image["alt_text"] for image in cleaned["images"]] == ["sun chart", "A raised bed"]
+    # With a mention approved, both stay as written.
+    kept, _ = _checked(article, _outline("prominent"))
+    assert kept is article

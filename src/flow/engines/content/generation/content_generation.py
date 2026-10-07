@@ -1004,6 +1004,9 @@ async def generate_content(state: REXT) -> dict:
             "content": {
                 "outline": outline,
                 "selected_topic": topic,
+                # The run's own keyphrase (the outline's copy can be stale on a resumed run):
+                # the system prompt's brand exclusion reads it, as the human message does.
+                "focus_keyword": primary_keyword,
                 "content_type": content_type,
                 "keyword_clusters": keyword_clusters,
                 "cluster_heading_map": cluster_heading_map,
