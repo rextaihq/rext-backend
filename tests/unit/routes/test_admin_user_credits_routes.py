@@ -272,6 +272,8 @@ async def test_the_admin_reads_the_breakdown_and_the_history(session, call):
     assert (credits["current_credits"], credits["monthly_credits"]) == (550, 550)
     assert credits["added_credits"] is None  # all 150 taken back
     assert credits["period_adjustment"] == -50
+    # The form's limits come with the read, so the dashboard holds no copy of them.
+    assert data["limits"] == {"amount_max": 100_000, "reason_min": 3, "reason_max": 500}
     [grant] = data["grants"]
     assert (grant["remaining"], grant["forfeited"], grant["reason"]) == (0, 150, REASON)
     assert (grant["granted_by"], grant["granted_by_email"]) == (str(admin.id), admin.email)
@@ -316,6 +318,7 @@ async def test_the_customer_sees_the_change_and_rext_support_only(session, call)
     assert (grant["amount"], grant["reason"], grant["granted_by"]) == (150, REASON, "Rext support")
     [entry] = data["adjustments"]
     assert (entry["action"], entry["adjusted_by"]) == ("add", "Rext support")
+    assert entry["grant_id"] == grant["id"]  # the add and its grant are one change
     assert str(admin.id) not in history.text and admin.email not in history.text
     credits = balance.json()["data"]
     assert credits["current_credits"] == 750

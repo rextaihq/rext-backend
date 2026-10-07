@@ -70,6 +70,7 @@ class CreditAdjustmentEntry(BaseModel):
     balance_after: Optional[int] = None
     reason: Optional[str] = None
     expires_at: Optional[str] = Field(None, description="ISO 8601, an add's expiry")
+    grant_id: Optional[str] = Field(None, description="The grant an add made, by its id")
     created_at: datetime
 
 
@@ -96,9 +97,17 @@ class AdminCreditGrantEntry(CreditGrantEntry):
 
 class AdminCreditAdjustmentEntry(CreditAdjustmentEntry):
     requested_amount: Optional[int] = None
-    grant_id: Optional[str] = None
     adjusted_by: Optional[UUID] = None
     adjusted_by_email: Optional[str] = None
+
+
+class AdminCreditLimits(BaseModel):
+    """What a change may ask for. The dashboard's form reads them from here, so the
+    limits are written in one place (the model's constants)."""
+
+    amount_max: int = Field(description="The most credits to add or deduct at once")
+    reason_min: int = Field(description="The reason's shortest length, once trimmed")
+    reason_max: int = Field(description="The reason's longest length")
 
 
 class AdminUserCreditsResponse(BaseModel):
@@ -106,5 +115,6 @@ class AdminUserCreditsResponse(BaseModel):
 
     user_id: UUID
     credits: CreditBreakdown
+    limits: AdminCreditLimits
     grants: List[AdminCreditGrantEntry]
     adjustments: List[AdminCreditAdjustmentEntry]

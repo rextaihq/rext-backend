@@ -760,6 +760,8 @@ async def test_the_customers_history_names_rext_support_and_never_the_admin(sess
     assert [a["action"] for a in history["adjustments"]] == ["deduct", "add"]
     assert history["adjustments"][0]["reason"] == "Added twice by mistake"
     assert all(a["adjusted_by"] == SUPPORT_NAME for a in history["adjustments"])
+    # An add names the grant it made, so the two are shown as one change.
+    assert [a["grant_id"] for a in history["adjustments"]] == [None, str(grant["id"])]
     assert str(admin.id) not in repr(history) and admin.email not in repr(history)
 
 

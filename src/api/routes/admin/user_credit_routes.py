@@ -26,7 +26,12 @@ from src.api.schema.response.credit_responses import (
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription.admin_schemas import AdminCreditAdjustment
 from src.api.security.dependencies import get_current_user
-from src.services.admin_credits import adjust_credits, credit_breakdown, credit_history
+from src.services.admin_credits import (
+    ADJUSTMENT_LIMITS,
+    adjust_credits,
+    credit_breakdown,
+    credit_history,
+)
 from src.utils.rbac_utils import assert_target_manageable_by
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -62,6 +67,8 @@ async def get_user_credits(
     Returns:
     - credits: what the user can spend now: the month's credits, a promotion's
       bonus and the credits admins added
+    - limits: the most credits a change may add or deduct, and the reason's
+      shortest and longest length, for the form that sends one
     - grants: the credits admins added, with what is left, what a deduction
       took back, the reason, who added them and the expiry
     - adjustments: every add, deduct and reset from the audit log, with the
@@ -75,6 +82,7 @@ async def get_user_credits(
         data={
             "user_id": user_id,
             "credits": await credit_breakdown(db, user_id),
+            "limits": ADJUSTMENT_LIMITS,
             **history,
         },
         request=request,
