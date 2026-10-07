@@ -175,7 +175,7 @@ class TestUpdatePreferences:
 
     @pytest.mark.asyncio
     async def test_update_multiple_preferences(self, mock_db, sample_user_id, sample_preferences):
-        """Test updating several category preferences (JSONB keys). Fails until G61 #523."""
+        """Test updating several category preferences (JSONB keys)."""
         _returns(mock_db, sample_preferences)
 
         service = EmailPreferencesService(mock_db)
@@ -215,7 +215,7 @@ class TestUnsubscribe:
 
     @pytest.mark.asyncio
     async def test_unsubscribe_from_specific_types(self, mock_db, sample_preferences):
-        """Test unsubscribing from specific email types (JSONB keys). Fails until G61 #523."""
+        """Test unsubscribing from specific email types (JSONB keys)."""
         _returns(mock_db, sample_preferences)
 
         service = EmailPreferencesService(mock_db)
