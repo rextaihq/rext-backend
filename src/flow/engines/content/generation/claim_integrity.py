@@ -102,11 +102,14 @@ _SENTENCE_SPLIT_RE = re.compile(
     rf"(?:(?<=[.!?])|(?<=[.!?]{_CLOSERS})|(?<=[.!?]{_CLOSERS}{_CLOSERS}))"
     r"\s+(?=[\"'(\[*_\u201c\u2018]?[A-Z0-9])"
 )
-# A full stop after a company suffix or a title ends no sentence: "The company (Contentful
-# Inc.) Enterprise plan lacks SSO." is one sentence, so its subject and its claim stay in
-# one unit. "etc." is left out: it ends sentences as often as not.
+# A full stop after a title ends no sentence ("Dr. Smith"), nor does one after a company
+# suffix inside brackets: "The company (Contentful Inc.) Enterprise plan lacks SSO." is one
+# sentence, so its subject and its claim stay in one unit. A suffix that isn't in brackets may
+# well end its sentence ("… through Acme Inc. Beta is cheaper …"), so that boundary stays.
+# "etc." is left out: it ends sentences as often as not.
 _ABBREVIATION_END_RE = re.compile(
-    rf"\b(?:Inc|Ltd|Co|Corp|LLC|LLP|PLC|GmbH|Pty|Bros|Mr|Mrs|Ms|Dr|St|Jr|Sr|vs)\.{_CLOSERS}{{0,2}}$"
+    rf"\b(?:(?:Mr|Mrs|Ms|Dr|St|vs)\.{_CLOSERS}{{0,2}}"
+    rf"|(?:Inc|Ltd|Co|Corp|LLC|LLP|PLC|GmbH|Pty|Bros|Jr|Sr)\.{_CLOSERS}{{1,2}})$"
 )
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
@@ -308,25 +311,26 @@ _NEGATION_BEFORE_RE = re.compile(
 )
 # A denial that is itself denied asserts the test: "it's not true that we never tested", "it
 # isn't that we haven't tested", "it's false that we never tested", "we deny that we never
-# tested". Not across a reported statement: "it's not true that we said we never tested"
-# denies the saying, and says nothing about the test.
+# tested". Only the denial's own subject and its auxiliaries may stand between "that" and
+# the denial: with anything else there ("that we said we never…", "that our logs show we
+# never…") the outer negation denies what was said or shown, and asserts nothing about the
+# test. Read by structure, so no list of reporting verbs has to be complete.
 _NEGATED_FRAME_RE = re.compile(
     r"(?:(?:\bnot\b|n['’]t\b)\s+(?:(?:true|the\s+case|correct|accurate)\s+)?"
     r"|\b(?:false|untrue|incorrect|wrong|a\s+lie|a\s+myth)\s+"
     r"|\b(?:den(?:y|ies|ied)|reject(?:s|ed)?|dispute[sd]?)\s+"
     r"(?:the\s+(?:claim|idea|notion|suggestion)\s+)?)"
-    r"that\s+(?P<between>(?:[\w'’-]+\s+){0,4}[\w'’-]*)$",
+    r"that\s+(?:we|i|(?:our|my)\s+(?:team|editors?|reviewers?|staff))"
+    r"(?:\s+(?:have|had|has|did|do|would|could|ever|actually|really|personally))*\s*$",
     re.IGNORECASE,
 )
-_REPORTING_RE = re.compile(
-    r"\b(?:sa(?:y|ys|id|ying)|claim(?:s|ed)?|stat(?:e|es|ed)|report(?:s|ed)?|wr(?:ote|ites?)|"
-    r"believ(?:e|es|ed)|th(?:ink|inks|ought)|suggest(?:s|ed)?|impl(?:y|ies|ied)|t(?:old|ells?))\b",
-    re.IGNORECASE,
-)
-# "Never" followed by a qualifier denies the qualifier, not the test: "we never tested in
-# isolation", "never tested without production data", "never tested only one tier".
+# "Never" denies the qualifier, not the test, only when the qualifier makes the sentence say
+# that testing happened: "we never tested in isolation", "never tested without production
+# data", "never tested only one tier". A place or a condition is a plain, scoped denial: "we
+# never tested in production" and "never tested under load" say what wasn't tested.
 _QUALIFIER_AFTER_RE = re.compile(
-    r"\s+(?:in|with|without|only|on|under|using|against)\b", re.IGNORECASE
+    r"\s+(?:without|only|just|merely|alone|in\s+isolation|by\s+(?:itself|themselves))\b",
+    re.IGNORECASE,
 )
 # After a denial, a clause that asserts the test by leaving the verb out ("I haven't tested
 # it, but we have.", "…, though our team did.") or by standing a pro-verb in for it ("…, but
@@ -644,8 +648,7 @@ def _denies(text: str, testing: re.Match) -> bool:
     negation = _NEGATION_BEFORE_RE.search(before)
     if not negation:
         return False
-    frame = _NEGATED_FRAME_RE.search(before[: negation.start()])
-    if frame and not _REPORTING_RE.search(frame.group("between")):
+    if _NEGATED_FRAME_RE.search(before[: negation.start()]):
         return False
     return not (
         negation.group(0).lower().startswith("never")
