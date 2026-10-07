@@ -41,3 +41,35 @@ def test_a_long_input_is_shown_back_cut_short(field):
 
 def test_a_wrong_address_is_still_shown_back():
     assert "Got: not a url" in _error(url="not  a url")
+
+
+# -- What the visitor typed is shown to them, and never kept in the error log -----------
+
+
+def _recorded(**fields) -> list[dict]:
+    from src.api.middleware.error_handler import _validation_error_metadata
+
+    with pytest.raises(ValidationError) as caught:
+        SchemaRequest(schema_type="Article", name="A title", **fields)
+    return _validation_error_metadata(caught.value)["invalid_fields"]
+
+
+@pytest.mark.parametrize("field", ["date_published", "url", "image_url"])
+def test_the_error_log_never_keeps_what_was_typed(field):
+    typed = "sk-live-a-token-pasted-by-mistake"
+
+    (row,) = _recorded(**{field: typed})
+
+    assert row["field"] == field and row["rule"] == "value_error"
+    assert "pasted" not in row["message"] and "sk-live" not in row["message"]
+    assert row["message"].endswith("Got: [not recorded]")
+
+
+def test_a_message_that_repeats_the_input_whole_is_recorded_without_it():
+    from src.api.middleware.error_handler import _message_without_input
+
+    err = {"msg": "Value error, 'hunter2!' is not allowed here", "input": "hunter2!"}
+
+    assert _message_without_input(err) == "Value error, '[not recorded]' is not allowed here"
+    # A built-in message quotes nothing and is recorded as it is.
+    assert _message_without_input({"msg": "Field required", "input": {}}) == "Field required"
