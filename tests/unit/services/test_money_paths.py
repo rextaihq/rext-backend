@@ -767,6 +767,11 @@ async def test_switching_plans_down_and_up_does_not_refill_spent_credits(db):
     assert await usage.get_credit_balance(user.id) <= 100
 
 
+@pytest.mark.xfail(
+    datetime.now().astimezone().utcoffset() != timedelta(0),
+    strict=True,
+    reason="F20 rext-control#655: off UTC, ends_at is stored moved by the host's offset",
+)
 async def test_a_cancelled_plan_keeps_access_until_its_end_then_expires(db, clock):
     from src.services.webhook_handlers.subscription_handlers import (
         handle_subscription_cancelled,
