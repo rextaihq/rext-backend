@@ -34,7 +34,7 @@ class _Reply:
         return dict(self._data)
 
 
-async def _generate(monkeypatch, content_type, replies):
+async def _generate(monkeypatch, content_type, replies, rejected_reason="None"):
     """generate_outline with the model's replies scripted; returns the outline and each call's messages."""
     calls = []
     queue = list(replies)
@@ -81,7 +81,7 @@ async def _generate(monkeypatch, content_type, replies):
         "content": {
             "selected_topic": "How to start a podcast",
             "content_type": content_type,
-            "outline": {"rejected_reason": "None"},
+            "outline": {"rejected_reason": rejected_reason},
         },
     }
     result = await outline_module.generate_outline.__wrapped__(state)
@@ -146,3 +146,36 @@ async def test_a_failed_second_attempt_keeps_the_first(monkeypatch):
 
     assert len(outline["steps"]["steps"]) == 1
     assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_a_reviewers_shorter_how_to_is_kept(monkeypatch):
+    """Their own ask sets the length: two steps on request isn't thin."""
+    outline, calls = await _generate(
+        monkeypatch, "how-to-guide", [_how_to(2)], rejected_reason="Combine it into two steps"
+    )
+
+    assert len(outline["steps"]["steps"]) == 2
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+async def test_an_empty_how_to_after_feedback_is_still_asked_for_again(monkeypatch):
+    outline, calls = await _generate(
+        monkeypatch, "how-to-guide", [_how_to(0), _how_to(2)], rejected_reason="Make it shorter"
+    )
+
+    assert len(outline["steps"]["steps"]) == 2
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_an_outage_during_the_second_attempt_is_the_runs_to_report(monkeypatch):
+    """Not swallowed: the run shows its outage notice, never a thin outline it charged for."""
+    outage = RuntimeError("the provider is down")
+    monkeypatch.setattr(
+        outline_module, "provider_outage", lambda error: "outage" if error is outage else None
+    )
+
+    with pytest.raises(RuntimeError, match="the provider is down"):
+        await _generate(monkeypatch, "how-to-guide", [_how_to(1), outage])
