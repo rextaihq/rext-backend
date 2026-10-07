@@ -325,3 +325,20 @@ def test_the_name_is_matched_whatever_the_spacing_in_the_profile():
 
     assert "Acme" not in block
     assert "**What it does:** The company builds sites. the company ships." in block
+
+
+def test_only_a_text_that_opened_with_the_name_gets_a_new_capital():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    profile = {
+        "brand_name": "Acme CMS",
+        "about": "iOS teams ship faster with Acme CMS.",
+        "target_audience": ["iOS developers", "Acme CMS customers"],
+        "content_pillars": ["macOS tutorials"],
+    }
+
+    block = format_expertise_for_writer(article_voice(None, profile))
+
+    assert "**What it does:** iOS teams ship faster with the company." in block
+    assert "**Who it serves:** iOS developers; The company customers" in block
+    assert "**What it writes about:** macOS tutorials" in block
