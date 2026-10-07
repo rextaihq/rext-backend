@@ -12,9 +12,9 @@ from pydantic import ValidationError
 import src.flow.engines.content.generation.outline as outline_module
 from src.flow.model.structure.outlines.infomational.blog import ContentStructure
 from src.flow.prompts.human.outline import (
-    asks_for_subsections,
     get_outline_prompt,
     outline_subsection_rule,
+    subsection_request,
 )
 
 FIXED_SHAPE_TYPES = [
@@ -89,18 +89,54 @@ def test_step_guides_plan_several_steps(content_type):
         "use sub-headings for the steps",
         "Break the long sections into sub sections",
         "nested headings please",
+        "No, add H3s under the tools",
+        "Not detailed enough: add H3s",
+        "Drop the H3 under the intro. Add H3s to the tools section.",
     ],
 )
 def test_feedback_asking_for_subsections_is_recognised(feedback):
-    assert asks_for_subsections(feedback)
+    assert subsection_request(feedback) == "more"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "feedback",
+    [
+        "Remove the H3s",
+        "do not use subsections",
+        "Don't want any sub-headings",
+        "Too many H3s",
+        "no subsections please",
+        "Flatten it: without nested headings",
+        "The H3s aren't needed",
+        "the subsections are unnecessary",
+    ],
+)
+def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
+    """Review round 1: "Remove the H3s" must not turn into "this pass MUST contain H3s"."""
+    assert subsection_request(feedback) == "fewer"
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "feedback", [None, "", "None", "Make it shorter", "Change the tone", "Add a section on pricing"]
 )
-def test_other_feedback_is_not_read_as_asking_for_subsections(feedback):
-    assert not asks_for_subsections(feedback)
+def test_other_feedback_says_nothing_about_subsections(feedback):
+    assert subsection_request(feedback) is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("content_type", ["blog", "pillar-content"])
+def test_feedback_asking_for_fewer_subsections_is_followed(content_type):
+    rule = outline_subsection_rule(content_type, feedback="Remove the H3s")
+
+    assert "asks for fewer or no subsections: follow it" in rule
+    assert "MUST contain H3s" not in rule
+
+
+@pytest.mark.unit
+def test_feedback_asking_for_fewer_on_a_fixed_shape_adds_nothing():
+    assert "feedback" not in outline_subsection_rule("best-tools", feedback="Too many H3s")
 
 
 @pytest.mark.unit
@@ -181,6 +217,23 @@ def test_a_blog_outline_has_room_for_h3s():
 def test_a_blog_outline_stays_bounded(count):
     with pytest.raises(ValidationError):
         ContentStructure(sections=[_section(f"S {i}") for i in range(count)])
+
+
+@pytest.mark.unit
+def test_the_extra_room_is_for_h3s_not_more_h2s():
+    """Review round 1: 9-16 entries all H2 are refused, as they were under the 8-entry cap."""
+    with pytest.raises(ValidationError, match="at most 8 H2 sections, got 9"):
+        ContentStructure(sections=[_section(f"S {i}") for i in range(9)])
+
+    full = [_section(f"S {i}", "H2" if i % 2 == 0 else "H3") for i in range(16)]
+    assert len(ContentStructure(sections=full).sections) == 16
+
+
+@pytest.mark.unit
+def test_an_outline_that_passed_before_still_passes():
+    """Fewer than four H2s with H3s made up four entries before; no new refusal."""
+    sections = [_section("A"), _section("A.1", "H3"), _section("B"), _section("B.1", "H3")]
+    assert len(ContentStructure(sections=sections).sections) == 4
 
 
 class _Stop(Exception):

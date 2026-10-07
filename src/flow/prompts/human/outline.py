@@ -13,10 +13,23 @@ _EXPECTED, _BY_SHAPE, _NONE = "expected", "by_shape", "none"
 _SUBSECTION_POLICY = {"pillar-content": _EXPECTED, "blog": _BY_SHAPE}
 _STEP_TYPES = frozenset({"how-to-guide", "tutorial"})
 
-# Feedback that asks for subsections, in the words reviewers use: "H3s", "subsections",
-# "sub-headings", "nested headings".
-_ASKS_FOR_SUBSECTIONS = re.compile(
+# Subsections, in the words reviewers use: "H3s", "subsections", "sub-headings", "nested headings".
+_SUBSECTION_WORDS = re.compile(
     r"\bh3s?\b|\bsub[- ]?(?:sections?|headings?|heads?)\b|\bnested\s+headings?\b", re.IGNORECASE
+)
+# A request for fewer: a cue up to three words before the term ("remove the H3s", "no
+# subsections", "don't use sub-headings", "too many H3s"), or a verdict just after it ("H3s
+# aren't needed", "the subsections are unnecessary").
+_FEWER_BEFORE = re.compile(
+    r"\b(?:no|without|remove|removing|drop|dropping|delete|deleting|fewer|less|flatten|avoid|"
+    r"skip|stop|get\s+rid\s+of|too\s+many|(?:do|does)\s*n[o']?t\s+(?:\w+\s+)?"
+    r"(?:use|add|want|need|include))(?:\s+[\w'-]+){0,3}\s*$",
+    re.IGNORECASE,
+)
+_FEWER_AFTER = re.compile(
+    r"^\W*(?:\w+\W+){0,2}?(?:aren'?t|isn'?t|are\s+not|is\s+not|(?:are|is)\s+unnecessary|"
+    r"(?:are|is)\s+too\s+many|not\s+needed)\b",
+    re.IGNORECASE,
 )
 
 _PARTS = "steps, stages, types, options, tools, or pros and cons"
@@ -30,9 +43,21 @@ def _kebab(value: str | None) -> str:
     return re.sub(r"[\s_-]+", "-", str(value or "").strip().lower()).strip("-")
 
 
-def asks_for_subsections(feedback: str | None) -> bool:
-    """Whether the reviewer's rejection reason asks for H3 subsections."""
-    return bool(feedback) and bool(_ASKS_FOR_SUBSECTIONS.search(str(feedback)))
+def subsection_request(feedback: str | None) -> str | None:
+    """What the reviewer's rejection reason asks of H3 subsections: "more", "fewer" or None.
+
+    Each mention is read in its sentence. Any mention that isn't a request for fewer counts as
+    asking for them, so "drop the H3 under the intro, add H3s to the tools" is "more", and the
+    model reads which ones from the feedback itself.
+    """
+    asks = set()
+    for sentence in re.split(r"[.!?;\n]+", str(feedback or "")):
+        for match in _SUBSECTION_WORDS.finditer(sentence):
+            fewer = _FEWER_BEFORE.search(sentence[: match.start()]) or _FEWER_AFTER.search(
+                sentence[match.end() :]
+            )
+            asks.add("fewer" if fewer else "more")
+    return "more" if "more" in asks else "fewer" if asks else None
 
 
 def outline_subsection_rule(
@@ -45,12 +70,12 @@ def outline_subsection_rule(
     Expected for pillar content; for a blog it follows the article's shape (expected for a
     long guide, optional for a short post, none for a list article); none for the types
     whose schema fixes the structure. Feedback asking for subsections makes them required
-    where the schema can hold them.
+    where the schema can hold them; feedback asking for fewer is followed.
     """
     kind = normalize_content_type(content_type) or "blog"
     raw = _kebab(raw_content_type)
     policy = _NONE if raw == "listicle" else _SUBSECTION_POLICY.get(kind, _NONE)
-    asked = asks_for_subsections(feedback)
+    asked = subsection_request(feedback)
 
     if policy == _EXPECTED:
         lines = [
@@ -95,7 +120,12 @@ def outline_subsection_rule(
                 "steps a reader actually takes, in order."
             )
 
-    if asked:
+    if asked == "fewer" and policy != _NONE:
+        lines.append(
+            "- The reviewer's feedback asks for fewer or no subsections: follow it, whatever this "
+            "content type's default. Keep H3s only where the feedback leaves them."
+        )
+    elif asked == "more":
         if policy == _NONE:
             lines.append(
                 "- The reviewer's feedback asks for subsections. This content type can't nest "
