@@ -35,9 +35,13 @@ def register_default_handlers(webhook_service) -> None:
     - the live webhook receiver and the admin retry/monitoring flow - routes
     events through exactly the same handlers.
     """
-    from src.services.webhook_handlers import order_handlers, subscription_handlers
+    from src.services.webhook_handlers import (
+        order_handlers,
+        renewal_refund_handlers,
+        subscription_handlers,
+    )
 
-    # Subscription handlers (9)
+    # Subscription handlers (10)
     webhook_service.register_handler(
         "subscription_created", subscription_handlers.handle_subscription_created
     )
@@ -65,6 +69,11 @@ def register_default_handlers(webhook_service) -> None:
     webhook_service.register_handler(
         "subscription_payment_recovered",
         subscription_handlers.handle_subscription_payment_recovered,
+    )
+    # A refunded renewal (an invoice, not an order): F8b, revnix/rext-control#537.
+    webhook_service.register_handler(
+        "subscription_payment_refunded",
+        renewal_refund_handlers.handle_subscription_payment_refunded,
     )
 
     # Order handlers (2)

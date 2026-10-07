@@ -285,6 +285,7 @@ class UsageTrackingService:
         lemonsqueezy_order_id: str,
         refunded_total: int,
         original_amount: int,
+        latest: Optional[bool] = None,
     ) -> Optional[Dict[str, Any]]:
         """Shrink the unused part of a partially refunded period's credits.
 
@@ -320,6 +321,9 @@ class UsageTrackingService:
             refunded_total: Cumulative cents refunded on that order, not the
                 amount of this one refund.
             original_amount: Cents the order was charged in full.
+            latest: Whether the refunded payment is the current period's. None asks
+                the orders table (the account's newest order); a renewal's invoice,
+                which has no order, is judged by its caller.
 
         Returns:
             A summary of the adjustment for the caller to log and audit, or
@@ -332,7 +336,9 @@ class UsageTrackingService:
 
         from src.services.order_service import OrderService
 
-        if not await OrderService(self.db).is_latest_order(user_id, lemonsqueezy_order_id):
+        if latest is None:
+            latest = await OrderService(self.db).is_latest_order(user_id, lemonsqueezy_order_id)
+        if not latest:
             return None
 
         result = await self.db.execute(
