@@ -393,17 +393,23 @@ def _window_step() -> dict:
     return step
 
 
-def _waited(tmp_path: Path, now: int) -> list[str]:
-    """The window step run by bash at `now` (epoch seconds): the seconds it slept, if it did."""
+def _waited(tmp_path: Path, pushed: int | None, now: int) -> list[str]:
+    """The window step run by bash `now` seconds into a half hour, for a run created `pushed`
+    seconds into it (None: GitHub doesn't answer): the seconds it slept, if it did."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     slept = tmp_path / "slept"
-    for name, body in (("date", f"echo {now}"), ("sleep", f'echo "$1" >> "{slept}"')):
+    gh = "exit 1" if pushed is None else f"echo {HALF_HOUR + pushed}"
+    stubs = (("date", f"echo {HALF_HOUR + now}"), ("gh", gh), ("sleep", f'echo "$1" >> "{slept}"'))
+    for name, body in stubs:
         stub = bin_dir / name
         stub.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
         stub.chmod(0o755)
+    script = _window_step()["run"]
+    script = script.replace("${{ github.repository }}", "rextaihq/rext-backend")
+    script = script.replace("${{ github.run_id }}", "1")
     subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", _window_step()["run"]],
+        ["bash", "-euo", "pipefail", "-c", script],
         env={"PATH": f"{bin_dir}:{os.environ['PATH']}"},
         check=True,
         capture_output=True,
@@ -416,26 +422,41 @@ def test_the_half_hour_the_window_tests_start_from_is_one() -> None:
 
 
 @pytest.mark.parametrize(
-    ("into", "slept"),
+    ("pushed", "now", "slept"),
     [
-        # Inside a window (minutes 00-09 and 30-39): until its end, and 20 seconds more.
-        (0, ["620"]),
-        (61, ["559"]),
-        (599, ["21"]),
-        (1800, ["620"]),
-        (1800 + 8 * 60, ["140"]),
-        # Outside one: an urgent fix deploys at once.
-        (600, []),
-        (601, []),
-        (15 * 60, []),
-        (1799, []),
-        (1800 + 600, []),
+        # Pushed inside a window (minutes 00-09 and 30-39): until its end, and 20 seconds more.
+        (0, 0, ["620"]),
+        (0, 5, ["615"]),
+        (8 * 60, 8 * 60 + 5, ["135"]),
+        (599, 600, ["20"]),
+        (1800, 1805, ["615"]),
+        # Pushed outside one: an urgent fix deploys at once, even when its run starts
+        # (or leaves the queue) inside the next window.
+        (600, 601, []),
+        (15 * 60, 15 * 60 + 5, []),
+        (1799, 1800, []),
+        (25 * 60, 31 * 60, []),
+        # Its window has passed: the run queued behind another, or is run again.
+        (599, 700, []),
+        (8 * 60, 10 * 60 + 25, []),
+        (0, 7200, []),
+        # GitHub doesn't say when the run was created: the time now stands in for it.
+        (None, 61, ["559"]),
+        (None, 700, []),
     ],
 )
-def test_a_run_started_inside_a_merge_window_waits_for_its_end(
-    tmp_path: Path, into: int, slept: list[str]
+def test_a_run_pushed_inside_a_merge_window_waits_for_its_end(
+    tmp_path: Path, pushed: int | None, now: int, slept: list[str]
 ) -> None:
-    assert _waited(tmp_path, HALF_HOUR + into) == slept
+    assert _waited(tmp_path, pushed, now) == slept
+
+
+def test_the_window_is_the_pushs_not_the_runners() -> None:
+    # A runner that starts late, or a run that queued, must not move a push into a window.
+    step = _window_step()
+    assert "actions/runs/${{ github.run_id }}" in step["run"]
+    assert ".created_at | fromdateiso8601" in step["run"]
+    assert _jobs("production.yaml")["window"]["permissions"] == {"actions": "read"}
 
 
 def test_only_a_push_waits_for_the_window() -> None:
