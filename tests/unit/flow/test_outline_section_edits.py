@@ -653,3 +653,21 @@ def test_a_renamed_heading_is_marked_and_the_mark_never_shows():
     assert first["heading_edited"] is True and "heading_edited" not in second
     plan = _format_outline_for_generation(edited, "blog")
     assert "Heading edited" not in plan and "heading_edited" not in plan
+
+
+@pytest.mark.parametrize("target", [800, 2400])
+def test_the_length_the_writer_is_told_is_the_length_the_check_accepts(target):
+    """An 800-word target was told 1,000-1,200 words; the check rejects above 896."""
+    import re
+
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+    from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+
+    prompt = PersonaInjectionMiddleware()._build_full_content_prompt(
+        None, _blog_outline(), target_word_count=target, content_type="blog"
+    )
+
+    low, high = compute_word_target_band(target)
+    told = re.search(r"Combined total: (\d+)-(\d+) words", prompt)
+    assert told and (int(told.group(1)), int(told.group(2))) == (low, high)
+    assert "minimum 200 words" not in prompt and "at least 200 words" not in prompt
