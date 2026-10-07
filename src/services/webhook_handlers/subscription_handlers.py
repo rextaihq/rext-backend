@@ -116,6 +116,8 @@ def _stamp_provider_state(subscription: UserSubscription, sub_data: Dict[str, An
 # subscription's metadata: invoice events don't stamp provider_updated_at, so this
 # orders them among themselves.
 _PAID_INVOICE_AT = "paid_invoice_at"
+# When that payment was credited, read by renewal_refund_handlers too.
+PAID_INVOICE_AT = _PAID_INVOICE_AT
 # The subscription invoice that paid for the current period (renewal_refund_handlers).
 PAID_INVOICE_ID = "paid_invoice_id"
 
@@ -1603,6 +1605,22 @@ async def handle_subscription_payment_success(
             )
     if paid_at:
         _record_paid_invoice(subscription, paid_at, (webhook_data.get("data") or {}).get("id"))
+
+    # A partial refund of this invoice that arrived before this payment (Lemon Squeezy
+    # doesn't promise order): the month just granted shrinks by it now.
+    from src.services.webhook_handlers.renewal_refund_handlers import apply_early_invoice_refund
+
+    early = await apply_early_invoice_refund(
+        db,
+        subscription,
+        (webhook_data.get("data") or {}).get("id"),
+        int(((webhook_data.get("data") or {}).get("attributes") or {}).get("total") or 0),
+    )
+    if early:
+        logger.info(
+            "subscription_payment_success: an earlier-delivered partial refund applied",
+            extra={"subscription_id": str(subscription.id), "adjustment": early},
+        )
 
     subscription.updated_at = datetime.now(timezone.utc)
     _stamp_card_details(subscription, sub_data)

@@ -18,6 +18,7 @@ from sqlalchemy.pool import NullPool
 
 import src.services.refund_cancellation as cancellation_module
 import src.services.webhook_handlers.renewal_refund_handlers as module
+import src.services.webhook_handlers.subscription_handlers as subscription_handlers
 from src.api.database.base import Base
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.credit_grants import CreditGrant
@@ -26,6 +27,7 @@ from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.refunds import Refund
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
+from src.services.refund_service import RefundService
 from src.services.webhook_handlers import register_default_handlers
 from src.services.webhook_handlers.subscription_handlers import (
     PAID_INVOICE_ID,
@@ -90,26 +92,39 @@ def outside(monkeypatch):
     return SimpleNamespace(provider=provider, email=email, alert=alert)
 
 
-async def _renewed_subscription(db, paid_invoice: str = "inv-renewal") -> UserSubscription:
-    """An active monthly plan whose latest renewal, invoice `paid_invoice`, was credited."""
+async def _renewed_subscription(
+    db,
+    paid_invoice: str = "inv-renewal",
+    *,
+    paid_at: datetime = NOW - timedelta(days=5),
+    user_id=None,
+    order_id: str | None = None,
+    started: datetime = NOW - timedelta(days=40),
+) -> UserSubscription:
+    """An active monthly plan whose latest payment, invoice `paid_invoice`, was credited."""
     plan = SubscriptionPlan(
         name=f"starter-{uuid4().hex[:8]}", display_name="Starter", credits_per_month=CREDITS
     )
-    user = Users(email=f"{uuid4().hex[:12]}@example.com")
-    db.add_all([plan, user])
+    db.add(plan)
+    if user_id is None:
+        user = Users(email=f"{uuid4().hex[:12]}@example.com")
+        db.add(user)
+        await db.flush()
+        user_id = user.id
     await db.flush()
     row = UserSubscription(
-        user_id=user.id,
+        user_id=user_id,
         plan_id=plan.id,
         status=SubscriptionStatus.ACTIVE,
         lemonsqueezy_subscription_id=f"ls-{uuid4().hex[:8]}",
-        start_date=NOW - timedelta(days=40),
+        lemonsqueezy_order_id=order_id,
+        start_date=started,
         end_date=NOW + timedelta(days=25),
         current_credits=CREDITS,
         credits_reset_date=NOW + timedelta(days=25),
         provider_updated_at=NOW - timedelta(days=5),
     )
-    _record_paid_invoice(row, NOW - timedelta(days=5), paid_invoice)
+    _record_paid_invoice(row, paid_at, paid_invoice)
     db.add(row)
     await db.flush()
     return row
@@ -120,6 +135,7 @@ def _refund_event(
     invoice: str = "inv-renewal",
     refunded: int = PRICE,
     billing_reason: str = "renewal",
+    created_at: datetime = NOW - timedelta(days=5),
 ) -> dict:
     return {
         "event_id": f"evt-{uuid4().hex[:8]}",
@@ -135,15 +151,35 @@ def _refund_event(
                 "refunded_at": NOW.isoformat(),
                 "total": PRICE,
                 "currency": "USD",
-                "created_at": (NOW - timedelta(days=5)).isoformat(),
+                "created_at": created_at.isoformat(),
                 "updated_at": NOW.isoformat(),
             },
         },
     }
 
 
-async def _refunds(db, invoice: str) -> list[Refund]:
-    key = module.invoice_refund_key(invoice)
+def _payment_event(row: UserSubscription, invoice: str, created_at: datetime) -> dict:
+    """subscription_payment_success for `invoice`, paid now."""
+    return {
+        "event_id": f"evt-{uuid4().hex[:8]}",
+        "data": {
+            "type": "subscription-invoices",
+            "id": invoice,
+            "attributes": {
+                "subscription_id": row.lemonsqueezy_subscription_id,
+                "billing_reason": "renewal",
+                "status": "paid",
+                "total": PRICE,
+                "currency": "USD",
+                "created_at": created_at.isoformat(),
+                "updated_at": NOW.isoformat(),
+            },
+        },
+    }
+
+
+async def _refunds(db, invoice: str, *, key: str | None = None) -> list[Refund]:
+    key = key or module.invoice_refund_key(invoice)
     return list(
         (await db.execute(select(Refund).where(Refund.lemonsqueezy_order_id == key))).scalars()
     )
@@ -207,17 +243,119 @@ async def test_a_full_refund_of_an_earlier_payment_leaves_the_paid_period(sessio
 
 
 @pytest.mark.asyncio
-async def test_the_first_payment_is_left_to_its_orders_refund(session, outside):
-    """order_refunded records the first payment's refund and ends the plan (F8c)."""
-    row = await _renewed_subscription(session, paid_invoice="inv-initial")
+async def test_a_first_payment_refunded_without_its_order_event_is_recorded_and_ends(
+    session, outside
+):
+    """Refunded through the invoice, the first payment brings no order_refunded: this event
+    records it under the order's id and ends the plan, as F8c would."""
+    row = await _renewed_subscription(session, paid_invoice="inv-initial", order_id="ord-1")
 
     await module.handle_subscription_payment_refunded(
         _refund_event(row, invoice="inv-initial", billing_reason="initial"), None, session
     )
 
+    assert [r.refund_amount for r in await _refunds(session, "", key="ord-1")] == [PRICE]
     assert await _refunds(session, "inv-initial") == []
+    assert row.status == SubscriptionStatus.CANCELLED
+    outside.provider.cancel_subscription.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_first_payment_and_its_order_refund_are_recorded_once(session, outside):
+    """Refunded through the order, both events come: the shared key records it once."""
+    row = await _renewed_subscription(session, paid_invoice="inv-initial", order_id="ord-2")
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-initial", billing_reason="initial"), None, session
+    )
+    # order_refunded records against the same order id and finds nothing new.
+    again = await RefundService(session).record_provider_refund(
+        lemonsqueezy_order_id="ord-2",
+        user_id=row.user_id,
+        provider_refunded_total=PRICE,
+        original_amount=PRICE,
+        subscription_id=row.id,
+        reason="Order refunded via Lemon Squeezy",
+    )
+
+    assert again is None
+    assert len(await _refunds(session, "", key="ord-2")) == 1
+    outside.email.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_refunded_plan_change_invoice_is_recorded_and_left_to_a_person(session, outside):
+    """A plan change's prorated invoice: its period stays paid, and its credits came with the
+    change, so the plan isn't ended or cut."""
+    row = await _renewed_subscription(session)
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-upgrade", billing_reason="updated"), None, session
+    )
+
+    assert len(await _refunds(session, "inv-upgrade")) == 1
     assert row.status == SubscriptionStatus.ACTIVE
+    assert row.current_credits == CREDITS
     outside.provider.cancel_subscription.assert_not_awaited()
+    assert outside.alert.call_args.kwargs["alert_type"] == "refund_of_plan_change"
+
+
+@pytest.mark.asyncio
+async def test_a_full_refund_that_comes_before_its_payment_still_ends_the_plan(session, outside):
+    """The newest invoice, refunded before its payment_success was processed."""
+    row = await _renewed_subscription(
+        session, paid_invoice="inv-previous", paid_at=NOW - timedelta(days=30)
+    )
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-new", created_at=NOW - timedelta(hours=1)), None, session
+    )
+
+    assert row.status == SubscriptionStatus.CANCELLED
+    outside.provider.cancel_subscription.assert_awaited_once()
+    outside.alert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_partial_refund_before_its_payment_cuts_the_month_once_it_is_granted(
+    session, outside, monkeypatch
+):
+    row = await _renewed_subscription(
+        session, paid_invoice="inv-previous", paid_at=NOW - timedelta(days=30)
+    )
+    row.current_credits = 25  # what was left of the previous month
+    new = NOW - timedelta(hours=1)
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-new", refunded=PRICE // 2, created_at=new), None, session
+    )
+    # Nothing to cut yet: the balance is the previous month's.
+    assert row.current_credits == 25
+    assert [r.is_partial for r in await _refunds(session, "inv-new")] == [True]
+
+    monkeypatch.setattr(subscription_handlers, "_stamp_card_details", lambda *a: None)
+    await subscription_handlers.handle_subscription_payment_success(
+        _payment_event(row, "inv-new", new), None, session
+    )
+
+    assert row.current_credits == CREDITS * (PRICE - PRICE // 2) // PRICE
+
+
+@pytest.mark.asyncio
+async def test_a_partial_refund_cuts_the_refunded_subscriptions_credits_not_a_newer_ones(
+    session, outside
+):
+    older = await _renewed_subscription(session, started=NOW - timedelta(days=90))
+    newer = await _renewed_subscription(
+        session, paid_invoice="inv-other", user_id=older.user_id, started=NOW - timedelta(days=3)
+    )
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(older, refunded=PRICE // 2), None, session
+    )
+
+    assert older.current_credits == CREDITS * (PRICE - PRICE // 2) // PRICE
+    assert newer.current_credits == CREDITS
 
 
 @pytest.mark.asyncio
