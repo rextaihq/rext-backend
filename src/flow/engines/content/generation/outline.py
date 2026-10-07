@@ -519,6 +519,29 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
     )
 
 
+# What a regeneration is shown of the rejected outline: the plan the model wrote. The rest of
+# the stored outline is the page's display copy of that plan, the heading map (in the prompt
+# under its own heading) and what was looked up after it was written (links, personas, the
+# brand's fit), plus the review's own marks: thousands of tokens the feedback never refers to.
+_NOT_THE_PLAN = frozenset(
+    {
+        "_render",
+        "cluster_heading_map",
+        "internal_links",
+        "persona_recommendations",
+        "selected_persona_id",
+        "brand_voice_promotion",
+        "rejected_reason",
+        "status",
+        "iteration_count",
+    }
+)
+
+
+def _previous_outline_for_prompt(outline_state: dict | None) -> dict:
+    return {key: value for key, value in (outline_state or {}).items() if key not in _NOT_THE_PLAN}
+
+
 # A step guide's whole body is its steps. On staging one How-To came back with one step and
 # another with none (rext-control#603); the schema can't require them without failing the run,
 # since structured output here isn't strict.
@@ -722,7 +745,7 @@ async def generate_outline(state: REXT) -> dict:
                 content_type, content_type_raw, outline_rejected_reason
             ),
             rejected_reason=outline_rejected_reason,
-            previous_outline=outline_state,
+            previous_outline=_previous_outline_for_prompt(outline_state),
         )
 
         # 🔒 Fail-fast guard
@@ -752,7 +775,8 @@ async def generate_outline(state: REXT) -> dict:
             # The first outline stays unless the second is at least as full: a failed or thinner
             # second attempt never costs the run what it already had.
             try:
-                retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
+                with timed_stage("outline_model", regenerating=reviewed, attempt=2):
+                    retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
             except Exception as error:
                 # An outage is the run's to report (the handler below), not a reason to return,
                 # and charge for, an outline already known to be thin.
@@ -803,17 +827,18 @@ async def generate_outline(state: REXT) -> dict:
         # The persona is ranked HERE rather than at extraction time because fit
         # is a property of the article (topic, title, intent, content type), not
         # of the workspace.
-        internal_links, persona_ranking, brand_voice_promotion = await asyncio.gather(
-            _fetch_internal_links(outline_dict, workspace_id),
-            _rank_personas_for_outline(
-                outline_dict,
-                workspace_id,
-                topic=topic,
-                search_intent=intent_distribution,
-                content_type=content_type,
-            ),
-            _fetch_brand_voice_promotion(outline_dict, workspace_id),
-        )
+        with timed_stage("outline_lookups"):
+            internal_links, persona_ranking, brand_voice_promotion = await asyncio.gather(
+                _fetch_internal_links(outline_dict, workspace_id),
+                _rank_personas_for_outline(
+                    outline_dict,
+                    workspace_id,
+                    topic=topic,
+                    search_intent=intent_distribution,
+                    content_type=content_type,
+                ),
+                _fetch_brand_voice_promotion(outline_dict, workspace_id),
+            )
         recommended_persona_id, persona_recommendations = persona_ranking
         outline_dict["internal_links"] = internal_links
         outline_dict["selected_persona_id"] = recommended_persona_id
