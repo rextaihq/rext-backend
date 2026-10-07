@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from langchain.messages import HumanMessage, SystemMessage
 
 from src.flow.model.llm_manager import load_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.keyword_clustering import KeywordClusteringLLMOutput
 from src.flow.prompts.system.keyword_clustering import KEYWORD_CLUSTERING_SYSTEM_PROMPT
 from src.flow.states.rext import IntentMatchedSerpSignals
@@ -1277,11 +1278,14 @@ class KeywordClusteringService:
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)
-        result: KeywordClusteringLLMOutput = await model.ainvoke(
+        result: KeywordClusteringLLMOutput = await ainvoke_watched(
+            model,
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=human_prompt),
-            ]
+            ],
+            stage="clustering",
+            schema=KeywordClusteringLLMOutput,
         )
 
         candidate_map = {kw["keyword"].lower(): kw for kw in keywords_data if kw.get("keyword")}

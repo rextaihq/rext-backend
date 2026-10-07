@@ -150,16 +150,15 @@ async def test_the_outline_lets_an_outage_through_to_the_notice(monkeypatch, out
     assert await stop_on_outage(outline_module.generate_outline)(outline_state) == NOTICE
 
 
-async def test_any_other_outline_error_keeps_its_message(monkeypatch, outline_state):
+async def test_any_other_outline_error_ends_the_run_with_the_notice_too(monkeypatch, outline_state):
+    # It kept its own message and the run went on: the review step opened on an empty outline
+    # (rext-control#697). No outline is no step to review, whatever the cause.
     def broken(content_type):
         raise ValueError("a schema error")
 
     monkeypatch.setattr(outline_module, "get_outline_model", broken)
 
-    result = await stop_on_outage(outline_module.generate_outline)(outline_state)
-
-    assert "error_code" not in result["content"]
-    assert result["content"]["error"].startswith("We couldn't generate")
+    assert await stop_on_outage(outline_module.generate_outline)(outline_state) == NOTICE
 
 
 async def test_the_article_lets_an_outage_through_to_the_notice(monkeypatch):

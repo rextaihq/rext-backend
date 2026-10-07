@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 import src.flow.engines.content.generation.outline as outline_module
+from src.flow.model.provider_outage import ProviderUnavailable
 from src.flow.model.structure.outlines.infomational.blog import BlogOutline, ContentStructure
 from src.flow.prompts.human.outline import (
     get_outline_prompt,
@@ -327,9 +328,9 @@ async def _outline_prompt_for(monkeypatch, content_type, rejected_reason="None")
             "outline": {"rejected_reason": rejected_reason},
         },
     }
-    result = await outline_module.generate_outline.__wrapped__(state)
-
-    assert "error" in result["content"]  # stopped at the model call
+    # Stopped at the model call: an outline that fails ends the run (rext-control#697).
+    with pytest.raises(ProviderUnavailable):
+        await outline_module.generate_outline.__wrapped__(state)
     return sent[1].content
 
 
