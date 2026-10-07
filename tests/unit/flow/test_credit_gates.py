@@ -108,6 +108,27 @@ async def test_the_failed_check_tells_the_user_to_try_again():
     }
 
 
+async def test_the_failed_check_tells_a_streaming_page_at_once(monkeypatch):
+    # The generation view that is streaming hears it as run.failed, as for an empty search (E27).
+    import langgraph.config
+
+    from src.flow.engines.rext import CREDIT_CHECK_FAILED, _credit_check_failed
+
+    sent = []
+    monkeypatch.setattr(langgraph.config, "get_stream_writer", lambda: sent.append)
+
+    await _credit_check_failed({})
+
+    assert sent == [
+        {
+            "type": "run",
+            "step": "run.failed",
+            "error_code": "credit_check_failed",
+            "message": CREDIT_CHECK_FAILED,
+        }
+    ]
+
+
 # --- a refused stage charge hands no work on -------------------------------------------
 
 
