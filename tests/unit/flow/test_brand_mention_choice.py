@@ -416,9 +416,9 @@ def test_links_to_the_excluded_brands_site_are_removed_in_code():
     )
     assert "![chart](https://acme.test/chart.png)" in cleaned["body_markdown"]
     assert cleaned["cta"] == {"text": "Start planning your garden today", "url": None}
-    assert check_brand_absent({**cleaned, "body_markdown": "## Choose the spot\n\nSun."}, spec)[
-        "passed"
-    ]
+    # What is left passes the check: an image stored on the brand's domain is no link to its
+    # site (a staging run failed "no mention" on the article's own generated image).
+    assert check_brand_absent(cleaned, spec)["passed"] is True
     assert article["cta"]["url"] == "https://acme.test/signup"  # the input isn't changed
 
 
@@ -640,3 +640,35 @@ def test_an_approved_page_linked_with_a_fragment_is_still_approved():
 
     assert cleaned is article
     assert check_brand_absent(cleaned, spec)["passed"] is True
+
+
+def test_an_image_stored_on_the_brands_domain_is_not_a_link_to_its_site():
+    article = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\n![A sun chart](https://media.acme.test/generated/a.png)\n\nSun.",
+    }
+    spec = build_requirements_spec(_outline("none"), "blog")
+
+    assert check_brand_absent(article, spec)["passed"] is True
+    # A text link to the same host is still one.
+    linked = {**article, "body_markdown": "See [the chart](https://media.acme.test/chart)."}
+    assert check_brand_absent(linked, spec)["passed"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prominence", ["none", "subtle"])
+async def test_a_call_to_action_without_the_brand_links_to_no_one_else(writer_message, prominence):
+    for text in ("Start planning today", "Get started with Acme Tools"):
+        message = await writer_message(_outline(prominence, final_cta={"primary_cta": text}))
+
+        assert "Leave the call to action's `url` empty (null)" in message
+        assert "Do not link it to another company's product or site instead" in message
+
+
+@pytest.mark.asyncio
+async def test_a_prominent_call_to_action_may_link(writer_message):
+    message = await writer_message(
+        _outline("prominent", final_cta={"primary_cta": "Start planning today"})
+    )
+
+    assert "Leave the call to action's `url` empty" not in message
