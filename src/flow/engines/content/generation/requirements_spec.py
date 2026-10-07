@@ -81,6 +81,9 @@ class RequirementsSpec(TypedDict, total=False):
     # (brand_prominence "none"): the article must not name it anywhere
     # (rext-control#700). None when a mention was approved or no brand is known.
     excluded_brand: Optional[dict]
+    # The user's choice keeps the brand out of the call to action ("None", or "Subtle"'s one
+    # body mention): the call to action then carries no link at all (rext-control#760).
+    cta_without_link: bool
     sourced_facts: list[dict]
     target_word_count: int
     cta_required: bool
@@ -361,6 +364,10 @@ def build_requirements_spec(
         approved_internal_links=approved_internal_links,
         brand_context=brand_context,
         excluded_brand=excluded_brand,
+        # Not for a title or keyphrase that is the brand's own: such an article is about the
+        # brand, and "None" there only means no promotion.
+        cta_without_link=bool(brand_kept_out_of_cta(outline))
+        and (excluded_brand is not None or outline.get("brand_prominence") == "subtle"),
         sourced_facts=outline.get("key_facts") or [],
         target_word_count=outline.get("target_word_count") or 0,
         cta_required=outline_cta is not None,

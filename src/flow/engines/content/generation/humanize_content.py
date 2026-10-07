@@ -32,6 +32,7 @@ from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
 from src.flow.engines.content.generation.validation import (
+    apply_brand_exclusion,
     check_brand_placement_policy,
     check_links_preserved,
     merge_link_inventory,
@@ -512,6 +513,9 @@ async def humanize_content(state: REXT) -> dict:
             brand_policy=spec.get("brand_placement_policy"),
             excluded_brand=spec.get("excluded_brand"),
         )
+        if repaired is not None:
+            # The repair returns every field: the brand choice's cleanup applies to it too.
+            repaired = apply_brand_exclusion(repaired, spec, stage="humanize_content repair")
         if repaired is not None and _repair_fixed(
             repaired, merged_payload, brand_failed, brand_context, spec, protected
         ):

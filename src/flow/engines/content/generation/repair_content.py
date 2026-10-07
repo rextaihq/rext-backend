@@ -473,6 +473,7 @@ async def repair_content(state: REXT) -> dict:
     else:
         # Imported here: validation imports this module at load time.
         from src.flow.engines.content.generation.validation import (
+            apply_brand_exclusion,
             apply_density_report,
             merge_link_inventory,
             protected_links,
@@ -507,7 +508,8 @@ async def repair_content(state: REXT) -> dict:
                 excluded_brand=spec.get("excluded_brand"),
             )
             if repaired is not None:
-                candidate = repaired
+                # The repair returns every field: the brand choice's cleanup applies to it too.
+                candidate = apply_brand_exclusion(repaired, spec, stage="repair_content")
             else:
                 logger.warning(
                     "repair_content: attempt %d model call failed — keeping pre-repair content; "
