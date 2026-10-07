@@ -361,6 +361,21 @@ def _recase_keyphrase_in_titles(parsed: SEOTopics, keyphrase: str) -> None:
             topic.title = recased
 
 
+def _fix_articles_keeping_valid(parsed: SEOTopics, keyphrase: str) -> None:
+    """The articles once more, after the last recasing: a repaired title's keyphrase may have
+    changed case since the first pass ("a seo agency" is now "a SEO Agency"). Nothing checks the
+    titles after this, so a change that would make a valid title invalid is taken back."""
+    written = [topic.title for topic in parsed.topics]
+    fix_title_articles(parsed, keyphrase)
+    for topic, was in zip(parsed.topics, written):
+        if (
+            topic.title != was
+            and title_is_valid(was, keyphrase)
+            and not title_is_valid(topic.title, keyphrase)
+        ):
+            topic.title = was
+
+
 async def _generate_and_validate_topics(
     model: Any,
     messages: List[Any],
@@ -381,9 +396,13 @@ async def _generate_and_validate_topics(
     try:
         results: SEOTopics = await model.ainvoke(messages)
 
-        # "a" or "an" put right before the titles are checked (G65), so one it lengthens past the
-        # limit goes through the repairs like any other.
-        results = fix_title_articles(_validate_topic_structure(results), keyphrase)
+        # The keyphrase in each title's case first (G49), so the article is judged by the word as
+        # the title will show it ("an SEO agency", where the model copied "seo"). Then "a" or "an"
+        # (G65), right before the titles are checked, so one it lengthens past the limit goes
+        # through the repairs like any other.
+        results = _validate_topic_structure(results)
+        _recase_keyphrase_in_titles(results, keyphrase)
+        results = fix_title_articles(results, keyphrase)
 
         if not results.topics:
             logger.warning("Model returned no topics for query=%r.", query)
@@ -410,6 +429,7 @@ async def _generate_and_validate_topics(
                 results.topics = [SEOTopic(title=fallback, recommended=True)]
 
         _recase_keyphrase_in_titles(results, keyphrase)
+        _fix_articles_keeping_valid(results, keyphrase)
 
         minimum = _MIN_USABLE_REGENERATED_TOPICS if regenerating else _MIN_USABLE_TOPICS
         if len(results.topics) < minimum:
