@@ -104,6 +104,10 @@ class BrandVoiceRefreshResponse(BaseModel):
     operation_id: str
 
 
+class WorkspacePipelineRetryResponse(BaseModel):
+    operation_id: str
+
+
 class MyWorkspacePermissionsResponse(BaseModel):
     workspace_id: UUID
     workspace_slug: str
