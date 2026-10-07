@@ -65,6 +65,8 @@ from src.flow.model.structure.topics import SEOTopics
         ),
         ("Hiring a LLM Engineer: What to Look For", "Hiring an LLM Engineer: What to Look For"),
         ("How to Start an Podcast on YouTube", "How to Start a Podcast on YouTube"),
+        ("An URL's Role in SEO: A Guide for Teams", "A URL's Role in SEO: A Guide for Teams"),
+        ("An ONE-PAGE SEO Checklist for Small Teams", "A ONE-PAGE SEO Checklist for Small Teams"),
     ],
 )
 def test_the_article_follows_the_next_words_sound(written, fixed):
@@ -80,6 +82,12 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "A 2026 Guide to Content Briefs for Beginners",
         "A 100-Day Content Plan for Your Blog",
         "A UX Audit Checklist for Your Website",
+        # An all-caps word read as a word, and an acronym's possessive or plural.
+        "A ONE-PAGE SEO Checklist for Small Business Websites",
+        "A EUROPEAN Guide to SEO for Small Teams",
+        "An EU Guide to Content Rules for Small Teams",
+        "A URL's Role in SEO: A Guide for Content Marketing Teams",
+        "An API's Role in SEO: A Guide for Content Teams",
         "An SEO Brief Template for Your Team",
         "How to Uninstall a Plugin: An Uninstall Checklist",
         "A Unidirectional Data Flow Architecture for React Apps",
