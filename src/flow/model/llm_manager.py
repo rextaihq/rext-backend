@@ -6,6 +6,8 @@ from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langgraph.constants import TAG_NOSTREAM
 
 from src.api.config import get_settings
+from src.flow.model.provider_outage import provider_outage, report_provider_outage
+from src.utils.loop_local_http import SHARED_ASYNC_CLIENT
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -27,7 +29,18 @@ def _remember_loop() -> None:
             pass
 
 
+def _alert_if_outage(service: str, error: BaseException) -> None:
+    """An empty account, a rate limit or the provider down: the team hears of it, once an hour (G75)."""
+    try:
+        outage = provider_outage(error, service)
+        if outage is not None:
+            report_provider_outage(outage)
+    except Exception:  # noqa: BLE001 - reporting never breaks generation
+        pass
+
+
 async def _report_ai_failure(service: str, error: BaseException) -> None:
+    _alert_if_outage(service, error)
     try:
         from src.services.monitoring_service import MonitoringService
 
@@ -79,6 +92,7 @@ class _SyncAIProviderFailureReporter(BaseCallbackHandler):
         loop = _MAIN_LOOP
         if loop is None or loop.is_closed():
             logger.warning("AI provider call failed (no loop to record it): %s", error)
+            _alert_if_outage(self.service, error)
             return
         try:
             asyncio.run_coroutine_threadsafe(_report_ai_failure(self.service, error), loop)
@@ -138,6 +152,10 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS, temperature: float | None =
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=max_tokens,
         streaming=True,
         **kwargs,
@@ -160,6 +178,10 @@ def load_content_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         temperature=0.9,
         streaming=True,
@@ -193,6 +215,10 @@ def load_luna_content_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="none",
         use_responses_api=True,
@@ -212,6 +238,10 @@ def load_humanize_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="low",
         tags=ARTICLE_STEP_TAGS,
@@ -231,6 +261,10 @@ def topic_generation_model():
         model_provider="openai",
         callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
+        # One pool per event loop: runs on their own loops never share a connection (G80).
+        http_async_client=SHARED_ASYNC_CLIENT,
+        # Our own client turns langchain's default token-usage chunk off; it stays on.
+        stream_usage=True,
         max_tokens=TOPIC_GENERATION_MAX_TOKENS,
         streaming=True,
     )

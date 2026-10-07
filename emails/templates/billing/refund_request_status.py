@@ -61,30 +61,30 @@ def _status_email(
         </h1>
         """,
         f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {FONT};">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {FONT};">
             Hi {user_name},
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {FONT};">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {FONT};">
             {intro}
         </p>
         """,
         f"""
-        <table role="presentation" style="width: 100%; margin: 0 0 24px 0; border: 1px solid #e5e7eb; border-radius: 8px; border-collapse: separate; border-spacing: 0;">
+        <table role="presentation" style="width: 100%; margin: 0 0 24px 0; border: 1px solid #e5e5e5; border-radius: 8px; border-collapse: separate; border-spacing: 0;">
             <tr>
-                <td style="padding: 16px 20px; color: #6b7280; font-size: 14px; font-family: {FONT};">Product</td>
-                <td style="padding: 16px 20px; color: #111827; font-size: 14px; font-weight: 600; text-align: right; font-family: {FONT};">{product_name}</td>
+                <td style="padding: 16px 20px; color: #737373; font-size: 14px; font-family: {FONT};">Product</td>
+                <td style="padding: 16px 20px; color: #171717; font-size: 14px; font-weight: 600; text-align: right; font-family: {FONT};">{product_name}</td>
             </tr>
             <tr>
-                <td style="padding: 16px 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; font-family: {FONT};">Amount requested</td>
-                <td style="padding: 16px 20px; border-top: 1px solid #e5e7eb; color: #111827; font-size: 14px; font-weight: 600; text-align: right; font-family: {FONT};">{refund_amount}</td>
+                <td style="padding: 16px 20px; border-top: 1px solid #e5e5e5; color: #737373; font-size: 14px; font-family: {FONT};">Amount requested</td>
+                <td style="padding: 16px 20px; border-top: 1px solid #e5e5e5; color: #171717; font-size: 14px; font-weight: 600; text-align: right; font-family: {FONT};">{refund_amount}</td>
             </tr>
             <tr>
-                <td style="padding: 16px 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; font-family: {FONT};">Order</td>
-                <td style="padding: 16px 20px; border-top: 1px solid #e5e7eb; color: #111827; font-size: 14px; text-align: right; font-family: {FONT};">#{order_id}</td>
+                <td style="padding: 16px 20px; border-top: 1px solid #e5e5e5; color: #737373; font-size: 14px; font-family: {FONT};">Order</td>
+                <td style="padding: 16px 20px; border-top: 1px solid #e5e5e5; color: #171717; font-size: 14px; text-align: right; font-family: {FONT};">#{order_id}</td>
             </tr>
             <tr>
-                <td style="padding: 16px 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; font-family: {FONT};">Requested on</td>
-                <td style="padding: 16px 20px; border-top: 1px solid #e5e7eb; color: #111827; font-size: 14px; text-align: right; font-family: {FONT};">{requested_date}</td>
+                <td style="padding: 16px 20px; border-top: 1px solid #e5e5e5; color: #737373; font-size: 14px; font-family: {FONT};">Requested on</td>
+                <td style="padding: 16px 20px; border-top: 1px solid #e5e5e5; color: #171717; font-size: 14px; text-align: right; font-family: {FONT};">{requested_date}</td>
             </tr>
         </table>
         """,
@@ -93,11 +93,11 @@ def _status_email(
     if note_title and note_body:
         blocks.append(
             f"""
-        <div style="margin: 0 0 32px 0; padding: 20px; background-color: #f9fafb; border-left: 4px solid {accent}; border-radius: 4px;">
+        <div style="margin: 0 0 32px 0; padding: 20px; background-color: #fafafa; border-left: 4px solid {accent}; border-radius: 4px;">
             <h2 style="color: {accent}; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; font-family: {FONT};">
                 {note_title}
             </h2>
-            <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0; font-family: {FONT};">
+            <p style="color: #404040; font-size: 15px; line-height: 22px; margin: 0; font-family: {FONT};">
                 {note_body}
             </p>
         </div>
@@ -125,7 +125,7 @@ def render_refund_request_received_email(
     """
     return _status_email(
         heading="We've got your refund request",
-        accent="#2563eb",
+        accent="#111a17",
         intro=(
             f"Thanks — we've received your request to refund "
             f"<strong>{refund_amount}</strong> and our team will review it."

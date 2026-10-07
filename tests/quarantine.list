@@ -65,10 +65,6 @@ tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_skip_
 tests/services/test_data_retention.py::TestWebhookEventCleanup::test_cleanup_old_processed_webhook_events  # G44.13 #504: the data cleanup's own bug
 tests/services/test_data_retention.py::test_anonymize_subscriptions_uses_config_default  # G44.13 #504: the data cleanup's own bug
 tests/services/test_data_retention.py::test_cleanup_webhook_events_uses_config_default  # G44.13 #504: the data cleanup's own bug
-tests/test_config.py::TestJWTSecretValidation::test_placeholder_refresh_secret_key_rejected
-tests/test_config.py::TestJWTSecretValidation::test_placeholder_secret_key_rejected
-tests/test_config.py::TestJWTSecretValidation::test_weak_refresh_secret_key_rejected_too_short
-tests/test_config.py::TestJWTSecretValidation::test_weak_secret_key_rejected_too_short
 tests/unit/api/tool/test_new_tools.py::test_content_outline_generator
 tests/unit/api/tool/test_new_tools.py::test_headline_analyzer
 tests/unit/api/tool/test_new_tools.py::test_hreflang_duplicate_warning
@@ -100,18 +96,10 @@ tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_with_cc_bcc
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_with_reply_to
 tests/unit/providers/payment/test_lemonsqueezy_provider.py::TestCreateCheckoutSession::test_create_checkout_session_uses_sandbox_mode  # G44.9 #407: after rextaihq/rext-backend#831 (F11.3) merges, in its file
-tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_empty_user_dict
-tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_not_impersonating
-tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_not_impersonating_explicit_false
-tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_response_structure
-tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_while_impersonating
-tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_with_all_fields
-tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_with_missing_optional_fields
 tests/unit/routes/test_workspace_brand_voice_routes.py::test_get_brand_voice_success
 tests/unit/routes/test_workspace_brand_voice_routes.py::test_refresh_brand_voice_returns_operation_id
 tests/unit/routes/test_workspace_brand_voice_routes.py::test_update_brand_voice_restful_returns_serialized_payload
 tests/unit/routes/test_workspace_members_routes.py::test_list_workspace_members_restful
-tests/unit/services/test_auth_service.py::test_register_user_uses_current_email_full_name_api
 tests/unit/services/test_brand_voice_service.py::test_delete_brand_voice_not_found
 tests/unit/services/test_brand_voice_service.py::test_delete_brand_voice_success
 tests/unit/services/test_brand_voice_service.py::test_get_brand_voice_returns_record
@@ -167,22 +155,6 @@ tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_disabl
 tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_success
 tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_unknown_flag
 tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_virtual_flag
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_legacy_or_nonrotation_blacklist_rows_never_replay[logout]
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_legacy_or_nonrotation_blacklist_rows_never_replay[refresh:v1:not-a-number]
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_legacy_or_nonrotation_blacklist_rows_never_replay[refresh]
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_logout_follows_rotation_and_revokes_current_tip
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_logout_losing_refresh_race_revokes_winner_access_token
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_replay_is_rejected_after_configured_grace
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_replay_uses_db_row_without_redis_and_reloads_authorization
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_replay_walks_to_first_unrevoked_successor
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_revoked_session_denies_every_replay_issued_access_token
-tests/unit/services/test_refresh_replay_postgres_authority.py::test_rotation_chain_has_a_hard_safety_bound
-tests/unit/services/test_user_service.py::TestUserServiceChangePassword::test_change_password_success
-tests/unit/services/test_user_service.py::TestUserServiceChangePassword::test_change_password_updates_password_changed_at
-tests/unit/services/test_user_service.py::TestUserServiceUpdateLastLogin::test_update_last_login_handles_none_count
-tests/unit/services/test_user_service.py::TestUserServiceUpdateLastLogin::test_update_last_login_increments_count
-tests/unit/services/test_user_service.py::TestUserServiceUpdateLastLogin::test_update_last_login_resets_failed_attempts
-tests/unit/services/test_user_service.py::TestUserServiceUpdateLastLogin::test_update_last_login_success
 tests/unit/services/test_workspace_service.py::TestWorkspaceServiceCreateWorkspace::test_create_workspace_basic
 tests/unit/services/test_workspace_service.py::TestWorkspaceServiceCreateWorkspace::test_create_workspace_generates_slug
 tests/unit/services/test_workspace_service.py::TestWorkspaceServiceCreateWorkspace::test_update_workspace_keeps_slug_when_name_unchanged
@@ -200,8 +172,6 @@ tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug
 tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug_increments_counter_multiple_times
 tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug_returns_base_when_unique
 tests/unit/test_slug_utils.py::TestGenerateUniqueSlug::test_generate_unique_slug_uses_custom_slug_field
-tests/unit/test_wordpress_publisher.py::test_html_disguised_as_image_is_rejected_before_upload  # G59 #520: a body image that can't be uploaded is published with its original address
-tests/unit/test_wordpress_publisher.py::test_media_upload_failure_prevents_broken_post_from_being_published  # G59 #520: a body image that can't be uploaded is published with its original address
 tests/utils/test_ip_allowlist.py::test_cidr_range_is_supported
 tests/utils/test_ip_allowlist.py::test_empty_allowlist_matches_nothing
 tests/utils/test_ip_allowlist.py::test_fully_invalid_allowlist_matches_nothing

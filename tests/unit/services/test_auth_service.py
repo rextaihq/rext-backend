@@ -89,19 +89,8 @@ async def test_register_user_uses_current_email_full_name_api() -> None:
     db = async_db()
     db.execute.return_value = Result(scalar=None)
     service = AuthService(db)
-    default_role = SimpleNamespace(id=uuid4(), name="user")
 
     with (
-        patch.object(
-            service,
-            "_get_or_create_default_role",
-            AsyncMock(return_value=default_role),
-        ),
-        patch.object(
-            service,
-            "_assign_default_permissions_to_role",
-            AsyncMock(),
-        ),
         patch.object(service, "_get_trial_plan", AsyncMock(return_value=None)),
         patch("src.services.auth_service.validate_password_strength") as validate,
         patch(
@@ -125,8 +114,11 @@ async def test_register_user_uses_current_email_full_name_api() -> None:
     assert token == "verification-token"
     validate.assert_called_once_with("Strong-password-123!")
     create_verification.assert_called_once_with({"user_id": str(user.id)})
-    assert db.add.call_count == 2  # Users + UserRole
-    assert db.flush.await_count == 2
+    # New accounts start with no global role (workspace roles come with membership),
+    # so without a trial plan the user is the only row added.
+    assert db.add.call_count == 1
+    assert db.add.call_args.args[0] is user
+    assert db.flush.await_count == 1  # the user; no role, no trial plan here
 
 
 @pytest.mark.asyncio

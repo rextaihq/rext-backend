@@ -7,6 +7,8 @@ Provides standard email footer with links and legal text.
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from emails.palette import LINE, MUTED
+
 
 @dataclass
 class FooterLink:
@@ -24,9 +26,9 @@ class FooterProps:
     company_address: Optional[str] = None
     links: List[FooterLink] = field(default_factory=list)
     unsubscribe_url: Optional[str] = None
-    text_color: str = "#6b7280"
-    link_color: str = "#3b82f6"
-    border_top: str = "1px solid #e5e7eb"
+    text_color: str = MUTED
+    link_color: str = MUTED  # told apart by its underline
+    border_top: str = f"1px solid {LINE}"
 
 
 def footer(props: Optional[FooterProps] = None) -> str:
@@ -49,7 +51,7 @@ def footer(props: Optional[FooterProps] = None) -> str:
     links_html = ""
     if props.links:
         link_items = [
-            f'<a href="{link.url}" style="color: {props.link_color}; text-decoration: none;">{link.text}</a>'
+            f'<a href="{link.url}" style="color: {props.link_color}; text-decoration: underline;">{link.text}</a>'
             for link in props.links
         ]
         links_html = f"""
@@ -77,7 +79,7 @@ def footer(props: Optional[FooterProps] = None) -> str:
         unsubscribe_html = f"""
         <tr>
             <td style="padding: 10px 0; text-align: center; font-size: 12px; color: {props.text_color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <a href="{props.unsubscribe_url}" style="color: {props.link_color}; text-decoration: none;">Unsubscribe</a>
+                <a href="{props.unsubscribe_url}" style="color: {props.link_color}; text-decoration: underline;">Unsubscribe</a>
             </td>
         </tr>
         """

@@ -96,7 +96,7 @@ class GeneratedContent(BaseModel):
 
     # SEO Meta Tags
     meta_title: str = Field(
-        description="Meta title: identical to the user-selected title, verbatim (50-59 chars)."
+        description="Meta title: identical to the user-selected title, verbatim."
     )
     meta_description: str = Field(
         description="Meta description containing the keyphrase (120-140 chars, hard maximum 140)."
