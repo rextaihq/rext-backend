@@ -51,7 +51,7 @@ from src.config.payment_config import payment_settings
 from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
-from src.services.duplicate_subscriptions import is_settled_duplicate
+from src.services.duplicate_subscriptions import is_known_duplicate
 from src.services.notification_helper import schedule_if_allowed
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
@@ -96,7 +96,7 @@ def billing_action(
     subscription); a paused one, or a cancelled one whose end hasn't come, is
     resumed. Either way a second subscription would bill twice.
     """
-    if subscription is None or is_settled_duplicate(subscription):
+    if subscription is None or is_known_duplicate(subscription):
         return None
     status = subscription.status
     if status in (SubscriptionStatus.PAST_DUE, SubscriptionStatus.SUSPENDED):

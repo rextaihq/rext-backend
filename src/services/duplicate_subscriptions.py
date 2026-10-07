@@ -14,8 +14,15 @@ is ever refunded, and only when it is paid in full: one already refunded (an
 earlier attempt whose transaction didn't commit) is taken as done, and anything
 else (a partial refund, an invoice not paid yet) goes to a person, never an
 older invoice in its place.
+
+The cancel and the refund run only when BILLING_AUTO_SETTLE_DUPLICATES is true
+(founder, 2026-10-07: off for launch week, on after a week of sandbox runs).
+While it is off, a duplicate is recorded on the older row and a critical alert
+asks a person to cancel and refund it by hand in Lemon Squeezy; no row's status
+or access changes here.
 """
 
+import os
 from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
@@ -42,9 +49,20 @@ LIVE_STATUSES = (
 PROVIDER_CREATED_AT = "provider_created_at"
 
 
+def auto_settle_enabled() -> bool:
+    """Whether a duplicate is cancelled and refunded here, or left to a person (the default)."""
+    return os.getenv("BILLING_AUTO_SETTLE_DUPLICATES", "false").strip().lower() == "true"
+
+
 def is_settled_duplicate(subscription: UserSubscription) -> bool:
     """The subscription was cancelled here as the older of two."""
     return bool((getattr(subscription, "subscription_metadata", None) or {}).get("duplicate_of"))
+
+
+def is_known_duplicate(subscription: UserSubscription) -> bool:
+    """Settled here, or found and left to a person: either way never offered back to resume."""
+    metadata = getattr(subscription, "subscription_metadata", None) or {}
+    return bool(metadata.get("duplicate_of") or metadata.get("duplicate_found_of"))
 
 
 def provider_created_record(created_at: Optional[str]) -> dict:
@@ -103,6 +121,11 @@ async def settle_duplicate_subscriptions(
         return []
 
     keep, older = live[0], live[1:]
+    if not auto_settle_enabled():
+        for subscription in older:
+            _leave_to_a_person(subscription, keep)
+        await db.flush()
+        return []
     provider = provider or get_payment_provider_singleton()
     settled = []
     for subscription in older:
@@ -112,6 +135,39 @@ async def settle_duplicate_subscriptions(
         settled.append(subscription.id)
     await db.flush()
     return settled
+
+
+def _leave_to_a_person(subscription: UserSubscription, keep: UserSubscription) -> None:
+    """Record the duplicate and alert once; a person cancels and refunds it in Lemon Squeezy."""
+    if (subscription.subscription_metadata or {}).get("duplicate_found_of") == str(keep.id):
+        return
+    subscription.subscription_metadata = {
+        **(subscription.subscription_metadata or {}),
+        "duplicate_found_of": str(keep.id),
+        "duplicate_found_at": datetime.now(timezone.utc).isoformat(),
+    }
+    ls_id = subscription.lemonsqueezy_subscription_id
+    trigger_payment_alert(
+        alert_type="duplicate_subscription",
+        message=(
+            f"Duplicate subscription {ls_id} for user {subscription.user_id} needs a person: "
+            f"cancel it and refund its latest payment in Lemon Squeezy, and keep "
+            f"{keep.lemonsqueezy_subscription_id} (BILLING_AUTO_SETTLE_DUPLICATES is off)"
+        ),
+        severity="critical",
+        context={
+            "kept_subscription_id": str(keep.id),
+            "kept_lemonsqueezy_subscription_id": keep.lemonsqueezy_subscription_id,
+            "older_lemonsqueezy_subscription_id": ls_id,
+        },
+        user_id=str(subscription.user_id),
+        subscription_id=str(subscription.id),
+        operation="settle_duplicate_subscription",
+    )
+    logger.warning(
+        "Duplicate subscription left to a person (automatic settlement is off)",
+        extra={"older_lemonsqueezy_subscription_id": ls_id, "kept_subscription_id": str(keep.id)},
+    )
 
 
 async def _settle(subscription: UserSubscription, keep: UserSubscription, provider) -> None:

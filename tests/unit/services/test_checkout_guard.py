@@ -251,6 +251,53 @@ async def test_resume_un_cancels_a_cancelled_subscription(session, status, call)
 
 
 @pytest.mark.asyncio
+async def test_resume_acts_on_the_banner_s_subscription_never_a_settled_duplicate(session):
+    """Codex round two on #831: the locally newest row isn't always the one to resume."""
+    from src.api.routes.subscriptions import subscription_routes
+
+    user, plan = await _user_with(session, SubscriptionStatus.PAUSED, ls_id="ls-kept")
+    kept = await session.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+    kept.created_at = NOW - timedelta(days=2)
+    # Stored after the kept one, then settled as the older purchase: cancelled before its
+    # Lemon Squeezy end, but refunded, so it must never be un-cancelled.
+    session.add(
+        UserSubscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.CANCELLED,
+            end_date=LATER,
+            lemonsqueezy_subscription_id="ls-settled",
+            created_at=NOW - timedelta(days=1),
+            subscription_metadata={"duplicate_of": str(kept.id)},
+        )
+    )
+    await session.flush()
+    provider = SimpleNamespace(uncancel_subscription=AsyncMock(), resume_subscription=AsyncMock())
+
+    with patch.object(subscription_routes, "get_payment_provider_singleton", lambda: provider):
+        response = await _call(session, user.id, "POST", "/resume")
+
+    assert response.status_code == 200, response.text
+    provider.resume_subscription.assert_awaited_once_with(kept.lemonsqueezy_subscription_id)
+    provider.uncancel_subscription.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resume_refuses_when_there_is_nothing_to_resume(session):
+    from src.api.routes.subscriptions import subscription_routes
+
+    user, _ = await _user_with(session, SubscriptionStatus.ACTIVE)
+    provider = SimpleNamespace(uncancel_subscription=AsyncMock(), resume_subscription=AsyncMock())
+
+    with patch.object(subscription_routes, "get_payment_provider_singleton", lambda: provider):
+        response = await _call(session, user.id, "POST", "/resume")
+
+    assert response.status_code == 400, response.text
+    provider.resume_subscription.assert_not_called()
+    provider.uncancel_subscription.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_status_reports_the_action_for_the_dashboard(session):
     from src.api.routes.subscriptions import subscription_routes
 

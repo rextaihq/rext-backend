@@ -82,7 +82,7 @@ from src.services.refund_request_service import (
 )
 from src.services.refund_service import RefundService
 from src.services.subscription_plan_service import SubscriptionPlanService
-from src.services.subscription_service import SubscriptionService, billing_action
+from src.services.subscription_service import RESUME, SubscriptionService, billing_action
 from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.logger import logger
 from src.utils.response_utils import success
@@ -1509,19 +1509,25 @@ async def resume_subscription(
     """
     Resume a paused subscription, or a cancelled one before it ends.
 
+    It resumes exactly the subscription the dashboard's Resume is for (billing_action()
+    on the unfinished one), never another of the user's rows: a settled duplicate or an
+    older subscription un-cancelled here would bill again.
+
     The subscription_resumed / subscription_updated webhook updates our local record.
     """
     user_id = current_user.get("identity")
-    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
-    local_status = await db.scalar(
-        select(UserSubscription.status).where(
-            UserSubscription.lemonsqueezy_subscription_id == ls_subscription_id
+    unfinished = await SubscriptionService(db).unfinished_subscription(user_id)
+    action = billing_action(unfinished)
+    if not action or action["action"] != RESUME:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="There is no paused or cancelled subscription to resume.",
         )
-    )
+    ls_subscription_id = unfinished.lemonsqueezy_subscription_id
     provider = get_payment_provider_singleton()
 
     try:
-        if local_status == SubscriptionStatus.CANCELLED:
+        if unfinished.status == SubscriptionStatus.CANCELLED:
             await provider.uncancel_subscription(ls_subscription_id)
         else:
             await provider.resume_subscription(ls_subscription_id)
