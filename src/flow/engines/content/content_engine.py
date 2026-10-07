@@ -40,6 +40,12 @@ def create_content_engine():
     from src.flow.engines.content.generation.humanize_content import humanize_content
     from src.flow.engines.content.generation.outline import generate_outline
     from src.flow.engines.content.generation.persist_content import persist_content
+    from src.flow.engines.content.generation.provider_unavailable import (
+        PROVIDER_UNAVAILABLE_NODE,
+        provider_unavailable,
+        stop_on_outage,
+        unless_outage,
+    )
     from src.flow.engines.content.generation.repair_content import repair_content
     from src.flow.engines.content.generation.topic_generation import (
         generate_topics,
@@ -59,6 +65,18 @@ def create_content_engine():
     from src.flow.engines.router.outline import outline_router
     from src.flow.engines.seo.keyword_clustering import keyword_clustering_node
 
+    def unless_stopped(next_node: str):
+        """On to `next_node`, unless the step ran out of credits (the run ends) or the AI provider
+        was unavailable (the run ends at provider_unavailable, with its notice)."""
+        out_of_credits_route = unless_out_of_credits(next_node)
+        outage_route = unless_outage(next_node)
+
+        def route(state: REXT) -> str:
+            return END if out_of_credits_route(state) == END else outage_route(state)
+
+        route.__name__ = f"to_{next_node}_unless_stopped"
+        return route
+
     graph = StateGraph(REXT)
 
     graph.add_node("recommend_content_type", recommend_content_type)
@@ -68,12 +86,19 @@ def create_content_engine():
     graph.add_node("topics_failed", topics_failed)
     graph.add_node("keyword_clustering", keyword_clustering_node)
     graph.add_node("map_keyword_clusters", map_keyword_clusters)
-    graph.add_node("generate_outline", generate_outline)
+    # The outline and the article end the run with a notice when the AI provider is unavailable, at
+    # provider_unavailable (G75.1, rext-control#614).
+    graph.add_node("generate_outline", stop_on_outage(generate_outline))
     graph.add_node("review_outline", review_outline)
-    graph.add_node("generate_content", generate_content, retry_policy=_LLM_RETRY_POLICY)
+    graph.add_node(
+        "generate_content", stop_on_outage(generate_content), retry_policy=_LLM_RETRY_POLICY
+    )
     graph.add_node("validate_content", validate_content)
+    # Repair and humanizing stay best effort on any model error, an outage included: the article is
+    # written by then, and the run goes on to save it rather than end without it.
     graph.add_node("repair_content", repair_content, retry_policy=_LLM_RETRY_POLICY)
     graph.add_node("humanize_content", humanize_content, retry_policy=_LLM_RETRY_POLICY)
+    graph.add_node(PROVIDER_UNAVAILABLE_NODE, provider_unavailable)
     graph.add_node("final_validate_content", final_validate_content)
     graph.add_node("review_content", review_content())
     graph.add_node("persist_content", persist_content)
@@ -98,11 +123,16 @@ def create_content_engine():
     graph.add_edge("keyword_clustering", "map_keyword_clusters")
     graph.add_edge("map_keyword_clusters", "generate_outline")
     # A stage whose charge was refused ends the run there: its work isn't handed on,
-    # and no later stage runs unpaid (rext-control#524).
+    # and no later stage runs unpaid (rext-control#524). An AI provider outage ends it
+    # with its notice (rext-control#614).
     graph.add_conditional_edges(
         "generate_outline",
-        unless_out_of_credits("review_outline"),
-        {"review_outline": "review_outline", END: END},
+        unless_stopped("review_outline"),
+        {
+            "review_outline": "review_outline",
+            END: END,
+            PROVIDER_UNAVAILABLE_NODE: PROVIDER_UNAVAILABLE_NODE,
+        },
     )
 
     graph.add_conditional_edges(
@@ -113,8 +143,12 @@ def create_content_engine():
 
     graph.add_conditional_edges(
         "generate_content",
-        unless_out_of_credits("validate_content"),
-        {"validate_content": "validate_content", END: END},
+        unless_stopped("validate_content"),
+        {
+            "validate_content": "validate_content",
+            END: END,
+            PROVIDER_UNAVAILABLE_NODE: PROVIDER_UNAVAILABLE_NODE,
+        },
     )
     graph.add_conditional_edges(
         "validate_content",
@@ -126,6 +160,7 @@ def create_content_engine():
     )
     graph.add_edge("repair_content", "validate_content")
     graph.add_edge("humanize_content", "final_validate_content")
+    graph.add_edge(PROVIDER_UNAVAILABLE_NODE, END)
     graph.add_edge("final_validate_content", "review_content")
     graph.add_edge("review_content", "persist_content")
     graph.add_edge("persist_content", END)

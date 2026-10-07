@@ -15,6 +15,7 @@ on:
       - 'requirements*.txt'
       - 'Dockerfile'
       - '.env.example'  # the secrets' validation reads its values
+      - 'emails/**'  # the image carries the email templates
       # Shopify app
       - 'rext/**'
       # Shared config / workflows
@@ -31,7 +32,7 @@ concurrency:
 # filters below, as regular expressions for the stale-run check. A newer commit
 # touching one of them started a run that deploys that component.
 env:
-  BACKEND_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|docker-compose\.yml$|\.env\.example$)'
+  BACKEND_PATHS: '^(src/|alembic/|alembic\.ini$|scripts/|emails/|langgraph\.json$|pyproject\.toml$|requirements[^/]*\.txt$|Dockerfile$|docker-compose\.yml$|\.env\.example$)'
   SHOPIFY_PATHS: '^rext/'
 
 # ──────────────────────────────────────────────
@@ -42,19 +43,27 @@ jobs:
     name: 🔎 Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
+      # A manual run always builds and deploys the backend stage holds: it has no earlier
+      # commit to compare with, so the filter below would find nothing changed.
+      backend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.backend }}
       shopify: ${{ steps.filter.outputs.shopify }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # Compare a push with the commit stage held before it. Left unset, the filter
+          # compares stage with the default branch (main): since stage only mirrors main
+          # (2026-10-07) the two are equal, nothing counted as changed, and staging
+          # stopped deploying (rext-control task 761).
+          base: ${{ github.ref }}
           filters: |
             backend:
               - 'src/**'
               - 'alembic/**'
               - 'alembic.ini'
               - 'scripts/**'
+              - 'emails/**'
               - 'langgraph.json'
               - 'pyproject.toml'
               - 'requirements*.txt'

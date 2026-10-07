@@ -42,9 +42,13 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_guidance_blocks,
     resolve_outline_structure,
 )
+from src.flow.engines.content.generation.provider_unavailable import StoppedAfterCharge
 from src.flow.engines.content.generation.repair_content import enforce_subheadings_for_spec
 from src.flow.engines.content.generation.requirements_spec import (
+    brand_kept_out_of_cta,
+    brand_named_in,
     build_requirements_spec,
+    excluded_brand_of,
     resolve_outline_cta,
 )
 from src.flow.engines.content.generation.structured_body import (
@@ -62,6 +66,7 @@ from src.flow.engines.content.generation.validation import (
     protected_links,
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.model.provider_outage import provider_outage
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.model.structure.outlines.schema_org import (
@@ -746,10 +751,54 @@ async def generate_content(state: REXT) -> dict:
                     f"Before finishing, re-read your own opening (or ranked list) and confirm {brand_name} is actually there.\n"
                 )
 
+        # The user chose NO mention (rext-control#700). Skipping the promotion block alone left the
+        # writer free to name the brand, and the outline, generated before the choice, may already
+        # name it in a product list or the call to action.
+        excluded = excluded_brand_of(outline, title=topic, keyphrase=primary_keyword)
+        if excluded and not outline.get("promote_brand"):
+            excluded_name = excluded["brand_name"]
+            brand_promo_str = (
+                f"\n========================\n"
+                f"BRAND EXCLUSION — REQUIRED\n"
+                f"========================\n"
+                f"The user chose NO mention of {excluded_name}. Do not name {excluded_name}, or link to "
+                f"its site (the internal links you were given above stay), anywhere: not in the title, "
+                f"the introduction, the body, a heading, a list, the FAQs, the call to action or its "
+                f"link, the meta title or the meta description. Where the "
+                f"outline names {excluded_name} (a product list, a comparison, the call to action), "
+                f"write that part without it: name another real product where a list needs one, or "
+                f"none. This overrides any instruction to follow the outline's wording exactly.\n"
+            )
+            final_brand_reminder = (
+                f"\nFINAL CHECK BEFORE YOU WRITE: {excluded_name} appears nowhere in what you write, "
+                f"including the call to action and the meta description.\n"
+            )
+
         # 7️⃣b Build CTA block, only if the approved outline declares one for this content type
         outline_cta = resolve_outline_cta(outline)
         cta_str = ""
-        if outline_cta:
+        cta_brand = brand_kept_out_of_cta(outline)
+        if outline_cta and cta_brand and brand_named_in(outline_cta["text"], cta_brand):
+            # The outline's call to action names a brand the user's choice keeps out of a call to
+            # action (None, or Subtle's one body mention): its exact text would contradict that.
+            cta_str = (
+                f"\n========================\n"
+                f"CALL-TO-ACTION — REQUIRED\n"
+                f"========================\n"
+                f'The approved outline defines this CTA: "{outline_cta["text"]}"\n'
+                f"It names {cta_brand}, but the user's choice keeps {cta_brand} out of the call to "
+                f"action. Populate the 'cta' output field ({{text, url, placement}}) with the same "
+                f"intent in your own words, WITHOUT naming {cta_brand} or linking to its site, and make "
+                f"sure that same text also appears verbatim as an actual call-to-action inside "
+                f"body_markdown or the introduction.\n"
+            )
+        elif outline_cta:
+            cta_link_rule = (
+                f"Its link must not point to {cta_brand}'s site: the user's choice keeps "
+                f"{cta_brand} out of the call to action.\n"
+                if cta_brand
+                else ""
+            )
             cta_str = (
                 f"\n========================\n"
                 f"CALL-TO-ACTION — REQUIRED\n"
@@ -758,6 +807,7 @@ async def generate_content(state: REXT) -> dict:
                 f"Populate the 'cta' output field ({{text, url, placement}}) using this exact CTA text "
                 f"(or a close natural variant preserving the same meaning), and make sure that same "
                 f"text also appears verbatim as an actual call-to-action inside body_markdown or the introduction.\n"
+                f"{cta_link_rule}"
             )
 
         # 7️⃣c Title + subject lock.
@@ -1364,6 +1414,10 @@ async def generate_content(state: REXT) -> dict:
         }
 
     except Exception as e:
+        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1). The notice
+        # keeps the marks of the stages charged above, so a retry on this thread doesn't charge them again.
+        if provider_outage(e) is not None:
+            raise StoppedAfterCharge(content_state) from e
         logger.exception(f"Error generating content: {str(e)}")
         return {
             "content": {

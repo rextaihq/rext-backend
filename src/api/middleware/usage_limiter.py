@@ -39,6 +39,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel as Wo
 from src.api.security.dependencies import get_current_user
 from src.services.credit_grants import grant_balance
 from src.services.usage_tracking_service import UsageTrackingService
+from src.utils import rbac_utils
 from src.utils.datetime_utils import next_billing_anchor
 from src.utils.logger import logger
 
@@ -100,11 +101,23 @@ def get_user_subscription_and_plan(
     raise RuntimeError("Deprecated sync helper called: use get_user_subscription_and_plan_async()")
 
 
+async def _live_workspace_count(db: AsyncSession, user_id) -> int:
+    """The workspaces the user owns that aren't in the trash."""
+    result = await db.execute(
+        select(func.count(Workspace.id)).where(
+            Workspace.user_id == user_id, Workspace.deleted_at.is_(None)
+        )
+    )
+    return result.scalar() or 0
+
+
 class WorkspaceLimitChecker:
     """
     Dependency for checking workspace creation limit.
 
-    Verifies that the user hasn't exceeded their plan's max_workspaces limit.
+    The one gate on a new (or restored) workspace: the user's live workspaces against
+    their plan's max_workspaces. A super admin isn't limited, nor is a plan without a
+    limit (-1, or none set); no subscription means the free tier's one workspace.
     """
 
     async def __call__(
@@ -120,18 +133,14 @@ class WorkspaceLimitChecker:
             logger.warning("Local unlimited workspace override enabled")
             return
 
+        if await rbac_utils.is_user_super_admin(db, UUID(str(user_id))):
+            return
+
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # No subscription = default free tier (allow 1 workspace)
-            result = await db.execute(
-                select(func.count(Workspace.id)).where(
-                    Workspace.user_id == user_id, Workspace.deleted_at.is_(None)
-                )
-            )
-            current_count = result.scalar() or 0
-
-            if current_count >= 1:
+            if await _live_workspace_count(db, user_id) >= 1:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Workspace limit reached (1/1). Please subscribe to a plan to create more workspaces.",
@@ -139,16 +148,11 @@ class WorkspaceLimitChecker:
             return
 
         # Check plan limit
-        if plan.max_workspaces == -1:
+        if plan.max_workspaces is None or plan.max_workspaces == -1:
             # Unlimited
             return
 
-        result = await db.execute(
-            select(func.count(Workspace.id)).where(
-                Workspace.user_id == user_id, Workspace.deleted_at.is_(None)
-            )
-        )
-        current_count = result.scalar() or 0
+        current_count = await _live_workspace_count(db, user_id)
 
         if current_count >= plan.max_workspaces:
             raise HTTPException(
