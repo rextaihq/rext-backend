@@ -7,13 +7,14 @@ Sent after a user successfully verifies their email address.
 from typing import Optional
 
 from emails.components import primary_button, simple_footer, simple_header
+from emails.site_links import SITE_HELP_URL
 from emails.utils.renderer import compose_email
 
 
 def render_welcome_email(
     user_name: str,
     dashboard_url: str = "https://app.rext.ai",
-    help_url: str = "https://help.rext.ai",
+    help_url: str = SITE_HELP_URL,
     frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
@@ -157,7 +158,7 @@ def create_welcome_email(
     """
     # Send newly verified users to workspace creation — their first onboarding step
     dashboard_url = f"{frontend_url}/w/create"
-    help_url = f"{frontend_url}/help"
+    help_url = SITE_HELP_URL
 
     # Build unsubscribe footer
     unsubscribe_html = ""
