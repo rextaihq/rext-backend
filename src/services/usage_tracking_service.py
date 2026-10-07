@@ -36,6 +36,30 @@ FREE_MAX_WORKSPACES = 1
 FREE_MAX_API_CALLS = 100
 
 
+def replenish_if_due(subscription: UserSubscription) -> bool:
+    """Start the new month's credits when the reset date has passed (non-trial plans).
+
+    Not while a renewal is unpaid: the new month's credits come with the payment
+    (subscription_payment_success), not with Lemon Squeezy's retries. The caller
+    holds the subscription's row lock. Returns whether the credits were reset.
+    """
+    if not (
+        subscription.plan
+        and not subscription.plan.is_trial_plan
+        and subscription.credits_reset_date
+        and subscription.status not in FAILED_PAYMENT_STATUSES
+    ):
+        return False
+    reset_dt = subscription.credits_reset_date
+    if reset_dt.tzinfo is None:
+        reset_dt = reset_dt.replace(tzinfo=timezone.utc)
+    if reset_dt >= datetime.now(timezone.utc):
+        return False
+    subscription.current_credits = subscription.plan.credits_per_month or 0
+    subscription.credits_reset_date = next_billing_anchor(subscription.credits_reset_date)
+    return True
+
+
 class UsageTrackingService:
     """Service for tracking and managing user usage metrics"""
 
@@ -186,35 +210,30 @@ class UsageTrackingService:
         if not subscription:
             return False
 
-        # Replenish if reset date passed (non-trial plans). Not while a renewal
-        # is unpaid: the new month's credits come with the payment
-        # (subscription_payment_success), not with Lemon Squeezy's retries.
-        if (
-            subscription.plan
-            and not subscription.plan.is_trial_plan
-            and subscription.credits_reset_date
-            and subscription.status not in FAILED_PAYMENT_STATUSES
-        ):
-            reset_dt = subscription.credits_reset_date
-            if reset_dt.tzinfo is None:
-                reset_dt = reset_dt.replace(tzinfo=timezone.utc)
-            if reset_dt < datetime.now(timezone.utc):
-                subscription.current_credits = subscription.plan.credits_per_month or 0
-                subscription.credits_reset_date = next_billing_anchor(
-                    subscription.credits_reset_date
-                )
+        replenish_if_due(subscription)
 
-        # Grants (an offer's bonus) are spent first, soonest expiry first; the row
-        # lock above serialises every change to them.
+        # Grants with an expiry (an offer's bonus) are spent first, soonest expiry
+        # first, then the monthly credits, then grants without an expiry (credits
+        # an admin added), oldest first; the row lock above serialises every
+        # change to them.
         grants = await live_grants(self.db, subscription.id)
-        split = split_cost(cost, [g.remaining for g in grants], subscription.current_credits or 0)
+        expiring = [g for g in grants if g.expires_at is not None]
+        lasting = [g for g in grants if g.expires_at is None]
+        split = split_cost(
+            cost,
+            [g.remaining for g in expiring],
+            subscription.current_credits or 0,
+            [g.remaining for g in lasting],
+        )
         if split is None:
             return False
 
-        from_grants, from_monthly = split
-        for grant, taken in zip(grants, from_grants):
+        from_expiring, from_monthly, from_lasting = split
+        for grant, taken in zip(expiring, from_expiring):
             grant.remaining -= taken
         subscription.current_credits -= from_monthly
+        for grant, taken in zip(lasting, from_lasting):
+            grant.remaining -= taken
         await self.db.flush()
         return True
 

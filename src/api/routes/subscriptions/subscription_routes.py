@@ -72,7 +72,7 @@ from src.services.audit_logger import audit_logger
 from src.services.billing_email_service import (
     send_billing_email_in_background,
 )
-from src.services.credit_grants import bonus_summary, live_grants
+from src.services.credit_grants import admin_credit_summary, bonus_summary, live_grants
 from src.services.notification_helper import notify_now, schedule_if_allowed
 from src.services.order_service import order_to_invoice_dict, refundable_amount
 from src.services.refund_request_service import (
@@ -256,6 +256,7 @@ async def get_credit_balance(
                 "current_credits": 0,
                 "monthly_credits": 0,
                 "bonus": None,
+                "added_credits": None,
                 "credits_per_month": None,
                 "credits_reset_date": None,
                 "articles_remaining": 0,
@@ -268,11 +269,16 @@ async def get_credit_balance(
         )
 
     plan = subscription.plan
-    # What can be spent: this month's credits plus any unexpired grant (an
-    # offer's bonus, spent first). `bonus` says what the grant is and until when.
-    bonus = bonus_summary(await live_grants(db, subscription.id))
+    # What can be spent: this month's credits plus any unexpired grant: an
+    # offer's bonus (`bonus` says what it is and until when) and credits Rext
+    # support added (`added_credits`).
+    grants = await live_grants(db, subscription.id)
+    bonus = bonus_summary(grants)
+    added = admin_credit_summary(grants)
     monthly_balance = subscription.current_credits or 0
-    credits = monthly_balance + (bonus["credits"] if bonus else 0)
+    credits = (
+        monthly_balance + (bonus["credits"] if bonus else 0) + (added["credits"] if added else 0)
+    )
     monthly = plan.credits_per_month if plan else None
     unlimited = monthly is None
 
@@ -281,6 +287,7 @@ async def get_credit_balance(
             "current_credits": credits,
             "monthly_credits": monthly_balance,
             "bonus": bonus,
+            "added_credits": added,
             "credits_per_month": monthly,
             "credits_reset_date": subscription.credits_reset_date.isoformat()
             if subscription.credits_reset_date is not None

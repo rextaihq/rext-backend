@@ -1,13 +1,18 @@
 """
 Credit grants: credits on top of a subscription's monthly credits.
 
-Today every grant is a promotion's bonus (the launch offer: double credits for
-the first month of a plan started in launch week). Promotions are data (the
-``promotions`` table); the Lemon Squeezy webhook reads the one that applies when
-a subscription is created and grants its bonus once. A grant is spent before the
-monthly credits, soonest expiry first, and is no longer counted once it expires.
-Spending goes through ``UsageTrackingService.consume_credits``, which
+A grant is a promotion's bonus (the launch offer: double credits for the first
+month of a plan started in launch week) or credits a super admin added
+(src/services/admin_credits.py). Promotions are data (the ``promotions`` table);
+the Lemon Squeezy webhook reads the one that applies when a subscription is
+created and grants its bonus once. Every spend takes grants with an expiry
+first, soonest expiry first, then the monthly credits, then grants without an
+expiry, oldest first; a grant is no longer counted once it expires. Spending
+goes through ``UsageTrackingService.consume_credits``, which
 ``src/utils/credit_manager.py`` calls; this module only gives, reads and splits.
+
+Admin grants are kept apart from the purchase: a refund forfeits only promotion
+grants, and only promotion grants count as credits used for the refund rule.
 """
 
 from dataclasses import dataclass
@@ -25,6 +30,9 @@ from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
+
+PROMOTION_SOURCE = "promotion"
+ADMIN_SOURCE = "admin"
 
 
 def as_utc(value: datetime) -> datetime:
@@ -83,22 +91,31 @@ def promotion_bonus(
 
 
 def split_cost(
-    cost: int, grant_remaining: Sequence[int], monthly: int
-) -> Optional[tuple[list[int], int]]:
-    """How a cost is taken: from each grant in order, then from the monthly credits.
+    cost: int, expiring: Sequence[int], monthly: int, lasting: Sequence[int]
+) -> Optional[tuple[list[int], int, list[int]]]:
+    """How a cost is taken: from each grant with an expiry in order (soonest
+    first), then from the monthly credits, then from each grant without an
+    expiry in order (oldest first). Credits that expire go first, so none is
+    lost while lasting ones are spent.
 
-    Returns the amount taken from each grant and from the monthly credits, or
-    None when everything together is not enough.
+    Returns the amount taken from each expiring grant, from the monthly credits
+    and from each lasting grant, or None when everything together is not enough.
     """
-    if cost < 0 or cost > sum(grant_remaining) + max(monthly, 0):
+    monthly = max(monthly, 0)
+    if cost < 0 or cost > sum(expiring) + monthly + sum(lasting):
         return None
-    taken: list[int] = []
     left = cost
-    for remaining in grant_remaining:
+
+    def take(remaining: int) -> int:
+        nonlocal left
         step = min(remaining, left)
-        taken.append(step)
         left -= step
-    return taken, left
+        return step
+
+    from_expiring = [take(remaining) for remaining in expiring]
+    from_monthly = take(monthly)
+    from_lasting = [take(remaining) for remaining in lasting]
+    return from_expiring, from_monthly, from_lasting
 
 
 def _usable(now: datetime):
@@ -111,7 +128,9 @@ def _usable(now: datetime):
 async def live_grants(
     db: AsyncSession, subscription_id: UUID, now: Optional[datetime] = None
 ) -> list[CreditGrant]:
-    """The subscription's grants with credits left and not expired, in spending order.
+    """The subscription's grants with credits left and not expired: those with an
+    expiry, soonest first, then those without, oldest first (``split_cost``'s order
+    around the monthly credits).
 
     Callers that spend lock the subscription row first (``consume_credits``),
     which serialises every change to its grants.
@@ -145,15 +164,18 @@ async def grant_credits_used(
     until: Optional[datetime] = None,
     order_id: Optional[str] = None,
 ) -> int:
-    """Credits spent from the subscription's grants (forfeited credits are not spent).
+    """Credits spent from the subscription's promotion grants (forfeited credits are
+    not spent).
 
     For a refund, the grants that order earned (``order_id``) count; for a grant
     without a recorded order, ``since`` and ``until`` bound the order's period
-    instead (valid at the order's date, made by ``until``).
+    instead (valid at the order's date, made by ``until``). Credits an admin
+    added came with no purchase, so spending them is not counted.
     """
     spent = CreditGrant.amount - CreditGrant.remaining - CreditGrant.forfeited
     query = select(func.coalesce(func.sum(spent), 0)).where(
-        CreditGrant.subscription_id == subscription_id
+        CreditGrant.subscription_id == subscription_id,
+        CreditGrant.source == PROMOTION_SOURCE,
     )
     if order_id:
         return int(
@@ -204,19 +226,21 @@ async def forfeit_grants(
     now: Optional[datetime] = None,
     order_id: Optional[str] = None,
 ) -> int:
-    """Zero the subscription's live grants and return the credits forfeited.
+    """Zero the subscription's live promotion grants and return the credits forfeited.
 
     A refund forfeits an unspent promotional bonus: the bonus came with the
-    purchase, so money returned on it takes the bonus back. Forfeited credits
-    are kept apart from spent ones. The caller holds the subscription's row lock,
-    as ``consume_credits`` does. Safe to call again (nothing is left the second
-    time).
+    purchase, so money returned on it takes the bonus back. Credits an admin
+    added (support's compensation) are not part of the purchase and stay.
+    Forfeited credits are kept apart from spent ones. The caller holds the
+    subscription's row lock, as ``consume_credits`` does. Safe to call again
+    (nothing is left the second time).
     """
     grants = [
         g
         for g in await live_grants(db, subscription_id, now)
+        if g.source == PROMOTION_SOURCE
         # The refunded order's grants, and any whose order was not recorded.
-        if not order_id or g.lemonsqueezy_order_id in (None, str(order_id))
+        and (not order_id or g.lemonsqueezy_order_id in (None, str(order_id)))
     ]
     forfeited = sum(g.remaining for g in grants)
     for grant in grants:
@@ -243,8 +267,9 @@ async def grant_promotion_bonus(
     ``started_at`` (the subscription's start) decides the window; the bonus runs
     from ``paid_from`` (when the paid period began; the start if not given). A
     subscription gets one promotional bonus: the subscription row is locked and a
-    subscription that already has a grant gets nothing, so a repeated or second
-    event grants nothing even when a capped promotion has since filled up. A
+    subscription that already has a promotion grant gets nothing, so a repeated or
+    second event grants nothing even when a capped promotion has since filled up
+    (credits an admin added do not count: they are no bonus). A
     capped promotion is locked while its grants are counted. ``order_id`` (the
     Lemon Squeezy order that started the subscription) is kept on the grant; no
     grant is made for an order already refunded, even partly (a failed refund
@@ -256,7 +281,14 @@ async def grant_promotion_bonus(
     await db.execute(
         select(UserSubscription.id).where(UserSubscription.id == subscription_id).with_for_update()
     )
-    if await db.scalar(select(exists().where(CreditGrant.subscription_id == subscription_id))):
+    if await db.scalar(
+        select(
+            exists().where(
+                CreditGrant.subscription_id == subscription_id,
+                CreditGrant.source == PROMOTION_SOURCE,
+            )
+        )
+    ):
         return None
     if order_id and await order_refunded(db, order_id):
         logger.info("No promotion bonus for refunded order %s", order_id)
@@ -307,6 +339,7 @@ async def grant_promotion_bonus(
         insert(CreditGrant)
         .values(
             subscription_id=subscription_id,
+            source=PROMOTION_SOURCE,
             promotion_id=promotion.id,
             lemonsqueezy_order_id=str(order_id) if order_id else None,
             amount=bonus.amount,
@@ -329,7 +362,9 @@ async def grant_promotion_bonus(
 
 
 def bonus_summary(grants: Sequence[CreditGrant]) -> Optional[Dict[str, Any]]:
-    """What the dashboard shows for the live grants: "Launch bonus: +1,000 credits until ..."."""
+    """What the dashboard shows for the live promotion grants: "Launch bonus: +1,000
+    credits until ...". Admin grants are left out (``admin_credit_summary``)."""
+    grants = [g for g in grants if g.source == PROMOTION_SOURCE]
     if not grants:
         return None
     first = grants[0]
@@ -337,6 +372,20 @@ def bonus_summary(grants: Sequence[CreditGrant]) -> Optional[Dict[str, Any]]:
     return {
         "label": first.promotion.label if first.promotion else "Bonus credits",
         "promotion": first.promotion.code if first.promotion else None,
+        "credits": sum(g.remaining for g in grants),
+        "granted": sum(g.amount for g in grants),
+        "expires_at": min(expiries).isoformat() if expiries else None,
+    }
+
+
+def admin_credit_summary(grants: Sequence[CreditGrant]) -> Optional[Dict[str, Any]]:
+    """The live admin grants among ``grants``: the credits left, the credits added
+    and the soonest expiry (None when none expires), or None when there are none."""
+    grants = [g for g in grants if g.source == ADMIN_SOURCE]
+    if not grants:
+        return None
+    expiries = [as_utc(g.expires_at) for g in grants if g.expires_at is not None]
+    return {
         "credits": sum(g.remaining for g in grants),
         "granted": sum(g.amount for g in grants),
         "expires_at": min(expiries).isoformat() if expiries else None,
