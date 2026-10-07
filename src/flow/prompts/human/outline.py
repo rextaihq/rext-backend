@@ -291,7 +291,7 @@ Cluster to Content Structure Map (H1/H2/H3):
 14. WHERE THE OFFER FITS: when "WHAT THE BRAND OFFERS" above relates to the topic, plan ONE section where a solution of that kind genuinely helps this reader, described by what it does. Do NOT name the brand there and do not make it a pitch: whether and how the brand is mentioned is decided later, at the outline review.
 15. Write every H2 and H3 heading in the title's capitalization style: when the title capitalizes only its first word and proper nouns (sentence case), so does every heading; when it capitalizes each major word (Title Case), every heading does too. Never mix the two in one outline.
 
-Return ONLY the JSON. No explanations.
+Return ONLY the JSON, written compactly: no indentation, no line breaks and no spaces between its parts. No explanations.
 """,
             ),
         ]

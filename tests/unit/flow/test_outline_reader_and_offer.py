@@ -9,6 +9,7 @@ from src.flow.engines.content.generation.outline import (
     _profile_list,
     _profile_text,
 )
+from src.flow.model.provider_outage import ProviderUnavailable
 
 PROFILE = {
     "customer_profile": "Marketing leads at 10–50 person B2B SaaS teams who publish weekly.",
@@ -94,17 +95,19 @@ def outline_prompt(monkeypatch):
 
         monkeypatch.setattr(outline_module, "_fetch_workspace_profile", fetch_profile)
         sent.clear()
-        await outline_module.generate_outline.__wrapped__(
-            {
-                "serp_payload": {"workspace_id": None},
-                "seo_result": {"serp_backlinks": {"main_intent": "Commercial"}},
-                "content": {
-                    "selected_topic": "How to choose an SEO content brief tool",
-                    "content_type": "blog",
-                    "outline": {},
-                },
-            }
-        )
+        # Stopped at the model call: an outline that fails ends the run (rext-control#697).
+        with pytest.raises(ProviderUnavailable):
+            await outline_module.generate_outline.__wrapped__(
+                {
+                    "serp_payload": {"workspace_id": None},
+                    "seo_result": {"serp_backlinks": {"main_intent": "Commercial"}},
+                    "content": {
+                        "selected_topic": "How to choose an SEO content brief tool",
+                        "content_type": "blog",
+                        "outline": {},
+                    },
+                }
+            )
         return sent[1].content
 
     return go

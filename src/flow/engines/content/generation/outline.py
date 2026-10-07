@@ -10,7 +10,14 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.model.llm_manager import load_model
-from src.flow.model.provider_outage import provider_outage
+from src.flow.model.provider_outage import (
+    STEP_FAILED,
+    UNREADABLE_ANSWER,
+    ProviderOutage,
+    ProviderUnavailable,
+    provider_outage,
+)
+from src.flow.model.runaway import ainvoke_watched, ran_away
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
@@ -762,7 +769,9 @@ async def generate_outline(state: REXT) -> dict:
         with timed_stage(
             "outline_model", regenerating=outline_rejected_reason not in (None, "", "None")
         ):
-            generated_outline = await outline_model.ainvoke(messages)
+            generated_outline = await ainvoke_watched(
+                outline_model, messages, stage="outline_model", schema=model_schema
+            )
         outline_dict = generated_outline.model_dump()
 
         # Asked once more, only when the outline can't be written from: one extra model call.
@@ -781,7 +790,14 @@ async def generate_outline(state: REXT) -> dict:
             # second attempt never costs the run what it already had.
             try:
                 with timed_stage("outline_model", regenerating=reviewed, attempt=2):
-                    retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
+                    retried = (
+                        await ainvoke_watched(
+                            outline_model,
+                            [*messages, retry_note],
+                            stage="outline_model",
+                            schema=model_schema,
+                        )
+                    ).model_dump()
             except Exception as error:
                 # An outage is the run's to report (the handler below), not a reason to return,
                 # and charge for, an outline already known to be thin.
@@ -871,8 +887,13 @@ async def generate_outline(state: REXT) -> dict:
         if provider_outage(e) is not None:
             raise
         logger.exception("Error generating outline")
-        return {
-            "content": {
-                "error": "We couldn't generate the requested content right now. Please try again.",
-            }
-        }
+        # No outline: the run ends with the same notice. It used to go on to the review step,
+        # which opened on an empty outline (rext-control#697). Nothing has been charged: the
+        # outline is charged only once it is written.
+        raise ProviderUnavailable(
+            ProviderOutage(
+                provider="OpenAI",
+                kind=UNREADABLE_ANSWER if ran_away(e) else STEP_FAILED,
+                detail=type(e).__name__,
+            )
+        ) from e
