@@ -294,18 +294,20 @@ async def send_workspace_email(
             subject = f"{context.get('new_member_name', 'A member')} joined {context.get('workspace_name', 'your workspace')}"
         elif email_type == "role_changed":
             html = create_role_changed_email(**context_with_token)
-            subject = (
-                f"Your role in {context.get('workspace_name', 'workspace')} has been updated"
-            )
+            subject = f"Your role in {context.get('workspace_name', 'workspace')} has been updated"
         elif email_type == "member_removed":
             html = create_member_removed_email(**context_with_token)
             subject = f"You've been removed from {context.get('workspace_name', 'a workspace')}"
         elif email_type == "workspace_deleted":
             html = create_workspace_deleted_email(**context_with_token)
-            subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' has been deleted"
+            subject = (
+                f"Workspace '{context.get('workspace_name', 'your workspace')}' has been deleted"
+            )
         elif email_type == "workspace_restored":
             html = create_workspace_restored_email(**context_with_token)
-            subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' has been restored"
+            subject = (
+                f"Workspace '{context.get('workspace_name', 'your workspace')}' has been restored"
+            )
         else:
             raise ValueError(f"Unknown workspace email type: {email_type}")
 

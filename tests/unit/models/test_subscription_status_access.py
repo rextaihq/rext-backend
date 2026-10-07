@@ -358,7 +358,7 @@ async def test_a_second_subscription_is_refused_while_a_renewal_is_unpaid(sessio
         assert raised.value.context["billing_action"] == "update_payment_method"
     assert "your plan can change once the payment goes through" in changing.value.message
     # Lemon Squeezy's retries are over once a subscription is unpaid.
-    retrying = "is being retried" in subscribing.value.message
+    retrying = "is being retried" in checking_out.value.message
     assert retrying is (status == SubscriptionStatus.PAST_DUE)
     assert ("is being retried" in changing.value.message) is retrying
 
