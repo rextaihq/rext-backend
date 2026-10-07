@@ -2,6 +2,8 @@ import asyncio
 import logging
 from uuid import UUID
 
+from langchain_core.messages import HumanMessage
+
 from src.flow.engines.content.generation.focus_keyword import (
     FOCUS_KEYWORD_STATE_KEY,
     pin_focus_keyword,
@@ -516,6 +518,73 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
     )
 
 
+# A step guide's whole body is its steps. On staging one How-To came back with one step and
+# another with none (rext-control#603); the schema can't require them without failing the run,
+# since structured output here isn't strict.
+_MIN_STEPS = 3
+
+
+def _summed_word_target(model_schema, sections: list) -> int:
+    """The sections' word budgets added up, kept inside the outline schema's own limits on
+    target_word_count (blog: 800 to 5,000). The sum replaces the target after validation, so
+    without the clamp a 16-entry blog outline could ask the writer for 12,800 words (review
+    round 3 of #890)."""
+    total = sum(s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict))
+    field = getattr(model_schema, "model_fields", {}).get("target_word_count")
+    limits = getattr(field, "metadata", None) or []
+    high = next((rule.le for rule in limits if getattr(rule, "le", None) is not None), None)
+    low = next((rule.ge for rule in limits if getattr(rule, "ge", None) is not None), None)
+    if high is not None:
+        total = min(total, high)
+    if low is not None:
+        total = max(total, low)
+    return total
+
+
+# What each step guide is built from, the least of it an outline can have, and what the second
+# attempt is asked for. A tutorial is built from its required modules: its `steps` are an optional
+# deeper breakdown, so their absence isn't a fault (review of #922).
+_STRUCTURE = {
+    "how-to-guide": (
+        "steps",
+        "step",
+        _MIN_STEPS,
+        f"{_MIN_STEPS}-10 steps, each with its title and description, in the order a reader "
+        "takes them",
+    ),
+    "tutorial": (
+        "modules",
+        "module",
+        1,
+        "its modules, each with its title and what it teaches, in the order a learner takes them",
+    ),
+}
+
+
+def _structure_count(content_type: str, outline: dict) -> int:
+    key = _STRUCTURE[content_type][0]
+    block = outline.get(key)
+    if isinstance(block, dict):
+        block = block.get(key)
+    return len(block) if isinstance(block, list) else 0
+
+
+def _thin_structure(content_type: str, outline: dict, reviewed: bool = False) -> str | None:
+    """What a generated outline is missing that makes it unusable, or None.
+
+    ``reviewed`` is a regeneration after a person's feedback: their own ask sets the length
+    ("combine it into two steps"), so only an empty structure is thin then."""
+    if content_type not in _STRUCTURE:
+        return None
+    _, name, least, _ = _STRUCTURE[content_type]
+    if reviewed:
+        least = 1
+    count = _structure_count(content_type, outline)
+    if count >= least:
+        return None
+    return f"had {count} {name}{'' if count == 1 else 's'}"
+
+
 @deduct_credits("generate_outline")
 async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
@@ -664,6 +733,36 @@ async def generate_outline(state: REXT) -> dict:
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
 
+        # Asked once more, only when the outline can't be written from: one extra model call.
+        reviewed = str(outline_rejected_reason or "None").strip().lower() not in ("", "none")
+        thin = _thin_structure(content_type, outline_dict, reviewed=reviewed)
+        if thin:
+            logger.warning("Outline %s for content_type=%s; asking once more", thin, content_type)
+            retry_note = HumanMessage(
+                content=(
+                    f"A first attempt at this outline {thin}. A {content_type} needs "
+                    f"{_STRUCTURE[content_type][3]}. Return the complete outline again with "
+                    "every one filled."
+                )
+            )
+            # The first outline stays unless the second is at least as full: a failed or thinner
+            # second attempt never costs the run what it already had.
+            try:
+                retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
+            except Exception as error:
+                # An outage is the run's to report (the handler below), not a reason to return,
+                # and charge for, an outline already known to be thin.
+                if provider_outage(error) is not None:
+                    raise
+                logger.warning(
+                    "The second outline attempt failed; keeping the first", exc_info=True
+                )
+            else:
+                if _structure_count(content_type, retried) >= _structure_count(
+                    content_type, outline_dict
+                ):
+                    outline_dict = retried
+
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
 
@@ -688,9 +787,7 @@ async def generate_outline(state: REXT) -> dict:
                     sections = container["sections"]
                     break
         if sections:
-            outline_dict["target_word_count"] = sum(
-                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
-            )
+            outline_dict["target_word_count"] = _summed_word_target(model_schema, sections)
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly

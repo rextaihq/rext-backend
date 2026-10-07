@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 import src.flow.engines.content.generation.outline as outline_module
-from src.flow.model.structure.outlines.infomational.blog import ContentStructure
+from src.flow.model.structure.outlines.infomational.blog import BlogOutline, ContentStructure
 from src.flow.prompts.human.outline import (
     get_outline_prompt,
     outline_subsection_rule,
@@ -110,8 +110,11 @@ def test_step_guides_plan_several_steps(content_type):
         "No, add H3s under the tools",
         "Not detailed enough: add H3s",
         "Drop the H3 under the intro. Add H3s to the tools section.",
-        "The H3s aren't detailed enough",
-        "The H3 is not specific enough",
+        "The H3s are missing",
+        "H3s under each list item",
+        "Subsections for pricing and features",
+        "H3s should be added",
+        "subsections must be included",
     ],
 )
 def test_feedback_asking_for_subsections_is_recognised(feedback):
@@ -131,6 +134,13 @@ def test_feedback_asking_for_subsections_is_recognised(feedback):
         "The H3s aren't needed",
         "the subsections are unnecessary",
         "the sub-headings should go",
+        "The H3s need to be removed",
+        "H3s must be removed",
+        "the subsections should be taken out",
+        "I don't think the H3s are needed",
+        "Not sure the sub-headings are really necessary",
+        "I don't think that any of the H3s are needed",
+        "H3s should not be added",
     ],
 )
 def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
@@ -140,9 +150,29 @@ def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "feedback", [None, "", "None", "Make it shorter", "Change the tone", "Add a section on pricing"]
+    "feedback",
+    [
+        None,
+        "",
+        "None",
+        "Make it shorter",
+        "Change the tone",
+        "Add a section on pricing",
+        'Rename the H3 "Cost" to "Pricing"',
+        "The H3s aren't detailed enough",
+        "The H3 is not specific enough",
+        "I don't think the H3s are detailed enough",
+        "I don't think the H3s are helpful enough",
+        "Not sure the subsections are useful enough yet",
+        "I don't think the H3s should be removed",
+        "The H3 under the intro is too long",
+        "The H3s do not need to be removed",
+        "The H3s don't need to be removed",
+        "the subsections shouldn't go",
+    ],
 )
 def test_other_feedback_says_nothing_about_subsections(feedback):
+    """A mention needs a cue either way: a rename or a quality note leaves the structure alone."""
     assert subsection_request(feedback) is None
 
 
@@ -315,3 +345,34 @@ async def test_generate_outline_sends_the_feedback_requirement(monkeypatch):
 
     assert "Previous Rejection Reason: Add H3s please" in human
     assert "this pass MUST contain H3s" in human
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("content_type", ["ultimate-roundup", "Something New"])
+def test_an_unknown_type_gets_the_blog_rule_like_its_schema(content_type):
+    """get_outline_model writes an unknown type on the blog schema, which holds H3s."""
+    assert outline_subsection_rule(content_type).startswith(
+        "H3 SUBSECTIONS: decide by the article's shape."
+    )
+    assert "this pass MUST contain H3s" in outline_subsection_rule(content_type, feedback="Add H3s")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("budgets", "expected"),
+    [
+        ([800] * 16, 5000),  # 8 H2s and 8 H3s with large budgets: the schema's 5,000 cap
+        ([100] * 4, 800),  # a thin plan still asks for the blog's 800 minimum
+        ([300, 250, 400, 350, None], 1500),  # an unset budget counts as 200
+    ],
+)
+def test_the_summed_word_target_stays_inside_the_blog_limits(budgets, expected):
+    """Review round 3 of #890: 16 entries could sum past BlogOutline's 5,000-word limit."""
+    sections = [{"suggested_word_count": budget} for budget in budgets]
+
+    assert outline_module._summed_word_target(BlogOutline, sections) == expected
+
+
+@pytest.mark.unit
+def test_the_summed_word_target_is_the_plain_sum_without_schema_limits():
+    assert outline_module._summed_word_target(object, [{"suggested_word_count": 9000}, "x"]) == 9000

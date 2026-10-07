@@ -2,7 +2,7 @@ import re
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from src.flow.model.structure.outlines import normalize_content_type
+from src.flow.model.structure.outlines import CONTENT_TYPE_TO_MODEL, normalize_content_type
 from src.flow.prompts.system.outline import OUTLINE_GENERATION_PROMPT
 
 # H3 subsections, per content type (rext-control#603). Only blog and pillar-content outlines carry
@@ -19,8 +19,8 @@ _SUBSECTION_WORDS = re.compile(
 )
 # A request for fewer: a cue up to three words before the term ("remove the H3s", "no
 # subsections", "don't use sub-headings", "too many H3s"), or a whole verdict just after it ("H3s
-# aren't needed", "the subsections are unnecessary"); "the H3s aren't detailed enough" asks for
-# better ones, not fewer.
+# aren't needed", "the subsections are unnecessary", "the H3s need to be removed"); "the H3s
+# aren't detailed enough" asks for better ones, not fewer.
 _FEWER_BEFORE = re.compile(
     r"\b(?:no|without|remove|removing|drop|dropping|delete|deleting|fewer|less|flatten|avoid|"
     r"skip|stop|get\s+rid\s+of|too\s+many|(?:do|does)\s*n[o']?t\s+(?:\w+\s+)?"
@@ -30,9 +30,54 @@ _FEWER_BEFORE = re.compile(
 _FEWER_AFTER = re.compile(
     r"^\W*(?:\w+\W+){0,2}?(?:(?:aren'?t|isn'?t|are\s+not|is\s+not)\s+(?:needed|necessary|"
     r"wanted|required|useful|helpful)|(?:are|is)\s+(?:unnecessary|unneeded|redundant|overkill|"
-    r"pointless|too\s+many)|not\s+needed|(?:should|can|must)\s+go)\b",
+    r"pointless|too\s+many)|not\s+needed|(?:should|can|must)\s+go|"
+    r"(?:(?:needs?|has|have)\s+to|should|must|can)\s+be\s+(?:removed|dropped|deleted|cut|"
+    r"taken\s+out|flattened))\b",
     re.IGNORECASE,
 )
+# A doubt up to five words before the term and a "needed" just after it: "I don't think that any
+# of the H3s are needed" asks for fewer, though "are needed" alone asks for more (review round 3 of
+# #890). "Helpful enough" judges quality, not the count, so it isn't a verdict.
+_DOUBT_BEFORE = re.compile(
+    r"\b(?:(?:do|does)\s*n[o']?t\s+(?:think|believe|feel)|doubt|not\s+sure)(?:\s+[\w'-]+){0,5}\s*$",
+    re.IGNORECASE,
+)
+_NEEDED_AFTER = re.compile(
+    r"^\W*(?:are|is)\s+(?:really\s+)?(?:needed|necessary|required|useful|helpful|wanted)\b"
+    r"(?!\s+enough)",
+    re.IGNORECASE,
+)
+# A request for more: a cue up to four words before the term ("add H3s", "it needs
+# subsections", "split them into sub-headings", "each tool as its own H3"), or just after it
+# ("nested headings, please", "the H3s are missing"). A mention with neither, such as "rename
+# the H3 \"Cost\"", asks nothing of the structure.
+_MORE_BEFORE = re.compile(
+    r"\b(?:add|adding|more|use|using|include|including|needs?|want|split|break|create|nest|"
+    r"missing|lacks?|lacking|give|as\s+(?:its|their)\s+own)(?:\s+[\w'-]+){0,4}\s*$",
+    re.IGNORECASE,
+)
+_MORE_AFTER = re.compile(
+    r"^\W*(?:please|would\s+help|(?:are|is)\s+missing|(?:are\s+|is\s+)?(?:needed|required))\b",
+    re.IGNORECASE,
+)
+# A removal that is negated right after the term keeps them: "the H3s do not need to be removed",
+# "the subsections shouldn't go" (review of #922).
+_KEPT_AFTER = re.compile(
+    r"^\W*(?:do(?:es)?|should|must|need|can)\s*(?:n[o']?t|not)\s+(?:(?:need|have)\s+to\s+)?"
+    r"(?:be\s+(?:removed|dropped|deleted|cut|taken\s+out|flattened)|go)\b",
+    re.IGNORECASE,
+)
+# A passive request to add them ("H3s should be added", "subsections must be included"), and its
+# negation, which asks for fewer.
+_ADDED_AFTER = re.compile(
+    r"^\W*(?:should|must|could|can|(?:needs?|has|have)\s+to)\s+(n[o']?t\s+|not\s+)?be\s+"
+    r"(?:added|included|used|introduced)\b",
+    re.IGNORECASE,
+)
+# A terse request that only says where they go: "H3s under each list item", "Subsections for
+# pricing and features". It counts when the mention opens the sentence, so "the H3 under the intro
+# is too long" still asks nothing (review round 2 of #922).
+_PLACED_AFTER = re.compile(r"^\s+(?:under|beneath|below|for|in|within|per|on)\s+\w+", re.IGNORECASE)
 
 _PARTS = "steps, stages, types, options, tools, or pros and cons"
 _PLACEMENT = (
@@ -48,17 +93,27 @@ def _kebab(value: str | None) -> str:
 def subsection_request(feedback: str | None) -> str | None:
     """What the reviewer's rejection reason asks of H3 subsections: "more", "fewer" or None.
 
-    Each mention is read in its sentence. Any mention that isn't a request for fewer counts as
-    asking for them, so "drop the H3 under the intro, add H3s to the tools" is "more", and the
+    Each mention is read in its sentence, and counts only with a cue either way. Any request
+    for more wins, so "drop the H3 under the intro, add H3s to the tools" is "more", and the
     model reads which ones from the feedback itself.
     """
     asks = set()
     for sentence in re.split(r"[.!?;\n]+", str(feedback or "")):
         for match in _SUBSECTION_WORDS.finditer(sentence):
-            fewer = _FEWER_BEFORE.search(sentence[: match.start()]) or _FEWER_AFTER.search(
-                sentence[match.end() :]
-            )
-            asks.add("fewer" if fewer else "more")
+            before, after = sentence[: match.start()], sentence[match.end() :]
+            doubt = _DOUBT_BEFORE.search(before)
+            if (doubt and _FEWER_AFTER.search(after)) or _KEPT_AFTER.search(after):
+                # "I don't think the H3s should be removed", "the H3s do not need to be
+                # removed": leave them as they are.
+                continue
+            doubted = doubt and _NEEDED_AFTER.search(after)
+            placed = not before.strip() and _PLACED_AFTER.search(after)
+            added = _ADDED_AFTER.search(after)
+            not_added = bool(added and added.group(1))
+            if doubted or not_added or _FEWER_BEFORE.search(before) or _FEWER_AFTER.search(after):
+                asks.add("fewer")
+            elif _MORE_BEFORE.search(before) or _MORE_AFTER.search(after) or placed or added:
+                asks.add("more")
     return "more" if "more" in asks else "fewer" if asks else None
 
 
@@ -75,6 +130,9 @@ def outline_subsection_rule(
     where the schema can hold them (a listicle's too); feedback asking for fewer is followed.
     """
     kind = normalize_content_type(content_type) or "blog"
+    # A type the outline models don't know is written on the blog schema (get_outline_model),
+    # so it gets the blog's rule.
+    kind = kind if kind in CONTENT_TYPE_TO_MODEL else "blog"
     raw = _kebab(raw_content_type)
     # Whether the schema can hold H3s, apart from whether this article should have them: a
     # listicle runs on the blog schema, so feedback asking for H3s there can still be met.
