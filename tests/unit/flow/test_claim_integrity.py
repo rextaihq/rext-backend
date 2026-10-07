@@ -508,6 +508,30 @@ def test_a_real_testing_claim_is_still_caught(text, span):
     assert [(c.category, c.span) for c in claims] == [("fabricated_experience", span)]
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\u201c73% of enterprises plan to adopt a headless CMS.\u201d [Report](https://example.com/r)",
+        "73% of enterprises plan to adopt a headless CMS. [Report](https://example.com/r)",
+        "73% of enterprises plan to adopt a headless CMS. [Report](https://example.com/r).",
+    ],
+)
+def test_a_trailing_citation_stays_with_its_sentence(text):
+    # Split off, the claim lost its source and was weighed against every source instead.
+    units = claim_integrity._units(text)
+    assert [u.cited_urls for u in units] == [("https://example.com/r",)]
+    assert "73% of enterprises" in units[0].text
+
+
+def test_a_sentence_that_starts_with_a_link_is_its_own():
+    text = "We compared plans. [Ahrefs](https://ahrefs.com/x) found 73% use one tool."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("We compared plans.", ()),
+        ("Ahrefs found 73% use one tool.", ("https://ahrefs.com/x",)),
+    ]
+
+
 def test_a_sentence_ends_after_a_closing_quote():
     text = "Call it 'good enough.' We tested it. He said “done.” Then we left."
     assert [u.text for u in claim_integrity._units(text)] == [
