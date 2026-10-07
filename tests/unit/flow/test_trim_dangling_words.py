@@ -79,6 +79,14 @@ def test_a_preposition_before_an_adverb_of_time_had_no_object_to_lose():
     ) == ("SEO Agencies: The Experts Every Small Business Leans On")
 
 
+def test_a_time_phrase_or_a_particle_before_the_preposition_keeps_it():
+    """The trim cut "This Year", not an object of "On"; and "Up On" completes "Catch"."""
+    title = "SEO Agencies: What Small Businesses Need to Catch Up On This Year"  # 65
+    repaired = repair_title(title, "seo agencies")
+
+    assert repaired == "SEO Agencies: What Small Businesses Need to Catch Up On"
+
+
 def test_a_verb_that_doubles_its_last_consonant_keeps_its_preposition():
     title = "SEO Agencies: A Strategy Your Whole Team Is Committed To Today"  # 62
     repaired = repair_title(title, "seo agencies")
