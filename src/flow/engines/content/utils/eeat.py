@@ -337,10 +337,11 @@ async def calculate_eeat_trust_score(
     )
 
     from src.flow.model.llm_manager import load_model
+    from src.flow.model.runaway import ainvoke_watched
 
     prompt = build_scoring_prompt(markdown_content, metadata)
     llm = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(EEATTrustScore)
-    llm_result = await llm.ainvoke(prompt)
+    llm_result = await ainvoke_watched(llm, prompt, stage="eeat_score")
 
     normalized = validate_and_normalize(llm_result, markdown_content)
     normalized["content_type"] = metadata.get("content_type") or normalized.get("content_type")
