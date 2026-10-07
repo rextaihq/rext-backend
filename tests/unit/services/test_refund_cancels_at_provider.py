@@ -395,3 +395,69 @@ async def test_a_payment_after_the_refund_gives_nothing_back_and_tells_a_person(
     assert row.status == SubscriptionStatus.CANCELLED
     assert row.end_date == ended and row.current_credits == credits
     assert handler_alerts.call_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.parametrize("event", ["payment_success", "payment_recovered"])
+@pytest.mark.asyncio
+async def test_a_payment_from_before_the_refund_delivered_late_is_ignored_quietly(
+    session, alerts, monkeypatch, event
+):
+    """It's the payment the refund returned: nothing given back, and no person paged."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    handler_alerts = MagicMock()
+    monkeypatch.setattr(handlers, "trigger_payment_alert", handler_alerts)
+    row = await _active_subscription(session)
+    module.end_for_refund(row, order_id="ord-12")
+    await session.flush()
+    ended, credits = row.end_date, row.current_credits
+
+    handler = getattr(handlers, f"handle_subscription_{event}")
+    await handler(_event(row, "active", minutes_later=-5), SimpleNamespace(id=uuid4()), session)
+
+    await session.refresh(row)
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert row.end_date == ended and row.current_credits == credits
+    handler_alerts.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_full_refund_webhook_without_a_subscription_is_recorded_and_alerts(
+    session, alerts, monkeypatch
+):
+    """No subscription to end: the refund is still recorded, and a person checks."""
+    import src.services.webhook_handlers.order_handlers as handlers
+
+    provider = SimpleNamespace(cancel_subscription=AsyncMock())
+    monkeypatch.setattr(handlers, "get_payment_provider", MagicMock(return_value=provider))
+    order = SimpleNamespace(
+        user_id=uuid4(),
+        subscription_id=None,
+        lemonsqueezy_subscription_id=None,
+        total=3900,
+        product_name="Starter",
+    )
+    orders = MagicMock()
+    orders.get_by_lemonsqueezy_id = AsyncMock(return_value=order)
+    orders.record_order = AsyncMock()
+    monkeypatch.setattr(handlers, "OrderService", MagicMock(return_value=orders))
+    refunds = MagicMock()
+    refunds.record_provider_refund = AsyncMock(return_value=None)
+    refunds.get_refunded_total = AsyncMock(return_value=3900)
+    monkeypatch.setattr(handlers, "RefundService", MagicMock(return_value=refunds))
+    monkeypatch.setattr(handlers, "apply_refund_state", MagicMock())
+    monkeypatch.setattr(handlers, "refundable_amount", MagicMock(return_value=0))
+
+    webhook = {
+        "data": {
+            "type": "orders",
+            "id": "ord-13",
+            "attributes": {"status": "refunded", "total": 3900, "refunded_amount": 3900},
+        }
+    }
+    await handlers.handle_order_refunded(webhook, SimpleNamespace(id=uuid4()), session)
+
+    refunds.record_provider_refund.assert_awaited_once()
+    provider.cancel_subscription.assert_not_called()
+    assert alerts.call_count == 1
+    assert alerts.call_args.kwargs["severity"] == "critical"

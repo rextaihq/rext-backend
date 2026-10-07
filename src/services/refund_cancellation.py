@@ -96,6 +96,18 @@ def is_ended_by_refund(subscription: UserSubscription) -> bool:
     return bool((getattr(subscription, "subscription_metadata", None) or {}).get(ENDED_BY_REFUND))
 
 
+def refund_ended_at(subscription: UserSubscription) -> Optional[datetime]:
+    """When a full refund ended the subscription, or None."""
+    value = _record(subscription).get("ended_at")
+    try:
+        ended = datetime.fromisoformat(value) if value else None
+    except (TypeError, ValueError):
+        return None
+    if ended is not None and ended.tzinfo is None:
+        ended = ended.replace(tzinfo=timezone.utc)
+    return ended
+
+
 def _record(subscription: UserSubscription) -> dict:
     return dict((subscription.subscription_metadata or {}).get(ENDED_BY_REFUND) or {})
 

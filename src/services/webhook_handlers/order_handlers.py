@@ -314,13 +314,13 @@ async def handle_order_refunded(
         )
         end_for_refund(subscription, order_id=str(lemonsqueezy_order_id))
         await db.flush()
-    else:
-        no_subscription_to_end(order_id=str(lemonsqueezy_order_id), user_id=user_id)
 
         logger.info(
             f"Cancelled subscription {subscription.id} due to refund",
             extra={"subscription_id": str(subscription.id)},
         )
+    else:
+        no_subscription_to_end(order_id=str(lemonsqueezy_order_id), user_id=user_id)
 
     # TODO: Send refund confirmation email
     # For now, logging that email should be sent
