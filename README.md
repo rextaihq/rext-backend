@@ -31,4 +31,6 @@ uv run langgraph dev --no-browser --port 2024       # the API and the graph; /do
 
 ## License
 
-Licensed under the MIT License.
+Proprietary. Copyright © Revnix LLC, the company behind Rext AI. All rights reserved.
+
+The repository is public, but it carries no open-source licence.

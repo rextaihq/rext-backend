@@ -403,4 +403,4 @@ Current version: **1.0.0**
 
 ## License
 
-Internal use only - Rext AI
+Part of the Rext AI backend and under its terms: see the [repository's README](../README.md#license).
