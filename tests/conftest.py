@@ -203,3 +203,18 @@ def no_live_model_calls(request, monkeypatch):
     yield
     if reached:
         pytest.fail(f"{request.node.nodeid}: {message} ({len(reached)} request(s))", pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def fake_store_embeddings(request, monkeypatch):
+    """The LangGraph store embeds what it saves (an article, a brand voice) through OpenAI's
+    embeddings API. A unit test gets a fake of the same size, so saving still goes through the
+    store and no provider is called. A live_model test, when those run, keeps the real one."""
+    if RUN_LIVE_MODEL_TESTS and request.node.get_closest_marker("live_model"):
+        return
+    from langchain_core.embeddings import DeterministicFakeEmbedding
+
+    monkeypatch.setattr(
+        "src.flow.store.rext_store.init_embeddings",
+        lambda *args, **kwargs: DeterministicFakeEmbedding(size=1536),
+    )
