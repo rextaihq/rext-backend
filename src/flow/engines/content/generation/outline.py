@@ -2,6 +2,8 @@ import asyncio
 import logging
 from uuid import UUID
 
+from langchain_core.messages import HumanMessage
+
 from src.flow.engines.content.generation.focus_keyword import (
     FOCUS_KEYWORD_STATE_KEY,
     pin_focus_keyword,
@@ -516,6 +518,26 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
     )
 
 
+# A step guide's whole body is its steps. On staging one How-To came back with one step and
+# another with none (rext-control#603); the schema can't require them without failing the run,
+# since structured output here isn't strict.
+_STEP_GUIDES = frozenset({"how-to-guide", "tutorial"})
+_MIN_STEPS = 3
+
+
+def _thin_structure(content_type: str, outline: dict) -> str | None:
+    """What a generated outline is missing that makes it unusable, or None."""
+    if content_type not in _STEP_GUIDES:
+        return None
+    steps = outline.get("steps")
+    if isinstance(steps, dict):
+        steps = steps.get("steps")
+    count = len(steps) if isinstance(steps, list) else 0
+    if count >= _MIN_STEPS:
+        return None
+    return f"had {count} step{'' if count == 1 else 's'}"
+
+
 @deduct_credits("generate_outline")
 async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
@@ -663,6 +685,20 @@ async def generate_outline(state: REXT) -> dict:
 
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
+
+        # Asked once more, only when the outline can't be written from: one extra model call.
+        thin = _thin_structure(content_type, outline_dict)
+        if thin:
+            logger.warning("Outline %s for content_type=%s; asking once more", thin, content_type)
+            retry_note = HumanMessage(
+                content=(
+                    f"A first attempt at this outline {thin}. A {content_type} needs "
+                    f"{_MIN_STEPS}-10 steps, each with its title and description, in the order a "
+                    "reader takes them. Return the complete outline again with every step filled."
+                )
+            )
+            generated_outline = await outline_model.ainvoke([*messages, retry_note])
+            outline_dict = generated_outline.model_dump()
 
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
