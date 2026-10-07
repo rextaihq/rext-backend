@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.schema.response.content_responses import ContentDetailResponse, ContentListResponse
+from src.api.schema.response.content_responses import (
+    ContentDetailResponse,
+    ContentHealthResponse,
+    ContentListResponse,
+)
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.cms_status_service import CMSStatusService
@@ -71,6 +75,26 @@ async def list_content(
         },
         request=request,
     )
+
+
+# -------------------------
+# Content health for a workspace (declared before /{content_id}, which would take "health" for an id)
+# -------------------------
+@router.get("/health", response_model=SuccessResponse[ContentHealthResponse])
+@require_permissions("content.read", workspace_scoped=True)
+@db_transaction_handler("content health", auto_commit=False)
+async def content_health(
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """How many published articles lack a meta description or a link to the workspace's own
+    sites (the home's content health card)."""
+    user_id = user.get("identity")
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    health = await ContentService(db).content_health(workspace.id)
+    return success(data=health, request=request)
 
 
 # -------------------------
