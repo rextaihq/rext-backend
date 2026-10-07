@@ -572,6 +572,13 @@ async def handle_subscription_created(
         )
         # Update existing subscription
         old_plan_id = existing_sub.plan_id
+        # Whether the start's month was given already. A row from before the marker existed
+        # counts as having had it once it runs paid, or once a payment was credited to it.
+        had_its_month = (
+            _start_month_given(existing_sub)
+            or existing_sub.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED)
+            or _last_paid_invoice_at(existing_sub) is not None
+        )
         existing_sub.status = internal_status
         existing_sub.plan_id = plan.id
         existing_sub.billing_period = billing_period
@@ -581,14 +588,16 @@ async def handle_subscription_created(
             datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
         )
         if plan.credits_per_month is not None and internal_status == SubscriptionStatus.ACTIVE:
-            # LemonSqueezy `renews_at` is the authoritative billing-period end;
-            # fall back to a calendar month only when it is absent.
-            existing_sub.credits_reset_date = parse_provider_datetime(renews_at) or add_months(
-                utc_now_naive(), 1
+            # LemonSqueezy `renews_at` is the authoritative billing-period end; without it the
+            # period stays as stored, and a calendar month is the last resort.
+            existing_sub.credits_reset_date = (
+                parse_provider_datetime(renews_at)
+                or existing_sub.credits_reset_date
+                or add_months(utc_now_naive(), 1)
             )
             # The start's month comes once: the same start again keeps what was spent since
             # (F8e), and a different plan keeps what was used (F8a).
-            if not _start_month_given(existing_sub):
+            if not had_its_month:
                 _give_start_month(existing_sub, plan)
             elif old_plan_id != plan.id:
                 old_plan = (
@@ -1107,8 +1116,12 @@ async def handle_subscription_updated(
                 else BillingPeriod.MONTHLY
             )
             if new_plan.credits_per_month is not None:
-                subscription.credits_reset_date = parse_provider_datetime(renews_at) or add_months(
-                    utc_now_naive(), 1
+                # Without renews_at the period stays as stored: the change is in the same period,
+                # and change_plan_credits() recognises it by that end.
+                subscription.credits_reset_date = (
+                    parse_provider_datetime(renews_at)
+                    or subscription.credits_reset_date
+                    or add_months(utc_now_naive(), 1)
                 )
                 # A plan change keeps what was used this period (F8a). A trial's credits come
                 # with its first payment, so its balance stays as it is.
