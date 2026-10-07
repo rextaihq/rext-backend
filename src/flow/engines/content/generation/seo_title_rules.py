@@ -93,9 +93,22 @@ def _normalize_for_match(text: Any) -> str:
     # the dot goes: Turkish "İstanbul" is "istanbul" in lowercase. A capital Σ lowercases to the
     # final ς at a word's end, which a user types as σ: both are σ.
     lowered = _nfc(text).lower().replace("i\u0307", "i").replace("ς", "σ")
-    flattened = "".join(
-        " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char for char in lowered
-    )
+    kept: list[str] = []
+    base_flattened = False
+    for char in lowered:
+        category = unicodedata.category(char)
+        if category == "Cf":
+            # Invisible inside a word (a soft hyphen, a zero-width joiner): not a word break.
+            continue
+        if category[0] == "M":
+            # A mark goes with the character it sits on: an emoji's variation selector is not
+            # kept once the emoji is flattened, or every emoji would match every other.
+            if not base_flattened:
+                kept.append(char)
+            continue
+        base_flattened = char == "_" or category[0] in "PSZC"
+        kept.append(" " if base_flattened else char)
+    flattened = "".join(kept)
     return f" {' '.join(flattened.split())} "
 
 
