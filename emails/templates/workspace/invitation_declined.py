@@ -64,28 +64,28 @@ def render_invitation_declined_email(
         [
             simple_header(workspace_name),
             f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Invitation to {workspace_name} was declined
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{declined_by_email}</strong> has declined your invitation to join <strong>{workspace_name}</strong>.
         </p>
         """,
             reason_html,
             """
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             No further action is required. You may send a new invitation in the future if circumstances change.
         </p>
         """,
             primary_button("View Workspace Settings", workspace_url),
             """
-        <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #404040; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>💡 Next Steps:</strong>
             </p>
-            <ul style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <ul style="color: #737373; font-size: 14px; line-height: 20px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <li style="margin-bottom: 8px;">Review if a different role might be more appropriate</li>
                 <li style="margin-bottom: 8px;">Consider reaching out directly to discuss their concerns</li>
                 <li>You can send a new invitation anytime from workspace settings</li>
@@ -150,10 +150,10 @@ def create_invitation_declined_email(
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #fafafa; border-radius: 6px;">
+            <p style="margin: 0; font-size: 12px; color: #737373; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Don't want to receive workspace notifications?
-                <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+                <a href="{unsubscribe_url}" style="color: #737373; text-decoration: underline;">Unsubscribe</a>
             </p>
         </div>
         """
@@ -162,28 +162,28 @@ def create_invitation_declined_email(
         [
             simple_header(workspace_name),
             f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Invitation to {workspace_name} was declined
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{declined_by_email}</strong> has declined your invitation to join <strong>{workspace_name}</strong>.
         </p>
         """,
             reason_html,
             """
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             No further action is required. You may send a new invitation in the future if circumstances change.
         </p>
         """,
             primary_button("View Workspace Settings", workspace_url),
             """
-        <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #404040; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>💡 Next Steps:</strong>
             </p>
-            <ul style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <ul style="color: #737373; font-size: 14px; line-height: 20px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <li style="margin-bottom: 8px;">Review if a different role might be more appropriate</li>
                 <li style="margin-bottom: 8px;">Consider reaching out directly to discuss their concerns</li>
                 <li>You can send a new invitation anytime from workspace settings</li>

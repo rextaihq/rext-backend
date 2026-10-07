@@ -94,31 +94,32 @@ from emails.components.base import render_email, EmailLayoutProps
 html = render_email(
     content="<h1>My Content</h1>",
     preview_text="Email preview text",
-    background_color="#f6f9fc",
+    background_color="#f5f5f5",
     content_background="#ffffff"
 )
 ```
 
 ### Buttons
 
-Four button styles available: primary (blue), secondary (gray), success (green), danger (red).
+One button colour: lime text on obsidian, the app's scheme (`emails/palette.py`, design/app-language.md §3.1). `primary_button` draws it; `success_button` and `danger_button` are the same button; `secondary_button` is outlined, ink on white. Links are underlined, and lime never appears on white.
 
 ```python
 from emails.components.button import primary_button, secondary_button
 
-# Primary button (blue)
+# Primary button (lime on obsidian)
 btn1 = primary_button("Click Me", "https://example.com")
 
-# Secondary button (gray)
+# Secondary button (outlined)
 btn2 = secondary_button("Learn More", "https://example.com")
 
 # Custom button
 from emails.components.button import button, ButtonProps
+from emails.palette import LIME, OBSIDIAN
 btn3 = button(ButtonProps(
     text="Custom Button",
     url="https://example.com",
-    background_color="#10b981",
-    text_color="#ffffff"
+    background_color=OBSIDIAN,
+    text_color=LIME,
 ))
 ```
 

@@ -7,6 +7,7 @@ Provides branded header with logo and optional workspace customization.
 from dataclasses import dataclass
 from typing import Optional
 
+from emails.palette import INK, LINE, MUTED
 from src.utils.storage import storage_service
 
 # Object key for the official Rext AI logo in MinIO storage (see scripts/upload_branding_logo.py).
@@ -26,8 +27,8 @@ class HeaderProps:
     logo_alt: str = "Rext AI"
     workspace_name: Optional[str] = None
     background_color: str = "#ffffff"
-    text_color: str = "#111827"
-    border_bottom: str = "1px solid #e5e7eb"
+    text_color: str = INK
+    border_bottom: str = f"1px solid {LINE}"
 
 
 def header(props: Optional[HeaderProps] = None) -> str:
@@ -54,9 +55,9 @@ def header(props: Optional[HeaderProps] = None) -> str:
         logo_html = f"""
         <img src="{logo_url}"
              alt="{props.logo_alt}"
-             width="120"
-             height="auto"
-             style="display: block; max-width: 120px; height: auto;">
+             width="137"
+             height="24"
+             style="display: block; width: 137px; max-width: 137px; height: auto;">
         """
     else:
         # Text-based logo if no image provided
@@ -70,7 +71,7 @@ def header(props: Optional[HeaderProps] = None) -> str:
     workspace_html = ""
     if props.workspace_name:
         workspace_html = f"""
-        <div style="margin-top: 8px; font-size: 14px; color: #6b7280; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 8px; font-size: 14px; color: {MUTED}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             {props.workspace_name}
         </div>
         """

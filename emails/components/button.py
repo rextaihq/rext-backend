@@ -6,6 +6,9 @@ Uses table-based structure for consistent rendering.
 """
 
 from dataclasses import dataclass
+from typing import Optional
+
+from emails.palette import BORDER_STRONG, INK, LIME, OBSIDIAN, WHITE
 
 
 @dataclass
@@ -14,8 +17,9 @@ class ButtonProps:
 
     text: str
     url: str
-    background_color: str = "#3b82f6"  # Blue-600
-    text_color: str = "#ffffff"
+    background_color: str = OBSIDIAN
+    text_color: str = LIME
+    border_color: Optional[str] = None  # defaults to the fill
     border_radius: str = "6px"
     padding: str = "12px 24px"
     font_size: str = "16px"
@@ -36,6 +40,7 @@ def button(props: ButtonProps) -> str:
     Returns:
         HTML string for button component
     """
+    border_color = props.border_color or props.background_color
     return f"""
     <!-- Button -->
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -46,7 +51,7 @@ def button(props: ButtonProps) -> str:
                     href="{props.url}"
                     style="height:44px;v-text-anchor:middle;width:200px;"
                     arcsize="14%"
-                    strokecolor="{props.background_color}"
+                    strokecolor="{border_color}"
                     fillcolor="{props.background_color}">
                     <w:anchorlock/>
                     <center style="color:{props.text_color};font-family:sans-serif;font-size:{props.font_size};font-weight:{props.font_weight};">
@@ -65,7 +70,7 @@ def button(props: ButtonProps) -> str:
                           text-decoration: none;
                           border-radius: {props.border_radius};
                           padding: {props.padding};
-                          border: 1px solid {props.background_color};
+                          border: 1px solid {border_color};
                           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                     {props.text}
                 </a>
@@ -77,20 +82,24 @@ def button(props: ButtonProps) -> str:
 
 
 def primary_button(text: str, url: str) -> str:
-    """Render a primary button (blue)."""
-    return button(ButtonProps(text=text, url=url, background_color="#3b82f6", text_color="#ffffff"))
+    """Render the primary button: lime text on obsidian, the emails' one button colour."""
+    return button(ButtonProps(text=text, url=url))
 
 
 def secondary_button(text: str, url: str) -> str:
-    """Render a secondary button (gray)."""
-    return button(ButtonProps(text=text, url=url, background_color="#6b7280", text_color="#ffffff"))
+    """Render a secondary button: ink text on white, outlined."""
+    return button(
+        ButtonProps(
+            text=text, url=url, background_color=WHITE, text_color=INK, border_color=BORDER_STRONG
+        )
+    )
 
 
 def success_button(text: str, url: str) -> str:
-    """Render a success button (green)."""
-    return button(ButtonProps(text=text, url=url, background_color="#10b981", text_color="#ffffff"))
+    """Render a success button (the primary button: the emails have one button colour)."""
+    return primary_button(text, url)
 
 
 def danger_button(text: str, url: str) -> str:
-    """Render a danger button (red)."""
-    return button(ButtonProps(text=text, url=url, background_color="#ef4444", text_color="#ffffff"))
+    """Render a danger button (the primary button: the emails have one button colour)."""
+    return primary_button(text, url)

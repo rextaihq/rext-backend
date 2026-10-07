@@ -60,48 +60,48 @@ def render_refund_requested_admin_email(
         [
             simple_header(),
             """
-        <h1 style="color: #2563eb; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Refund Requested
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {admin_name},
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{customer_email}</strong> has requested a refund of
             <strong>{refund_amount}</strong>. No money has moved &mdash; the
             refund is only issued once you approve it.
         </p>
         """,
             f"""
-        <div style="margin: 32px 0; padding: 24px; background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="margin: 32px 0; padding: 24px; background-color: #fafafa; border: 1px solid #e5e5e5; border-radius: 8px;">
             <table style="width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <tr>
-                    <td style="color: #6b7280; font-size: 14px; padding: 4px 0;">Product</td>
-                    <td style="color: #111827; font-size: 14px; padding: 4px 0; text-align: right;"><strong>{product_name}</strong></td>
+                    <td style="color: #737373; font-size: 14px; padding: 4px 0;">Product</td>
+                    <td style="color: #171717; font-size: 14px; padding: 4px 0; text-align: right;"><strong>{product_name}</strong></td>
                 </tr>
                 <tr>
-                    <td style="color: #6b7280; font-size: 14px; padding: 4px 0;">Amount</td>
-                    <td style="color: #111827; font-size: 14px; padding: 4px 0; text-align: right;"><strong>{refund_amount}</strong></td>
+                    <td style="color: #737373; font-size: 14px; padding: 4px 0;">Amount</td>
+                    <td style="color: #171717; font-size: 14px; padding: 4px 0; text-align: right;"><strong>{refund_amount}</strong></td>
                 </tr>
                 <tr>
-                    <td style="color: #6b7280; font-size: 14px; padding: 4px 0;">Order</td>
-                    <td style="color: #111827; font-size: 14px; padding: 4px 0; text-align: right;">{order_id}</td>
+                    <td style="color: #737373; font-size: 14px; padding: 4px 0;">Order</td>
+                    <td style="color: #171717; font-size: 14px; padding: 4px 0; text-align: right;">{order_id}</td>
                 </tr>
                 <tr>
-                    <td style="color: #6b7280; font-size: 14px; padding: 4px 0;">Requested</td>
-                    <td style="color: #111827; font-size: 14px; padding: 4px 0; text-align: right;">{requested_date}</td>
+                    <td style="color: #737373; font-size: 14px; padding: 4px 0;">Requested</td>
+                    <td style="color: #171717; font-size: 14px; padding: 4px 0; text-align: right;">{requested_date}</td>
                 </tr>
             </table>
         </div>
         """,
             f"""
-        <div style="margin: 24px 0; padding: 20px; background-color: #eff6ff; border-left: 4px solid #93c5fd; border-radius: 4px;">
-            <p style="color: #6b7280; font-size: 13px; font-weight: 600; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin: 24px 0; padding: 20px; background-color: #fafafa; border-left: 4px solid #d4d4d4; border-radius: 4px;">
+            <p style="color: #737373; font-size: 13px; font-weight: 600; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Customer's reason
             </p>
-            <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <p style="color: #404040; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 {reason}
             </p>
         </div>

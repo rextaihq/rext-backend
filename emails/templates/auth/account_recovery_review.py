@@ -18,17 +18,17 @@ from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 _P = (
-    "color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; "
+    "color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; "
     "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
     "'Helvetica Neue', Arial, sans-serif;"
 )
 _MUTED = (
-    "color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; "
+    "color: #737373; font-size: 14px; line-height: 20px; margin: 0; "
     "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
     "'Helvetica Neue', Arial, sans-serif;"
 )
 _H1 = (
-    "color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; "
+    "color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; "
     "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
     "'Helvetica Neue', Arial, sans-serif;"
 )
@@ -39,10 +39,10 @@ def _unsubscribe_block(frontend_url: str, unsubscribe_token: Optional[str]) -> s
         return ""
     unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
     return f"""
-    <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-        <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+    <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #fafafa; border-radius: 6px;">
+        <p style="margin: 0; font-size: 12px; color: #737373; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Don't want to receive these emails?
-            <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+            <a href="{unsubscribe_url}" style="color: #737373; text-decoration: underline;">Unsubscribe</a>
         </p>
     </div>
     """
@@ -130,7 +130,7 @@ def create_account_recovery_approved_email(
     note_block = ""
     if review_note:
         note_block = f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
+        <div style="margin-top: 24px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
             <p style="{_MUTED}"><strong>Note from our team:</strong><br>{review_note}</p>
         </div>
         """
@@ -144,7 +144,7 @@ def create_account_recovery_approved_email(
             primary_button("Sign In", login_url),
             note_block,
             f"""
-            <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+            <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
                 <p style="{_MUTED}">
                     If you didn't request this, contact our support team right away —
                     someone else may have access to your details.
@@ -170,7 +170,7 @@ def create_account_recovery_rejected_email(
     note_block = ""
     if review_note:
         note_block = f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
+        <div style="margin-top: 24px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
             <p style="{_MUTED}"><strong>Reason:</strong><br>{review_note}</p>
         </div>
         """
