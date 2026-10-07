@@ -104,6 +104,8 @@ _SENTENCE_SPLIT_RE = re.compile(
 )
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
+# A piece that is only a citation ("… CMS.” [Report](url)") is the sentence before it's source.
+_CITATION_ONLY_RE = re.compile(r"(?:\[[^\]]*\]\(https?://[^)\s]+\)[\s,;.]*)+")
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9.'+-]*")
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -130,11 +132,19 @@ def _units(text: str) -> list[_Unit]:
         if not stripped or _HEADING_RE.match(line) or _TABLE_SEPARATOR_RE.match(stripped):
             continue
         parts = [stripped] if _TABLE_ROW_RE.match(stripped) else _SENTENCE_SPLIT_RE.split(stripped)
+        line_units: list[_Unit] = []
         for part in parts:
             urls = tuple(m.group(2) for m in _LINK_RE.finditer(part))
+            if line_units and _CITATION_ONLY_RE.fullmatch(part.strip()):
+                # Split off by the sentence boundary: the claim must keep its own source, or it
+                # is weighed against every source and a number from another one can pass it.
+                claim = line_units[-1]
+                line_units[-1] = _Unit(claim.text, claim.cited_urls + urls)
+                continue
             visible = _LINK_RE.sub(lambda m: m.group(1), part).strip()
             if visible:
-                units.append(_Unit(visible, urls))
+                line_units.append(_Unit(visible, urls))
+        units.extend(line_units)
     return units
 
 
