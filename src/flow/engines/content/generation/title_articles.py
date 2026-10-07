@@ -173,6 +173,8 @@ def _an_before(word: str) -> bool | None:
         return False
     if lower.startswith("uni"):
         return True if lower.startswith(_UN_I) else False if lower.startswith(_UNI_YOU) else None
+    if lower.startswith("euler"):
+        return None  # "Euler" is "oiler", and some say "you-ler"
     if lower.startswith(_YOU_SOUND) or lower.startswith(_U_YOU):
         return False
     if lower.startswith("oui"):
