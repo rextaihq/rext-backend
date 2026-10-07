@@ -81,11 +81,15 @@ def _redact_urls(text: str, *addresses: object) -> str:
 # query on a bare path ("/images/x.png?X-Amz-Signature=…", as Google's and nginx's 404 pages
 # write it) and an S3 or MinIO error's request details.
 _QUERY_IN_TEXT = re.compile(r"\?[^\s'\"<>]+")
+# A field cut off by the scan limit has no closing tag: it's taken out to the end.
 _S3_REQUEST_DETAILS = re.compile(
     r"<(SignatureProvided|StringToSign|StringToSignBytes|CanonicalRequest|CanonicalRequestBytes"
-    r"|AWSAccessKeyId|HostId|RequestId)>.*?</\1>",
+    r"|AWSAccessKeyId|HostId|RequestId)>.*?(?:</\1>|$)",
     re.DOTALL,
 )
+# A signed request's parameters wherever they stand, with or without a "?" before them (a
+# canonical query string lists them bare).
+_AMZ_PARAMETER = re.compile(r"(X-Amz-[A-Za-z-]+)=[^&\s<'\"]*", re.IGNORECASE)
 _LOGGED_BODY_CHARS = 500
 # Read before redacting: enough past the logged length that an address or a query cut at the
 # edge is still whole when the redactors run, and never the whole of a large error page.
@@ -98,6 +102,7 @@ def _loggable_body(text: str, *addresses: object) -> str:
     they see names the status only (G59b, revnix/rext-control#632)."""
     text = _redact_urls((text or "")[:_SCANNED_BODY_CHARS], *addresses)
     text = _S3_REQUEST_DETAILS.sub(lambda match: f"<{match.group(1)}>…</{match.group(1)}>", text)
+    text = _AMZ_PARAMETER.sub(lambda match: f"{match.group(1)}=…", text)
     text = _QUERY_IN_TEXT.sub("?…", text)
     text = " ".join(text.split())
     return text[:_LOGGED_BODY_CHARS] + ("…" if len(text) > _LOGGED_BODY_CHARS else "")
