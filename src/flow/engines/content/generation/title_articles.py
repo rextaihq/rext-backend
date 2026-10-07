@@ -22,12 +22,16 @@ import unicodedata
 from src.flow.engines.content.generation.seo_title_rules import contains_keyphrase
 from src.flow.model.structure.topics import SEOTopics
 
-# Words that mark a title as English, besides "a" and "an" themselves.
+# Words that mark a title as English, besides "a" and "an" themselves: one is enough.
 _ENGLISH = {
-    "the", "to", "for", "how", "of", "and", "with", "your", "you", "in", "on", "is", "are",
-    "what", "why", "when", "best", "guide", "tips", "ways", "from", "by", "that", "this", "it",
-    "or", "vs", "can", "should", "will", "my", "our", "into", "without", "about", "more", "than",
-    "using", "step", "steps", "complete", "ultimate", "beginners",
+    "the", "how", "and", "with", "your", "you", "what", "why", "when", "ways", "from", "that",
+    "this", "should", "our", "into", "without", "about", "than", "using", "steps", "beginners",
+}  # fmt: skip
+# English words that other languages write too ("in Italia", "guide complete", "of" is Dutch for
+# "or", "to" is Polish): one alone proves nothing, so they count with the title words below.
+_SHARED = {
+    "to", "for", "of", "in", "on", "is", "are", "best", "guide", "tips", "by", "it", "or", "vs",
+    "can", "will", "my", "more", "step", "complete", "ultimate",
 }  # fmt: skip
 # Words of the other languages that write "a" or "an" as a word of their own, and are no English
 # words: one of them means the title isn't English.
@@ -37,10 +41,13 @@ _OTHER = {
     "bei", "auf", "zum", "zur", "les", "des", "du", "pour", "avec", "et", "une", "au", "aux",
     "sur", "dans", "à", "dos", "em", "uma", "um", "ao", "aos", "na", "nas", "nos", "às", "il",
     "di", "della", "delle", "degli", "gli", "het", "een", "voor", "och", "dla", "jak", "oraz",
-    "się", "jest", "czy",
+    "się", "jest", "czy", "nel", "nella", "nelle", "nei", "dei", "dal", "dalla", "sul", "sulla",
+    "alla", "alle", "ai", "tra", "fra", "che", "per", "sono", "è", "le", "lo", "un", "uno", "est",
+    "ces", "vos", "votre", "pourquoi", "seu", "sua", "da", "das", "van", "je", "wat", "og", "på",
+    "til", "med", "är", "att",
 }  # fmt: skip
 # Common English title words that other languages don't borrow ("SEO" and "marketing" they do):
-# two of them make a title English when it has none of the function words above.
+# two of them, or of the shared words, make a title English when it has none of the words above.
 _ENGLISH_TITLE_WORDS = {
     "content", "strategy", "template", "templates", "checklist", "tools", "tool", "examples",
     "small", "website", "growth", "customer", "customers", "build", "create", "write", "writing",
@@ -76,6 +83,7 @@ _ONE_WUN = ("once", "oneself", "oneness", "onetime", "onesie", "onefold")
 # A vowel letter that may say "w" or "you" in a borrowed word or a name: "Ouija", "Oaxaca",
 # "Ouagadougou", "Ewing", and "Euler" ("oiler"). Left as written.
 _UNSURE_VOWEL = ("oui", "oua", "oax", "euler")
+_X_EX = ("xbox", "xfinity", "xcode", "xperia")
 # Silent h: "an hour", "an honest". Said either way by dialect ("an herb" in America): left.
 _SILENT_H = ("hour", "honest", "honor", "honour", "heir")
 _EITHER_H = ("herb", "homage", "historic", "humble")
@@ -101,7 +109,7 @@ def _is_english(words: list[str]) -> bool:
         return False
     if lowered & _ENGLISH:
         return True
-    return len(lowered & _ENGLISH_TITLE_WORDS) >= 2
+    return len(lowered & (_ENGLISH_TITLE_WORDS | _SHARED)) >= 2
 
 
 def _base_letter(char: str) -> str | None:
@@ -184,8 +192,8 @@ def _an_before(word: str) -> bool | None:
     if lower.startswith("ew"):
         return None  # "ewe" is "you" (above); "Ewing" is, "Ewok" isn't
     if first.lower() == "x":
-        # "Ex" before a consonant ("an Xbox", "an Xfinity"); "z" or another sound before a vowel.
-        return True if re.match(r"x[^aeiouy]", lower) else None
+        # "Ex" in the names it knows ("an Xbox"); "z" or a click in the rest ("Xerox", "Xhosa").
+        return True if lower.startswith(_X_EX) else None
     if re.match(r"y[^aeiou]", lower):
         return None  # "Yves", "Ypres", "yttrium": a vowel sound, or not
     if (
