@@ -12,7 +12,7 @@ from src.flow.engines.serp.serp_intent_heuristics import (
     filter_related_topics,
 )
 from src.flow.model.llm_manager import load_model
-from src.flow.model.runaway import ainvoke_watched
+from src.flow.model.runaway import ainvoke_watched, ran_away
 from src.flow.model.structure.intent import BatchSEOIntentOutput, SEOIntentResult
 from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
 from src.flow.states.rext import REXT, SERPNORMALIZED, Competitor, IntentMatchedSerpSignals
@@ -134,6 +134,10 @@ async def _classify_competitor_intents(
             )
             return final_intent_type, {}, suggested_keywords
         except Exception as e:
+            # A runaway or a cut-off has had its second attempt: the call below would only ask
+            # the same question twice more.
+            if ran_away(e):
+                raise
             logger.error(f"Error in query-only intent classification: {e}")
 
     batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
