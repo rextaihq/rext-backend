@@ -191,6 +191,7 @@ def _prompt_values(**overrides):
         "questions": "",
         "competitors_context": "",
         "known_entities": "",
+        "reader_and_offer": "None available.",
         "intent_distribution": "Informational",
         "keyword_clusters": "None",
         "cluster_heading_map": "None.",
