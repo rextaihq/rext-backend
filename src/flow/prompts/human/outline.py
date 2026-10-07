@@ -60,6 +60,10 @@ _MORE_AFTER = re.compile(
     r"^\W*(?:please|would\s+help|(?:are|is)\s+missing|(?:are\s+|is\s+)?(?:needed|required))\b",
     re.IGNORECASE,
 )
+# A terse request that only says where they go: "H3s under each list item", "Subsections for
+# pricing and features". It counts when the mention opens the sentence, so "the H3 under the intro
+# is too long" still asks nothing (review round 2 of #922).
+_PLACED_AFTER = re.compile(r"^\s+(?:under|beneath|below|for|in|within|per|on)\s+\w+", re.IGNORECASE)
 
 _PARTS = "steps, stages, types, options, tools, or pros and cons"
 _PLACEMENT = (
@@ -83,10 +87,15 @@ def subsection_request(feedback: str | None) -> str | None:
     for sentence in re.split(r"[.!?;\n]+", str(feedback or "")):
         for match in _SUBSECTION_WORDS.finditer(sentence):
             before, after = sentence[: match.start()], sentence[match.end() :]
-            doubted = _DOUBT_BEFORE.search(before) and _NEEDED_AFTER.search(after)
+            doubt = _DOUBT_BEFORE.search(before)
+            if doubt and _FEWER_AFTER.search(after):
+                # "I don't think the H3s should be removed": leave them as they are.
+                continue
+            doubted = doubt and _NEEDED_AFTER.search(after)
+            placed = not before.strip() and _PLACED_AFTER.search(after)
             if doubted or _FEWER_BEFORE.search(before) or _FEWER_AFTER.search(after):
                 asks.add("fewer")
-            elif _MORE_BEFORE.search(before) or _MORE_AFTER.search(after):
+            elif _MORE_BEFORE.search(before) or _MORE_AFTER.search(after) or placed:
                 asks.add("more")
     return "more" if "more" in asks else "fewer" if asks else None
 

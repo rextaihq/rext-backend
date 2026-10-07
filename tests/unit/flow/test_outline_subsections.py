@@ -111,6 +111,8 @@ def test_step_guides_plan_several_steps(content_type):
         "Not detailed enough: add H3s",
         "Drop the H3 under the intro. Add H3s to the tools section.",
         "The H3s are missing",
+        "H3s under each list item",
+        "Subsections for pricing and features",
     ],
 )
 def test_feedback_asking_for_subsections_is_recognised(feedback):
@@ -159,6 +161,8 @@ def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
         "I don't think the H3s are detailed enough",
         "I don't think the H3s are helpful enough",
         "Not sure the subsections are useful enough yet",
+        "I don't think the H3s should be removed",
+        "The H3 under the intro is too long",
     ],
 )
 def test_other_feedback_says_nothing_about_subsections(feedback):
