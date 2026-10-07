@@ -139,8 +139,9 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "An Hors d'Oeuvre Guide for Caterers and Event Planners",
         "A Hors d'Oeuvre Guide for Caterers and Event Planners",
         "An Hotel Booking Guide for Budget Travelers in Europe",
-        # x before a vowel, and y before a consonant: the sound isn't clear.
+        # An x word it doesn't know, and y before a consonant: the sound isn't clear.
         "A Xylophone Buying Guide for Parents and Music Teachers",
+        "A Xhosa Language Guide for South African Travelers",
         "An Yves Saint Laurent Bag Guide for First-Time Buyers",
         # A small letter, then a capital: said by the letter's name.
         "An mRNA Vaccine Guide for Curious Readers and Students",
@@ -197,6 +198,10 @@ def test_what_is_right_or_unsure_is_left_alone(title):
         "Ideas a Evitar: Plan Marketing Digital SEO Profesional",
         # ASCII, but no English word: not taken for English.
         "Marketing a Efektywna Strategia SEO Polskich Firm",
+        # A word English shares with the language ("in", "guide", "complete") proves nothing alone.
+        "Strategie a Impatto nel Marketing Digitale in Italia",
+        "Strategie a Impatto: Marketing Digitale in Italia",
+        "Guide a Impatto: Marketing Digitale SEO Avanzato",
     ],
 )
 def test_a_title_in_another_language_is_left_alone(title):
