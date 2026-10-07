@@ -78,6 +78,29 @@ async def test_a_lookup_that_found_nothing_is_never_kept(monkeypatch, day_cache)
     assert calls.await_count == 2
 
 
+async def test_a_failed_task_with_some_rows_is_never_kept(monkeypatch, day_cache):
+    # A task DataForSEO reports as failed can still carry rows: it reads as "ok", but what
+    # depends on completion (the AI Overview) is unknown, so it isn't served to others.
+    calls = AsyncMock(return_value=_task(status_code=40501, items=[ORGANIC]))
+
+    first = await _fetch(monkeypatch, calls)
+    await _fetch(monkeypatch, calls)
+
+    assert first["serp_status"] == "ok" and calls.await_count == 2 and day_cache == {}
+
+
+async def test_a_cache_hit_logs_no_keyword(monkeypatch, day_cache, caplog):
+    caplog.set_level(logging.INFO)
+    calls = AsyncMock(return_value=_task(items=[ORGANIC]))
+
+    await _fetch(monkeypatch, calls, query="acme confidential launch")
+    caplog.clear()
+    await _fetch(monkeypatch, calls, query="acme confidential launch")
+
+    assert calls.await_count == 1
+    assert not any("confidential" in r.getMessage() for r in caplog.records)
+
+
 # --- the intent call --------------------------------------------------------------------
 
 GROUPS = {"a.test": {"top_result": {"title": "A", "snippet": "about a"}, "top_positions": [1]}}
