@@ -298,6 +298,7 @@ _TIME_ADVERBS = frozenset(
         "today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon",
         "anyway", "online", "offline", "here", "there", "everywhere", "anywhere", "locally",
         "globally", "worldwide", "abroad", "together", "alone", "quickly", "easily",
+        "ultimately", "finally", "really", "actually", "too", "also", "ever", "yet", "already",
     }
 )  # fmt: skip
 _TIME_PHRASE_STARTS = frozenset({"this", "next", "last", "every"})

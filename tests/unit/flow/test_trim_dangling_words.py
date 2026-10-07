@@ -150,6 +150,13 @@ def test_a_preposition_whose_object_was_a_time_goes():
     )
 
 
+def test_a_sentence_adverb_is_no_object_either():
+    title = "SEO Agencies: Learn Why This Useful Guide Was Made For Ultimately"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Learn Why This Useful Guide Was Made For"
+    )
+
+
 def test_a_verb_ending_in_o_keeps_its_preposition():
     title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
     assert _trim_to_max(title, "seo agencies") == (
