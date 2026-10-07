@@ -267,8 +267,11 @@ def test_none_cannot_exclude_a_brand_the_title_or_keyphrase_names(outline_extra)
     [
         ("Save this for later.", False),
         ("Later you can review it.", False),  # sentence start: ordinary use
+        ("Later, the team reviews it.", False),
         ("We scheduled it in Later last week.", True),
-        ("## Later\n\nIt helps.", False),  # a heading's first word
+        ("## Later\n\nIt helps.", False),  # a heading's first word, alone
+        ("Later is a social media scheduler.", True),  # a sentence start used as a name
+        ("Later can help you plan the week.", True),
     ],
 )
 def test_a_one_word_brand_that_is_an_ordinary_word_counts_only_as_the_name(text, counts):
@@ -329,3 +332,33 @@ async def test_humanize_bringing_the_brand_back_is_repaired_after_it(monkeypatch
     )
 
     assert "brand_absent" in asked
+
+
+# -- Review round 2 of #918 ---------------------------------------------------------------
+
+
+def test_a_subdomain_of_the_brand_is_its_site():
+    article = {**ARTICLE, "body_markdown": "Sign up at [the app](https://app.acme.test/signup)."}
+
+    assert _absent(article)["passed"] is False
+
+
+def test_a_subtle_call_to_action_rendered_as_a_brand_link_is_caught():
+    from src.flow.engines.content.generation.validation import check_brand_prominence
+
+    article = {
+        **ARTICLE,
+        "body_markdown": "Acme Tools maps the sun.\n\n[Get started](https://shop.acme.test)",
+        "cta": {"text": "Get started"},
+    }
+
+    result = check_brand_prominence(article, build_requirements_spec(_outline("subtle"), "blog"))
+
+    assert result["passed"] is False and "https://shop.acme.test" in result["detail"]
+
+
+def test_the_runs_own_keyphrase_decides_not_a_stale_outline_copy():
+    """A resumed run: the outline has no keyphrase, the run's is "acme tools login"."""
+    spec = build_requirements_spec(_outline("none"), "blog", focus_keyword="acme tools login")
+
+    assert spec["excluded_brand"] is None

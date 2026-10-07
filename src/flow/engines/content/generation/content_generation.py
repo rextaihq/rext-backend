@@ -747,7 +747,7 @@ async def generate_content(state: REXT) -> dict:
         # The user chose NO mention (rext-control#700). Skipping the promotion block alone left the
         # writer free to name the brand, and the outline, generated before the choice, may already
         # name it in a product list or the call to action.
-        excluded = excluded_brand_of(outline)
+        excluded = excluded_brand_of(outline, title=topic, keyphrase=primary_keyword)
         if excluded and not outline.get("promote_brand"):
             excluded_name = excluded["brand_name"]
             brand_promo_str = (

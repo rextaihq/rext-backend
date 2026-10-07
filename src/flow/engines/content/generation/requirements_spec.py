@@ -145,7 +145,9 @@ def _extract_brand_context(outline: dict) -> Optional[dict]:
     }
 
 
-def excluded_brand_of(outline: dict) -> Optional[dict]:
+def excluded_brand_of(
+    outline: dict, *, title: Optional[str] = None, keyphrase: Optional[str] = None
+) -> Optional[dict]:
     """The brand to keep out of the article: the user chose "None" at the outline gate
     (rext-control#700). None when a mention was approved or no brand is known."""
     if (outline or {}).get("brand_prominence") != "none":
@@ -157,9 +159,11 @@ def excluded_brand_of(outline: dict) -> Optional[dict]:
     # A title or keyphrase that names the brand ("Acme Tools login") must stay verbatim, and the
     # SEO checks need the keyphrase in the title, meta and introduction: there "None" can't mean
     # "never named", so it means no promotion only (the other brand checks skip, as before).
-    if brand_named_in(outline.get("title") or "", brand_name) or brand_named_in(
-        focus_keyword_from_outline(outline) or "", brand_name
-    ):
+    # The run's resolved title and keyphrase when the caller has them (the outline's copies can
+    # be stale on a resumed run), else the outline's.
+    title = title if title is not None else outline.get("title") or ""
+    keyphrase = keyphrase if keyphrase is not None else focus_keyword_from_outline(outline) or ""
+    if brand_named_in(title, brand_name) or brand_named_in(keyphrase, brand_name):
         return None
     return {"brand_name": brand_name, "brand_url": (promo.get("brand_url") or "").strip()}
 
@@ -296,7 +300,11 @@ def build_requirements_spec(
         hero_required=type_policy["prefers_top"],
         approved_internal_links=outline.get("internal_links") or [],
         brand_context=brand_context,
-        excluded_brand=excluded_brand_of(outline),
+        excluded_brand=excluded_brand_of(
+            outline,
+            title=selected_title or outline.get("title") or "",
+            keyphrase=focus_keyphrase,
+        ),
         sourced_facts=outline.get("key_facts") or [],
         target_word_count=outline.get("target_word_count") or 0,
         cta_required=outline_cta is not None,
