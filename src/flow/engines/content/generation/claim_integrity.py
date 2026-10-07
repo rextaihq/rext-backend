@@ -104,8 +104,12 @@ _SENTENCE_SPLIT_RE = re.compile(
 )
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
-# A piece that is only a citation ("… CMS.” [Report](url)") is the sentence before it's source.
-_CITATION_ONLY_RE = re.compile(r"(?:\[[^\]]*\]\(https?://[^)\s]+\)[\s,;.]*)+")
+# A piece that is only citations ("… CMS.” [Report](url)", "… [A](url) and [B](url)") is the
+# sentence before it's source.
+_CITATION_LINK = r"\[[^\]]*\]\(https?://[^)\s]+\)"
+_CITATION_ONLY_RE = re.compile(
+    rf"{_CITATION_LINK}(?:(?:[\s,;.&]|\b[Aa]nd\b)*{_CITATION_LINK})*[\s,;.]*"
+)
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9.'+-]*")
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
