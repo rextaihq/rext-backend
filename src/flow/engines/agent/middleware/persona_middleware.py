@@ -79,7 +79,9 @@ def persona_query(workspace_id, selected_id):
     deleted, finds nothing and the article is written with no persona (never as whichever
     is newest). Without one (a run from before the outline step chose): the newest.
     """
-    query = select(Persona).where(Persona.workspace_id == workspace_id)
+    # A run's state carries the workspace id as text (it arrives as JSON); bound as a UUID,
+    # like the persona's own id below, whatever the driver would make of the text.
+    query = select(Persona).where(Persona.workspace_id == uuid.UUID(str(workspace_id)))
     if selected_id:
         return query.where(Persona.id == uuid.UUID(str(selected_id)))
     return query.order_by(Persona.created_at.desc()).limit(1)

@@ -184,7 +184,7 @@ async def test_publishing_reads_the_author_persona_inside_the_articles_workspace
     ("content_type", "words", "kept"),
     [
         ("contact-us", 250, True),  # under the old 500 floor; this type takes 200 to 1,500
-        ("white-paper", 12000, True),  # over the old 5,000 ceiling; takes up to 15,000
+        ("white-paper", 7000, True),  # over the old 5,000 ceiling; takes up to 15,000
         ("landing-page", 3000, False),  # a landing page takes 400 to 1,200
         ("blog", 100, False),
         ("pricing-page", 300, True),  # no range of its own: the wide default
@@ -202,3 +202,32 @@ def test_the_length_the_screen_offers_is_the_length_the_gate_keeps(
     )
 
     assert outline["target_word_count"] == (words if kept else 900)
+
+
+@pytest.mark.unit
+def test_a_length_past_what_the_writer_can_return_is_brought_down_to_it(monkeypatch):
+    from src.flow.model.llm_manager import CONTENT_GENERATION_MAX_TOKENS
+    from src.flow.model.structure.outlines import WRITER_MAX_TARGET_WORDS
+
+    state = _state()
+    state["content"]["content_type"] = "white-paper"
+    state["content"]["outline"]["target_word_count"] = 3000
+
+    outline = _approved_outline(
+        monkeypatch, {"action": "approve", "target_word_count": 12000}, state
+    )
+
+    assert outline["target_word_count"] == WRITER_MAX_TARGET_WORDS
+    # The two numbers move together: a longer article needs a larger response first.
+    assert WRITER_MAX_TARGET_WORDS * 2 <= CONTENT_GENERATION_MAX_TOKENS
+
+
+@pytest.mark.unit
+def test_the_workspace_id_is_bound_as_a_uuid_though_the_state_holds_text():
+    from uuid import UUID
+
+    from src.flow.engines.agent.middleware.persona_middleware import persona_query
+
+    params = persona_query(WORKSPACE, PERSONA).compile().params
+
+    assert params == {"workspace_id_1": UUID(WORKSPACE), "id_1": UUID(PERSONA)}
