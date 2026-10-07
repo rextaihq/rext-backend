@@ -18,6 +18,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_article_brand_policy,
 )
 from src.flow.engines.content.generation.outline_structure import (
+    faq_section_heading,
     format_structure_for_prompt,
     resolve_outline_structure,
 )
@@ -375,7 +376,8 @@ FABRICATION IS BANNED:
 ========================
 FAQ SECTION (MANDATORY)
 ========================
-- Add a FAQ section at the end
+- Put the FAQs in the outline's FAQ section when it has one, under that section's own heading, which may not say "FAQ" (the APPROVED FAQs line names it). Add no other FAQ or questions section
+- Only when the outline has no FAQ section, add a FAQ section at the end
 - If the outline above includes an "APPROVED FAQs" list, you MUST use every one of those questions — do not invent new ones or drop any. Reword only for tone/flow; the answers should be expanded to 2–3 sentences where the outline gives a short or missing answer.
 - If no APPROVED FAQs are listed in the outline, include 3–5 real, relevant user questions with concise, clear answers (2–3 sentences each)
 
@@ -980,16 +982,24 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         approved_faqs = extract_outline_faqs(outline)
         if approved_faqs:
+            faq_heading = faq_section_heading(outline, content_type)
+            where = (
+                f'the outline\'s section "{faq_heading}" (its FAQ section, under that heading; add no other FAQ section)'
+                if faq_heading
+                else "a FAQ section at the end of the article"
+            )
             lines.append(
-                f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN a FAQ section at the end of the article, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):"
+                f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN {where}, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):"
             )
             for faq in approved_faqs:
                 lines.append(f"  - Q: {faq['question']}")
                 if faq.get("answer"):
                     lines.append(f"    A: {faq['answer']}")
 
+        # The sections' order and headings are the user's: "adapt where needed" let the
+        # writer reorder them (G70, revnix/rext-control#586).
         lines.append(
-            "\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links."
+            "\nWrite the sections in this order, under these headings, and write each one fully. With images and fact links included, the minimum length should be: 3000 words total. Clearly mention the facts and stats with links."
         )
 
         return "\n".join(lines)

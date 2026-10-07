@@ -517,3 +517,93 @@ def test_approval_with_an_added_section_writes_it(monkeypatch):
 
     assert _headings(outline) == ["Why the right shoe matters", "Caring for your shoes"]
     assert "Caring for your shoes" in repr(outline["_render"])
+
+
+# --- the writer keeps what the user approved (G70 #586, G71 #587) -------------
+
+
+def _tools_outline():
+    outline = _blog_outline()
+    outline["structure"]["sections"] = [
+        _section("Top tools for agencies"),
+        _section("1. Rext AI", "H3"),
+        _section("2. Surfer SEO", "H3"),
+        _section("3. Contentbot", "H3"),
+        _section("4. Postiv", "H3"),
+        _section("5. SEO.ai", "H3"),
+        _section("FAQs on AI writing tools"),
+    ]
+    return outline
+
+
+TOOL_IDS = [f"structure.sections:{i}" for i in range(7)]
+
+
+def test_moved_numbered_items_are_numbered_again_in_their_new_order():
+    """A moved item kept its old number, and the writer put it back where the number said."""
+    rows = [{"id": TOOL_IDS[i]} for i in (0, 1, 5, 2, 3, 6)]  # 5. SEO.ai up two, Postiv removed
+
+    edited = apply_section_edits(_tools_outline(), "blog", rows)
+
+    assert _headings(edited) == [
+        "Top tools for agencies",
+        "1. Rext AI",
+        "2. SEO.ai",
+        "3. Surfer SEO",
+        "4. Contentbot",
+        "FAQs on AI writing tools",
+    ]
+    plan = _format_outline_for_generation(edited, "blog")
+    assert plan.index("2. SEO.ai") < plan.index("3. Surfer SEO") < plan.index("4. Contentbot")
+
+
+def test_a_single_numbered_heading_keeps_its_number():
+    outline = _blog_outline()
+    outline["structure"]["sections"][1]["heading"] = "3 ways cushioning helps"
+    outline["structure"]["sections"][3]["heading"] = "1. Get fitted"
+    rows = [{"id": BLOG_IDS[i]} for i in (3, 0, 1, 2)]
+
+    edited = apply_section_edits(outline, "blog", rows)
+
+    assert _headings(edited)[:2] == ["1. Get fitted", "Why the right shoe matters"]
+    assert "3 ways cushioning helps" in _headings(edited)
+
+
+def test_a_renamed_faq_section_is_still_where_the_faqs_go():
+    """Renamed, it no longer says FAQ: the writer wrote it and then added a second FAQ."""
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+    from src.flow.engines.content.generation.outline_structure import faq_section_heading
+
+    rows = [{"id": TOOL_IDS[i]} for i in range(6)]
+    rows.append({"id": TOOL_IDS[6], "heading": "Questions agencies ask"})
+
+    edited = apply_section_edits(_tools_outline(), "blog", rows)
+
+    assert faq_section_heading(edited, "blog") == "Questions agencies ask"
+    plan = _format_outline_for_generation(edited, "blog")
+    assert 'in the section "Questions agencies ask"' in plan
+    assert "Holds faqs" not in plan and "holds_faqs" not in plan
+    block = PersonaInjectionMiddleware()._build_outline_block(edited, "blog")
+    assert 'section "Questions agencies ask"' in block
+    assert "Holds faqs" not in block and "holds_faqs" not in block
+
+
+def test_an_outline_without_a_faq_section_keeps_the_faq_at_the_end():
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+    from src.flow.engines.content.generation.outline_structure import faq_section_heading
+
+    outline = _blog_outline()  # the FAQs, but no section whose heading says FAQ
+
+    assert faq_section_heading(outline, "blog") is None
+    assert "in the FAQ section" in _format_outline_for_generation(outline, "blog")
+    block = PersonaInjectionMiddleware()._build_outline_block(outline, "blog")
+    assert "a FAQ section at the end of the article" in block
+
+
+def test_the_writer_is_not_told_to_adapt_the_order():
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+
+    block = PersonaInjectionMiddleware()._build_outline_block(_tools_outline(), "blog")
+
+    assert "adapt where needed" not in block
+    assert "in this order, under these headings" in block

@@ -28,9 +28,11 @@ writes it from its heading, as a required planned section.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from src.flow.engines.content.generation.outline_structure import (
+    FAQ_HEADING,
     item_heading_field,
     resolve_outline_structure,
     section_containers,
@@ -42,6 +44,8 @@ HEADING_LEVELS = ("H2", "H3", "H4")
 # More than this many added sections in one approval is not a review any more;
 # the rest are ignored and logged.
 MAX_ADDED_SECTIONS = 6
+# A list item's own number in its heading: "5. SEO.ai …", "2) Surfer …".
+_NUMBERED_HEADING = re.compile(r"^(\d{1,2})([.)])(\s+)")
 
 
 def _row_id(path: str, index: int) -> str:
@@ -111,12 +115,41 @@ def _edited_item(item: dict, row: dict) -> dict:
     item = dict(item)
     heading = row.get("heading")
     field = item_heading_field(item)
+    # The FAQ section keeps a mark whatever it's renamed to, so the writer puts the
+    # FAQs there rather than adding another FAQ section (G71, revnix/rext-control#587).
+    if field and FAQ_HEADING.search(item[field]):
+        item["holds_faqs"] = True
     if field and isinstance(heading, str) and heading.strip():
         item[field] = heading.strip()
     level = row.get("heading_level")
     if level in HEADING_LEVELS and item.get("heading_level") in HEADING_LEVELS:
         item["heading_level"] = level
     return item
+
+
+def _renumbered(items: list[dict]) -> list[dict]:
+    """The list's numbered headings ("1. …", "2. …") numbered again in their new order.
+
+    A moved item kept its old number ("5. SEO.ai" third), and the writer put it back
+    where its number said (G70, revnix/rext-control#586). Lists with fewer than two
+    numbered headings are left alone: one number is part of its heading.
+    """
+    numbered = [
+        index
+        for index, item in enumerate(items)
+        if (field := item_heading_field(item)) and _NUMBERED_HEADING.match(item[field])
+    ]
+    if len(numbered) < 2:
+        return items
+    items = list(items)
+    for position, index in enumerate(numbered, 1):
+        item = dict(items[index])
+        field = item_heading_field(item)
+        item[field] = _NUMBERED_HEADING.sub(
+            lambda match, n=position: f"{n}{match.group(2)}{match.group(3)}", item[field], count=1
+        )
+        items[index] = item
+    return items
 
 
 def _rows_by_list(rows: list) -> dict[str, list[tuple[int | None, dict]]]:
@@ -190,6 +223,7 @@ def apply_section_edits(outline: dict, content_type: str, rows: Any) -> dict:
         # A list that now opens on a subsection has no H2 above it.
         if reordered[0].get("heading_level") in ("H3", "H4"):
             reordered[0]["heading_level"] = "H2"
+        reordered = _renumbered(reordered)
         logger.info(
             "[OutlineEdits] %s: %d of %d sections, order %s",
             path,
