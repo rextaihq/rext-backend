@@ -42,6 +42,7 @@ USER_WORDING: dict[str, str] = {
     "links_preserved": "A link was lost while the article was polished.",
     "cta_presence": "The call to action from the outline isn't in the article.",
     "placeholder_product_names": 'The article names placeholder products (like "Tool A") instead of real ones.',
+    "secondary_keywords": "Some keywords you approved don't appear in the article as written.",
 }
 
 _COUNT = re.compile(r"^\s*(\d+)")
@@ -62,6 +63,29 @@ def _meta_length(detail: str) -> str:
     if "aim for" in detail or "too short" in detail:
         return "The meta description is too short: search results have room for more."
     return "The meta description is too long: search results cut it off."
+
+
+# check_secondary_keywords ends its detail with the missing phrases, each in single quotes.
+_MISSING_KEYWORDS = "approved secondary keywords don't appear as written: "
+_ONE_KEYWORD = "A keyword you approved is missing: "
+_SEVERAL_KEYWORDS = "Keywords you approved are missing: "
+_KEYWORDS_NAMED = 4
+
+
+def _secondary_keywords(detail: str) -> str:
+    """The missing keywords by name: the reader can only add the ones they can see."""
+    if detail.startswith((_ONE_KEYWORD, _SEVERAL_KEYWORDS)):
+        return detail
+    _, marker, quoted = detail.partition(_MISSING_KEYWORDS)
+    quoted = quoted.strip()
+    if not marker or len(quoted) < 3 or not (quoted[0] == quoted[-1] == "'"):
+        return USER_WORDING["secondary_keywords"]
+    names = [name for name in quoted[1:-1].split("', '") if name]
+    if len(names) == 1:
+        return f"{_ONE_KEYWORD}{names[0]}."
+    shown = ", ".join(names[:_KEYWORDS_NAMED])
+    more = len(names) - _KEYWORDS_NAMED
+    return f"{_SEVERAL_KEYWORDS}{shown}{f' and {more} more' if more > 0 else ''}."
 
 
 # A check that reports one of several causes gets the line for the cause its detail names.
@@ -166,6 +190,7 @@ def _several_causes(name: str, detail: str) -> str:
 _FROM_DETAIL = {
     "unsupported_claims": _claims,
     "meta_description_length": _meta_length,
+    "secondary_keywords": _secondary_keywords,
     **{name: (lambda detail, name=name: _one_cause(name, detail)) for name in _ONE_CAUSE},
     **{name: (lambda detail, name=name: _several_causes(name, detail)) for name in _SEVERAL_CAUSES},
 }
