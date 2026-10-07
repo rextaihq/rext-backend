@@ -72,6 +72,20 @@ def test_a_list_loses_its_markers_quotes_and_blank_lines():
     assert _list_items("10 Ways to Plan Content") == ["10 Ways to Plan Content"]
 
 
+def test_a_number_is_numbering_only_when_it_continues_the_count():
+    # A title that starts with a year keeps it, alone or inside a numbered list.
+    assert _list_items("2026. What Changes for Content Marketing?") == [
+        "2026. What Changes for Content Marketing?"
+    ]
+    assert _list_items('1. "First"\n2. Second\n2026. What Changes') == [
+        "First",
+        "Second",
+        "2026. What Changes",
+    ]
+    # A bulleted line's number is the title's own.
+    assert _list_items("- 3. Steps to a Brief") == ["3. Steps to a Brief"]
+
+
 def _model(content=None, structured=None):
     model = MagicMock()
     response = MagicMock()
