@@ -19,8 +19,8 @@ _SUBSECTION_WORDS = re.compile(
 )
 # A request for fewer: a cue up to three words before the term ("remove the H3s", "no
 # subsections", "don't use sub-headings", "too many H3s"), or a whole verdict just after it ("H3s
-# aren't needed", "the subsections are unnecessary"); "the H3s aren't detailed enough" asks for
-# better ones, not fewer.
+# aren't needed", "the subsections are unnecessary", "the H3s need to be removed"); "the H3s
+# aren't detailed enough" asks for better ones, not fewer.
 _FEWER_BEFORE = re.compile(
     r"\b(?:no|without|remove|removing|drop|dropping|delete|deleting|fewer|less|flatten|avoid|"
     r"skip|stop|get\s+rid\s+of|too\s+many|(?:do|does)\s*n[o']?t\s+(?:\w+\s+)?"
@@ -30,7 +30,19 @@ _FEWER_BEFORE = re.compile(
 _FEWER_AFTER = re.compile(
     r"^\W*(?:\w+\W+){0,2}?(?:(?:aren'?t|isn'?t|are\s+not|is\s+not)\s+(?:needed|necessary|"
     r"wanted|required|useful|helpful)|(?:are|is)\s+(?:unnecessary|unneeded|redundant|overkill|"
-    r"pointless|too\s+many)|not\s+needed|(?:should|can|must)\s+go)\b",
+    r"pointless|too\s+many)|not\s+needed|(?:should|can|must)\s+go|"
+    r"(?:(?:needs?|has|have)\s+to|should|must|can)\s+be\s+(?:removed|dropped|deleted|cut|"
+    r"taken\s+out|flattened))\b",
+    re.IGNORECASE,
+)
+# A doubt before the term and a "needed" just after it: "I don't think the H3s are needed" asks
+# for fewer, though "are needed" alone asks for more (review round 3 of #890).
+_DOUBT_BEFORE = re.compile(
+    r"\b(?:(?:do|does)\s*n[o']?t\s+(?:think|believe|feel)|doubt|not\s+sure)(?:\s+[\w'-]+){0,3}\s*$",
+    re.IGNORECASE,
+)
+_NEEDED_AFTER = re.compile(
+    r"^\W*(?:are|is)\s+(?:really\s+)?(?:needed|necessary|required|useful|helpful|wanted)\b",
     re.IGNORECASE,
 )
 # A request for more: a cue up to four words before the term ("add H3s", "it needs
@@ -69,7 +81,8 @@ def subsection_request(feedback: str | None) -> str | None:
     for sentence in re.split(r"[.!?;\n]+", str(feedback or "")):
         for match in _SUBSECTION_WORDS.finditer(sentence):
             before, after = sentence[: match.start()], sentence[match.end() :]
-            if _FEWER_BEFORE.search(before) or _FEWER_AFTER.search(after):
+            doubted = _DOUBT_BEFORE.search(before) and _NEEDED_AFTER.search(after)
+            if doubted or _FEWER_BEFORE.search(before) or _FEWER_AFTER.search(after):
                 asks.add("fewer")
             elif _MORE_BEFORE.search(before) or _MORE_AFTER.search(after):
                 asks.add("more")
