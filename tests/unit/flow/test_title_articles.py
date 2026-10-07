@@ -110,6 +110,10 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         # "u", one consonant, a vowel: unsure.
         "An Uber Guide for Small Business Teams",
         "A Ouija Board Guide for Paranormal Content Creators",
+        # "Euler" is "oiler": not the "you" of "European".
+        "An Euler Diagram Guide for Content Strategy Teams Today",
+        "A Euler Diagram Guide for Content Strategy Teams Today",
+        "AN EULER DIAGRAM GUIDE FOR CONTENT STRATEGY TEAMS",
         "An M2 MacBook Guide for Creative Content Teams Today",
         "A B2B Content Plan for Small Teams",
         "A Uber Guide for Small Business Teams",
