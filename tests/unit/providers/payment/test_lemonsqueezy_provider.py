@@ -151,8 +151,13 @@ class TestCreateCheckoutSession:
         assert session.metadata == {"order_id": "789"}
 
     @pytest.mark.asyncio
-    async def test_create_checkout_session_uses_sandbox_mode(self, provider, mock_response):
-        """Test that checkout session uses sandbox mode flag."""
+    @pytest.mark.parametrize("sandbox_mode", [True, False])
+    async def test_create_checkout_session_uses_sandbox_mode(self, sandbox_mode, mock_response):
+        """Sandbox mode asks Lemon Squeezy for a test-mode checkout whatever mode the API key
+        is in; live mode asks for a live one. Neither asks for a preview."""
+        provider = LemonSqueezyProvider(
+            api_key="test_api_key", store_id="12345", sandbox_mode=sandbox_mode
+        )
         mock_response.json.return_value = {
             "data": {
                 "id": "checkout_123",
@@ -169,11 +174,9 @@ class TestCreateCheckoutSession:
                 cancel_url="https://example.com/cancel",
             )
 
-            # Verify sandbox mode is set in request data
-            call_args = mock_request.call_args
-            request_data = call_args.kwargs["json"]
-            assert request_data["data"]["attributes"]["test_mode"] is True
-            assert request_data["data"]["attributes"]["preview"] is True
+        attributes = mock_request.call_args.kwargs["json"]["data"]["attributes"]
+        assert attributes["test_mode"] is sandbox_mode
+        assert attributes["preview"] is False
 
 
 class TestGetSubscription:

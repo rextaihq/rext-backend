@@ -99,7 +99,6 @@ tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderErrorHand
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_success
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_with_cc_bcc
 tests/unit/providers/email/test_smtp_provider.py::TestSMTPEmailProviderSendEmail::test_send_email_with_reply_to
-tests/unit/providers/payment/test_lemonsqueezy_provider.py::TestCreateCheckoutSession::test_create_checkout_session_uses_sandbox_mode  # G44.9 #407: after rextaihq/rext-backend#831 (F11.3) merges, in its file
 tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_empty_user_dict
 tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_not_impersonating
 tests/unit/routes/test_impersonation_routes.py::test_get_impersonation_status_not_impersonating_explicit_false
