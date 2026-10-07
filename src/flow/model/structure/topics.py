@@ -28,6 +28,8 @@ class SEOTopic(BaseModel):
             "MANDATORY FOCUS KEYPHRASE REQUIREMENT:\n"
             "- The title MUST contain the user's exact focus keyphrase, word for word, "
             "in the same order, as given in the prompt.\n"
+            "- Only its case may change: write it in the title's own case (capitalized "
+            "like the rest of a Title Case title, acronyms such as SEO in capitals).\n"
             "- Do NOT substitute a synonym, abbreviation, singular/plural variant, "
             "reordering, or any reworded version of it.\n"
             "- Do NOT invent or choose a different focus keyword.\n"

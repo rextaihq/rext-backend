@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 TITLE_MIN_CHARS = 50
 TITLE_MAX_CHARS = 59
@@ -348,6 +348,161 @@ def _pad_to_min(title: str, max_chars: int = TITLE_MAX_CHARS) -> str:
     return title
 
 
+# The keyphrase's case (G49, rext-control #463). Matching ignores case, so a title may write the
+# user's "seo agency for small business" as "SEO Agency for Small Business": only the letters'
+# case changes, never a word.
+
+# Short words a Title Case title keeps in lowercase unless they open it.
+_TITLE_CASE_SMALL_WORDS = frozenset(
+    {
+        "a", "an", "the", "and", "or", "but", "nor", "for", "of", "in", "on", "at", "to", "by",
+        "with", "from", "into", "onto", "as", "vs", "via", "per", "than",
+    }
+)  # fmt: skip
+# Acronyms SEO users type in lowercase; written in capitals in any title ("kpis" is "KPIs").
+# Not "it" or "us", which are words too.
+_ACRONYMS = frozenset(
+    {
+        "seo", "sem", "ppc", "ai", "crm", "erp", "saas", "b2b", "b2c", "d2c", "roi", "kpi", "api",
+        "ui", "ux", "cms", "faq", "diy", "usa", "uk", "eu", "gdpr", "hipaa", "vpn", "sql", "css",
+        "html", "php", "aws", "iot", "ar", "vr", "nft", "ctr", "cpc", "cpm", "cpa", "smb",
+        "llc", "pdf", "url", "hr", "pr", "llm", "gpt", "ecom",
+    }
+)  # fmt: skip
+_ACRONYM_SPELLINGS = {"saas": "SaaS", "ecom": "eCom"}
+_WORD_EDGE_PUNCTUATION = "\"'`“”‘’()[]{}.,;:!?"
+_SENTENCE_BREAKS = (":", "?", "!", ".", "|", "-", "–", "—")
+
+
+def _same_length_case(word: str, cased: str) -> str:
+    """``cased`` when it changes only the case of ``word``'s letters, else ``word``: "ß" upper is
+    "SS", which would change a title's length."""
+    return cased if len(cased) == len(word) and cased.lower() == word.lower() else word
+
+
+def _acronym(word: str) -> Optional[str]:
+    """The written form of an acronym the user typed in lowercase, or None."""
+    low = word.lower()
+    if low in _ACRONYMS:
+        return _ACRONYM_SPELLINGS.get(low, low.upper())
+    if low.endswith("s") and low[:-1] in _ACRONYMS and len(low) > 2:  # "kpis": KPIs
+        return f"{_ACRONYM_SPELLINGS.get(low[:-1], low[:-1].upper())}s"
+    return None
+
+
+def _phrase_spans(title: str, keyphrase: str, ignore_case: bool) -> list[tuple[int, int]]:
+    """Where the keyphrase is written in the title as a whole-word run, letter for letter."""
+    pattern = re.compile(
+        rf"(?<!\w){re.escape(keyphrase)}(?!\w)", re.IGNORECASE if ignore_case else 0
+    )
+    return [match.span() for match in pattern.finditer(title)]
+
+
+def _opens_at(title: str, start: int) -> bool:
+    """Whether the word at ``start`` opens the title or a clause after a break (": ", " - ")."""
+    before = title[:start].rstrip()
+    return not before or before.endswith(_SENTENCE_BREAKS)
+
+
+def _title_style(title: str, skip: tuple[int, int]) -> Optional[str]:
+    """How the title's own words, outside the keyphrase, are cased: "title" or "sentence".
+
+    None when no word decides it. Opening words, short words, acronyms and words with a capital
+    inside ("YouTube") don't count.
+    """
+    votes = []
+    for match in re.finditer(r"\S+", title):
+        if skip[0] <= match.start() < skip[1]:
+            continue
+        word = match.group().strip(_WORD_EDGE_PUNCTUATION)
+        if (
+            not word[:1].isalpha()
+            or word[:1].lower() == word[:1].upper()
+            or _opens_at(title, match.start())
+            or word.lower() in _TITLE_CASE_SMALL_WORDS
+            or any(char.isupper() for char in word[1:])
+        ):
+            continue
+        votes.append(word[:1].isupper())
+    if not votes:
+        return None
+    return "title" if sum(votes) * 2 > len(votes) else "sentence"
+
+
+def keyphrase_spellings(titles: Iterable[Any], keyphrase: Any) -> dict[str, str]:
+    """How the keyphrase's words are spelled where their case is not a matter of style.
+
+    The user's own capitals come first ("London", "SEO"), then what the titles show: a capital
+    inside a word ("SaaS", "iPhone"), or a capitalized word in the middle of a sentence-case
+    title (a name).
+    """
+    keyphrase = normalize_title(keyphrase)
+    spellings: dict[str, str] = {}
+    for title in titles:
+        title = normalize_title(title)
+        for start, end in _phrase_spans(title, keyphrase, ignore_case=True):
+            style = _title_style(title, (start, end))
+            for match in re.finditer(r"\S+", title[start:end]):
+                word = match.group()
+                if any(char.isupper() for char in word[1:]) or (
+                    style == "sentence"
+                    and word[:1].isupper()
+                    and not _opens_at(title, start + match.start())
+                ):
+                    spellings.setdefault(word.lower(), word)
+    for word in keyphrase.split():
+        if word != word.lower():
+            spellings[word.lower()] = word
+    return spellings
+
+
+def _cased_keyphrase(
+    keyphrase: str, style: Optional[str], opens: bool, spellings: dict[str, str]
+) -> str:
+    words = []
+    for index, word in enumerate(keyphrase.split(" ")):
+        known = spellings.get(word.lower()) or _acronym(word)
+        if known:
+            words.append(_same_length_case(word, known))
+        elif (index == 0 and opens) or (
+            style == "title" and word.lower() not in _TITLE_CASE_SMALL_WORDS
+        ):
+            words.append(_capitalized(word))
+        else:
+            words.append(word)
+    return " ".join(words)
+
+
+def display_keyphrase(keyphrase: Any) -> str:
+    """The keyphrase in Title Case, as a title's opening words ("seo agency" is "SEO Agency")."""
+    keyphrase = normalize_title(keyphrase)
+    return _cased_keyphrase(keyphrase, "title", True, keyphrase_spellings([], keyphrase))
+
+
+def recase_keyphrase(title: Any, keyphrase: Any, spellings: Optional[dict[str, str]] = None) -> str:
+    """The title with the keyphrase written in the title's case, where it was copied as typed.
+
+    "Find the Best seo agency for small business in 2026" becomes "Find the Best SEO Agency for
+    Small Business in 2026"; in a sentence-case title only acronyms, names and an opening word
+    change. A keyphrase the title already writes another way is left as written, and so is a
+    title whose case can't be told.
+    """
+    title = normalize_title(title)
+    keyphrase = normalize_title(keyphrase)
+    if not keyphrase or keyphrase.lower() == keyphrase.upper():  # no letters with a case
+        return title
+    if spellings is None:
+        spellings = keyphrase_spellings([title], keyphrase)
+    for start, end in _phrase_spans(title, keyphrase, ignore_case=False):
+        opens = _opens_at(title, start)
+        style = _title_style(title, (start, end))
+        if style is None and not opens:
+            continue
+        cased = _cased_keyphrase(keyphrase, style, opens, spellings)
+        title = f"{title[:start]}{cased}{title[end:]}"
+    return title
+
+
 def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
     """Best-effort deterministic repair. Returns None when it cannot comply.
 
@@ -366,7 +521,7 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
     if keyphrase and not contains_keyphrase(cleaned, keyphrase):
         # Capitalized for display only; matching is case-insensitive, so the
         # title still contains the user's exact phrase.
-        lead = " ".join(_capitalized(word) for word in keyphrase.split())
+        lead = display_keyphrase(keyphrase)
         cleaned = f"{lead}: {cleaned}" if cleaned else lead
 
     if len(cleaned) > title_max_chars(keyphrase):
@@ -398,8 +553,7 @@ def keyphrase_title(keyphrase: Any) -> Optional[str]:
     keyphrase = normalize_title(keyphrase)
     if not keyphrase:
         return None
-    title = " ".join(_capitalized(word) for word in keyphrase.split())
-    return repair_title(title, keyphrase)
+    return repair_title(display_keyphrase(keyphrase), keyphrase)
 
 
 # NOTE: resolving WHICH keyphrase to enforce is not this module's job — that

@@ -37,8 +37,10 @@ from src.flow.engines.content.generation.seo_title_rules import (
     TITLE_MAX_CHARS_CEILING,
     TITLE_MIN_CHARS,
     keyphrase_fits_a_title,
+    keyphrase_spellings,
     keyphrase_title,
     normalize_title,
+    recase_keyphrase,
     repair_title,
     title_is_valid,
     title_max_chars,
@@ -348,6 +350,16 @@ def _apply_deterministic_title_repair(parsed: SEOTopics, keyphrase: str) -> SEOT
     return _validate_topic_structure(parsed) if kept else parsed
 
 
+def _recase_keyphrase_in_titles(parsed: SEOTopics, keyphrase: str) -> None:
+    """Each title writes the keyphrase in its own case (G49): the model copies the user's
+    lowercase into a Title Case title ("Find the Best seo agency for small business")."""
+    spellings = keyphrase_spellings([topic.title for topic in parsed.topics], keyphrase)
+    for topic in parsed.topics:
+        recased = recase_keyphrase(topic.title, keyphrase, spellings)
+        if recased != topic.title and title_is_valid(recased, keyphrase):
+            topic.title = recased
+
+
 async def _generate_and_validate_topics(
     model: Any,
     messages: List[Any],
@@ -393,6 +405,8 @@ async def _generate_and_validate_topics(
                     "No generated title survived for query=%r; offering the keyphrase.", query
                 )
                 results.topics = [SEOTopic(title=fallback, recommended=True)]
+
+        _recase_keyphrase_in_titles(results, keyphrase)
 
         minimum = _MIN_USABLE_REGENERATED_TOPICS if regenerating else _MIN_USABLE_TOPICS
         if len(results.topics) < minimum:
@@ -457,6 +471,8 @@ def _build_system_prompt(
         f'THE EXACT FOCUS KEYPHRASE IS: "{keyphrase}"\n\n'
         "EVERY SINGLE TITLE MUST CONTAIN THIS EXACT PHRASE, WORD FOR WORD.\n"
         "- Use the phrase verbatim, in this exact word order.\n"
+        "- Only its case may change: write it in the title's own case, capitalized like the "
+        "rest of a Title Case title, with acronyms such as SEO in capitals.\n"
         "- Do NOT substitute a synonym, abbreviation, singular/plural variant, "
         "reordering, or any reworded version.\n"
         "- Do NOT invent, choose, or substitute a different focus keyword.\n"
