@@ -10,9 +10,11 @@
    docker run -d --name rext-db -e POSTGRES_USER=rext -e POSTGRES_PASSWORD=rext -e POSTGRES_DB=rext_app \
      -p 5432:5432 pgvector/pgvector:pg17
    # The first start initialises the database on a temporary, socket-only server, then restarts it:
-   # wait until the real server answers over TCP before creating the runtime's database.
-   until docker exec rext-db pg_isready -h 127.0.0.1 -U rext -q; do sleep 1; done
-   docker exec rext-db createdb -U rext rext_app_runtime          # the LangGraph runtime's database
+   # wait (up to a minute) until the real server answers over TCP, then create the runtime's database.
+   ready() { docker exec rext-db pg_isready -h 127.0.0.1 -U rext -q; }
+   for i in $(seq 60); do ready && break; sleep 1; done
+   if ready; then docker exec rext-db createdb -U rext rext_app_runtime     # the LangGraph runtime's database
+   else docker ps -a --filter name=rext-db; docker logs --tail 50 rext-db; fi   # why it didn't start
    docker run -d --name rext-redis -p 6379:6379 redis:7-alpine --maxmemory 128mb
    ```
 
