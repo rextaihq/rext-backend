@@ -369,7 +369,9 @@ async def _fetch_workspace_profile(workspace_id) -> dict:
 
 
 def _format_reader_and_offer(profile: dict) -> str:
-    """The workspace's reader and offer, as the outline prompt reads them."""
+    """The workspace's customers and offer, as the outline prompt reads them. The customers
+    are who the site serves, not the article's reader: that is whoever searches the keyword
+    (the prompt's rule 12), which is why the block doesn't say "who this is for"."""
     profile = profile or {}
     reader = [
         f"- Customer profile: {profile['customer_profile']}"
@@ -393,7 +395,7 @@ def _format_reader_and_offer(profile: dict) -> str:
         return "None available."
     blocks = []
     if reader:
-        blocks.append("WHO THIS IS FOR:\n" + "\n".join(reader))
+        blocks.append("WHO THE SITE SERVES:\n" + "\n".join(reader))
     if offer:
         blocks.append("WHAT THE BRAND OFFERS:\n" + "\n".join(offer))
     return "\n".join(blocks)
