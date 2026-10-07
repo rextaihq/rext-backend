@@ -176,3 +176,15 @@ async def test_a_regeneration_keeps_the_previous_set_rather_than_shrink_it(monke
         )
         is None
     )
+
+
+def test_a_valid_title_is_stored_as_validation_measured_it():
+    """A decomposed accent passes as one character; the picker gets that same NFC title."""
+    import unicodedata
+
+    title = "SEO Agencies: " + "x" * 43 + unicodedata.normalize("NFD", "é")  # 58 in NFC
+    parsed = tg._apply_deterministic_title_repair(_topics(title), SHORT)
+
+    [topic] = parsed.topics
+    assert topic.title == unicodedata.normalize("NFC", title)
+    assert len(topic.title) == 58
