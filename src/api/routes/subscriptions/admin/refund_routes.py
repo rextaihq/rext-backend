@@ -58,6 +58,7 @@ from src.services.order_service import (
     apply_refund_state,
     refundable_amount,
 )
+from src.services.refund_cancellation import cancel_at_provider_for_refund, end_for_refund
 from src.services.refund_request_service import (
     RefundRequestError,
     RefundRequestService,
@@ -226,6 +227,23 @@ async def _issue_refund(
                 f"{adjustment['credits_before']} -> {adjustment['credits_after']}",
                 extra={"order_id": str(lemonsqueezy_order_id), **adjustment},
             )
+
+    else:
+        # A full refund ends the subscription at Lemon Squeezy as well as here: left
+        # active there, it renews and charges the refunded customer again, and its next
+        # "active" update would give the plan back (F8c, revnix/rext-control#538). The
+        # cancel is made once and recorded; a failed one alerts a person, and the
+        # refund stands either way.
+        subscription_ref = subscription_id or (order.subscription_id if order else None)
+        subscription = (
+            await db.get(UserSubscription, subscription_ref) if subscription_ref else None
+        )
+        if subscription is not None:
+            await cancel_at_provider_for_refund(
+                subscription, order_id=str(lemonsqueezy_order_id), provider=provider
+            )
+            end_for_refund(subscription, order_id=str(lemonsqueezy_order_id))
+            await db.flush()
 
     return refund, {
         "total": original_amount,
