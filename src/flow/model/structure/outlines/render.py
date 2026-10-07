@@ -396,6 +396,7 @@ _META_KEYS = {
     "seo",
     "seo_plan",
     "keywords_to_include",
+    "removed_keywords",
     # Writing-guidance and authority signals — used during generation, not approval
     "eeat",
     "engagement",

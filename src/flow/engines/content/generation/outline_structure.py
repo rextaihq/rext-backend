@@ -107,6 +107,7 @@ _NON_STRUCTURAL_KEYS = frozenset(
         "slug_suggestion",
         "focus_keyphrase",
         "keywords_to_include",
+        "removed_keywords",
         "secondary_keywords",
         "target_audience",
         "tone",
