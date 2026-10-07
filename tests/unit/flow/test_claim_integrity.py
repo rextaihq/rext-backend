@@ -523,6 +523,32 @@ def test_a_trailing_citation_stays_with_its_sentence(text):
     assert "73% of enterprises" in units[0].text
 
 
+@pytest.mark.parametrize(
+    "citations",
+    [
+        "[Report A](https://example.com/a) and [Report B](https://example.com/b)",
+        "[Report A](https://example.com/a), [Report B](https://example.com/b)",
+        "[Report A](https://example.com/a) & [Report B](https://example.com/b).",
+        "[Report A](https://example.com/a), and [Report B](https://example.com/b)",
+    ],
+)
+def test_several_trailing_citations_stay_with_their_sentence(citations):
+    # Joined by "and", the pair read as a sentence of its own and the claim had no source.
+    text = f"\u201c73% of enterprises plan to adopt a headless CMS.\u201d {citations}"
+    units = claim_integrity._units(text)
+    assert [u.cited_urls for u in units] == [("https://example.com/a", "https://example.com/b")]
+    assert "73% of enterprises" in units[0].text
+
+
+def test_linked_names_that_open_a_sentence_are_not_a_citation():
+    text = "We compared plans. [Ahrefs](https://ahrefs.com/x) and [Moz](https://moz.com/y) agree."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("We compared plans.", ()),
+        ("Ahrefs and Moz agree.", ("https://ahrefs.com/x", "https://moz.com/y")),
+    ]
+
+
 def test_a_sentence_that_starts_with_a_link_is_its_own():
     text = "We compared plans. [Ahrefs](https://ahrefs.com/x) found 73% use one tool."
     units = claim_integrity._units(text)
