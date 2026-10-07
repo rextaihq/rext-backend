@@ -65,6 +65,12 @@ ACTIONS = ("add", "deduct", "reset")
 HISTORY_LIMIT = 100
 # Who the customer is told made a change: never the admin's name or email.
 SUPPORT_NAME = "Rext support"
+# What a change may ask for, as the admin's read sends it to the dashboard's form.
+ADJUSTMENT_LIMITS = {
+    "amount_max": ADMIN_CREDIT_MAX_AMOUNT,
+    "reason_min": ADMIN_CREDIT_REASON_MIN_LENGTH,
+    "reason_max": ADMIN_CREDIT_REASON_MAX_LENGTH,
+}
 
 
 def clean_reason(reason: Optional[str]) -> str:
@@ -418,6 +424,8 @@ async def credit_history(
             "balance_after": meta.get("balance_after"),
             "reason": meta.get("reason"),
             "expires_at": meta.get("expires_at"),
+            # The grant an add made: both views list it, so the two are shown as one.
+            "grant_id": meta.get("grant_id"),
             "created_at": e.created_at,
         }
         if for_admin:
@@ -425,7 +433,6 @@ async def credit_history(
             row.update(
                 {
                     "requested_amount": meta.get("requested_amount"),
-                    "grant_id": meta.get("grant_id"),
                     "adjusted_by": admin_id,
                     "adjusted_by_email": emails.get(admin_id),
                 }
