@@ -7,6 +7,7 @@ Move from src/services/wordpress_publisher.py to src/web/wordpress.py.
 
 import asyncio
 import html
+import http
 import json
 import logging
 import mimetypes
@@ -86,13 +87,16 @@ _S3_REQUEST_DETAILS = re.compile(
     re.DOTALL,
 )
 _LOGGED_BODY_CHARS = 500
+# Read before redacting: enough past the logged length that an address or a query cut at the
+# edge is still whole when the redactors run, and never the whole of a large error page.
+_SCANNED_BODY_CHARS = 4000
 
 
 def _loggable_body(text: str, *addresses: object) -> str:
     """A remote server's response body as a log line may show it: shortened, with every address,
     any query and an S3 error's request details taken out. Never for a person to read: a reason
     they see names the status only (G59b, revnix/rext-control#632)."""
-    text = _redact_urls(text or "", *addresses)
+    text = _redact_urls((text or "")[:_SCANNED_BODY_CHARS], *addresses)
     text = _S3_REQUEST_DETAILS.sub(lambda match: f"<{match.group(1)}>…</{match.group(1)}>", text)
     text = _QUERY_IN_TEXT.sub("?…", text)
     text = " ".join(text.split())
@@ -1188,7 +1192,10 @@ class WordPressPublisher:
             if media_response is None:
                 raise RuntimeError("WordPress media upload retry loop exited unexpectedly")
             logger.info("[WordPress Media Upload] upload_status=%s", media_response.status_code)
-            logger.info("[WordPress Media Upload] upload_body=%s", media_response.text[:4000])
+            logger.info(
+                "[WordPress Media Upload] upload_body=%s",
+                _loggable_body(media_response.text, image_url),
+            )
 
             if media_response.status_code != 201:
                 reason = (
@@ -1220,8 +1227,12 @@ class WordPressPublisher:
                     message=reason, service_name="WordPress"
                 ) from exc
             if not isinstance(raw, dict):
+                logger.error(
+                    "[WordPress Media Upload] unexpected JSON value: %s",
+                    _loggable_body(repr(raw), image_url),
+                )
                 raise RextExternalServiceException(
-                    message=f"WordPress media API returned an unexpected JSON value: {raw!r}",
+                    message="WordPress media API returned an unexpected response",
                     service_name="WordPress",
                 )
             media_data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
@@ -1231,7 +1242,10 @@ class WordPressPublisher:
             )
 
             if not isinstance(media_id, int) or media_id <= 0:
-                logger.error("[WordPress Media Upload] response has no valid media id: %s", raw)
+                logger.error(
+                    "[WordPress Media Upload] response has no valid media id: %s",
+                    _loggable_body(repr(raw), image_url),
+                )
                 raise RextExternalServiceException(
                     message="WordPress media upload response did not include a valid media id",
                     service_name="WordPress",
@@ -1291,7 +1305,11 @@ class WordPressPublisher:
             # error, and a remote's error page (HTML, or S3's XML) can echo the signed request.
             # The body goes to the log, shortened and redacted (G59b, revnix/rext-control#632).
             status = e.response.status_code if e.response is not None else None
-            phrase = e.response.reason_phrase if e.response is not None else ""
+            # Our own words for the status: the response's reason phrase is the remote's text.
+            try:
+                phrase = http.HTTPStatus(status).phrase if status else ""
+            except ValueError:
+                phrase = ""
             reason = (
                 f"the image's address answered HTTP {status} {phrase}".rstrip()
                 if status

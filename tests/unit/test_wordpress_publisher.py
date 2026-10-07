@@ -1007,3 +1007,86 @@ async def test_a_wordpress_refusal_names_its_status_without_its_body():
         "body=" not in raised.value.message and "rest_upload_too_large" not in raised.value.message
     )
     assert len(raised.value.message) < 300
+
+
+@pytest.mark.asyncio
+async def test_the_servers_own_reason_phrase_stays_out_of_the_message():
+    publisher = _publisher_downloading(
+        httpx.Response(
+            404,
+            text="gone",
+            request=httpx.Request("GET", _SIGNED),
+            extensions={
+                "reason_phrase": b"Not Found /images/gone.png?X-Amz-Signature=secret-token"
+            },
+        )
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "HTTP 404 Not Found" in message and "secret-token" not in message
+
+
+def _publisher_uploading(upload: httpx.Response) -> WordPressPublisher:
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\n" + b"0" * 64,
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.rext.test/fine.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(return_value=upload)
+    publisher.client.post = AsyncMock()
+    return publisher
+
+
+@pytest.mark.asyncio
+async def test_every_log_of_a_wordpress_upload_body_is_redacted(caplog):
+    caplog.set_level("INFO")
+    publisher = _publisher_uploading(
+        httpx.Response(
+            413,
+            json={"message": "refused https://cdn.rext.test/fine.png?X-Amz-Signature=secret-token"},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped"):
+        await publisher.publish_post(
+            ContentCreate(title="Refused", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    assert "secret-token" not in " ".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_json_shape_is_a_plain_reason():
+    publisher = _publisher_uploading(
+        httpx.Response(
+            201,
+            json=["https://cdn.rext.test/fine.png?X-Amz-Signature=secret-token"] * 50,
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Odd", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    assert "unexpected response" in raised.value.message
+    assert "secret-token" not in raised.value.message and len(raised.value.message) < 300
+
+
+def test_a_huge_error_page_is_cut_before_it_is_scanned():
+    from src.web.wordpress import _loggable_body
+
+    body = "<p>" + "x" * 5_000_000 + "?X-Amz-Signature=secret-token</p>"
+
+    logged = _loggable_body(body)
+
+    assert len(logged) <= 501 and "secret-token" not in logged
