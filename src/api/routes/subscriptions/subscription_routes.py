@@ -41,6 +41,7 @@ from src.api.schema.response.checkout_responses import (
     SubscriptionStatusResponse,
     UsageMetricsResponse,
 )
+from src.api.schema.response.credit_responses import CreditHistoryResponse
 from src.api.schema.response.refund_responses import (
     RefundRequestListResponse,
     RefundRequestRow,
@@ -68,6 +69,7 @@ from src.api.schema.subscription.refund_schemas import RefundRequestCreate
 from src.api.security.dependencies import get_current_user
 from src.config.payment_config import payment_settings
 from src.providers.payment.provider_factory import get_payment_provider_singleton
+from src.services.admin_credits import credit_history
 from src.services.audit_logger import audit_logger
 from src.services.billing_email_service import (
     send_billing_email_in_background,
@@ -300,6 +302,32 @@ async def get_credit_balance(
             "runs": run_costs(credits),
         },
         message="Credit balance retrieved.",
+    )
+
+
+@router.get(
+    "/credits/history",
+    response_model=SuccessResponse[CreditHistoryResponse],
+    status_code=status.HTTP_200_OK,
+)
+@db_transaction_handler("get credit history", auto_commit=False)
+async def get_credit_history(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """The caller's credits added, deducted or reset by Rext support, newest first.
+
+    Each change comes with its reason; who made it is always "Rext support", never
+    an admin's name or email.
+    """
+    from uuid import UUID
+
+    user_id = UUID(str(current_user.get("identity")))
+    return success(
+        data=await credit_history(db, user_id, for_admin=False),
+        request=request,
+        message="Credit history retrieved.",
     )
 
 
