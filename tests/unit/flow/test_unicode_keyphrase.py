@@ -68,6 +68,12 @@ def _nfd(text: str) -> str:
         # Greek: a capital Σ at a word's end lowercases to ς, which the user types as σ.
         ("ΟΔΗΓΟΣ SEO ΓΙΑ ΜΙΚΡΕΣ ΕΠΙΧΕΙΡΗΣΕΙΣ", "οδηγοσ seo", True),
         ("Οδηγός SEO για μικρές επιχειρήσεις", "οδηγός seo", True),
+        # An invisible format character inside a word is no word break (a soft hyphen, a
+        # zero-width joiner in Devanagari).
+        ("How to cooperate effectively in small teams", "co\u00adoperate", True),
+        ("हिन्दी में सबसे अच्छा सॉफ्टवेयर", "हिन्\u200dदी", True),
+        # An emoji's variation selector goes with the emoji: one emoji doesn't match another.
+        ("\u2600\ufe0f weather guide for travellers", "\u2764\ufe0f", False),
         # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
         ("𠀀𠀁𠀂", "𠀁", True),
         ("2026年𠮷野家の店舗", "𠮷野家", True),
