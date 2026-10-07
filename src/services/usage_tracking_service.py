@@ -147,18 +147,7 @@ class UsageTrackingService:
         used = metric.get("used", 0) or 0
         limit = metric.get("limit")
 
-        # BYPASS: Workspace limit check is temporarily disabled to allow multiple workspaces for testing
-        if limit_type == "workspaces":
-            return True, used, None
-
-        # Original limit check logic
-        # if limit is None or limit <= 0:
-        #     return True, used, None
-        #
-        # within_limit = used < limit
-        # return within_limit, used, limit
-
-        # Default to True for other types if no limit is set
+        # No limit set (None, or -1 for unlimited)
         if limit is None or limit <= 0:
             return True, used, None
 

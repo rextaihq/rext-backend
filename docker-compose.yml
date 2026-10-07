@@ -220,6 +220,7 @@ services:
             # Frontend + CORS
             FRONTEND_URL: ${FRONTEND_URL}
             ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+            ALLOW_PREVIEW_ORIGINS: ${ALLOW_PREVIEW_ORIGINS:-false}
             ENVIRONMENT: ${ENVIRONMENT}
             DEBUG: ${DEBUG:-false}
 

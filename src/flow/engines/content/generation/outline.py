@@ -8,6 +8,7 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.model.llm_manager import load_model
+from src.flow.model.provider_outage import provider_outage
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
@@ -734,7 +735,10 @@ async def generate_outline(state: REXT) -> dict:
             }
         }
 
-    except Exception:
+    except Exception as e:
+        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1).
+        if provider_outage(e) is not None:
+            raise
         logger.exception("Error generating outline")
         return {
             "content": {
