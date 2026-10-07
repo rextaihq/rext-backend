@@ -233,6 +233,26 @@ async def test_a_trial_grants_access_until_its_own_end(session, trial_end, ls_id
 
 
 @pytest.mark.parametrize(
+    ("trial_end", "ls_id", "expected"),
+    [
+        # A deferred cancel of an unpaid trial keeps an end_date past the trial's end:
+        # the trial's end still wins (Codex on #845).
+        (NOW - timedelta(minutes=1), None, False),
+        (NOW + timedelta(minutes=1), None, True),
+        # A cancelled Lemon Squeezy subscription keeps its paid-through access.
+        (NOW - timedelta(minutes=1), "ls-sub", True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_cancelled_trial_still_ends_on_its_own_date(session, trial_end, ls_id, expected):
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.CANCELLED, end=LATER, trial_end=trial_end, ls_id=ls_id
+    )
+
+    assert await _grants(session, subscription) is expected
+
+
+@pytest.mark.parametrize(
     ("minutes_left", "spent"),
     [(1, True), (-1, False)],
 )
