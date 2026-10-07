@@ -23,7 +23,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+import src.api.models.subscription_models.subscriptions as subscriptions_module
+import src.services.credit_grants as credit_grants_module
 import src.services.lemonsqueezy_webhook_service as webhook_service_module
+import src.services.usage_tracking_service as usage_module
+import src.services.webhook_handlers.subscription_handlers as subscription_handlers_module
 from scripts.seeds.seed_promotions import LAUNCH_PROMOTION
 from src.api.database.base import Base
 from src.api.models.audit_models.audit_logs import AuditLog
@@ -102,6 +106,36 @@ def _session(conn):
 async def db(connection):
     async with _session(connection) as session:
         yield session
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """The time the handlers and the credit services read, set by the test.
+
+    The launch offer's paths are judged against a fixed week, so a test that reads the real
+    clock would change its outcome while the suite runs inside that week, and again once the
+    bonus has expired.
+    """
+    current = {}
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            moment = current["now"]
+            return moment.astimezone(tz) if tz else moment.replace(tzinfo=None)
+
+    for module in (
+        subscription_handlers_module,
+        credit_grants_module,
+        usage_module,
+        subscriptions_module,
+    ):
+        monkeypatch.setattr(module, "datetime", Clock)
+
+    def set_to(moment: datetime) -> None:
+        current["now"] = moment
+
+    return set_to
 
 
 # --- the world: plans, a customer, the launch promotion ----------------------------
@@ -278,17 +312,19 @@ async def test_launch_offer_doubles_a_paid_plan_started_in_its_window(db, starte
     assert subscription.current_credits == 1000
     assert [g.amount for g in grants] == ([1000] if doubled else [])
     if doubled:
-        # The bonus lasts the first period, no longer than a month from the start.
-        assert grants[0].expires_at <= started + timedelta(days=31)
+        # The bonus lasts the first period: it ends with it (renews_at, 30 days here),
+        # which comes before a calendar month from the start.
+        assert grants[0].expires_at == started + timedelta(days=30)
 
 
-async def test_launch_offer_is_granted_once_however_often_its_events_arrive(db):
+async def test_launch_offer_is_granted_once_however_often_its_events_arrive(db, clock):
     """The created event, its replay and the first invoice: one bonus."""
     await _launch_promotion(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user = await _customer(db)
     ls_id = uuid4().int % 10**9
     started = OPENS + timedelta(hours=3)
+    clock(started + timedelta(minutes=5))
     created = _subscription_event(
         user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=started, order_id="ord-launch-1"
     )
@@ -303,22 +339,58 @@ async def test_launch_offer_is_granted_once_however_often_its_events_arrive(db):
 
     subscription = await _subscription_of(db, ls_id)
     assert [g.amount for g in await _grants(db, subscription)] == [1000]
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 2000
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="F8e rext-control#551: the first invoice resets the month spent since the start",
+)
+async def test_credits_spent_between_the_starts_events_stay_spent(db, clock):
+    """Spend after the subscription was created, then its first invoice and the created event
+    arrive again (Lemon Squeezy's order isn't guaranteed, and a failed delivery is retried):
+    neither gives back what was spent."""
+    await _launch_promotion(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    started = OPENS + timedelta(hours=3)
+    clock(started + timedelta(minutes=5))
+    created = _subscription_event(
+        user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=started, order_id="ord-launch-2"
+    )
+    await handle_subscription_created(created, None, db)
+    usage = UsageTrackingService(db)
+    # 1,200: the bonus's 1,000 first, then 200 of the month's 1,000.
+    assert await usage.consume_credits(user.id, 1200)
+    assert await usage.get_credit_balance(user.id) == 800
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=started + timedelta(minutes=1), billing_reason="initial"),
+        None,
+        db,
+    )
+    await handle_subscription_created(created, None, db)
+
+    assert await usage.get_credit_balance(user.id) == 800
 
 
 @pytest.mark.xfail(
     strict=True,
     reason="F8d rext-control#543: the first payment judges the window by the processing time",
 )
-async def test_a_trials_first_payment_gets_the_offer_when_it_started_in_the_window(db):
+async def test_a_trials_first_payment_gets_the_offer_when_it_started_in_the_window(db, clock):
     """A paid plan's trial days, started in launch week, pays later: the bonus comes with
     the first payment, judged by when Lemon Squeezy started the subscription (its created_at),
-    not by when the event happened to be processed."""
+    not by when the event happened to be processed. Here it started in the week's last hour
+    and its event was processed after the week (a retried delivery)."""
     await _launch_promotion(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user = await _customer(db)
     ls_id = uuid4().int % 10**9
-    started = OPENS + timedelta(days=1)
+    started = CLOSES - timedelta(hours=1)
 
+    clock(CLOSES + timedelta(hours=1))
     await handle_subscription_created(
         _subscription_event(
             user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=started, status="on_trial"
@@ -329,8 +401,10 @@ async def test_a_trials_first_payment_gets_the_offer_when_it_started_in_the_wind
     subscription = await _subscription_of(db, ls_id)
     assert await _grants(db, subscription) == []  # nothing until it is paid
 
+    paid = started + timedelta(days=7)
+    clock(paid + timedelta(minutes=1))
     await handle_subscription_payment_success(
-        _invoice_event(user, ls_id, at=started + timedelta(days=7), billing_reason="initial"),
+        _invoice_event(user, ls_id, at=paid, billing_reason="initial"),
         None,
         db,
     )
@@ -634,7 +708,7 @@ async def test_an_upgrade_and_a_downgrade_take_the_new_plans_credits_at_once(db)
     )
     downgraded = await _subscription_of(db, ls_id)
     assert downgraded.plan_id == starter.id
-    assert downgraded.current_credits <= 400
+    assert downgraded.current_credits == 400  # nothing was spent
 
 
 @pytest.mark.xfail(strict=True, reason="F8a rext-control#536: a plan change sets a full month")
