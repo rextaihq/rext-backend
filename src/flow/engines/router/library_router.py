@@ -43,9 +43,8 @@ async def library_router(state: REXT) -> str:
             logger.warning("Blocking run: the workspace's credits don't cover this caller")
             return "insufficient_credits"
         except Exception as exc:
-            logger.warning(
-                "Blocking run: the credit check failed (%s)", type(exc).__name__, exc_info=True
-            )
+            # The class only: a database error's text can carry the query's parameters.
+            logger.warning("Blocking run: the credit check failed (%s)", type(exc).__name__)
             return "credit_check_failed"
 
         if balance < total_cost:

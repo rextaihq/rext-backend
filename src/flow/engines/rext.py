@@ -100,8 +100,23 @@ def create_rext_engine():
     return flow.compile()
 
 
+def _blocked_at(state: REXT) -> str:
+    """Where a run ran out of credits, for the operators' record."""
+    from src.flow.engines.router.credits import OUT_OF_CREDITS, serp_unpaid
+
+    is_library = bool((state.get("serp_payload") or {}).get("is_library"))
+    if is_library and (state.get("content") or {}).get("error_code") == OUT_OF_CREDITS:
+        return "library start charges"
+    keyword_recs = (state.get("seo_result") or {}).get("keyword_recommendations") or {}
+    if keyword_recs.get("titles_unpaid"):
+        return "title_generation charge"
+    if not is_library and serp_unpaid(state):
+        return "serp_seo charge"
+    return "library_router credit gate"
+
+
 async def _insufficient_credits(state: REXT) -> dict:
-    """Terminal node for runs blocked by the credit gate in library_router."""
+    """Terminal node for runs that ran out of credits: the start's gate, or a refused stage charge."""
     # This returns a successful response carrying an error payload, so no
     # exception handler ever sees it and the event was recorded nowhere. The
     # equivalent limit on workspaces raises and is logged as a warning; the
@@ -119,7 +134,7 @@ async def _insufficient_credits(state: REXT) -> dict:
             metadata={
                 "error_code": "insufficient_credits",
                 "workspace_id": str(state.get("workspace_id") or ""),
-                "blocked_at": "library_router credit gate",
+                "blocked_at": _blocked_at(state),
             },
         )
     except Exception:  # noqa: BLE001 - reporting never breaks the flow

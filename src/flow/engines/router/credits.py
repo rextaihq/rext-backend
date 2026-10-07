@@ -12,6 +12,12 @@ def out_of_credits(state: REXT) -> bool:
     return (state.get("content") or {}).get("error_code") == OUT_OF_CREDITS
 
 
+def serp_unpaid(state: REXT) -> bool:
+    """Whether the keyword analysis's SERP charge was refused, so its paid calls were skipped."""
+    seo_result = state.get("seo_result") or {}
+    return (seo_result.get("serp_backlinks") or {}).get("volume_status") == OUT_OF_CREDITS
+
+
 def unless_out_of_credits(next_node: str):
     """A router that goes on to `next_node`, or ends the run when it ran out of credits."""
 
