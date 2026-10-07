@@ -4,6 +4,8 @@ until the token limit, and the review step opened on an empty outline."""
 
 import json
 import logging
+import re
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -229,6 +231,34 @@ async def test_a_call_that_ran_away_mid_answer_is_asked_for_again():
     assert len(model.sent) == 2 * (2 + runaway.RUNAWAY_WHITESPACE // 50)  # two attempts
 
 
+async def test_a_recorded_runaway_is_answered_with_its_outline(caplog):
+    """A real answer, as recorded on 2026-10-07: a how-to outline written up to its last text
+    field, then whitespace without end (26,402 characters of it in the longest seen)."""
+    from src.flow.model.structure.outlines import get_outline_model
+
+    caplog.set_level(logging.WARNING, logger="rext.stage_timing")
+    recorded = json.loads(
+        (Path(__file__).parent / "data" / "how_to_outline_before_runaway.json").read_text()
+    )["written"]
+    pieces = [recorded[i : i + 40] for i in range(0, len(recorded), 40)]
+    model = _Streamed(tokens=[*pieces, *[" " * 50] * 528], streaming=True, sent=[])
+    schema = get_outline_model("how-to-guide")
+
+    outline = await ainvoke_watched(
+        model, [HumanMessage(content="outline")], stage="outline_model", schema=schema
+    )
+
+    assert isinstance(outline, schema)
+    assert outline.title and len(outline.steps.steps) == 7
+    assert outline.success_definition.endswith("launch of the podcast.")
+    assert outline.target_word_count == 2000  # the fields it never reached take their defaults
+    # One attempt, stopped 400 characters into the whitespace: 26,000 more were never waited for.
+    assert len(model.sent) == len(pieces) + runaway.RUNAWAY_WHITESPACE // 50
+    assert [r.getMessage() for r in caplog.records if r.name == "rext.stage_timing"] == [
+        "stage_runaway stage=outline_model reason=whitespace attempt=1 answer_kept=yes"
+    ]
+
+
 # --- asked once more ----------------------------------------------------------------------------
 
 
@@ -431,6 +461,76 @@ async def test_the_failure_names_its_kind_and_alerts_nobody(monkeypatch):
     assert stopped.value.outage.kind == UNREADABLE_ANSWER
     assert provider_outage(stopped.value).kind == UNREADABLE_ANSWER
     assert STEP_FAILED != UNREADABLE_ANSWER
+
+
+async def test_an_outline_that_cant_be_written_takes_no_credits(monkeypatch):
+    import src.utils.credit_manager as credits
+
+    charged = []
+
+    async def balance(_user, _workspace):
+        return 100
+
+    async def consume(*args, **kwargs):
+        charged.append(args)
+
+    monkeypatch.setattr(credits, "_get_balance", balance)
+    monkeypatch.setattr(credits, "consume_stage_credits", consume)
+    queue = [WhitespaceRunaway("one"), _cut_off()]
+
+    class _Model:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, _messages):
+            raise queue.pop(0)
+
+    async def _no_entities(_workspace_id):
+        return "", []
+
+    async def _none(*_a, **_kw):
+        return None
+
+    monkeypatch.setattr(outline_module, "load_model", lambda **_kw: _Model())
+    monkeypatch.setattr(outline_module, "_fetch_known_entities", _no_entities)
+    monkeypatch.setattr(outline_module, "_fetch_workspace_profile", _none)
+    monkeypatch.setattr(outline_module, "_bulk_sync_workspace", _none)
+    monkeypatch.setattr(outline_module, "resolve_focus_keyword", lambda _state: "start a podcast")
+    monkeypatch.setattr(
+        outline_module, "build_cluster_heading_map", lambda **_kw: {"enabled": False}
+    )
+    state = {
+        "serp_payload": {"workspace_id": None, "user_id": str(uuid4())},
+        "content": {"selected_topic": "How to start a podcast", "content_type": "how-to-guide"},
+    }
+
+    # The node as the graph runs it: the charge around it, the notice outside.
+    result = await stop_on_outage(outline_module.generate_outline)(state)
+
+    assert result["content"]["error_code"] == PROVIDER_UNAVAILABLE_CODE
+    assert not queue and charged == []
+
+
+# --- every structured call on the way to an article ---------------------------------------------
+
+WATCHED_CALLS = {
+    "src/flow/engines/serp/competitor.py": 2,  # the intent of the search results
+    "src/services/keyword_clustering_service.py": 1,
+    "src/flow/engines/content/generation/topic_generation.py": 2,  # the titles, and their repair
+    "src/flow/engines/content/generation/outline.py": 2,  # the outline, and its second attempt
+    "src/flow/engines/content/generation/subheading_seo.py": 1,
+    "src/flow/engines/content/utils/eeat.py": 1,
+    "src/flow/engines/content/generation/humanize_content.py": 1,
+    "src/flow/engines/content/generation/repair_content.py": 1,
+}
+
+
+@pytest.mark.parametrize(("path", "calls"), WATCHED_CALLS.items())
+def test_the_structured_calls_of_a_run_are_made_under_the_watch(path, calls):
+    source = (Path(__file__).resolve().parents[3] / path).read_text()
+    assert source.count("ainvoke_watched(") == calls
+    # A new structured call written as `await model.ainvoke(...)` would run unwatched.
+    assert not re.search(r"await \w+\.ainvoke\(", source)
 
 
 def test_the_outline_is_asked_for_as_compact_json():

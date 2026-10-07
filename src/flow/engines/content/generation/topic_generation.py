@@ -49,6 +49,7 @@ from src.flow.engines.content.generation.seo_title_rules import (
 from src.flow.engines.content.generation.title_articles import fix_title_articles
 from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.llm_manager import topic_generation_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.topics import SEOTopic, SEOTopics
 from src.flow.states.rext import REXT
 
@@ -286,7 +287,9 @@ async def _repair_invalid_titles(
     ]
 
     try:
-        repaired: SEOTopics = await model.ainvoke(repair_messages)
+        repaired: SEOTopics = await ainvoke_watched(
+            model, repair_messages, stage="titles", schema=SEOTopics
+        )
 
         repaired = fix_title_articles(_validate_topic_structure(repaired), keyphrase)
 
@@ -397,7 +400,9 @@ async def _generate_and_validate_topics(
       preserve the previously valid topics.
     """
     try:
-        results: SEOTopics = await model.ainvoke(messages)
+        results: SEOTopics = await ainvoke_watched(
+            model, messages, stage="titles", schema=SEOTopics
+        )
 
         # The keyphrase in each title's case first (G49), so the article is judged by the word as
         # the title will show it ("an SEO agency", where the model copied "seo"). Then "a" or "an"

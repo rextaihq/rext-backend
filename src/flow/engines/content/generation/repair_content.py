@@ -39,6 +39,7 @@ from src.flow.engines.content.generation.requirements_spec import (
 )
 from src.flow.engines.content.generation.subheading_seo import enforce_subheading_seo
 from src.flow.model.llm_manager import load_content_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.prompts.human.repair import get_repair_prompt
 from src.flow.states.rext import REXT
@@ -370,7 +371,7 @@ async def run_targeted_repair(
     try:
         model = load_content_model().with_structured_output(schema)
         messages = get_repair_prompt().format_messages(**prompt_data)
-        repaired_obj = await model.ainvoke(messages)
+        repaired_obj = await ainvoke_watched(model, messages, stage="repair")
         repaired_payload = (
             repaired_obj.model_dump() if hasattr(repaired_obj, "model_dump") else dict(repaired_obj)
         )

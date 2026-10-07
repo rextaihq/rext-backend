@@ -39,6 +39,7 @@ from src.flow.engines.content.generation.validation import (
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.model.llm_manager import load_humanize_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.prompts.human.humanize import get_humanize_prompt
 from src.flow.states.rext import REXT
@@ -430,7 +431,7 @@ async def humanize_content(state: REXT) -> dict:
 
     logger.info("humanize_content: invoking humanization model.")
     try:
-        humanized_obj = await model.ainvoke(messages)
+        humanized_obj = await ainvoke_watched(model, messages, stage="humanize")
     except Exception:
         logger.exception(
             "humanize_content: humanization model failed; keeping pre-humanize content."
