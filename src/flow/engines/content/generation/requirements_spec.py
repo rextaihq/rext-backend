@@ -9,6 +9,7 @@ functions in validation.py stay generic.
 
 from __future__ import annotations
 
+import re
 from typing import Optional, TypedDict
 
 from src.flow.engines.content.generation.brand_placement_policy import (
@@ -70,6 +71,10 @@ class RequirementsSpec(TypedDict, total=False):
     hero_required: bool  # blocking for prefers_top types, warning otherwise
     approved_internal_links: list[dict]
     brand_context: Optional[dict]
+    # The workspace's brand when the user chose NO mention at the outline gate
+    # (brand_prominence "none"): the article must not name it anywhere
+    # (rext-control#700). None when a mention was approved or no brand is known.
+    excluded_brand: Optional[dict]
     sourced_facts: list[dict]
     target_word_count: int
     cta_required: bool
@@ -138,6 +143,36 @@ def _extract_brand_context(outline: dict) -> Optional[dict]:
         "about": promo.get("about") or "",
         "selling_position": promo.get("selling_position") or "",
     }
+
+
+def excluded_brand_of(outline: dict) -> Optional[dict]:
+    """The brand to keep out of the article: the user chose "None" at the outline gate
+    (rext-control#700). None when a mention was approved or no brand is known."""
+    if (outline or {}).get("brand_prominence") != "none":
+        return None
+    promo = outline.get("brand_voice_promotion") or {}
+    brand_name = (promo.get("brand_name") or "").strip()
+    if not brand_name:
+        return None
+    return {"brand_name": brand_name, "brand_url": (promo.get("brand_url") or "").strip()}
+
+
+def brand_named_in(text: str, brand_name: str) -> bool:
+    """Whether ``text`` names the brand as a word of its own, in any case."""
+    name = (brand_name or "").strip()
+    if not name:
+        return False
+    pattern = r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])"
+    return re.search(pattern, text or "", re.IGNORECASE) is not None
+
+
+def brand_kept_out_of_cta(outline: dict) -> str:
+    """The brand's name when the user's choice keeps it out of the call to action: "None" (no
+    mention at all) or "Subtle" (one body mention, never in a call to action). Empty otherwise."""
+    outline = outline or {}
+    if outline.get("brand_prominence") not in ("none", "subtle"):
+        return ""
+    return ((outline.get("brand_voice_promotion") or {}).get("brand_name") or "").strip()
 
 
 def _expected_sections(outline: dict, content_type: str) -> list[str]:
@@ -254,6 +289,7 @@ def build_requirements_spec(
         hero_required=type_policy["prefers_top"],
         approved_internal_links=outline.get("internal_links") or [],
         brand_context=brand_context,
+        excluded_brand=excluded_brand_of(outline),
         sourced_facts=outline.get("key_facts") or [],
         target_word_count=outline.get("target_word_count") or 0,
         cta_required=outline_cta is not None,
