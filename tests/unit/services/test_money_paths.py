@@ -788,3 +788,70 @@ async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(db, 
     )
 
     assert await UsageTrackingService(db).consume_credits(user.id, 15) is False
+
+
+# --- 6. one subscription at a time (#831) ----------------------------------------------------------
+
+
+async def test_no_second_checkout_while_a_renewal_is_past_due(db):
+    """The customer fixes the card; a second subscription, which could be paid too, isn't opened."""
+    from src.api.middleware.exceptions import DuplicateResourceException
+    from src.api.models.subscription_models.subscriptions import BillingPeriod
+    from src.services.subscription_service import UPDATE_PAYMENT_METHOD, SubscriptionService
+
+    user, ls_id, growth = await _active_growth(db)
+    await handle_subscription_payment_failed(
+        _invoice_event(
+            user,
+            ls_id,
+            at=datetime.now(timezone.utc),
+            billing_reason="renewal",
+            status="failed",
+            name="subscription_payment_failed",
+        ),
+        None,
+        db,
+    )
+
+    with pytest.raises(DuplicateResourceException) as refused:
+        await SubscriptionService(db).create_checkout(
+            user_id=user.id,
+            plan_id=growth.id,
+            billing_period=BillingPeriod.MONTHLY,
+            success_url="https://app.example.invalid/ok",
+            cancel_url="https://app.example.invalid/cancel",
+        )
+    assert refused.value.context["billing_action"] == UPDATE_PAYMENT_METHOD
+
+
+async def test_resume_is_never_offered_for_an_old_cancellation_once_a_newer_plan_runs(db):
+    """Resuming the old one would bill twice."""
+    from src.services.subscription_service import RESUME, SubscriptionService, billing_action
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_cancelled
+
+    user, old_id, growth = await _active_growth(db)
+    now = datetime.now(timezone.utc)
+    cancelled = _subscription_event(
+        user,
+        old_id,
+        growth.lemonsqueezy_variant_id_monthly,
+        at=now - timedelta(hours=2),
+        status="cancelled",
+        name="subscription_cancelled",
+    )
+    cancelled["data"]["attributes"]["cancelled"] = True
+    cancelled["data"]["attributes"]["ends_at"] = _iso(now + timedelta(days=10))
+    await handle_subscription_cancelled(cancelled, None, db)
+    old = await _subscription_of(db, old_id)
+    assert billing_action(old)["action"] == RESUME  # alone, it would be offered back
+
+    new_id = uuid4().int % 10**9
+    await handle_subscription_created(
+        _subscription_event(
+            user, new_id, growth.lemonsqueezy_variant_id_monthly, at=now - timedelta(hours=1)
+        ),
+        None,
+        db,
+    )
+
+    assert await SubscriptionService(db).unfinished_subscription(user.id) is None
