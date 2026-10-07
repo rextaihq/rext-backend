@@ -162,6 +162,12 @@ def _at_boundary(edge: str, beside: str) -> bool:
     )
 
 
+def _matched_length(keyphrase: Any) -> int:
+    """The keyphrase's length as matching reads it (punctuation flattened), but with the
+    Armenian ligature և as the one character it takes in a title, not the two it is matched as."""
+    return len(_normalize_for_match(keyphrase).strip()) - _nfc(keyphrase).count("և")
+
+
 def title_max_chars(keyphrase: Any = "") -> int:
     """The longest a title for this keyphrase may be.
 
@@ -170,7 +176,7 @@ def title_max_chars(keyphrase: Any = "") -> int:
     """
     # Measured as keyphrase_fits_a_title measures it, so a keyword the gate lets through is
     # never given a smaller limit than the gate assumed.
-    length = len(_normalize_for_match(keyphrase).strip()) if keyphrase else 0
+    length = _matched_length(keyphrase) if keyphrase else 0
     return min(TITLE_MAX_CHARS_CEILING, max(TITLE_MAX_CHARS, length + TITLE_ROOM_BESIDE_KEYPHRASE))
 
 
@@ -183,7 +189,7 @@ def keyphrase_fits_a_title(keyphrase: Any) -> bool:
     It is measured as contains_keyphrase matches it (case, quotes and other
     punctuation flattened), so a keyword some title could hold is never refused.
     """
-    return len(_normalize_for_match(keyphrase).strip()) <= TITLE_MAX_CHARS_CEILING
+    return _matched_length(keyphrase) <= TITLE_MAX_CHARS_CEILING
 
 
 def title_violations(title: Any, keyphrase: Any = "") -> list[str]:
@@ -288,8 +294,12 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
 # Words that follow a preposition without being its object ("Turns To Today", "Sign Up Now"),
 # and the time phrases that do the same ("Catch Up On This Year").
 _TIME_ADVERBS = frozenset(
-    {"today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon", "anyway"}
-)
+    {
+        "today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon",
+        "anyway", "online", "offline", "here", "there", "everywhere", "anywhere", "locally",
+        "globally", "worldwide", "abroad", "together", "alone", "quickly", "easily",
+    }
+)  # fmt: skip
 _TIME_PHRASE_STARTS = frozenset({"this", "next", "last", "every"})
 _TIME_NOUNS = frozenset(
     {
@@ -334,7 +344,8 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
         or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS and removed[1] in _TIME_NOUNS)
     )
     if last == "that":
-        return not only_time_cut
+        # "Needs That: Guide" ended a clause on it, as "Needs That Today" did.
+        return not (only_time_cut or words[kept - 1][-1] in _TRAILING_PUNCTUATION)
     if last not in _PREPOSITION_AFTER_VERB:
         return False
     # A preposition that ended a clause, or stood before another one or an adverb of time, had

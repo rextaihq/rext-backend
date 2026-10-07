@@ -127,6 +127,21 @@ def test_every_common_preposition_whose_object_was_cut_goes():
     )
 
 
+def test_that_ending_a_clause_before_punctuation_stays():
+    title = "SEO Agencies: Why Every Small Business Really Needs That: Guide"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Why Every Small Business Really Needs That"
+    )
+
+
+def test_a_preposition_before_an_adverb_keeps_its_place():
+    """The trim cut "Online", not the object of "For"."""
+    title = "SEO Agencies: Complete Guide to What Businesses Search For Online"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Complete Guide to What Businesses Search For"
+    )
+
+
 def test_a_verb_ending_in_o_keeps_its_preposition():
     title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
     assert _trim_to_max(title, "seo agencies") == (

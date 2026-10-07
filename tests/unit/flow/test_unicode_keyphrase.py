@@ -95,6 +95,14 @@ def test_a_keyphrase_in_any_script_is_matched(title, keyphrase, expected):
     assert contains_keyphrase(title, keyphrase) is expected
 
 
+def test_an_armenian_keyphrase_is_measured_as_it_is_written():
+    """Matching reads "և" as "եւ", but it takes one character in a title."""
+    keyphrase = "սուրճ և թեյ և հաց և պանիր և միրգ և բանջարեղեն և քաղցրավենիք և կաթ և ձու"
+    assert len(keyphrase) == 71
+    assert keyphrase_fits_a_title(keyphrase)
+    assert title_max_chars(keyphrase) == 75
+
+
 def test_a_keyphrase_starting_with_a_dotless_i_can_still_be_repaired():
     """Capitalizing "ışık" gives "Işık", which lowercases to a dotted i: it stays as typed."""
     title = keyphrase_title("ışık terapisi")
