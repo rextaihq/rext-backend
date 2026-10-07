@@ -12,10 +12,14 @@ older state than the stored one is ignored), and the emails those rules call for
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
+from src.api.models.subscription_models.subscriptions import (
+    SubscriptionStatus,
+    UserSubscription,
+    not_a_known_duplicate,
+)
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
 from src.utils.logger import logger
@@ -34,12 +38,9 @@ async def reconcile_subscriptions(
             .where(
                 UserSubscription.lemonsqueezy_subscription_id.is_not(None),
                 UserSubscription.status != SubscriptionStatus.EXPIRED,
-                # Settled duplicates end here (duplicate_subscriptions.py), and are left out
-                # before the limit: skipped afterwards, they would fill every batch for good.
-                or_(
-                    UserSubscription.subscription_metadata.is_(None),
-                    ~UserSubscription.subscription_metadata.has_key("duplicate_of"),
-                ),
+                # Known duplicates (settled here, or left to a person) are left out before
+                # the limit: skipped afterwards, they would fill every batch for good.
+                not_a_known_duplicate(),
             )
             .order_by(UserSubscription.updated_at.asc())
             .limit(limit)
