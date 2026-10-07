@@ -12,6 +12,7 @@ import logging
 import mimetypes
 import os
 import re
+import traceback
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
@@ -33,6 +34,32 @@ from src.utils.url_validator import SSRFValidationError, public_client
 from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
+
+
+def _loggable_url(url: object) -> str:
+    """An address as a log line or an error may show it: its scheme, host (and port) and path, never
+    its userinfo (``user:password@``), query (a signed URL's token) or fragment."""
+    try:
+        parsed = urlparse(str(url))
+        host = parsed.hostname or ""
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+    except ValueError:
+        return "(an unreadable address)"
+    if not parsed.netloc:
+        # data:, blob: and other addresses without a host: the scheme says enough.
+        return f"{parsed.scheme}:..." if parsed.scheme else "(an address without a scheme)"
+    return f"{parsed.scheme}://{host}{parsed.path}"
+
+
+_ADDRESS_IN_TEXT = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>()]+")
+
+
+def _redact_urls(text: str) -> str:
+    """Every address in a message as _loggable_url gives it: an HTTP error's text names the URL it
+    requested, signed query and all."""
+    return _ADDRESS_IN_TEXT.sub(lambda match: _loggable_url(match.group(0)), text)
+
 
 # Domains that only ever show up when an image URL was hallucinated by the
 # model rather than being a real generated/uploaded asset.
@@ -646,8 +673,8 @@ class WordPressPublisher:
                     media_info = await self._upload_featured_image(image_url, alt_text=alt_text)
                 except Exception:
                     logger.exception(
-                        "[WordPress Publish] failed to sync embedded image url=%s; keeping original URL",
-                        image_url,
+                        "[WordPress Publish] failed to sync embedded image=%s; keeping original URL",
+                        _loggable_url(image_url),
                     )
                     continue
                 media_by_source[image_url] = media_info
@@ -895,16 +922,17 @@ class WordPressPublisher:
                     logger.info(
                         "[WordPress Media Download] source=http attempt=%s/3 host=%s",
                         attempt,
-                        urlparse(image_url).netloc,
+                        # The host only: the netloc can carry a username and password.
+                        urlparse(image_url).hostname,
                     )
                     return await download_client.get(image_url, timeout=30)
                 except (httpx.NetworkError, httpx.TimeoutException) as exc:
                     logger.warning(
-                        "[WordPress Media Download] http_attempt_failed attempt=%s/3 error_type=%s error=%r cause=%r",
+                        "[WordPress Media Download] http_attempt_failed attempt=%s/3 error_type=%s error=%s cause=%s",
                         attempt,
                         type(exc).__name__,
-                        exc,
-                        exc.__cause__,
+                        _redact_urls(repr(exc)),
+                        _redact_urls(repr(exc.__cause__)),
                     )
                     if attempt == 3:
                         raise
@@ -965,21 +993,23 @@ class WordPressPublisher:
         if image_url.strip().lower().startswith(("data:", "blob:")):
             reason = "Featured image is a base64/data/blob URL, not a downloadable image"
             logger.error(
-                "[WordPress Media Upload] rejected image_url=%s reason=%s", image_url, reason
+                "[WordPress Media Upload] rejected image=%s reason=%s",
+                _loggable_url(image_url),
+                reason,
             )
             raise RextExternalServiceException(message=reason, service_name="WordPress")
 
         parsed_url = urlparse(image_url)
         if parsed_url.scheme not in {"http", "https"}:
-            reason = f"Featured image is not an HTTP(S) URL: {image_url}"
+            reason = f"Featured image is not an HTTP(S) URL: {_loggable_url(image_url)}"
             logger.error("[WordPress Media Upload] rejected reason=%s", reason)
             raise RextExternalServiceException(message=reason, service_name="WordPress")
 
         endpoint = self._upload_endpoint()
         filename = os.path.basename(parsed_url.path) or "image"
 
-        logger.info("[WordPress Media Upload] called image_url=%s", image_url)
-        logger.info("[WordPress Media Upload] download_request_url=%s", image_url)
+        # Never the image's whole address in a log line: it can carry credentials or a signed token.
+        logger.info("[WordPress Media Upload] called image=%s", _loggable_url(image_url))
 
         stage = "download"
         try:
@@ -992,7 +1022,7 @@ class WordPressPublisher:
             )
             logger.info(
                 "[WordPress Media Upload] download_final_url=%s bytes=%s",
-                image_response.url,
+                _loggable_url(image_response.url),
                 len(image_response.content),
             )
 
@@ -1007,8 +1037,8 @@ class WordPressPublisher:
                     f"body_preview={preview!r})"
                 )
                 logger.error(
-                    "[WordPress Media Upload] validation_failed image_url=%s reason=%s",
-                    image_url,
+                    "[WordPress Media Upload] validation_failed image=%s reason=%s",
+                    _loggable_url(image_url),
                     reason,
                 )
                 raise RextExternalServiceException(message=reason, service_name="WordPress")
@@ -1142,39 +1172,39 @@ class WordPressPublisher:
                     )
             return {"media_id": media_id, "url": media_url}
 
+        # The failures below name the image by _loggable_url, and httpx's own messages, which carry
+        # the whole requested URL, pass through _redact_urls. None logs a traceback or chains the
+        # httpx error, since either would print that URL again (for this log line or a caller's).
         except httpx.TimeoutException as e:
-            reason = (
-                f"Featured image {stage} timed out for "
-                f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}; "
+            reason = _redact_urls(
+                f"Featured image {stage} timed out for {_loggable_url(image_url)}; "
                 f"error={type(e).__name__}({e!r}); cause={e.__cause__!r}"
             )
-            logger.exception("[WordPress Media Upload] failed reason=%s", reason)
+            logger.error("[WordPress Media Upload] failed reason=%s", reason)
             raise ExternalServiceTimeoutException(
                 service_name="WordPress Media", timeout_seconds=60
-            ) from e
+            ) from None
         except httpx.NetworkError as e:
-            reason = (
+            reason = _redact_urls(
                 f"Featured image {stage} network connection failed for "
-                f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path} "
+                f"{_loggable_url(image_url)} "
                 f"after 3 attempts; error={type(e).__name__}({e!r}); "
                 f"cause={e.__cause__!r}"
             )
-            logger.exception(
-                "[WordPress Media Upload] failed image_url=%s reason=%s",
-                image_url,
-                reason,
-            )
+            logger.error("[WordPress Media Upload] failed reason=%s", reason)
             raise RextExternalServiceException(
                 message=reason,
                 service_name="WordPress",
-            ) from e
+            ) from None
         except httpx.HTTPStatusError as e:
             body = e.response.text[:4000] if e.response is not None else ""
-            reason = f"Image request failed: {e}; body={body}"
-            logger.exception(
-                "[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason
+            reason = _redact_urls(f"Image request failed: {e}; body={body}")
+            logger.error(
+                "[WordPress Media Upload] failed image=%s reason=%s",
+                _loggable_url(image_url),
+                reason,
             )
-            raise RextExternalServiceException(message=reason, service_name="WordPress") from e
+            raise RextExternalServiceException(message=reason, service_name="WordPress") from None
         except RextExternalServiceException:
             raise
         except SSRFValidationError as e:
@@ -1183,18 +1213,24 @@ class WordPressPublisher:
             )
             # The host only: the URL's netloc can carry a username and password.
             logger.warning(
-                "[WordPress Media Upload] refused host=%s reason=%s", parsed_url.hostname, e
+                "[WordPress Media Upload] refused host=%s reason=%s",
+                parsed_url.hostname,
+                _redact_urls(str(e)),
             )
-            raise RextExternalServiceException(message=reason, service_name="WordPress") from e
+            raise RextExternalServiceException(message=reason, service_name="WordPress") from None
         except Exception as e:
-            reason = (
+            reason = _redact_urls(
                 f"Unexpected featured image {stage} error: "
                 f"{type(e).__name__}({e!r}); cause={e.__cause__!r}"
             )
-            logger.exception(
-                "[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason
+            # Where it failed, without the exceptions' own text (traceback.format_tb lists frames only).
+            logger.error(
+                "[WordPress Media Upload] failed image=%s reason=%s\n%s",
+                _loggable_url(image_url),
+                reason,
+                "".join(traceback.format_tb(e.__traceback__)),
             )
-            raise RextExternalServiceException(message=reason, service_name="WordPress") from e
+            raise RextExternalServiceException(message=reason, service_name="WordPress") from None
 
     async def _confirm_author(
         self,
@@ -1471,7 +1507,7 @@ class WordPressPublisher:
         image_url, images_data_alt = self._extract_feature_image(data)
         media_info = None
         if image_url:
-            logger.info("[WordPress Publish] detected featured image url=%s", image_url)
+            logger.info("[WordPress Publish] detected featured image=%s", _loggable_url(image_url))
             # Resolve alt text while the image is still in the body — the alt the
             # user typed in the editor lives on the <img>, and the inline copy is
             # stripped below before the embedded-image sync could ever see it.
@@ -1488,8 +1524,8 @@ class WordPressPublisher:
                 # A missing/broken featured image (e.g. deleted from storage)
                 # must not abort the whole publish - post without one instead.
                 logger.exception(
-                    "[WordPress Publish] failed to upload featured image url=%s; publishing without it",
-                    image_url,
+                    "[WordPress Publish] failed to upload featured image=%s; publishing without it",
+                    _loggable_url(image_url),
                 )
                 media_info = None
 
