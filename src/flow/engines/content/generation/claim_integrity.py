@@ -137,15 +137,19 @@ def _units(text: str) -> list[_Unit]:
             continue
         parts = [stripped] if _TABLE_ROW_RE.match(stripped) else _SENTENCE_SPLIT_RE.split(stripped)
         line_units: list[_Unit] = []
+        claim_at: Optional[int] = None  # the last unit that isn't only citation links
         for part in parts:
             urls = tuple(m.group(2) for m in _LINK_RE.finditer(part))
-            if line_units and _CITATION_ONLY_RE.fullmatch(part.strip()):
+            visible = _LINK_RE.sub(lambda m: m.group(1), part).strip()
+            if claim_at is not None and _CITATION_ONLY_RE.fullmatch(part.strip()):
                 # Split off by the sentence boundary: the claim must keep its own source, or it
                 # is weighed against every source and a number from another one can pass it.
-                claim = line_units[-1]
-                line_units[-1] = _Unit(claim.text, claim.cited_urls + urls)
-                continue
-            visible = _LINK_RE.sub(lambda m: m.group(1), part).strip()
+                # The links' own text stays a unit as well: a fully linked sentence
+                # ("[Contentful costs $300 per month](url).") is a claim, not only a source.
+                claim = line_units[claim_at]
+                line_units[claim_at] = _Unit(claim.text, claim.cited_urls + urls)
+            elif visible:
+                claim_at = len(line_units)
             if visible:
                 line_units.append(_Unit(visible, urls))
         units.extend(line_units)
@@ -243,6 +247,14 @@ _DENIAL_FILLERS = "been|be|being|yet|ever|personally|independently|actually|real
 _NEGATION_BEFORE_RE = re.compile(
     r"(?:\b(?:not|never)\b|n['\u2019]t\b)"
     rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
+    re.IGNORECASE,
+)
+# After a denial, a clause that asserts the test by leaving the verb out ("I haven't tested
+# it, but we have.", "…, though our team did.") is a testing claim after all. Only a bare
+# auxiliary that ends its clause counts: "but we have a checklist" asserts no test.
+_ELLIPTICAL_ASSERTION_RE = re.compile(
+    r"\b(?:but|though|although|however|yet)\b[,\s]+(?:we|i|(?:our|my)\s+team)\s+(?:have|has|did|do)\b"
+    r"(?!\s+not\b)(?:\s+(?:too|already|since))?\s*(?:[.!?,;:)\"'\u201d\u2019]|$)",
     re.IGNORECASE,
 )
 _CLIENT_OUTCOME_RE = re.compile(
@@ -555,6 +567,15 @@ def _fabricated_experience(unit: _Unit, index: _EvidenceIndex) -> Optional[str]:
         ),
         None,
     )
+    if testing is None:
+        testing = next(
+            (
+                m
+                for m in _TESTING_RE.finditer(text)
+                if _ELLIPTICAL_ASSERTION_RE.search(text[m.end() :])
+            ),
+            None,
+        )
     if testing:
         # The pipeline never runs hands-on tests, so a first-person testing claim
         # is invented unless a retrieved source describes that exact test.

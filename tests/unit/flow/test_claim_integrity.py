@@ -519,8 +519,10 @@ def test_a_real_testing_claim_is_still_caught(text, span):
 def test_a_trailing_citation_stays_with_its_sentence(text):
     # Split off, the claim lost its source and was weighed against every source instead.
     units = claim_integrity._units(text)
-    assert [u.cited_urls for u in units] == [("https://example.com/r",)]
+    assert units[0].cited_urls == ("https://example.com/r",)
     assert "73% of enterprises" in units[0].text
+    # The link's own text is still a unit, as it was before the claim took its source.
+    assert [u.text.rstrip(".") for u in units[1:]] == ["Report"]
 
 
 @pytest.mark.parametrize(
@@ -536,8 +538,59 @@ def test_several_trailing_citations_stay_with_their_sentence(citations):
     # Joined by "and", the pair read as a sentence of its own and the claim had no source.
     text = f"\u201c73% of enterprises plan to adopt a headless CMS.\u201d {citations}"
     units = claim_integrity._units(text)
-    assert [u.cited_urls for u in units] == [("https://example.com/a", "https://example.com/b")]
+    assert units[0].cited_urls == ("https://example.com/a", "https://example.com/b")
     assert "73% of enterprises" in units[0].text
+    assert len(units) == 2 and "Report A" in units[1].text and "Report B" in units[1].text
+
+
+def test_citations_in_two_pieces_both_go_to_the_claim():
+    text = (
+        "73% of enterprises plan to adopt a headless CMS. "
+        "[Report A](https://example.com/a). [Report B](https://example.com/b)."
+    )
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ("https://example.com/a", "https://example.com/b")
+    assert [u.cited_urls for u in units[1:]] == [
+        ("https://example.com/a",),
+        ("https://example.com/b",),
+    ]
+
+
+def test_a_fully_linked_sentence_is_still_weighed():
+    # Read as a trailing citation only, its text was dropped and its price went unchecked.
+    text = "See pricing. [Contentful costs $300 per month](https://example.com/contentful)."
+    units = claim_integrity._units(text)
+    assert [u.text for u in units] == ["See pricing.", "Contentful costs $300 per month."]
+    assert units[1].cited_urls == ("https://example.com/contentful",)
+    claims = find_unsupported_claims(text, {})
+    assert [c.category for c in claims] == ["pricing"]
+    assert "$300" in claims[0].span
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I haven't tested it, but we have.",
+        "We haven't benchmarked the free plan, though I did.",
+        "I have not tested the enterprise tier, but our team has already.",
+    ],
+)
+def test_a_denial_followed_by_an_elliptical_assertion_is_a_claim(text):
+    claims = find_unsupported_claims(text, {})
+    assert [c.category for c in claims] == ["fabricated_experience"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We haven't tested it, but we have a checklist for when a trial opens.",
+        "We haven't tested it, but we have not ruled it out.",
+        "I haven't tested it, but our readers have.",
+        "We haven't tested it, and we do not plan to.",
+    ],
+)
+def test_a_denial_followed_by_another_clause_is_still_a_denial(text):
+    assert find_unsupported_claims(text, {}) == []
 
 
 def test_linked_names_that_open_a_sentence_are_not_a_citation():
