@@ -6,14 +6,16 @@ from urllib.parse import urlparse
 
 from langchain.messages import HumanMessage, SystemMessage
 
+from src.flow.engines.serp import serp_cache
 from src.flow.engines.serp.serp_intent_heuristics import (
     filter_paa_questions,
     filter_related_topics,
 )
 from src.flow.model.llm_manager import load_model
-from src.flow.model.structure.intent import BatchSEOIntentOutput
+from src.flow.model.structure.intent import BatchSEOIntentOutput, SEOIntentResult
 from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
 from src.flow.states.rext import REXT, SERPNORMALIZED, Competitor, IntentMatchedSerpSignals
+from src.utils.stage_timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +163,34 @@ async def _classify_competitor_intents(
     )
 
 
+async def _classify_cached(
+    query: str, domain_groups: Dict[str, dict]
+) -> Tuple[str, Dict[str, Any], List[str]]:
+    """_classify_competitor_intents, through the day's cache (serp_cache): the same keyword
+    and the same rows get the same answer without another model call."""
+    with timed_stage("intent") as timing:
+        key = serp_cache.intent_key(query, domain_groups)
+        cached = await serp_cache.read(key)
+        if cached:
+            timing["cache"] = "hit"
+            results = {d: SEOIntentResult(**r) for d, r in (cached.get("results") or {}).items()}
+            return cached["final_intent_type"], results, cached.get("suggested_keywords") or []
+        timing["cache"] = "miss"
+        final_intent_type, results_map, suggested = await _classify_competitor_intents(
+            query, domain_groups
+        )
+        if final_intent_type and final_intent_type != "UNKNOWN":
+            await serp_cache.write(
+                key,
+                {
+                    "final_intent_type": final_intent_type,
+                    "results": {d: r.model_dump() for d, r in results_map.items()},
+                    "suggested_keywords": suggested,
+                },
+            )
+        return final_intent_type, results_map, suggested
+
+
 def build_intent_matched_signals_from_competitors(
     query: str,
     primary_intent: str,
@@ -258,7 +288,7 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     llm_suggested_keywords: List[str] = []
 
     try:
-        final_intent_type, results_map, llm_suggested_keywords = await _classify_competitor_intents(
+        final_intent_type, results_map, llm_suggested_keywords = await _classify_cached(
             query, domain_groups
         )
         for domain, data in domain_groups.items():

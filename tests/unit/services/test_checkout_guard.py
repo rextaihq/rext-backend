@@ -212,6 +212,52 @@ async def test_a_repeated_checkout_reuses_the_open_one(session, monkeypatch):
     provider.create_checkout_session.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_a_checkout_with_another_affiliate_or_return_address_opens_its_own(
+    session, monkeypatch
+):
+    """#529: a repeat is the same checkout only when nothing that changes it differs."""
+    user, plan = await _user_with(session)
+    store = {}
+
+    async def cache_get(key):
+        return store.get(key)
+
+    async def cache_set(key, value, ttl=300):
+        store[key] = value
+        return True
+
+    monkeypatch.setattr(service_module.cache, "get", cache_get)
+    monkeypatch.setattr(service_module.cache, "set", cache_set)
+    service = service_module.SubscriptionService(session)
+    provider = SimpleNamespace(
+        create_customer=AsyncMock(return_value="cus_1"),
+        create_checkout_session=AsyncMock(
+            return_value=SimpleNamespace(
+                checkout_url="https://checkout.example/1", session_id="sess-1"
+            )
+        ),
+    )
+    monkeypatch.setattr(service, "payment_provider", provider)
+
+    async def checkout(affiliate=None, success="https://app.example.com/ok"):
+        return await service.create_checkout(
+            user_id=user.id,
+            plan_id=plan.id,
+            billing_period=BillingPeriod.MONTHLY,
+            success_url=success,
+            cancel_url="https://app.example.com/cancel",
+            affiliate_code=affiliate,
+        )
+
+    await checkout()
+    await checkout(affiliate="partner-1")
+    await checkout(success="https://app.example.com/other")
+    await checkout(affiliate="partner-1")  # the same as the second: reused
+
+    assert provider.create_checkout_session.await_count == 3
+
+
 async def _call(session, user_id, method, path):
     from src.api.server import app
 

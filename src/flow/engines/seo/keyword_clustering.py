@@ -9,6 +9,7 @@ from src.services.keyword_clustering_service import (
     resolve_primary_intent,
 )
 from src.services.keyword_service import KeywordExtractor
+from src.utils.stage_timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -186,14 +187,15 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
     )
 
     service = KeywordClusteringService()
-    clusters = await service.cluster_keywords(
-        keywords_data=keyword_candidates,
-        query=query,
-        primary_intent=primary_intent,
-        intent_matched_signals=intent_matched_signals,
-        content_type=content_type,
-        selected_topic=selected_topic,
-    )
+    with timed_stage("clustering", candidates=len(keyword_candidates)):
+        clusters = await service.cluster_keywords(
+            keywords_data=keyword_candidates,
+            query=query,
+            primary_intent=primary_intent,
+            intent_matched_signals=intent_matched_signals,
+            content_type=content_type,
+            selected_topic=selected_topic,
+        )
 
     return {
         "seo_result": {

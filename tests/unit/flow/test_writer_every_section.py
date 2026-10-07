@@ -301,3 +301,52 @@ def test_an_optional_legacy_sections_list_is_still_checked_by_heading():
     result = check_required_sections(_article(("##", "Something else entirely", "text")), spec)
 
     assert not result["passed"]
+
+
+# --- the writer keeps what the user approved (G70 #586, G71 #587) -------------
+
+
+def test_a_heading_the_user_reworded_is_written_word_for_word():
+    """The model's own wording replaced the user's; an unedited heading keeps its latitude."""
+    from src.flow.engines.content.review.outline_edits import apply_section_edits
+
+    rows = [{"id": f"structure.sections:{i}"} for i in range(4)]
+    rows[1]["heading"] = "What to track first"
+    outline = apply_section_edits(_blog_outline(), "blog", rows)
+    _, blocks = _model(outline, "blog")
+    generated = {
+        f"structure_{i}": {"heading": f"Model heading {i}", "markdown": f"Prose {i}."}
+        for i in range(1, 5)
+    }
+
+    body = assemble_structured_payload({"title": "T", **generated}, blocks)["body_markdown"]
+
+    assert "## What to track first" in body
+    assert "## Model heading 1" in body  # not edited by the user: the model's wording stands
+    assert "Model heading 2" not in body
+
+
+def test_a_planned_faq_section_is_the_only_place_the_faqs_go():
+    """The outline's FAQ list beside a planned FAQ section was a second required block."""
+    faqs = {"faqs": [{"question": "How often should I measure ROI?", "answer": "Monthly."}]}
+    with_section = _blog_outline(
+        sections=[*SECTIONS, ("FAQs on content marketing ROI", ["common questions"])], faqs=faqs
+    )
+    model, blocks = _model(with_section, "blog")
+
+    assert "faqs" not in model.model_fields
+    assert not any(block.key == "faqs" for block in blocks)
+    faq_field = model.model_fields["structure_5"]
+    assert "This is the article's FAQ section" in faq_field.description
+
+    without_section = _blog_outline(faqs=faqs)
+    model, _ = _model(without_section, "blog")
+    assert "faqs" in model.model_fields
+
+    # A topic that starts with "FAQ-" isn't the FAQ section: the FAQs keep their own block.
+    topical = _blog_outline(
+        sections=[*SECTIONS, ("FAQ-driven content strategy", ["answer pages"])], faqs=faqs
+    )
+    model, _ = _model(topical, "blog")
+    assert "faqs" in model.model_fields
+    assert "This is the article's FAQ section" not in model.model_fields["structure_4"].description

@@ -17,7 +17,14 @@ setting of its own, and a checkout's tests and `langgraph dev` never migrate.
   blocking work, and psycopg keeps the address's sslmode and channel_binding as given.
 - A migration that fails stops the start, so no code serves against a schema it
   doesn't match. A database newer than the image (an older image started to roll
-  back) is left alone: the image starts and says so.
+  back) is left alone: the image starts and says so. A database on a revision the
+  2026-10 squash retired never reached the preserved head, so the start refuses it.
+- A database with no subscription plan yet (a brand-new one, or one whose first seed
+  didn't finish) gets the rows every database needs from scripts/seeds once it's
+  migrated: the plans, roles and permissions, email templates and the super admin.
+  The seeds only insert what's missing; a database with plans is never seeded, nor
+  one newer than the image. They run in one transaction under the same lock, on the
+  app's own engine: all of them are kept or none, and one server seeds at a time.
 """
 
 import asyncio
@@ -32,8 +39,10 @@ from alembic.script.revision import ResolutionError
 from alembic.util import CommandError
 from sqlalchemy import create_engine, pool, text
 from sqlalchemy.engine import URL, Connection, Engine, make_url
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from alembic import command
+from src.api.database.retired_revisions import RETIRED_REVISIONS
 from src.utils.logger import logger
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -138,6 +147,12 @@ def upgrade_to_head(connection: Connection) -> Outcome:
     head = scripts.get_current_head()
     before = MigrationContext.configure(connection).get_current_revision()
     if before is not None and not _knows(scripts, before):
+        if before in RETIRED_REVISIONS:
+            raise MigrationFailed(
+                f"the database is at {before}, a revision the 2026-10 squash retired: it never "
+                f"reached the preserved head 3c9e1e5d5028. Bring it there with an image from "
+                f"before the squash, then start this one"
+            )
         return Outcome(before, before, head, ahead=True)
     if before != head:
         logger.info(f"Database migration: from {before} to {head}")
@@ -158,8 +173,8 @@ def _take_the_lock(connection: Connection) -> None:
 
 def migrate(
     url: Optional[URL] = None, *, upgrade: Callable[[Connection], Outcome] = upgrade_to_head
-) -> Optional[str]:
-    """Apply the pending migrations under the lock; returns the revision the database is at.
+) -> Outcome:
+    """Apply the pending migrations under the lock; returns where the database was and is.
 
     The lock, the migrations and their commit are one transaction, which PgBouncer's
     transaction pooling keeps on one server connection, so the lock holds there too.
@@ -197,14 +212,54 @@ def migrate(
             f"Database schema at {outcome.before}, newer than this image's head "
             f"{outcome.head} (an older image, a rollback?): starting without migrating"
         )
-        return outcome.before
-    if outcome.before == outcome.after:
+    elif outcome.before == outcome.after:
         logger.info(f"Database schema at {outcome.after}, the head: nothing to migrate")
     else:
         logger.info(f"Database migrated from {outcome.before} to {outcome.after}, the head")
-    return outcome.after
+    return outcome
+
+
+async def _has_no_plans(connection: AsyncConnection) -> bool:
+    found = await connection.execute(text("SELECT EXISTS (SELECT 1 FROM subscription_plans)"))
+    return not found.scalar()
+
+
+async def seed_a_new_database() -> bool:
+    """The rows every database needs, when it has no subscription plan yet; whether it seeded.
+
+    One transaction under the migrations' lock, on the app's own engine (PgBouncer-safe):
+    a second server waits, then finds the plans; a seed that fails keeps nothing, so the
+    next start finds no plan and seeds it all again.
+
+    Raises:
+        MigrationFailed: the seeds failed, or couldn't be checked; the next start tries again
+    """
+    from scripts.seeds.base import seeding_on
+    from scripts.seeds.run_all import run_all_seeds
+    from src.api.database.async_database import async_engine
+
+    try:
+        async with async_engine.connect() as connection, connection.begin():
+            await connection.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK}
+            )
+            if not await _has_no_plans(connection):
+                return False
+            logger.info("Database seeding: no subscription plan yet, a new database: seeding it")
+            async with seeding_on(connection):
+                await run_all_seeds()
+    except Exception as e:
+        raise MigrationFailed(f"the database's seeds could not be applied: {_summary(e)}") from None
+    logger.info("Database seeding: done")
+    return True
 
 
 async def apply_pending_migrations() -> Optional[str]:
-    """migrate() off the event loop: the server's start waits for it, nothing else does."""
-    return await asyncio.to_thread(migrate)
+    """migrate() off the event loop, then the seeds for a new database: the server's start
+    waits for both, nothing else does. A database newer than the image is never seeded:
+    this image's seeds are not its rows to write."""
+    outcome = await asyncio.to_thread(migrate)
+    if outcome.ahead:
+        return outcome.before
+    await seed_a_new_database()
+    return outcome.after

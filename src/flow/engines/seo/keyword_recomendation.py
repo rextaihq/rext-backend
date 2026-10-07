@@ -8,6 +8,7 @@ from src.flow.engines.content.generation.seo_title_rules import keyphrase_fits_a
 from src.flow.engines.serp.normalization import has_organic_results
 from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.states.rext import REXT
+from src.utils.stage_timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -209,12 +210,16 @@ async def save_keyword_research(state: REXT, config, *, runtime) -> Any:
             "timestamp": timestamp,  # Include timestamp in value
         }
 
-        # Store with unique key (keeps history)
-        await store.aput(
-            namespace=namespace,
-            key=unique_key,
-            value=data_to_store,
-        )
+        # Store with unique key (keeps history). Not indexed: the Library is listed and read
+        # by key, never searched by meaning, so the embedding the store's index would make
+        # of the whole value was an OpenAI call on every analysis for nothing (#697).
+        with timed_stage("library_save"):
+            await store.aput(
+                namespace=namespace,
+                key=unique_key,
+                value=data_to_store,
+                index=False,
+            )
         print(f"✅ Stored with unique key: {unique_key}")
 
     except Exception as e:
@@ -299,10 +304,11 @@ async def keyword_recommendation(state: REXT) -> Any:
     # only after the answer that keeps the keyword. A keyword longer than any
     # title can be gets no titles (the topic step ends the run and says so),
     # so it is not charged for them.
+    titles_paid = True
     if not is_changed and not keyphrase_fits_a_title(primary_keyword):
         logger.info("Kept keyword is longer than a title can be: titles not charged")
     elif not is_changed:
-        await charge_title_generation(serp_payload or {})
+        titles_paid = await charge_title_generation(serp_payload or {})
 
     return {
         "seo_result": {
@@ -320,6 +326,9 @@ async def keyword_recommendation(state: REXT) -> Any:
                 "error": None,
                 "is_changed": is_changed,
                 "library_key": seo_result.get(KEYWORD_RESEARCH_KEY),
+                # This answer's own verdict: a refused title charge ends the run
+                # before the titles (keyword_router, rext-control#524).
+                "titles_unpaid": not titles_paid,
             },
         },
         "serp_payload": {

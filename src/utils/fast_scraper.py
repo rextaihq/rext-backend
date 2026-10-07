@@ -16,7 +16,7 @@ import httpx
 import tldextract
 from bs4 import BeautifulSoup
 
-from src.utils.url_validator import SSRFValidationError, validate_url_for_ssrf
+from src.utils.url_validator import SSRFValidationError, public_client, validate_url_for_ssrf
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,10 @@ async def check_website_reachable(url: str) -> None:
         raise WebsiteUnreachableError("This URL is not allowed.") from exc
 
     try:
-        async with httpx.AsyncClient(
+        # Every hop, redirects included, is checked and connects only to the address checked.
+        # Certificates aren't checked here: the site only has to be one a browser opens, and a
+        # missing intermediate certificate would refuse a live site at its creation.
+        async with public_client(
             headers=REQUEST_HEADERS,
             verify=False,
             follow_redirects=True,
@@ -127,6 +130,9 @@ async def check_website_reachable(url: str) -> None:
                     head += chunk
                     if len(head) >= PARKED_SNIFF_BYTES:
                         break
+    except SSRFValidationError as exc:
+        # A redirect to a private or reserved address.
+        raise WebsiteUnreachableError("This URL is not allowed.") from exc
     except httpx.TimeoutException as exc:
         logger.info("Website reachability check timed out for %s", url)
         raise WebsiteUnreachableError(
@@ -2373,7 +2379,11 @@ async def _scrape_site(
         return blog_pages
 
     # SINGLE HTTP CLIENT CONTEXT: Kept strictly open for the entire multi-stage scrape
-    async with httpx.AsyncClient(
+    # Every page and redirect is checked and connects only to the address checked. Certificates
+    # aren't checked: competitor discovery calls this scrape with no browser fallback, and a site
+    # with an expired or incomplete chain would give it nothing. The address check doesn't rely
+    # on TLS.
+    async with public_client(
         headers=headers, verify=False, follow_redirects=True, timeout=REQUEST_TIMEOUT
     ) as client:
         home_html = await fetch(client, url, sem)

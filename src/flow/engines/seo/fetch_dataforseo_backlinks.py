@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SERPBacklinks
+from src.utils.stage_timing import timed_stage
 
 load_dotenv()
 
@@ -281,7 +282,8 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
 
     logger.info(f"Fetching DataForSEO for '{query}' @ {location_name} ({language_code})")
 
-    data = await get_dataforseo_data(query, location_name, language_code)
+    with timed_stage("keyword_overview"):
+        data = await get_dataforseo_data(query, location_name, language_code)
 
     if "keyword" not in data:
         logger.warning(

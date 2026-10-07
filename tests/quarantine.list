@@ -65,25 +65,10 @@ tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_skip_
 tests/services/test_data_retention.py::TestWebhookEventCleanup::test_cleanup_old_processed_webhook_events  # G44.13 #504: the data cleanup's own bug
 tests/services/test_data_retention.py::test_anonymize_subscriptions_uses_config_default  # G44.13 #504: the data cleanup's own bug
 tests/services/test_data_retention.py::test_cleanup_webhook_events_uses_config_default  # G44.13 #504: the data cleanup's own bug
-tests/unit/api/tool/test_new_tools.py::test_content_outline_generator
-tests/unit/api/tool/test_new_tools.py::test_headline_analyzer
-tests/unit/api/tool/test_new_tools.py::test_hreflang_duplicate_warning
-tests/unit/api/tool/test_new_tools.py::test_hreflang_generator
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[expand]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[improve clarity]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[make professional]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[more engaging]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[shorten]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[simplify]
-tests/unit/api/tool/test_tool_routes.py::test_content_idea_generator_route
-tests/unit/api/tool/test_tool_routes.py::test_hook_generator_route
-tests/unit/api/tool/test_tool_routes.py::test_question_generator_route
-tests/unit/api/tool/test_tool_routes.py::test_seo_blog_titles_route
 tests/unit/flow/test_subheading_and_meta_seo.py::test_long_meta_description_drops_a_whole_sentence_and_keeps_the_cta
 tests/unit/flow/test_subheading_and_meta_seo.py::test_meta_description_within_limit_passes_and_is_untouched[155]
 tests/unit/flow/test_subheading_and_meta_seo.py::test_schema_and_system_prompt_state_the_156_limit
 tests/unit/flow/test_title_and_onpage_seo.py::test_repair_merge_cannot_blank_meta_description_or_change_title
-tests/unit/models/test_notification_preferences_model.py::TestToDict::test_returns_correct_top_level_keys
 tests/unit/providers/email/test_factory.py::TestEmailProviderFactoryGetProvider::test_get_provider_resend
 tests/unit/providers/email/test_factory.py::TestEmailProviderFactoryInstanceManagement::test_provider_instances_isolation
 tests/unit/providers/email/test_resend_provider.py::TestResendEmailProviderErrorHandling::test_send_email_non_dict_response
@@ -122,20 +107,6 @@ tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_wor
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_email_preferences_allow
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_email_with_preferences_check
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_invitation_success
-tests/unit/services/test_email_preferences_service.py::TestCheckCanSend::test_can_send_unknown_email_type_defaults_to_true
-tests/unit/services/test_email_preferences_service.py::TestCheckCanSend::test_can_send_when_preference_enabled
-tests/unit/services/test_email_preferences_service.py::TestCheckCanSend::test_can_send_with_alias_email_type
-tests/unit/services/test_email_preferences_service.py::TestCheckCanSend::test_cannot_send_when_preference_disabled
-tests/unit/services/test_email_preferences_service.py::TestGetOrCreatePreferences::test_create_new_preferences
-tests/unit/services/test_email_preferences_service.py::TestGetOrCreatePreferences::test_get_existing_preferences
-tests/unit/services/test_email_preferences_service.py::TestGetUnsubscribeLink::test_get_unsubscribe_link
-tests/unit/services/test_email_preferences_service.py::TestGetUnsubscribeLink::test_get_unsubscribe_link_creates_preferences_if_not_exist
-tests/unit/services/test_email_preferences_service.py::TestUnsubscribe::test_unsubscribe_from_all
-tests/unit/services/test_email_preferences_service.py::TestUnsubscribe::test_unsubscribe_from_specific_types
-tests/unit/services/test_email_preferences_service.py::TestUnsubscribe::test_unsubscribe_with_invalid_token
-tests/unit/services/test_email_preferences_service.py::TestUpdatePreferences::test_update_ignores_invalid_fields
-tests/unit/services/test_email_preferences_service.py::TestUpdatePreferences::test_update_multiple_preferences
-tests/unit/services/test_email_preferences_service.py::TestUpdatePreferences::test_update_single_preference
 tests/unit/services/test_email_service.py::TestEmailServiceRetryFailedEmail::test_retry_failed_email_success
 tests/unit/services/test_email_service.py::TestEmailServiceSendEmail::test_send_email_provider_failure_with_fallback
 tests/unit/services/test_email_service.py::TestEmailServiceSendEmail::test_send_email_success
@@ -150,11 +121,6 @@ tests/unit/services/test_knowledge_service.py::TestKnowledgeServiceDeleteFileKno
 tests/unit/services/test_knowledge_service.py::TestKnowledgeServiceDeleteFileKnowledge::test_delete_file_knowledge_wrong_workspace
 tests/unit/services/test_knowledge_service.py::TestKnowledgeServiceDeleteTextKnowledge::test_delete_text_knowledge_success
 tests/unit/services/test_knowledge_service.py::TestKnowledgeServiceDeleteTextKnowledge::test_delete_text_knowledge_wrong_workspace
-tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_disabled_global_toggle
-tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_disabled_specific_flag
-tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_success
-tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_unknown_flag
-tests/unit/services/test_notification_helper.py::test_schedule_if_allowed_virtual_flag
 tests/unit/services/test_workspace_service.py::TestWorkspaceServiceCreateWorkspace::test_create_workspace_basic
 tests/unit/services/test_workspace_service.py::TestWorkspaceServiceCreateWorkspace::test_create_workspace_generates_slug
 tests/unit/services/test_workspace_service.py::TestWorkspaceServiceCreateWorkspace::test_update_workspace_keeps_slug_when_name_unchanged

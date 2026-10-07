@@ -37,7 +37,14 @@ async def test_a_bearer_header_is_accepted(monkeypatch):
     monkeypatch.setattr(dependencies, "is_token_blacklisted", not_blacklisted)
     monkeypatch.setattr(dependencies, "_ensure_active_user_session", session_ok)
 
-    user = await dependencies.get_current_user_sse(authorization="Bearer abc.def.ghi", db=None)
+    class _Session:  # the request's session; the dependency ends its read transaction
+        async def rollback(self):
+            seen["rolled_back"] = True
+
+    user = await dependencies.get_current_user_sse(
+        authorization="Bearer abc.def.ghi", db=_Session()
+    )
 
     assert seen["token"] == "abc.def.ghi"
     assert user["identity"] == "user-1"
+    assert seen["rolled_back"]

@@ -94,9 +94,22 @@ CLAIM_REPAIR_GUIDANCE: dict[str, str] = {
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
 _TABLE_ROW_RE = re.compile(r"^\s*\|")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]*-{3,}[\s:|-]*$")
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[\"'(\[*_]?[A-Z0-9])")
+# A sentence ends at . ! or ?, also when one or two closing quotes or brackets follow it
+# ("not 'lab-tested.' Our picks…", "(It said “lab-tested.”) Our picks…"): without that,
+# the next sentence's "Our" made the one before it read as a first-person testing claim.
+_CLOSERS = "[\"'\u201d\u2019)\\]]"
+_SENTENCE_SPLIT_RE = re.compile(
+    rf"(?:(?<=[.!?])|(?<=[.!?]{_CLOSERS})|(?<=[.!?]{_CLOSERS}{_CLOSERS}))"
+    r"\s+(?=[\"'(\[*_\u201c\u2018]?[A-Z0-9])"
+)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
+# A piece that is only citations ("… CMS.” [Report](url)", "… [A](url) and [B](url)") is the
+# sentence before it's source.
+_CITATION_LINK = r"\[[^\]]*\]\(https?://[^)\s]+\)"
+_CITATION_ONLY_RE = re.compile(
+    rf"{_CITATION_LINK}(?:(?:[\s,;.&]|\b[Aa]nd\b)*{_CITATION_LINK})*[\s,;.]*"
+)
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9.'+-]*")
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -123,11 +136,23 @@ def _units(text: str) -> list[_Unit]:
         if not stripped or _HEADING_RE.match(line) or _TABLE_SEPARATOR_RE.match(stripped):
             continue
         parts = [stripped] if _TABLE_ROW_RE.match(stripped) else _SENTENCE_SPLIT_RE.split(stripped)
+        line_units: list[_Unit] = []
+        claim_at: Optional[int] = None  # the last unit that isn't only citation links
         for part in parts:
             urls = tuple(m.group(2) for m in _LINK_RE.finditer(part))
             visible = _LINK_RE.sub(lambda m: m.group(1), part).strip()
+            if claim_at is not None and _CITATION_ONLY_RE.fullmatch(part.strip()):
+                # Split off by the sentence boundary: the claim must keep its own source, or it
+                # is weighed against every source and a number from another one can pass it.
+                # The links' own text stays a unit as well: a fully linked sentence
+                # ("[Contentful costs $300 per month](url).") is a claim, not only a source.
+                claim = line_units[claim_at]
+                line_units[claim_at] = _Unit(claim.text, claim.cited_urls + urls)
+            elif visible:
+                claim_at = len(line_units)
             if visible:
-                units.append(_Unit(visible, urls))
+                line_units.append(_Unit(visible, urls))
+        units.extend(line_units)
     return units
 
 
@@ -209,6 +234,27 @@ _TESTING_RE = re.compile(
     r"\b(?:tested|benchmarked|trialed|trialled|stress-tested|put\s+(?:\w+\s+){1,3}through"
     r"|hands-on\s+(?:testing|tests|review|evaluation)"
     r"|in\s+(?:my|our)\s+(?:own\s+)?(?:tests?|testing|benchmarks?|trials?))\b",
+    re.IGNORECASE,
+)
+# A testing word that the negation right before it denies ("not lab-tested", "we haven't
+# tested", "we have not personally benchmarked") discloses that no test was run: it isn't
+# a testing claim. Only words that belong inside such a denial may stand between the two,
+# with no comma, semicolon or full stop, so "we never guessed; we tested" and "without
+# hesitation, we tested" are still claims. "Without" is no denial here: "we never rank
+# products without hands-on testing" asserts the test. Nor is a word that grades the
+# testing: "we haven't fully tested every integration" says some testing was done.
+_DENIAL_FILLERS = "been|be|being|yet|ever|personally|independently|actually|really|directly|lab"
+_NEGATION_BEFORE_RE = re.compile(
+    r"(?:\b(?:not|never)\b|n['\u2019]t\b)"
+    rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
+    re.IGNORECASE,
+)
+# After a denial, a clause that asserts the test by leaving the verb out ("I haven't tested
+# it, but we have.", "…, though our team did.") is a testing claim after all. Only a bare
+# auxiliary that ends its clause counts: "but we have a checklist" asserts no test.
+_ELLIPTICAL_ASSERTION_RE = re.compile(
+    r"\b(?:but|though|although|however|yet)\b[,\s]+(?:we|i|(?:our|my)\s+team)\s+(?:have|has|did|do)\b"
+    r"(?!\s+not\b)(?:\s+(?:too|already|since))?\s*(?:[.!?,;:)\"'\u201d\u2019]|$)",
     re.IGNORECASE,
 )
 _CLIENT_OUTCOME_RE = re.compile(
@@ -511,7 +557,25 @@ def _fabricated_experience(unit: _Unit, index: _EvidenceIndex) -> Optional[str]:
     text = unit.text
     if not _FIRST_PERSON_RE.search(text):
         return None
-    testing = _TESTING_RE.search(text)
+    # The first testing word the sentence doesn't deny ("we haven't tested every product,
+    # but we tested the top five" is still a claim).
+    testing = next(
+        (
+            m
+            for m in _TESTING_RE.finditer(text)
+            if not _NEGATION_BEFORE_RE.search(text[: m.start()])
+        ),
+        None,
+    )
+    if testing is None:
+        testing = next(
+            (
+                m
+                for m in _TESTING_RE.finditer(text)
+                if _ELLIPTICAL_ASSERTION_RE.search(text[m.end() :])
+            ),
+            None,
+        )
     if testing:
         # The pipeline never runs hands-on tests, so a first-person testing claim
         # is invented unless a retrieved source describes that exact test.

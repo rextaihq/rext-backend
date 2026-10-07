@@ -10,6 +10,7 @@ authentication and carry no user, so the handlers below do not run for them.
 """
 
 import hmac
+import logging
 
 from fastapi import Security
 from fastapi.security.api_key import APIKeyHeader
@@ -19,6 +20,9 @@ from src.api.config import get_settings
 from src.api.database.async_database import get_async_db_context
 from src.api.middleware.exceptions import InvalidAPIKeyException, RextAuthenticationException
 from src.api.security.dependencies import get_current_user
+from src.api.security.run_admission import MAX_ACTIVE_RUNS, admit_run
+
+logger = logging.getLogger(__name__)
 
 # Get settings instance
 settings = get_settings()
@@ -31,6 +35,31 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 def _forbidden(detail: str = "Forbidden") -> Auth.exceptions.HTTPException:
     return Auth.exceptions.HTTPException(status_code=403, detail=detail)
+
+
+TOO_MANY_RUNS = (
+    f"You already have {MAX_ACTIVE_RUNS} articles generating. "
+    "Wait for one to finish, then start another."
+)
+
+
+async def _busy_threads(identity: str) -> set[str]:
+    """The ids of the user's threads with a run in flight.
+
+    Read through the in-process client, which skips these handlers. If they can't be
+    read, none count: the run isn't held up, and the credit checks still apply to it.
+    """
+    from langgraph_sdk import get_client
+
+    try:
+        threads = await get_client().threads.search(
+            metadata={"owner": identity}, status="busy", limit=MAX_ACTIVE_RUNS + 1
+        )
+    except Exception as exc:
+        # The class only: the error's text can carry the owner id the query was bound with.
+        logger.warning("active-run cap: could not count busy threads (%s)", type(exc).__name__)
+        return set()
+    return {str(thread.get("thread_id")) for thread in threads}
 
 
 @auth.authenticate
@@ -205,6 +234,11 @@ async def runs_need_content_create(
     )
     if not await _may_create_content(ctx.user.identity, workspace_id):
         raise _forbidden(CONTENT_CREATE_REFUSED)
+    # Starting or resuming a run starts paid work: at most MAX_ACTIVE_RUNS per user,
+    # admitted atomically so runs requested together count each other (run_admission).
+    identity = ctx.user.identity
+    if not await admit_run(identity, value.get("thread_id"), lambda: _busy_threads(identity)):
+        raise Auth.exceptions.HTTPException(status_code=429, detail=TOO_MANY_RUNS)
     _bind_to_its_user(ctx.user.identity, kwargs.get("input"))
     scope = {"owner": ctx.user.identity, "workspace_id": str(workspace_id)}
     # A run that creates its own thread (if_not_exists="create") stamps it with

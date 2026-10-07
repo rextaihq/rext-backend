@@ -46,6 +46,14 @@ def _is_public_secret(value: str) -> bool:
     )
 
 
+# Our Vercel team's (it-rx) preview deployments of the dashboard: rext-<9 letters or digits>-it-rx.vercel.app, matched
+# whole (Starlette uses fullmatch). Branch aliases (rext-app-git-<branch>-it-rx) are left out: a branch's hyphens make
+# another team whose name ends in "-it-rx" indistinguishable from ours.
+PREVIEW_ORIGIN_REGEX = r"^https://rext-[a-z0-9]{9}-it-rx\.vercel\.app$"
+# Where ALLOW_PREVIEW_ORIGINS may be on; anywhere else the settings refuse it and the server doesn't start.
+PREVIEW_ORIGIN_ENVIRONMENTS = ("staging", "development", "local")
+
+
 class Settings(HidesSecrets, BaseSettings):
     """Application settings loaded from environment variables with validation."""
 
@@ -155,6 +163,10 @@ class Settings(HidesSecrets, BaseSettings):
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="Comma-separated CORS allowed origins",
     )
+    ALLOW_PREVIEW_ORIGINS: bool = Field(
+        default=False,
+        description="Staging/development only: also accept the dashboard's Vercel preview origins (CORS)",
+    )
     CORS_ALLOWED_HEADERS: str = Field(
         default="Authorization,Content-Type,Accept,X-Request-ID,X-API-Key",
         description="Comma-separated list of allowed CORS request headers",
@@ -188,6 +200,10 @@ class Settings(HidesSecrets, BaseSettings):
     )
     FREE_TOOLS_DAILY_BUDGET_USD: float = Field(
         default=5.0, ge=0, description="Free tools: the most their model calls spend per day, US$"
+    )
+    TURNSTILE_SECRET_KEY: Optional[str] = Field(
+        default=None,
+        description="Free tools: Cloudflare Turnstile's secret key for the bot check; unset, no check",
     )
 
     # Trusted reverse proxy IPs (comma-separated)
@@ -494,6 +510,19 @@ class Settings(HidesSecrets, BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def preview_origins_never_in_production(self) -> "Settings":
+        """Refuse ALLOW_PREVIEW_ORIGINS outside staging and development, so production can't accept a preview."""
+        if (
+            self.ALLOW_PREVIEW_ORIGINS
+            and self.ENVIRONMENT.lower() not in PREVIEW_ORIGIN_ENVIRONMENTS
+        ):
+            raise ValueError(
+                f"ALLOW_PREVIEW_ORIGINS is only allowed where ENVIRONMENT is one of "
+                f"{', '.join(PREVIEW_ORIGIN_ENVIRONMENTS)}, not {self.ENVIRONMENT!r}"
+            )
+        return self
+
     @field_validator("SECRET_KEY", "REFRESH_SECRET_KEY")
     @classmethod
     def validate_secret_strength(cls, v: str, info) -> str:
@@ -545,6 +574,11 @@ class Settings(HidesSecrets, BaseSettings):
     def allowed_origins_list(self) -> List[str]:
         """Parse comma-separated ALLOWED_ORIGINS into a list."""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def allowed_origin_regex(self) -> Optional[str]:
+        """The preview origins' pattern for CORSMiddleware, when ALLOW_PREVIEW_ORIGINS is on."""
+        return PREVIEW_ORIGIN_REGEX if self.ALLOW_PREVIEW_ORIGINS else None
 
     @property
     def cors_allowed_headers_list(self) -> List[str]:
