@@ -33,7 +33,7 @@ re-exports ``Section``, so a local class of that name would shadow the canonical
 
 from typing import ClassVar, List, Literal, Optional
 
-from pydantic import BaseModel, Field, conlist
+from pydantic import BaseModel, Field, conlist, model_validator
 
 from src.flow.model.structure.outlines.common import (
     CTASection,
@@ -147,6 +147,15 @@ class ContentStructure(BaseModel):
             "directly after its H2 or a sibling H3."
         )
     )
+
+    @model_validator(mode="after")
+    def _at_most_eight_h2s(self):
+        # The 16 entries leave room for H3s, not for more main sections: past 8 H2s an outline
+        # is refused, as it was when 8 entries were the cap.
+        h2s = sum(1 for section in self.sections if section.heading_level == "H2")
+        if h2s > 8:
+            raise ValueError(f"at most 8 H2 sections, got {h2s}")
+        return self
 
 
 class BlogFAQSection(FAQSection):
