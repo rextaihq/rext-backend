@@ -18,11 +18,12 @@ Testing Strategy:
 - Assert that access is denied (404 Not Found, not 403 to avoid leaking existence)
 """
 
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -36,6 +37,7 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.content_embedding_service import ContentEmbeddingService
 from src.services.content_service import ContentService
 from src.services.member_service import MemberService
 from src.services.workspace_service import WorkspaceService
@@ -62,12 +64,28 @@ def _with_parents(*tables):
     return found
 
 
+def _tables_for_an_unmigrated_database(sync, tables) -> None:
+    """Make the tables on an empty test database only. A migrated one (CI's) is tested as
+    its migrations built it, so a table a migration lacks fails here instead of being made
+    from the models."""
+    if inspect(sync).has_table("alembic_version"):
+        return
+    Base.metadata.create_all(sync, tables=tables, checkfirst=True)
+
+
+@pytest.fixture(autouse=True)
+def no_embeddings(monkeypatch):
+    """Creating, updating or publishing content writes its embedding, which calls the
+    embedding provider: never from these tests."""
+    monkeypatch.setattr(ContentEmbeddingService, "upsert_content_embedding", AsyncMock())
+
+
 @pytest_asyncio.fixture
 async def db():
-    """The tables these tests need, inside a transaction that is rolled back.
+    """The database these tests use, inside a transaction that is rolled back.
 
     The services commit in places: each commit only releases a savepoint, so nothing
-    is left behind, on an empty test database or a migrated one.
+    is left behind.
     """
     tables = _with_parents(
         Users.__table__,
@@ -82,9 +100,7 @@ async def db():
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.connect() as connection:
         transaction = await connection.begin()
-        await connection.run_sync(
-            lambda sync: Base.metadata.create_all(sync, tables=tables, checkfirst=True)
-        )
+        await connection.run_sync(lambda sync: _tables_for_an_unmigrated_database(sync, tables))
         async with AsyncSession(
             bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
         ) as session:
