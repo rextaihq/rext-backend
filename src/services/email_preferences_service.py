@@ -85,7 +85,13 @@ def read_preference(prefs: NotificationPreferences, key: str) -> Any:
 
 
 def write_preference(prefs: NotificationPreferences, key: str, value: Any) -> bool:
-    """Set a preference, a column or a category key; False for a key that is neither."""
+    """Set a preference, a column or a category key; False for a key that is neither.
+
+    A null (an optional field a client sent as null) changes nothing and gives False: stored in
+    the JSONB, it would read as an opt-out when sending, and the columns don't take one.
+    """
+    if value is None:
+        return False
     if key in COLUMN_PREFERENCES:
         setattr(prefs, key, value)
         return True
