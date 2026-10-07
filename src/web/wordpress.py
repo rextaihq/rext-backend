@@ -77,12 +77,31 @@ def _redact_urls(text: str, *addresses: object) -> str:
     return _ADDRESS_IN_TEXT.sub(lambda match: _loggable_url(match.group(0)), text)
 
 
-# A media type as a reason may repeat it ("text/html"); anything else in the header isn't.
-_PLAIN_MEDIA_TYPE = re.compile(r"[a-z0-9][a-z0-9.+-]{0,40}/[a-z0-9][a-z0-9.+-]{0,60}")
+# A media type a reason or a log line may repeat ("text/html"). The header is the remote's text,
+# so only a known type is named, never one because of how it looks (review round 2 of #898).
+_KNOWN_MEDIA_TYPES = frozenset(
+    {
+        "application/json",
+        "application/problem+json",
+        "application/xml",
+        "application/octet-stream",
+        "text/html",
+        "text/plain",
+        "text/xml",
+        "image/avif",
+        "image/bmp",
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/svg+xml",
+        "image/tiff",
+        "image/webp",
+    }
+)
 # A log line keeps a summary of a remote server's response body, never its text (G59c,
 # revnix/rext-control#636). An error body can echo whatever the request carried, under any
 # field name: G59b's redactors (addresses, queries, S3's request details) let an
-# {"authorization": …} through. The size, a plain media type and the error code the body names
+# {"authorization": …} through. The size, a known media type and the error code the body names
 # (WordPress's "code", S3's <Code>) are what a diagnosis needs. Only the first bytes are searched,
 # and nothing is decoded whole.
 _SCANNED_BODY_BYTES = 4000
@@ -130,7 +149,7 @@ _EXPECTED_JSON_KEYS = ("id", "data", "source_url", "link", "url", "code", "messa
 
 def _body_summary(response: Optional[httpx.Response]) -> str:
     """A remote server's response body as a log line may show it: its size, its media type when
-    that's a plain one, and the error code it names when that's a known kind. Never for a person
+    that's a known one, and the error code it names when that's a known kind. Never for a person
     to read: a reason they see names the status only (G59b, revnix/rext-control#632)."""
     if response is None:
         return "no response"
@@ -140,7 +159,7 @@ def _body_summary(response: Optional[httpx.Response]) -> str:
         return "a body not read"
     parts = [f"{len(content)} bytes"]
     media_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if _PLAIN_MEDIA_TYPE.fullmatch(media_type):
+    if media_type in _KNOWN_MEDIA_TYPES:
         parts.append(media_type)
     match = _CODE_IN_BODY.search(content[:_SCANNED_BODY_BYTES])
     if match:
@@ -1161,26 +1180,23 @@ class WordPressPublisher:
             # Never forward WordPress credentials to the external image host.
             image_response = await self._download_image(image_url)
             logger.info("[WordPress Media Upload] download_status=%s", image_response.status_code)
+            # Not the image host's headers: their values are its text (review round 2 of #898).
             logger.info(
-                "[WordPress Media Upload] download_headers=%s",
-                self._redact_headers(dict(image_response.headers)),
-            )
-            logger.info(
-                "[WordPress Media Upload] download_final_url=%s bytes=%s",
+                "[WordPress Media Upload] download_final_url=%s body=%s",
                 _loggable_url(image_response.url),
-                len(image_response.content),
+                _body_summary(image_response),
             )
 
             self._raise_for_status(image_response)
 
-            content_type = image_response.headers.get("content-type", "").split(";", 1)[0].lower()
+            content_type = (
+                image_response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            )
             if not self._is_image_bytes(image_response.content, content_type):
                 # The reason names what came back, never its text: a storage or CDN error page
                 # served as 200 can echo the signed request (G59b, revnix/rext-control#632). The
-                # type is the remote's header, so only a plain media type is repeated.
-                sent = (
-                    content_type if _PLAIN_MEDIA_TYPE.fullmatch(content_type) else "no image type"
-                )
+                # type is the remote's header, so only a known media type is repeated.
+                sent = content_type if content_type in _KNOWN_MEDIA_TYPES else "another type"
                 reason = (
                     f"the image's address sent something that is not a valid image ({sent}, "
                     f"{len(image_response.content)} bytes)"
@@ -1227,7 +1243,7 @@ class WordPressPublisher:
                 logger.info(
                     "[WordPress Media Upload] request_file name=%s content_type=%s bytes=%s",
                     filename,
-                    content_type,
+                    content_type if content_type in _KNOWN_MEDIA_TYPES else "another type",
                     len(image_response.content),
                 )
                 try:
