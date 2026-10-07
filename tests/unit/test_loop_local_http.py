@@ -101,7 +101,9 @@ def test_every_chat_model_and_the_competitors_client_use_the_shared_client(monke
         llm_manager.load_humanize_model,
         llm_manager.topic_generation_model,
     ):
-        assert build().http_async_client is SHARED_ASYNC_CLIENT, build.__name__
+        model = build()
+        # The client langchain actually wired into the OpenAI SDK, not only the attribute.
+        assert model.root_async_client._client is SHARED_ASYNC_CLIENT, build.__name__
 
     from src.flow.engines.competitors import llm_client
 
