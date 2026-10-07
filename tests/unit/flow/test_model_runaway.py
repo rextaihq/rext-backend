@@ -2,6 +2,7 @@
 (rext-control#697): on staging one outline call wrote 26,402 whitespace characters in a row,
 until the token limit, and the review step opened on an empty outline."""
 
+import asyncio
 import json
 import logging
 import re
@@ -509,6 +510,57 @@ async def test_an_outline_that_cant_be_written_takes_no_credits(monkeypatch):
 
     assert result["content"]["error_code"] == PROVIDER_UNAVAILABLE_CODE
     assert not queue and charged == []
+
+
+# --- what a stop is not ---------------------------------------------------------------------------
+
+
+async def test_a_stop_by_the_watch_is_not_recorded_as_a_provider_failure(monkeypatch):
+    import src.flow.model.llm_manager as llm_manager
+
+    recorded = []
+
+    async def report(service, error):
+        recorded.append(type(error).__name__)
+
+    monkeypatch.setattr(llm_manager, "_report_ai_failure", report)
+    reporters = llm_manager._reporters("OpenAI")  # the async one, and the sync one
+
+    for reporter in reporters:
+        stopped = reporter.on_llm_error(WhitespaceRunaway("ran away"))
+        if stopped is not None:
+            await stopped
+    await asyncio.sleep(0.05)  # the sync reporter hands its report to the loop
+    assert recorded == []
+
+    # A real failure is still recorded by both: an answer cut off at the provider's limit.
+    for reporter in reporters:
+        failed = reporter.on_llm_error(_cut_off())
+        if failed is not None:
+            await failed
+    await asyncio.sleep(0.05)
+    assert recorded == ["LengthFinishReasonError", "LengthFinishReasonError"]
+
+
+async def test_the_query_only_intent_call_has_one_more_attempt_not_three(monkeypatch):
+    import src.flow.engines.serp.competitor as competitor
+
+    calls = []
+
+    class _Model:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            calls.append(messages)
+            raise WhitespaceRunaway("ran away")
+
+    monkeypatch.setattr(competitor, "load_model", lambda **_kw: _Model())
+
+    with pytest.raises(WhitespaceRunaway):
+        await competitor._classify_competitor_intents("crm for small business", {})
+
+    assert len(calls) == 2  # it used to go on to the competitors' call, and ask twice more
 
 
 # --- every structured call on the way to an article ---------------------------------------------
