@@ -40,7 +40,11 @@ from src.api.middleware.security import SecurityHeadersMiddleware
 from src.config.payment_config import payment_settings
 from src.config.storage_config import storage_settings
 from src.tasks.scheduled_tasks import shutdown_scheduled_tasks, start_scheduled_tasks
-from src.utils.ip_allowlist import proxy_trust_is_spoofable, resolve_trusted_proxy_hosts
+from src.utils.ip_allowlist import (
+    DirectPeerMiddleware,
+    proxy_trust_is_spoofable,
+    resolve_trusted_proxy_hosts,
+)
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.storage import storage_service
@@ -302,6 +306,10 @@ app.add_middleware(
 # tracker saw Traefik's 10.0.1.2 for everyone and every visitor shared one
 # per-IP budget. It never ends a request early, so CORS stays outermost.
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
+
+# Added after (so it runs before) ProxyHeadersMiddleware: it keeps the connection's
+# own peer, which the rate limiters key on under a catch-all TRUSTED_PROXY_IPS.
+app.add_middleware(DirectPeerMiddleware)
 
 # CORS middleware (MUST be added last = outermost, so it handles preflight
 # OPTIONS requests before any other middleware can intercept them)

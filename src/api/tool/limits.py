@@ -212,11 +212,14 @@ async def free_tool_size(request: Request) -> None:
 
 
 async def count_call(request: Request) -> None:
-    """Count a valid call against its visitor's limit and the budget, or refuse it."""
+    """Count a valid call against its visitor's limit and the budget, or refuse it. A model tool's
+    bot check (turnstile.py) comes first, so a refused token counts nothing."""
     global _budget_logged
     settings = get_settings()
     tool = _tool(request)
     spec = FREE_TOOLS.get(tool, FreeTool())
+    if spec.model_calls:
+        await verify_turnstile(request, _trusted_address(request))
     day, ttl = _today()
     if spec.model_calls:
         limit = settings.FREE_TOOLS_MODEL_CALLS_PER_DAY
@@ -241,15 +244,11 @@ async def count_call(request: Request) -> None:
 
 def bounded(endpoint):
     """A free tool's route: counted (count_call) once FastAPI has validated its request, before it
-    runs. A dependency would run before the validation, so an invalid request would be charged.
-    A model tool's bot check (turnstile.py) comes first, so a refused token counts nothing."""
+    runs. A dependency would run before the validation, so an invalid request would be charged."""
 
     @functools.wraps(endpoint)
     async def run(*args, **kwargs):
-        request = kwargs["request"]
-        if FREE_TOOLS.get(_tool(request), FreeTool()).model_calls:
-            await verify_turnstile(request, _trusted_address(request))
-        await count_call(request)
+        await count_call(kwargs["request"])
         return await endpoint(*args, **kwargs)
 
     run.free_tool_bounded = True

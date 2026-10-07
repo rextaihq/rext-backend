@@ -33,6 +33,7 @@ USER_WORDING: dict[str, str] = {
     "brand_placement": "Your brand mention sits on a line of its own instead of in a sentence.",
     "brand_placement_policy": "Your brand mention isn't where this kind of article puts it.",
     "brand_prominence": "Your brand's mentions don't match the prominence you chose.",
+    "brand_absent": "Your brand is named or linked, though you chose no brand mention.",
     "brand_integration_depth": "Your brand mention is too brief or too general; give it a full sentence.",
     "brand_factual_grounding": "Something said about your brand isn't in your brand details.",
     "brand_context_heuristic": "Check the tone of the sentence that mentions your brand.",
