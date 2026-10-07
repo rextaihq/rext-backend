@@ -2,6 +2,8 @@ import asyncio
 import logging
 from uuid import UUID
 
+from langchain_core.messages import HumanMessage
+
 from src.flow.engines.content.generation.focus_keyword import (
     FOCUS_KEYWORD_STATE_KEY,
     pin_focus_keyword,
@@ -21,6 +23,7 @@ from src.services.content_cluster_mapping_service import (
     format_cluster_heading_map_for_prompt,
 )
 from src.utils.credit_manager import deduct_credits
+from src.utils.stage_timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +299,106 @@ async def _fetch_known_entities(workspace_id) -> tuple[str, list]:
         return "", []
 
 
+# The workspace's reader and offer, as the outline prompt shows them (FB2.17,
+# revnix/rext-control#698): enough to steer the plan, never the whole profile.
+_PROFILE_TEXT_CHARS = 500
+_PROFILE_ITEM_CHARS = 120
+_PROFILE_LIST_ITEMS = 6
+
+
+def _profile_text(value, limit: int = _PROFILE_TEXT_CHARS) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _profile_list(value) -> list[str]:
+    """A profile list (strings, or objects such as {"name": …, "description": …}) as short lines."""
+    items: list[str] = []
+    for item in value if isinstance(value, list) else []:
+        if isinstance(item, dict):
+            item = " — ".join(str(v) for v in item.values() if isinstance(v, str) and v.strip())
+        text = _profile_text(item, _PROFILE_ITEM_CHARS)
+        if text:
+            items.append(text)
+    return items[:_PROFILE_LIST_ITEMS]
+
+
+async def _fetch_workspace_profile(workspace_id) -> dict:
+    """Who this workspace writes for and what it offers, from its brand voice profile: the
+    customer profile, target audience, about, selling position and content pillars.
+
+    The outline used only the brand name and the competitors from it, so plans were written for
+    a generic reader. Non-fatal: an empty profile leaves the outline as it was.
+    """
+    if not workspace_id:
+        return {}
+    try:
+        from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.knowledge_models.knowledge_model import BrandVoice
+        from src.utils.loop_bridge import run_on_main_loop
+
+        async def _fetch_row():
+            async with get_pooled_langgraph_db_context() as db:
+                result = await db.execute(
+                    sa_select(
+                        BrandVoice.customer_profile,
+                        BrandVoice.target_audience,
+                        BrandVoice.about,
+                        BrandVoice.selling_position,
+                        BrandVoice.content_pillar,
+                    ).where(BrandVoice.workspace_id == UUID(str(workspace_id)))
+                )
+                return result.first()
+
+        row = await run_on_main_loop(_fetch_row())
+        if row is None:
+            return {}
+        customer_profile, target_audience, about, selling_position, content_pillar = row
+        return {
+            "customer_profile": _profile_text(customer_profile),
+            "target_audience": _profile_list(target_audience),
+            "about": _profile_text(about),
+            "selling_position": _profile_text(selling_position),
+            "content_pillars": _profile_list(content_pillar),
+        }
+    except Exception as e:
+        logger.warning(f"[WorkspaceProfile] Fetch failed (non-fatal): {e}")
+        return {}
+
+
+def _format_reader_and_offer(profile: dict) -> str:
+    """The workspace's reader and offer, as the outline prompt reads them."""
+    profile = profile or {}
+    reader = [
+        f"- Customer profile: {profile['customer_profile']}"
+        if profile.get("customer_profile")
+        else "",
+        f"- Audiences: {'; '.join(profile['target_audience'])}"
+        if profile.get("target_audience")
+        else "",
+    ]
+    offer = [
+        f"- About: {profile['about']}" if profile.get("about") else "",
+        f"- What it offers: {profile['selling_position']}"
+        if profile.get("selling_position")
+        else "",
+        f"- Content pillars: {'; '.join(profile['content_pillars'])}"
+        if profile.get("content_pillars")
+        else "",
+    ]
+    reader, offer = [line for line in reader if line], [line for line in offer if line]
+    if not reader and not offer:
+        return "None available."
+    blocks = []
+    if reader:
+        blocks.append("WHO THIS IS FOR:\n" + "\n".join(reader))
+    if offer:
+        blocks.append("WHAT THE BRAND OFFERS:\n" + "\n".join(offer))
+    return "\n".join(blocks)
+
+
 async def _fetch_internal_links(outline: dict, workspace_id) -> list:
     """Return semantically related published content links for this outline."""
     if not workspace_id or not outline:
@@ -416,6 +519,73 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
     )
 
 
+# A step guide's whole body is its steps. On staging one How-To came back with one step and
+# another with none (rext-control#603); the schema can't require them without failing the run,
+# since structured output here isn't strict.
+_MIN_STEPS = 3
+
+
+def _summed_word_target(model_schema, sections: list) -> int:
+    """The sections' word budgets added up, kept inside the outline schema's own limits on
+    target_word_count (blog: 800 to 5,000). The sum replaces the target after validation, so
+    without the clamp a 16-entry blog outline could ask the writer for 12,800 words (review
+    round 3 of #890)."""
+    total = sum(s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict))
+    field = getattr(model_schema, "model_fields", {}).get("target_word_count")
+    limits = getattr(field, "metadata", None) or []
+    high = next((rule.le for rule in limits if getattr(rule, "le", None) is not None), None)
+    low = next((rule.ge for rule in limits if getattr(rule, "ge", None) is not None), None)
+    if high is not None:
+        total = min(total, high)
+    if low is not None:
+        total = max(total, low)
+    return total
+
+
+# What each step guide is built from, the least of it an outline can have, and what the second
+# attempt is asked for. A tutorial is built from its required modules: its `steps` are an optional
+# deeper breakdown, so their absence isn't a fault (review of #922).
+_STRUCTURE = {
+    "how-to-guide": (
+        "steps",
+        "step",
+        _MIN_STEPS,
+        f"{_MIN_STEPS}-10 steps, each with its title and description, in the order a reader "
+        "takes them",
+    ),
+    "tutorial": (
+        "modules",
+        "module",
+        1,
+        "its modules, each with its title and what it teaches, in the order a learner takes them",
+    ),
+}
+
+
+def _structure_count(content_type: str, outline: dict) -> int:
+    key = _STRUCTURE[content_type][0]
+    block = outline.get(key)
+    if isinstance(block, dict):
+        block = block.get(key)
+    return len(block) if isinstance(block, list) else 0
+
+
+def _thin_structure(content_type: str, outline: dict, reviewed: bool = False) -> str | None:
+    """What a generated outline is missing that makes it unusable, or None.
+
+    ``reviewed`` is a regeneration after a person's feedback: their own ask sets the length
+    ("combine it into two steps"), so only an empty structure is thin then."""
+    if content_type not in _STRUCTURE:
+        return None
+    _, name, least, _ = _STRUCTURE[content_type]
+    if reviewed:
+        least = 1
+    count = _structure_count(content_type, outline)
+    if count >= least:
+        return None
+    return f"had {count} {name}{'' if count == 1 else 's'}"
+
+
 @deduct_credits("generate_outline")
 async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
@@ -525,8 +695,11 @@ async def generate_outline(state: REXT) -> dict:
 
         # Real named entities, resolved BEFORE generation so comparison-style
         # outlines name actual products instead of inventing stand-ins.
-        known_brand_name, known_competitor_domains = await _fetch_known_entities(workspace_id)
+        (known_brand_name, known_competitor_domains), workspace_profile = await asyncio.gather(
+            _fetch_known_entities(workspace_id), _fetch_workspace_profile(workspace_id)
+        )
         known_entities = _format_known_entities(known_brand_name, known_competitor_domains)
+        reader_and_offer = _format_reader_and_offer(workspace_profile)
         logger.info(
             "[KnownEntities] brand=%r competitors=%d for content_type=%s",
             known_brand_name,
@@ -541,6 +714,7 @@ async def generate_outline(state: REXT) -> dict:
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
             known_entities=known_entities,
+            reader_and_offer=reader_and_offer,
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
             cluster_heading_map=cluster_heading_map_context,
@@ -557,8 +731,41 @@ async def generate_outline(state: REXT) -> dict:
 
         logger.info("Outline prompt formatted successfully")
 
-        generated_outline = await outline_model.ainvoke(messages)
+        with timed_stage(
+            "outline_model", regenerating=outline_rejected_reason not in (None, "", "None")
+        ):
+            generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
+
+        # Asked once more, only when the outline can't be written from: one extra model call.
+        reviewed = str(outline_rejected_reason or "None").strip().lower() not in ("", "none")
+        thin = _thin_structure(content_type, outline_dict, reviewed=reviewed)
+        if thin:
+            logger.warning("Outline %s for content_type=%s; asking once more", thin, content_type)
+            retry_note = HumanMessage(
+                content=(
+                    f"A first attempt at this outline {thin}. A {content_type} needs "
+                    f"{_STRUCTURE[content_type][3]}. Return the complete outline again with "
+                    "every one filled."
+                )
+            )
+            # The first outline stays unless the second is at least as full: a failed or thinner
+            # second attempt never costs the run what it already had.
+            try:
+                retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
+            except Exception as error:
+                # An outage is the run's to report (the handler below), not a reason to return,
+                # and charge for, an outline already known to be thin.
+                if provider_outage(error) is not None:
+                    raise
+                logger.warning(
+                    "The second outline attempt failed; keeping the first", exc_info=True
+                )
+            else:
+                if _structure_count(content_type, retried) >= _structure_count(
+                    content_type, outline_dict
+                ):
+                    outline_dict = retried
 
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
@@ -584,9 +791,7 @@ async def generate_outline(state: REXT) -> dict:
                     sections = container["sections"]
                     break
         if sections:
-            outline_dict["target_word_count"] = sum(
-                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
-            )
+            outline_dict["target_word_count"] = _summed_word_target(model_schema, sections)
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly

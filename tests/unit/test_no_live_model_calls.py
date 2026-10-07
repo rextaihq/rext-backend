@@ -56,3 +56,16 @@ def test_a_live_model_test_is_skipped_unless_asked(monkeypatch, opted_in, skippe
 
     assert [m.mark.name for m in live.added] == (["skip"] if skipped else [])
     assert plain.added == []
+
+
+def test_the_store_embeds_with_a_fake_in_unit_tests():
+    # Saving an article or a brand voice embeds it: the store's embeddings are a fake here, of the
+    # size the index is built for, so no test reaches the embeddings API.
+    from langchain_core.embeddings import DeterministicFakeEmbedding
+
+    from src.flow.store import rext_store
+
+    embeddings = rext_store.init_embeddings("openai:text-embedding-3-small")
+
+    assert isinstance(embeddings, DeterministicFakeEmbedding)
+    assert len(embeddings.embed_query("an article")) == 1536

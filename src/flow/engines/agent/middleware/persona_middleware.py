@@ -22,6 +22,7 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_outline_structure,
 )
 from src.flow.engines.content.generation.persona_relevance import persona_fits_topic
+from src.flow.engines.content.generation.requirements_spec import excluded_brand_of
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
@@ -1010,6 +1011,17 @@ Write the full article now. Every third-party claim must have an inline [text](u
         part — visible at the highest-priority point in the prompt too, not
         just once, buried in a much longer human message.
         """
+        excluded = excluded_brand_of(outline or {})
+        if excluded and not (outline or {}).get("promote_brand"):
+            # The user chose no mention (rext-control#700): said here too, at the top of the
+            # prompt, since the outline itself may still name the brand.
+            name = excluded["brand_name"]
+            return (
+                "## BRAND EXCLUSION — MANDATORY\n\n"
+                f"The user chose NO mention of {name}. Do not name {name}, or link to its site, "
+                "anywhere in the article, its call to action or its meta tags, even where the "
+                "outline names it. The human message below says how to handle those parts."
+            )
         if not outline or not outline.get("promote_brand"):
             return ""
         promo = outline.get("brand_voice_promotion") or {}

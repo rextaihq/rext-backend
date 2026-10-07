@@ -8,6 +8,7 @@ from src.flow.engines.content.generation.seo_title_rules import keyphrase_fits_a
 from src.flow.engines.serp.normalization import has_organic_results
 from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.states.rext import REXT
+from src.utils.stage_timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -209,12 +210,16 @@ async def save_keyword_research(state: REXT, config, *, runtime) -> Any:
             "timestamp": timestamp,  # Include timestamp in value
         }
 
-        # Store with unique key (keeps history)
-        await store.aput(
-            namespace=namespace,
-            key=unique_key,
-            value=data_to_store,
-        )
+        # Store with unique key (keeps history). Not indexed: the Library is listed and read
+        # by key, never searched by meaning, so the embedding the store's index would make
+        # of the whole value was an OpenAI call on every analysis for nothing (#697).
+        with timed_stage("library_save"):
+            await store.aput(
+                namespace=namespace,
+                key=unique_key,
+                value=data_to_store,
+                index=False,
+            )
         print(f"✅ Stored with unique key: {unique_key}")
 
     except Exception as e:

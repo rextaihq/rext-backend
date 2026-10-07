@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
-from src.flow.engines.content.generation import validation
+from src.flow.engines.content.generation import claim_integrity, validation
 from src.flow.engines.content.generation.brand_placement_policy import BRAND_PLACEMENT_POLICY
 from src.flow.engines.content.generation.claim_integrity import (
     find_unsupported_claims,
@@ -466,3 +466,156 @@ def test_writer_prompt_no_longer_demands_invented_experience():
 def test_humanizer_is_told_not_to_add_facts():
     assert "FACTUAL INTEGRITY" in HUMANIZE_SYSTEM_PROMPT
     assert "Add 1–2 real-feeling examples" not in HUMANIZE_SYSTEM_PROMPT
+
+
+# --- hedged and framing sentences aren't claims (G54, rext-control#491) ----------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The staging article's sentence (f82b2431), followed by a first-person one.
+        "Each tool got a score out of ten. Treat these scores as directional, not "
+        "'lab-tested.' Our picks lean toward agencies that publish weekly.",
+        "We haven't tested every plan ourselves, so read these prices as a guide.",
+        "We have not personally benchmarked these tools; treat the ratings as a starting point.",
+        "The marketing copy was explicit. (It said \u201clab-tested.\u201d) Our picks favor agencies.",
+    ],
+)
+def test_a_hedged_or_framing_sentence_is_not_a_testing_claim(text):
+    assert [c.category for c in find_unsupported_claims(text, {})] == []
+
+
+@pytest.mark.parametrize(
+    ("text", "span"),
+    [
+        ("We tested all five tools for a month before ranking them.", "tested"),
+        ("Our team benchmarked each tool on real client sites.", "benchmarked"),
+        ("There's no doubt we tested every tool on this list.", "tested"),
+        ("We haven't tested every product, but we tested the top five ourselves.", "tested"),
+        ("We never guessed; we tested every tool for a month.", "tested"),
+        ("Without hesitation, we tested every tool for a month.", "tested"),
+        ("We never rank products without hands-on testing.", "hands-on testing"),
+        # A graded denial still says some testing was done.
+        ("We have not fully tested every integration.", "tested"),
+        ("We haven't properly tested the enterprise tier.", "tested"),
+        ("We have not formally benchmarked the free plan.", "benchmarked"),
+        ("We haven't officially tested the API yet.", "tested"),
+    ],
+)
+def test_a_real_testing_claim_is_still_caught(text, span):
+    claims = find_unsupported_claims(text, {})
+    assert [(c.category, c.span) for c in claims] == [("fabricated_experience", span)]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\u201c73% of enterprises plan to adopt a headless CMS.\u201d [Report](https://example.com/r)",
+        "73% of enterprises plan to adopt a headless CMS. [Report](https://example.com/r)",
+        "73% of enterprises plan to adopt a headless CMS. [Report](https://example.com/r).",
+    ],
+)
+def test_a_trailing_citation_stays_with_its_sentence(text):
+    # Split off, the claim lost its source and was weighed against every source instead.
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ("https://example.com/r",)
+    assert "73% of enterprises" in units[0].text
+    # The link's own text is still a unit, as it was before the claim took its source.
+    assert [u.text.rstrip(".") for u in units[1:]] == ["Report"]
+
+
+@pytest.mark.parametrize(
+    "citations",
+    [
+        "[Report A](https://example.com/a) and [Report B](https://example.com/b)",
+        "[Report A](https://example.com/a), [Report B](https://example.com/b)",
+        "[Report A](https://example.com/a) & [Report B](https://example.com/b).",
+        "[Report A](https://example.com/a), and [Report B](https://example.com/b)",
+    ],
+)
+def test_several_trailing_citations_stay_with_their_sentence(citations):
+    # Joined by "and", the pair read as a sentence of its own and the claim had no source.
+    text = f"\u201c73% of enterprises plan to adopt a headless CMS.\u201d {citations}"
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ("https://example.com/a", "https://example.com/b")
+    assert "73% of enterprises" in units[0].text
+    assert len(units) == 2 and "Report A" in units[1].text and "Report B" in units[1].text
+
+
+def test_citations_in_two_pieces_both_go_to_the_claim():
+    text = (
+        "73% of enterprises plan to adopt a headless CMS. "
+        "[Report A](https://example.com/a). [Report B](https://example.com/b)."
+    )
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ("https://example.com/a", "https://example.com/b")
+    assert [u.cited_urls for u in units[1:]] == [
+        ("https://example.com/a",),
+        ("https://example.com/b",),
+    ]
+
+
+def test_a_fully_linked_sentence_is_still_weighed():
+    # Read as a trailing citation only, its text was dropped and its price went unchecked.
+    text = "See pricing. [Contentful costs $300 per month](https://example.com/contentful)."
+    units = claim_integrity._units(text)
+    assert [u.text for u in units] == ["See pricing.", "Contentful costs $300 per month."]
+    assert units[1].cited_urls == ("https://example.com/contentful",)
+    claims = find_unsupported_claims(text, {})
+    assert [c.category for c in claims] == ["pricing"]
+    assert "$300" in claims[0].span
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I haven't tested it, but we have.",
+        "We haven't benchmarked the free plan, though I did.",
+        "I have not tested the enterprise tier, but our team has already.",
+    ],
+)
+def test_a_denial_followed_by_an_elliptical_assertion_is_a_claim(text):
+    claims = find_unsupported_claims(text, {})
+    assert [c.category for c in claims] == ["fabricated_experience"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We haven't tested it, but we have a checklist for when a trial opens.",
+        "We haven't tested it, but we have not ruled it out.",
+        "I haven't tested it, but our readers have.",
+        "We haven't tested it, and we do not plan to.",
+    ],
+)
+def test_a_denial_followed_by_another_clause_is_still_a_denial(text):
+    assert find_unsupported_claims(text, {}) == []
+
+
+def test_linked_names_that_open_a_sentence_are_not_a_citation():
+    text = "We compared plans. [Ahrefs](https://ahrefs.com/x) and [Moz](https://moz.com/y) agree."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("We compared plans.", ()),
+        ("Ahrefs and Moz agree.", ("https://ahrefs.com/x", "https://moz.com/y")),
+    ]
+
+
+def test_a_sentence_that_starts_with_a_link_is_its_own():
+    text = "We compared plans. [Ahrefs](https://ahrefs.com/x) found 73% use one tool."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("We compared plans.", ()),
+        ("Ahrefs found 73% use one tool.", ("https://ahrefs.com/x",)),
+    ]
+
+
+def test_a_sentence_ends_after_a_closing_quote():
+    text = "Call it 'good enough.' We tested it. He said “done.” Then we left."
+    assert [u.text for u in claim_integrity._units(text)] == [
+        "Call it 'good enough.'",
+        "We tested it.",
+        "He said “done.”",
+        "Then we left.",
+    ]
