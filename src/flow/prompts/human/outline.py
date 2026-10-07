@@ -2,7 +2,7 @@ import re
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from src.flow.model.structure.outlines import normalize_content_type
+from src.flow.model.structure.outlines import CONTENT_TYPE_TO_MODEL, normalize_content_type
 from src.flow.prompts.system.outline import OUTLINE_GENERATION_PROMPT
 
 # H3 subsections, per content type (rext-control#603). Only blog and pillar-content outlines carry
@@ -33,6 +33,19 @@ _FEWER_AFTER = re.compile(
     r"pointless|too\s+many)|not\s+needed|(?:should|can|must)\s+go)\b",
     re.IGNORECASE,
 )
+# A request for more: a cue up to four words before the term ("add H3s", "it needs
+# subsections", "split them into sub-headings", "each tool as its own H3"), or just after it
+# ("nested headings, please", "the H3s are missing"). A mention with neither, such as "rename
+# the H3 \"Cost\"", asks nothing of the structure.
+_MORE_BEFORE = re.compile(
+    r"\b(?:add|adding|more|use|using|include|including|needs?|want|split|break|create|nest|"
+    r"missing|lacks?|lacking|give|as\s+(?:its|their)\s+own)(?:\s+[\w'-]+){0,4}\s*$",
+    re.IGNORECASE,
+)
+_MORE_AFTER = re.compile(
+    r"^\W*(?:please|would\s+help|(?:are|is)\s+missing|(?:are\s+|is\s+)?(?:needed|required))\b",
+    re.IGNORECASE,
+)
 
 _PARTS = "steps, stages, types, options, tools, or pros and cons"
 _PLACEMENT = (
@@ -48,17 +61,18 @@ def _kebab(value: str | None) -> str:
 def subsection_request(feedback: str | None) -> str | None:
     """What the reviewer's rejection reason asks of H3 subsections: "more", "fewer" or None.
 
-    Each mention is read in its sentence. Any mention that isn't a request for fewer counts as
-    asking for them, so "drop the H3 under the intro, add H3s to the tools" is "more", and the
+    Each mention is read in its sentence, and counts only with a cue either way. Any request
+    for more wins, so "drop the H3 under the intro, add H3s to the tools" is "more", and the
     model reads which ones from the feedback itself.
     """
     asks = set()
     for sentence in re.split(r"[.!?;\n]+", str(feedback or "")):
         for match in _SUBSECTION_WORDS.finditer(sentence):
-            fewer = _FEWER_BEFORE.search(sentence[: match.start()]) or _FEWER_AFTER.search(
-                sentence[match.end() :]
-            )
-            asks.add("fewer" if fewer else "more")
+            before, after = sentence[: match.start()], sentence[match.end() :]
+            if _FEWER_BEFORE.search(before) or _FEWER_AFTER.search(after):
+                asks.add("fewer")
+            elif _MORE_BEFORE.search(before) or _MORE_AFTER.search(after):
+                asks.add("more")
     return "more" if "more" in asks else "fewer" if asks else None
 
 
@@ -75,6 +89,9 @@ def outline_subsection_rule(
     where the schema can hold them (a listicle's too); feedback asking for fewer is followed.
     """
     kind = normalize_content_type(content_type) or "blog"
+    # A type the outline models don't know is written on the blog schema (get_outline_model),
+    # so it gets the blog's rule.
+    kind = kind if kind in CONTENT_TYPE_TO_MODEL else "blog"
     raw = _kebab(raw_content_type)
     # Whether the schema can hold H3s, apart from whether this article should have them: a
     # listicle runs on the blog schema, so feedback asking for H3s there can still be met.
