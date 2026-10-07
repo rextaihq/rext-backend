@@ -15,7 +15,8 @@ async def library_router(state: REXT) -> str:
 
     Also gates the whole run on credits before any billed stage runs: if the
     user can't afford a full article, route straight to END instead of
-    burning SERP/outline/etc. calls before failing midway.
+    burning SERP/outline/etc. calls before failing midway. If the balance
+    can't be read, the run doesn't start either (credit_check_failed).
     """
     serp_payload = state.get("serp_payload", {})
     user_id = serp_payload.get("user_id") or state.get("user_id")
@@ -24,50 +25,59 @@ async def library_router(state: REXT) -> str:
     if user_id:
         from src.utils.credit_manager import (
             STAGE_CREDITS,
+            InsufficientCreditsError,
             _emit_credit_event,
             _get_balance,
             notify_credit_owner,
         )
 
+        # The start check fails closed: a run whose credits can't be read doesn't
+        # start, since parallel runs would otherwise spend past an unread balance.
+        total_cost = sum(STAGE_CREDITS.values())
         try:
             uid = UUID(str(user_id))
             wid = UUID(str(workspace_id)) if workspace_id else None
-            total_cost = sum(STAGE_CREDITS.values())
             balance = await _get_balance(uid, workspace_id=wid)
-            if balance < total_cost:
-                logger.warning(
-                    "Blocking run: need %d credits for a full article, have %d (user=%s, workspace=%s)",
-                    total_cost,
-                    balance,
-                    uid,
-                    wid,
-                )
-                _emit_credit_event(balance, "pipeline_start", total_cost, step="credits.exhausted")
-                await notify_credit_owner(
-                    uid, wid, exceeded=True, balance=balance, required=total_cost
-                )
-                return "insufficient_credits"
-
-            from src.services.notification_helper import notify_now
-
-            # A Library start announces itself once its item has loaded
-            # (load_library_item): a refused one never started.
-            if serp_payload.get("is_library"):
-                return "load_library_item"
-
-            await notify_now(
-                user_id=uid,
-                pref_flag="gen_started",
-                message=f'Generating content for "{serp_payload.get("query") or "your keyword"}".',
-                payload={"query": serp_payload.get("query")},
-                workspace_id=wid,
-            )
-        except (ValueError, AttributeError):
-            logger.warning(
-                "library_router: invalid user_id %s or workspace_id %s", user_id, workspace_id
-            )
+        except InsufficientCreditsError as exc:
+            # Not a member of the workspace whose credits would pay.
+            logger.warning("Blocking run: %s (user=%s, workspace=%s)", exc, user_id, workspace_id)
+            return "insufficient_credits"
         except Exception as exc:
-            logger.warning("library_router credit check failed: %s — proceeding", exc)
+            logger.warning(
+                "Blocking run: the credit check failed (user=%s, workspace=%s): %s",
+                user_id,
+                workspace_id,
+                exc,
+            )
+            return "credit_check_failed"
+
+        if balance < total_cost:
+            logger.warning(
+                "Blocking run: need %d credits for a full article, have %d (user=%s, workspace=%s)",
+                total_cost,
+                balance,
+                uid,
+                wid,
+            )
+            _emit_credit_event(balance, "pipeline_start", total_cost, step="credits.exhausted")
+            await notify_credit_owner(uid, wid, exceeded=True, balance=balance, required=total_cost)
+            return "insufficient_credits"
+
+        # A Library start announces itself once its item has loaded
+        # (load_library_item): a refused one never started.
+        if not serp_payload.get("is_library"):
+            try:
+                from src.services.notification_helper import notify_now
+
+                await notify_now(
+                    user_id=uid,
+                    pref_flag="gen_started",
+                    message=f'Generating content for "{serp_payload.get("query") or "your keyword"}".',
+                    payload={"query": serp_payload.get("query")},
+                    workspace_id=wid,
+                )
+            except Exception as exc:
+                logger.warning("library_router: the start notification failed: %s", exc)
 
     is_library = serp_payload.get("is_library", False)
 
