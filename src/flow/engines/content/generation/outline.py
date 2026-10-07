@@ -735,6 +735,9 @@ async def generate_outline(state: REXT) -> dict:
         messages = prompt_template.format_messages(
             content_type=content_type,
             topic=topic,
+            # The reader rule names "whoever types the Focus Keyword"; a title the user wrote
+            # may not contain it, so the prompt states it.
+            focus_keyword=focus_keyword or topic,
             related_topics=", ".join(related_topics),
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),

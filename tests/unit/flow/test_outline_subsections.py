@@ -217,6 +217,7 @@ def _prompt_values(**overrides):
     values = {
         "content_type": "blog",
         "topic": "Email marketing for small businesses",
+        "focus_keyword": "email marketing for small businesses",
         "related_topics": "",
         "questions": "",
         "competitors_context": "",

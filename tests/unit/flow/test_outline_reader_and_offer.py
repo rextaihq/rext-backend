@@ -119,6 +119,11 @@ async def test_the_outline_is_planned_for_the_workspaces_reader_and_offer(outlin
     assert "What it offers: Researched, cited drafts" in human
     # The reader is the searcher, narrowed toward the site's customers; never their list copied.
     assert "WRITE FOR THE PERSON SEARCHING THIS KEYWORD, AS THIS SITE'S CUSTOMER" in human
+    assert "the reader is whoever types the Focus Keyword above" in human
+    # The keyword itself is stated: a title the user wrote may not contain it.
+    assert (
+        "Focus Keyword (what the reader typed into the search engine):\nseo content brief" in human
+    )
     assert "`target_audience` names the searcher this article serves" in human
     assert "Never copy the site's customer list into `target_audience`" in human
     assert "LET THE INTENT SHAPE THE STRUCTURE" in human
