@@ -51,7 +51,7 @@ from src.config.payment_config import payment_settings
 from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
-from src.services.credit_grants import change_plan_credits
+from src.services.credit_grants import as_utc, change_plan_credits
 from src.services.duplicate_subscriptions import is_known_duplicate
 from src.services.notification_helper import schedule_if_allowed
 from src.utils.datetime_utils import add_months
@@ -733,14 +733,22 @@ class SubscriptionService:
             current_subscription.trial_end_date = None
 
         if new_plan.credits_per_month is not None:
-            # Keep the credit reset aligned to the existing billing-period end
-            # (provider `renews_at`); the subscription_updated webhook reconciles
-            # this afterwards. Only fall back to a calendar month if we have no
-            # anchor at all.
-            current_subscription.credits_reset_date = (
-                current_subscription.renews_at
-                or current_subscription.credits_reset_date
-                or add_months(datetime.now(timezone.utc), 1)
+            # The credits period keeps its end: the stored reset date while it's ahead (a
+            # renewal invoice moves it, and renews_at can lag until Lemon Squeezy's update
+            # arrives), else renews_at, and a calendar month only with no anchor at all. A past
+            # date would let the next spend refill the month this change has just worked out.
+            now = datetime.now(timezone.utc)
+            period_before = current_subscription.credits_reset_date
+            current_subscription.credits_reset_date = next(
+                (
+                    end
+                    for end in (
+                        current_subscription.credits_reset_date,
+                        current_subscription.renews_at,
+                    )
+                    if end and as_utc(end) > now
+                ),
+                add_months(now, 1),
             )
             # The change keeps what was used this period (F8a). A trial's credits come with
             # its first payment, so its balance stays as it is.
@@ -749,6 +757,7 @@ class SubscriptionService:
                     current_subscription,
                     current_plan.credits_per_month,
                     new_plan.credits_per_month,
+                    period_before=period_before,
                 )
 
         current_subscription.updated_at = datetime.now(timezone.utc)

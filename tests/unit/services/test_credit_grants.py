@@ -273,6 +273,8 @@ async def test_the_first_payment_judges_the_window_by_the_subscriptions_start(mo
         plan_id=uuid4(),
         status="active",
         start_date=started,
+        # A trial: it converts with this payment, so its month comes now.
+        trial_end_date=started + timedelta(days=7),
         billing_period=SimpleNamespace(value="monthly"),
         renews_at=None,
         plan=None,

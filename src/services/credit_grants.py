@@ -88,7 +88,10 @@ _PLAN_CHANGE = "plan_change_credits"
 
 
 def change_plan_credits(
-    subscription: UserSubscription, old_monthly: Optional[int], new_monthly: int
+    subscription: UserSubscription,
+    old_monthly: Optional[int],
+    new_monthly: int,
+    period_before: Optional[datetime] = None,
 ) -> None:
     """Set the balance for a plan change within a billing period (F8a, the founder's rule,
     2026-10-07): the new plan's monthly credits minus the credits already used this period,
@@ -98,15 +101,19 @@ def change_plan_credits(
     in the same period it is what was used then plus what was spent since, so switching down to
     a smaller plan and back gives nothing back. With the old plan's credits unknown, nothing
     counts as used. Grants (an offer's bonus) are apart and stay.
+
+    The period's end can come from Lemon Squeezy's renews_at or from the stored reset date, so
+    a change is in the earlier change's period when that period is the end it found
+    (`period_before`, before the change moved it) or the end it leaves.
     """
-    period = (
-        as_utc(subscription.credits_reset_date).isoformat()
-        if subscription.credits_reset_date
-        else None
-    )
+
+    def key(moment: Optional[datetime]) -> Optional[str]:
+        return as_utc(moment).isoformat() if moment else None
+
+    period = key(subscription.credits_reset_date)
     left = subscription.current_credits or 0
     earlier = (subscription.subscription_metadata or {}).get(_PLAN_CHANGE) or {}
-    if period and earlier.get("period") == period:
+    if earlier.get("period") and earlier.get("period") in (period, key(period_before)):
         used = max(0, earlier["used"] + earlier["left"] - left)
     elif old_monthly is not None:
         used = max(0, old_monthly - left)

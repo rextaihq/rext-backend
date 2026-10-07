@@ -983,6 +983,93 @@ async def test_plan_changes_without_a_renewal_date_stay_in_one_period(db):
     assert await usage.get_credit_balance(user.id) == 100
 
 
+async def test_an_in_app_change_keeps_the_period_when_renews_at_lags(db, monkeypatch):
+    """After a renewal invoice (no renews_at), the stored reset date is the period's end and
+    renews_at still the last one. The change keeps the reset date ahead, so the next spend
+    doesn't refill the month it has just worked out."""
+    user, ls_id, _, growth, now, _ = await _starter_spent(db, 300)
+    subscription = await _subscription_of(db, ls_id)
+    subscription.renews_at = (now - timedelta(days=1)).replace(tzinfo=None)  # lagging
+    subscription.credits_reset_date = now + timedelta(days=29)
+    await db.flush()
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+    usage = UsageTrackingService(db)
+
+    await service.upgrade(user.id, growth.id)
+    assert await usage.consume_credits(user.id, 1)
+
+    assert await usage.get_credit_balance(user.id) == 699  # 1,000 less 300, less 1
+
+
+async def test_a_paid_start_from_before_the_marker_gets_no_second_month_from_its_invoice(db):
+    """Created paid before the marker existed, its first invoice processed after: the month
+    it opened with isn't given again over what was spent."""
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    await handle_subscription_created(
+        _subscription_event(user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=now),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    subscription.subscription_metadata = {
+        k: v for k, v in subscription.subscription_metadata.items() if k != "start_month_given"
+    }
+    await db.flush()
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 300)
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=1), billing_reason="initial"),
+        None,
+        db,
+    )
+
+    assert await usage.get_credit_balance(user.id) == 700
+
+
+async def test_an_in_app_change_then_lemon_squeezys_change_back_stay_in_one_period(db, monkeypatch):
+    """The dashboard's change keeps the stored period end; Lemon Squeezy's next change brings
+    its renews_at. Both are one period: 900 spent, down to Starter and back up leaves 100."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    period_end = now + timedelta(days=27)
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            growth.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=3),
+            renews_at=period_end,
+        ),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    subscription.credits_reset_date = period_end - timedelta(hours=5)  # a renewal invoice's
+    await db.flush()
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 900)
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+
+    await service.upgrade(user.id, starter.id)
+    assert await usage.get_credit_balance(user.id) == 0
+    await _change_plan(db, user, ls_id, growth, at=now - timedelta(hours=1), period_end=period_end)
+
+    assert await usage.get_credit_balance(user.id) == 100
+
+
 async def test_a_cancelled_plan_keeps_access_until_its_end_then_expires(db):
     from src.services.webhook_handlers.subscription_handlers import (
         handle_subscription_cancelled,
