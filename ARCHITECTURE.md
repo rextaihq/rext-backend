@@ -12,7 +12,7 @@ A LangGraph server that mounts a FastAPI application as its HTTP app (`langgraph
 - **Start-up** (`src/api/server.py`, the lifespan): Sentry, the pending Alembic migrations (in the image only, below), the Redis cache, Lemon Squeezy's plan variant ids synced from the environment into `subscription_plans`, the APScheduler jobs (`src/tasks/scheduled_tasks.py`, `src/api/tasks/`: trials, grace periods, dunning, usage roll-ups, webhook reprocessing), the MinIO check, the vector store. Middleware: proxy headers, request ids, structlog, Sentry user context, the error handler, security headers, the rate limiter, CORS with explicit origins.
 
 ```text
-main.py                     builds the graph (main:graph); agent.py and agent/ are unused leftovers
+main.py                     builds the graph (main:graph)
 server.py                   the API alone, without the graph
 langgraph.json              the graph, the HTTP app, the checkpointer's 3-day TTL, the store, the image's extra build lines
 src/api/
@@ -43,7 +43,7 @@ src/services/               the business logic: subscriptions, trials, credits a
 src/providers/              payment (Lemon Squeezy) and email providers
 src/web/                    the WordPress publisher and the Shopify connector and bridge
 src/utils/credit_manager.py every billed stage and its cost; the only place credits are charged
-scripts/                    db.py (reset, migrate, seed, status, store), check_imports.py, audits and one-off fixes
+scripts/                    db.py (reset, migrate, seed, status, store), check_imports.py, env_example.py (.env.example from the settings), audits and one-off fixes
 tests/                      pytest; tests/conftest.py needs a real PostgreSQL; the coverage floor is 57 %
 rext/                       the Shopify app (Node), built and deployed by the same workflows
 ```
