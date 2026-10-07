@@ -17,7 +17,7 @@ Does NOT:
 """
 
 import re
-from asyncio import create_task
+from asyncio import create_task, sleep, wait_for
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -52,13 +52,19 @@ from src.utils.storage import resolve_avatar_url, resolve_media_url
 
 # Track background pipeline tasks to prevent garbage collection
 _background_tasks: set = set()
+# The operation ids of the pipeline runs this process is running now.
+_live_operations: set = set()
 
 # The workspace pipeline runs as a task inside this process, with no queue behind it, so a
 # restart or a deploy ends a run without a word. A run recorded as running is gone once it
 # started before this process did, or once it has outlived any real run (the pipeline's own
-# budget is 90 seconds).
+# budget is 90 seconds). A run this process is still running is never gone: it is cut off at
+# the same limit instead (_run_pipeline_recorded), so a retry can't start beside it.
 _PROCESS_STARTED_AT = datetime.now(timezone.utc)
 _PIPELINE_RUN_LIMIT = timedelta(minutes=10)
+# How long a run's end waits for the request that created its row to commit it.
+_RECORD_ATTEMPTS = 15
+_RECORD_RETRY_SECONDS = 2.0
 
 
 def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
@@ -70,10 +76,14 @@ def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
     if status is None:
         return None
     started_at = workspace.pipeline_started_at
-    if status == "running" and (
-        started_at is None
-        or started_at < _PROCESS_STARTED_AT
-        or datetime.now(timezone.utc) - started_at > _PIPELINE_RUN_LIMIT
+    if (
+        status == "running"
+        and workspace.pipeline_operation_id not in _live_operations
+        and (
+            started_at is None
+            or started_at < _PROCESS_STARTED_AT
+            or datetime.now(timezone.utc) - started_at > _PIPELINE_RUN_LIMIT
+        )
     ):
         status = "interrupted"
     return {
@@ -92,19 +102,37 @@ def _mark_pipeline_started(workspace: WorkspaceModel, operation_id: str) -> None
 async def _record_pipeline_end(
     db: AsyncSession, workspace_id: UUID, operation_id: str, status: str
 ) -> None:
-    """Write how a run ended, unless a newer run has taken its place on the row. Never raises:
-    the run's outcome is logged already, and a row left running reads as interrupted."""
+    """Write how a run ended, unless a newer run has taken its place on the row. A creation run
+    can end before the request that created its row has committed it, so while the row isn't
+    there yet this waits for it (up to about half a minute). Never raises: the run's outcome is
+    logged already, and a row left running reads as interrupted."""
     try:
-        await db.execute(
-            update(WorkspaceModel)
-            .where(
-                WorkspaceModel.id == workspace_id,
-                WorkspaceModel.pipeline_operation_id == operation_id,
+        for _ in range(_RECORD_ATTEMPTS):
+            result = await db.execute(
+                update(WorkspaceModel)
+                .where(
+                    WorkspaceModel.id == workspace_id,
+                    WorkspaceModel.pipeline_operation_id == operation_id,
+                )
+                .values(pipeline_status=status)
+                .execution_options(synchronize_session=False)
             )
-            .values(pipeline_status=status)
-            .execution_options(synchronize_session=False)
+            await db.commit()
+            if result.rowcount:
+                return
+            current = await db.scalar(
+                select(WorkspaceModel.pipeline_operation_id).where(
+                    WorkspaceModel.id == workspace_id
+                )
+            )
+            await db.commit()
+            if current is not None:
+                return  # a newer run has the row: its own end will be recorded
+            await sleep(_RECORD_RETRY_SECONDS)
+        logger.warning(
+            "The workspace pipeline's row never appeared to record its end",
+            extra={"workspace_id": str(workspace_id), "operation_id": operation_id},
         )
-        await db.commit()
     except Exception as exc:  # noqa: BLE001 - the status is a record, never a new failure
         await db.rollback()
         logger.warning(
@@ -116,6 +144,37 @@ async def _record_pipeline_end(
                 "error": repr(exc),
             },
         )
+
+
+async def _run_pipeline_recorded(
+    db: AsyncSession, *, operation_id: str, workspace_id: UUID, user_id: UUID, url: str
+) -> None:
+    """One pipeline run with its outcome on the workspace's row: written as the run settles, before
+    its terminal event goes out (so a read on that event sees it), and "failed" for a run cut off at
+    _PIPELINE_RUN_LIMIT. Live in _live_operations meanwhile, so it never reads as interrupted."""
+
+    async def record(status: str) -> None:
+        await _record_pipeline_end(db, workspace_id, operation_id, status)
+
+    _live_operations.add(operation_id)
+    try:
+        await wait_for(
+            run_workspace_pipeline(
+                db=db,
+                operation_id=operation_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                url=url,
+                on_finished=record,
+            ),
+            timeout=_PIPELINE_RUN_LIMIT.total_seconds(),
+        )
+    except TimeoutError:
+        await db.rollback()
+        await record("failed")
+        raise
+    finally:
+        _live_operations.discard(operation_id)
 
 
 class WorkspaceService:
@@ -191,8 +250,8 @@ class WorkspaceService:
             ):
                 async with get_async_db_context() as bg_db:
                     try:
-                        await run_workspace_pipeline(
-                            db=bg_db,
+                        await _run_pipeline_recorded(
+                            bg_db,
                             operation_id=operation_id,
                             workspace_id=workspace.id,
                             user_id=user_id,
@@ -208,9 +267,7 @@ class WorkspaceService:
                             },
                             exc_info=True,
                         )
-                        await _record_pipeline_end(bg_db, workspace.id, operation_id, "failed")
                         raise
-                    await _record_pipeline_end(bg_db, workspace.id, operation_id, "completed")
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)
@@ -297,8 +354,8 @@ class WorkspaceService:
         async def run_pipeline() -> None:
             async with get_async_db_context() as bg_db:
                 try:
-                    await run_workspace_pipeline(
-                        db=bg_db,
+                    await _run_pipeline_recorded(
+                        bg_db,
                         operation_id=operation_id,
                         workspace_id=workspace_id,
                         user_id=user_id,
@@ -314,9 +371,7 @@ class WorkspaceService:
                         },
                         exc_info=True,
                     )
-                    await _record_pipeline_end(bg_db, workspace_id, operation_id, "failed")
                     raise
-                await _record_pipeline_end(bg_db, workspace_id, operation_id, "completed")
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)

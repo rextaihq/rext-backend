@@ -7,6 +7,7 @@ POST /workspaces/{id}/pipeline/retry runs it again. Checked on the test PostgreS
 rolled-back transaction, with the pipeline itself replaced (it reads a website and calls a model).
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
@@ -26,7 +27,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.dependencies import get_current_user
-from src.services import workspace_service
+from src.services import workspace_pipeline, workspace_service
 from src.services.workspace_service import WorkspaceService, pipeline_state
 from tests.conftest import TEST_DATABASE_URL
 
@@ -164,7 +165,14 @@ async def test_a_refresh_waits_for_the_run_in_progress(session, started_tasks):
 @pytest.mark.parametrize("pipeline_fails", [False, True])
 async def test_a_run_records_how_it_ended(session, started_tasks, monkeypatch, pipeline_fails):
     user, workspace = await _workspace(session, status="failed")
-    run = AsyncMock(side_effect=RuntimeError("the site timed out") if pipeline_fails else None)
+
+    # The pipeline settles its outcome through on_finished, as WorkspacePipeline.run does.
+    async def pipeline(**kwargs):
+        await kwargs["on_finished"]("failed" if pipeline_fails else "completed")
+        if pipeline_fails:
+            raise RuntimeError("the site timed out")
+
+    run = AsyncMock(side_effect=pipeline)
     monkeypatch.setattr(workspace_service, "run_workspace_pipeline", run)
 
     @asynccontextmanager
@@ -250,3 +258,117 @@ async def test_the_retry_route_and_the_detail_show_the_new_run(
 
     again = await _call(session, user, "POST", f"/{workspace.id}/pipeline/retry")
     assert again.status_code == 400
+
+
+# G20a (rext-control#672): a live run is never "interrupted", a run is cut off at the limit, the end
+# waits for its row, and the outcome is on the row before the terminal event goes out.
+
+
+@pytest.mark.asyncio
+async def test_a_live_run_past_the_limit_still_runs_and_cant_be_retried(
+    session, started_tasks, monkeypatch
+):
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(workspace_service, "_PROCESS_STARTED_AT", now - timedelta(hours=1))
+    user, workspace = await _workspace(
+        session, status="running", started_at=now - timedelta(minutes=11), operation_id="slow"
+    )
+    assert pipeline_state(workspace)["status"] == "interrupted"
+
+    monkeypatch.setattr(workspace_service, "_live_operations", {"slow"})
+    assert pipeline_state(workspace)["status"] == "running"
+    with pytest.raises(BusinessRuleViolationException, match="failed or was interrupted"):
+        await WorkspaceService(session).retry_pipeline_for_user(workspace.id, user.id)
+    assert started_tasks == []
+
+
+@pytest.mark.asyncio
+async def test_a_run_past_the_limit_is_cut_off_and_recorded_as_failed(session, monkeypatch):
+    _, workspace = await _workspace(
+        session, status="running", started_at=datetime.now(timezone.utc), operation_id="hung"
+    )
+    seen_live = []
+
+    async def hangs(**kwargs):
+        seen_live.append(kwargs["operation_id"] in workspace_service._live_operations)
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(workspace_service, "run_workspace_pipeline", hangs)
+    monkeypatch.setattr(workspace_service, "_PIPELINE_RUN_LIMIT", timedelta(seconds=0.05))
+    # The cut-off run's session is rolled back before the record; here that session also holds the
+    # fixture's tables, so the rollback is only counted.
+    rollback = AsyncMock()
+    monkeypatch.setattr(session, "rollback", rollback)
+
+    with pytest.raises(TimeoutError):
+        await workspace_service._run_pipeline_recorded(
+            session,
+            operation_id="hung",
+            workspace_id=workspace.id,
+            user_id=uuid4(),
+            url="https://a.example",
+        )
+
+    await session.refresh(workspace)
+    rollback.assert_awaited()
+    assert seen_live == [True]
+    assert "hung" not in workspace_service._live_operations
+    assert workspace.pipeline_status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_the_end_waits_for_the_row_its_request_has_not_committed_yet(monkeypatch):
+    monkeypatch.setattr(workspace_service, "_RECORD_RETRY_SECONDS", 0)
+    db = Mock()
+    # Not there yet (the creating request hasn't committed), then there.
+    db.execute = AsyncMock(side_effect=[Mock(rowcount=0), Mock(rowcount=1)])
+    db.scalar = AsyncMock(return_value=None)
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+
+    await workspace_service._record_pipeline_end(db, uuid4(), "new-run", "failed")
+
+    assert db.execute.await_count == 2
+    db.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_the_outcome_is_recorded_before_the_terminal_event(monkeypatch, fails):
+    order = []
+
+    async def on_finished(status):
+        order.append(f"recorded {status}")
+
+    async def emitted(*args, **kwargs):
+        order.append("event")
+
+    monkeypatch.setattr(workspace_pipeline, "emit_pipeline_complete", emitted)
+    monkeypatch.setattr(workspace_pipeline, "emit_step_failure", emitted)
+    monkeypatch.setattr(workspace_pipeline, "invalidate_cache_key", AsyncMock())
+    pipeline = workspace_pipeline.WorkspacePipeline(
+        db=AsyncMock(),
+        operation_id="op",
+        workspace_id=uuid4(),
+        user_id=uuid4(),
+        url="https://a.example",
+        on_finished=on_finished,
+    )
+    scrape = (
+        AsyncMock(side_effect=RuntimeError("down"))
+        if fails
+        else AsyncMock(return_value=Mock(content=""))
+    )
+    monkeypatch.setattr(pipeline, "_scrape_website", scrape)
+    for step in ("_extract_brand_voice", "_persist_brand_voice", "_embed_brand_voice"):
+        monkeypatch.setattr(pipeline, step, AsyncMock(return_value=None))
+    monkeypatch.setattr(pipeline, "_discover_competitors", AsyncMock(return_value=None))
+    monkeypatch.setattr(pipeline, "_store_favicon", AsyncMock(return_value=None))
+
+    if fails:
+        with pytest.raises(RuntimeError):
+            await pipeline.run()
+    else:
+        await pipeline.run()
+
+    assert order == [f"recorded {'failed' if fails else 'completed'}", "event"]
