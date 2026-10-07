@@ -1,53 +1,76 @@
 """
 Unit Tests for Email Helper Functions
 
-Tests the email_helpers module which provides unified email sending interface.
+The helpers render an email from its template (a workspace's own template first, for workspace
+emails), respect the recipient's preferences, and send it through EmailService now or in the
+background. The templates and the preferences service are imported where they are used, so
+they are patched at their own modules.
 """
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from src.services.email_helpers import send_auth_email, send_workspace_email
+from src.services.email_helpers import _send_email_task, send_auth_email, send_workspace_email
+
+PREFS = "src.services.email_preferences_service.EmailPreferencesService"
+AUTH = "emails.templates.auth"
+WORKSPACE = "emails.templates.workspace"
 
 
 @pytest.fixture
 def mock_db():
-    """Mock database session."""
+    """A session whose lookup of a workspace's own template finds none."""
     db = MagicMock()
+    found = MagicMock()
+    found.scalar_one_or_none.return_value = None
+    db.execute = AsyncMock(return_value=found)
     return db
 
 
 @pytest.fixture
 def sample_user_id():
-    """Sample user UUID."""
     return uuid4()
 
 
 @pytest.fixture
 def sample_workspace_id():
-    """Sample workspace UUID."""
     return uuid4()
+
+
+@pytest.fixture
+def email_service():
+    """EmailService as the helpers construct it; its send_email is what they call."""
+    with patch("src.services.email_helpers.EmailService") as service_class:
+        instance = MagicMock()
+        instance.send_email = AsyncMock()
+        service_class.return_value = instance
+        yield instance
+
+
+@pytest.fixture
+def prefs():
+    """The recipient's preferences: every email allowed, with an unsubscribe token."""
+    with patch(PREFS) as service_class:
+        instance = MagicMock()
+        instance.check_can_send = AsyncMock(return_value=True)
+        instance.get_or_create_preferences = AsyncMock(
+            return_value=SimpleNamespace(unsubscribe_token="unsub-token")
+        )
+        service_class.return_value = instance
+        yield instance
 
 
 class TestSendAuthEmail:
     """Tests for send_auth_email function."""
 
     @pytest.mark.asyncio
-    async def test_send_verification_email_success(self, mock_db, sample_user_id):
-        """Test successful verification email sending."""
-        with (
-            patch("src.services.email_helpers.EmailService") as mock_service,
-            patch("src.services.email_helpers.create_verification_email") as mock_template,
-        ):
-            # Setup mocks
-            mock_template.return_value = "<html>Verification Email</html>"
-            mock_email_service_instance = Mock()
-            mock_email_service_instance.send_email = AsyncMock()
-            mock_service.return_value = mock_email_service_instance
-
-            # Call function
+    async def test_send_verification_email_success(
+        self, mock_db, sample_user_id, email_service, prefs
+    ):
+        with patch(f"{AUTH}.create_verification_email", return_value="<html>V</html>") as template:
             result = await send_auth_email(
                 db=mock_db,
                 email_type="verification",
@@ -58,33 +81,27 @@ class TestSendAuthEmail:
                 frontend_url="https://app.rext.com",
             )
 
-            # Assertions
-            assert result is True
-            mock_template.assert_called_once_with(
-                user_name="John Doe",
-                verification_token="test-token-123",
-                frontend_url="https://app.rext.com",
-            )
-            mock_email_service_instance.send_email.assert_called_once()
-            call_args = mock_email_service_instance.send_email.call_args[1]
-            assert call_args["to"] == "test@example.com"
-            assert call_args["subject"] == "Verify Your Email Address - Rext AI"
-            assert call_args["user_id"] == sample_user_id
+        assert result is True
+        template.assert_called_once_with(
+            user_name="John Doe",
+            verification_token="test-token-123",
+            frontend_url="https://app.rext.com",
+            unsubscribe_token="unsub-token",
+        )
+        sent = email_service.send_email.call_args.kwargs
+        assert sent["to"] == "test@example.com"
+        assert sent["subject"] == "Verify Your Email Address - Rext AI"
+        assert sent["html"] == "<html>V</html>"
+        assert sent["user_id"] == sample_user_id
+        assert sent["template_type"] == "verification"
 
     @pytest.mark.asyncio
-    async def test_send_password_reset_email_success(self, mock_db, sample_user_id):
-        """Test successful password reset email sending."""
-        with (
-            patch("src.services.email_helpers.EmailService") as mock_service,
-            patch("src.services.email_helpers.create_password_reset_email") as mock_template,
-        ):
-            # Setup mocks
-            mock_template.return_value = "<html>Password Reset Email</html>"
-            mock_email_service_instance = Mock()
-            mock_email_service_instance.send_email = AsyncMock()
-            mock_service.return_value = mock_email_service_instance
-
-            # Call function
+    async def test_send_password_reset_email_success(
+        self, mock_db, sample_user_id, email_service, prefs
+    ):
+        with patch(
+            f"{AUTH}.create_password_reset_email", return_value="<html>R</html>"
+        ) as template:
             result = await send_auth_email(
                 db=mock_db,
                 email_type="password_reset",
@@ -95,28 +112,18 @@ class TestSendAuthEmail:
                 frontend_url="https://app.rext.com",
             )
 
-            # Assertions
-            assert result is True
-            mock_template.assert_called_once()
-            call_args = mock_template.call_args[1]
-            assert call_args["user_name"] == "Jane Smith"
-            assert call_args["reset_token"] == "reset-token-456"
-            assert call_args["user_email"] == "test@example.com"
+        assert result is True
+        args = template.call_args.kwargs
+        assert args["user_name"] == "Jane Smith"
+        assert args["reset_token"] == "reset-token-456"
+        assert args["user_email"] == "test@example.com"
+        assert (
+            email_service.send_email.call_args.kwargs["subject"] == "Reset Your Password - Rext AI"
+        )
 
     @pytest.mark.asyncio
-    async def test_send_welcome_email_success(self, mock_db, sample_user_id):
-        """Test successful welcome email sending."""
-        with (
-            patch("src.services.email_helpers.EmailService") as mock_service,
-            patch("src.services.email_helpers.create_welcome_email") as mock_template,
-        ):
-            # Setup mocks
-            mock_template.return_value = "<html>Welcome Email</html>"
-            mock_email_service_instance = Mock()
-            mock_email_service_instance.send_email = AsyncMock()
-            mock_service.return_value = mock_email_service_instance
-
-            # Call function
+    async def test_send_welcome_email_success(self, mock_db, sample_user_id, email_service, prefs):
+        with patch(f"{AUTH}.create_welcome_email", return_value="<html>W</html>") as template:
             result = await send_auth_email(
                 db=mock_db,
                 email_type="welcome",
@@ -126,20 +133,21 @@ class TestSendAuthEmail:
                 frontend_url="https://app.rext.com",
             )
 
-            # Assertions
-            assert result is True
-            mock_template.assert_called_once_with(
-                user_name="New User", frontend_url="https://app.rext.com"
-            )
+        assert result is True
+        template.assert_called_once_with(
+            user_name="New User",
+            frontend_url="https://app.rext.com",
+            unsubscribe_token="unsub-token",
+        )
+        assert email_service.send_email.call_args.kwargs["subject"] == "Welcome to Rext AI!"
 
     @pytest.mark.asyncio
-    async def test_send_auth_email_with_background_tasks(self, mock_db, sample_user_id):
-        """Test email sending with background tasks."""
-        with patch("src.services.email_helpers.create_verification_email") as mock_template:
-            mock_template.return_value = "<html>Email</html>"
-            mock_background_tasks = Mock()
-
-            # Call function with background_tasks
+    async def test_send_auth_email_with_background_tasks(
+        self, mock_db, sample_user_id, email_service, prefs
+    ):
+        """With background tasks the email is queued, not sent in the request."""
+        background_tasks = MagicMock()
+        with patch(f"{AUTH}.create_verification_email", return_value="<html>V</html>"):
             result = await send_auth_email(
                 db=mock_db,
                 email_type="verification",
@@ -148,43 +156,39 @@ class TestSendAuthEmail:
                 user_id=sample_user_id,
                 token="token",
                 frontend_url="https://app.rext.com",
-                background_tasks=mock_background_tasks,
+                background_tasks=background_tasks,
             )
 
-            # Assertions
-            assert result is True
-            mock_background_tasks.add_task.assert_called_once()
+        assert result is True
+        email_service.send_email.assert_not_called()
+        (task,) = background_tasks.add_task.call_args.args
+        queued = background_tasks.add_task.call_args.kwargs
+        assert task is _send_email_task
+        assert (queued["recipient_email"], queued["html"], queued["email_type"]) == (
+            "test@example.com",
+            "<html>V</html>",
+            "verification",
+        )
 
     @pytest.mark.asyncio
-    async def test_send_auth_email_invalid_type(self, mock_db, sample_user_id):
-        """Test error handling for invalid email type."""
+    async def test_send_auth_email_invalid_type(self, mock_db, sample_user_id, prefs):
         result = await send_auth_email(
             db=mock_db,
-            email_type="invalid_type",  # Invalid type
+            email_type="invalid_type",
             recipient_email="test@example.com",
             user_name="Test User",
             user_id=sample_user_id,
         )
 
-        # Should return False on error
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_auth_email_service_failure(self, mock_db, sample_user_id):
-        """Test error handling when EmailService fails."""
-        with (
-            patch("src.services.email_helpers.EmailService") as mock_service,
-            patch("src.services.email_helpers.create_verification_email") as mock_template,
-        ):
-            # Setup mocks to simulate failure
-            mock_template.return_value = "<html>Email</html>"
-            mock_email_service_instance = Mock()
-            mock_email_service_instance.send_email = AsyncMock(
-                side_effect=Exception("Email service error")
-            )
-            mock_service.return_value = mock_email_service_instance
-
-            # Call function
+    async def test_send_auth_email_service_failure(
+        self, mock_db, sample_user_id, email_service, prefs
+    ):
+        """A failure to send is reported as False, never raised to the caller."""
+        email_service.send_email.side_effect = Exception("Email service error")
+        with patch(f"{AUTH}.create_verification_email", return_value="<html>V</html>"):
             result = await send_auth_email(
                 db=mock_db,
                 email_type="verification",
@@ -195,30 +199,20 @@ class TestSendAuthEmail:
                 frontend_url="https://app.rext.com",
             )
 
-            # Should return False on error
-            assert result is False
+        assert result is False
 
 
 class TestSendWorkspaceEmail:
     """Tests for send_workspace_email function."""
 
     @pytest.mark.asyncio
-    async def test_send_workspace_invitation_success(self, mock_db, sample_workspace_id):
-        """Test successful workspace invitation email."""
-        with (
-            patch("src.services.email_helpers.EmailService") as mock_service,
-            patch("src.services.email_helpers.render_workspace_email") as mock_render,
-        ):
-            # Setup mocks
-            mock_render.return_value = {
-                "subject": "Join Our Workspace",
-                "html": "<html>Invitation Email</html>",
-            }
-            mock_email_service_instance = Mock()
-            mock_email_service_instance.send_email = AsyncMock()
-            mock_service.return_value = mock_email_service_instance
-
-            # Call function
+    async def test_send_workspace_invitation_success(
+        self, mock_db, sample_workspace_id, email_service
+    ):
+        """No user to check: the built-in template, given the workspace's id for its links."""
+        with patch(
+            f"{WORKSPACE}.create_workspace_invitation_email", return_value="<html>I</html>"
+        ) as template:
             result = await send_workspace_email(
                 db=mock_db,
                 email_type="invitation",
@@ -229,26 +223,22 @@ class TestSendWorkspaceEmail:
                 role_name="Editor",
             )
 
-            # Assertions
-            assert result is True
-            mock_render.assert_called_once()
-            mock_email_service_instance.send_email.assert_called_once()
+        assert result is True
+        context = template.call_args.kwargs
+        assert context["workspace_id"] == str(sample_workspace_id)
+        assert context["unsubscribe_token"] is None
+        assert (context["workspace_name"], context["inviter_name"]) == ("Acme Inc", "John Doe")
+        sent = email_service.send_email.call_args.kwargs
+        assert sent["subject"] == "You're invited to join Acme Inc"
+        assert (sent["to"], sent["workspace_id"]) == ("invitee@example.com", sample_workspace_id)
 
     @pytest.mark.asyncio
     async def test_send_workspace_email_with_preferences_check(
-        self, mock_db, sample_workspace_id, sample_user_id
+        self, mock_db, sample_workspace_id, sample_user_id, email_service, prefs
     ):
-        """Test that email preferences are checked before sending."""
-        with (
-            patch("src.services.email_helpers.EmailPreferencesService") as mock_prefs_service,
-            patch("src.services.email_helpers.render_workspace_email") as mock_render,
-        ):
-            # Setup mocks - preferences block email
-            mock_prefs_instance = Mock()
-            mock_prefs_instance.check_can_send = AsyncMock(return_value=False)
-            mock_prefs_service.return_value = mock_prefs_instance
-
-            # Call function with user_id (triggers preferences check)
+        """A recipient who turned the kind off gets nothing; nothing is rendered."""
+        prefs.check_can_send.return_value = False
+        with patch(f"{WORKSPACE}.create_workspace_invitation_email") as template:
             result = await send_workspace_email(
                 db=mock_db,
                 email_type="invitation",
@@ -258,34 +248,18 @@ class TestSendWorkspaceEmail:
                 workspace_name="Test Workspace",
             )
 
-            # Assertions
-            assert result is False  # Email should be blocked
-            mock_prefs_instance.check_can_send.assert_called_once_with(
-                sample_user_id, "invitation", mock_db
-            )
-            mock_render.assert_not_called()  # Email should not be rendered
+        assert result is False
+        prefs.check_can_send.assert_awaited_once_with(sample_user_id, "invitation")
+        template.assert_not_called()
+        email_service.send_email.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_send_workspace_email_preferences_allow(
-        self, mock_db, sample_workspace_id, sample_user_id
+        self, mock_db, sample_workspace_id, sample_user_id, email_service, prefs
     ):
-        """Test email sending when preferences allow."""
-        with (
-            patch("src.services.email_helpers.EmailPreferencesService") as mock_prefs_service,
-            patch("src.services.email_helpers.EmailService") as mock_service,
-            patch("src.services.email_helpers.render_workspace_email") as mock_render,
-        ):
-            # Setup mocks - preferences allow email
-            mock_prefs_instance = Mock()
-            mock_prefs_instance.check_can_send = AsyncMock(return_value=True)
-            mock_prefs_service.return_value = mock_prefs_instance
-
-            mock_render.return_value = {"subject": "Test Email", "html": "<html>Test</html>"}
-            mock_email_service_instance = Mock()
-            mock_email_service_instance.send_email = AsyncMock()
-            mock_service.return_value = mock_email_service_instance
-
-            # Call function
+        with patch(
+            f"{WORKSPACE}.create_role_changed_email", return_value="<html>R</html>"
+        ) as template:
             result = await send_workspace_email(
                 db=mock_db,
                 email_type="role_changed",
@@ -295,33 +269,45 @@ class TestSendWorkspaceEmail:
                 workspace_name="Test Workspace",
             )
 
-            # Assertions
-            assert result is True
-            mock_prefs_instance.check_can_send.assert_called_once()
-            mock_render.assert_called_once()
-            mock_email_service_instance.send_email.assert_called_once()
+        assert result is True
+        assert template.call_args.kwargs["unsubscribe_token"] == "unsub-token"
+        sent = email_service.send_email.call_args.kwargs
+        assert sent["subject"] == "Your role in Test Workspace has been updated"
+        assert sent["user_id"] == sample_user_id
+
+    @pytest.mark.asyncio
+    async def test_send_workspace_email_uses_the_workspaces_own_template(
+        self, mock_db, sample_workspace_id, email_service
+    ):
+        """A workspace's own (admin-made) template wins over the built-in one."""
+        own = SimpleNamespace(
+            subject="Welcome to {{workspace_name}}", body="<p>Hi from {{workspace_name}}</p>"
+        )
+        mock_db.execute.return_value.scalar_one_or_none.return_value = own
+        with patch(f"{WORKSPACE}.create_workspace_invitation_email") as built_in:
+            result = await send_workspace_email(
+                db=mock_db,
+                email_type="invitation",
+                workspace_id=sample_workspace_id,
+                recipient_email="test@example.com",
+                workspace_name="Acme",
+            )
+
+        assert result is True
+        built_in.assert_not_called()
+        sent = email_service.send_email.call_args.kwargs
+        assert sent["subject"] == "Welcome to Acme"
+        assert "Hi from Acme" in sent["html"]
 
     @pytest.mark.asyncio
     async def test_send_workspace_email_fallback_to_python_template(
-        self, mock_db, sample_workspace_id
+        self, mock_db, sample_workspace_id, email_service
     ):
-        """Test fallback to Python template when DB template fails."""
-        with (
-            patch("src.services.email_helpers.EmailService") as mock_service,
-            patch("src.services.email_helpers.render_workspace_email") as mock_render,
-            patch(
-                "src.services.email_helpers.create_workspace_invitation_email"
-            ) as mock_python_template,
-        ):
-            # Setup mocks - DB template fails, Python template succeeds
-            mock_render.side_effect = Exception("DB template error")
-            mock_python_template.return_value = "<html>Fallback Email</html>"
-
-            mock_email_service_instance = Mock()
-            mock_email_service_instance.send_email = AsyncMock()
-            mock_service.return_value = mock_email_service_instance
-
-            # Call function
+        """The workspace-template lookup failing falls back to the built-in template."""
+        mock_db.execute.side_effect = Exception("DB template error")
+        with patch(
+            f"{WORKSPACE}.create_workspace_invitation_email", return_value="<html>F</html>"
+        ) as built_in:
             result = await send_workspace_email(
                 db=mock_db,
                 email_type="invitation",
@@ -330,26 +316,20 @@ class TestSendWorkspaceEmail:
                 workspace_name="Test Workspace",
             )
 
-            # Assertions
-            assert result is True
-            mock_render.assert_called_once()  # Tried DB template first
-            mock_python_template.assert_called_once()  # Fell back to Python template
-            mock_email_service_instance.send_email.assert_called_once()
+        assert result is True
+        built_in.assert_called_once()
+        assert email_service.send_email.call_args.kwargs["html"] == "<html>F</html>"
 
     @pytest.mark.asyncio
-    async def test_send_workspace_email_complete_failure(self, mock_db, sample_workspace_id):
-        """Test error handling when both DB and Python templates fail."""
-        with (
-            patch("src.services.email_helpers.render_workspace_email") as mock_render,
-            patch(
-                "src.services.email_helpers.create_workspace_invitation_email"
-            ) as mock_python_template,
+    async def test_send_workspace_email_complete_failure(
+        self, mock_db, sample_workspace_id, email_service
+    ):
+        """No template at all: reported as False, and nothing is sent."""
+        mock_db.execute.side_effect = Exception("DB template error")
+        with patch(
+            f"{WORKSPACE}.create_workspace_invitation_email",
+            side_effect=Exception("Python template error"),
         ):
-            # Setup mocks - both fail
-            mock_render.side_effect = Exception("DB template error")
-            mock_python_template.side_effect = Exception("Python template error")
-
-            # Call function
             result = await send_workspace_email(
                 db=mock_db,
                 email_type="invitation",
@@ -358,10 +338,5 @@ class TestSendWorkspaceEmail:
                 workspace_name="Test Workspace",
             )
 
-            # Should return False on complete failure
-            assert result is False
-
-
-# Test coverage report
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--cov=src.services.email_helpers", "--cov-report=term-missing"])
+        assert result is False
+        email_service.send_email.assert_not_called()

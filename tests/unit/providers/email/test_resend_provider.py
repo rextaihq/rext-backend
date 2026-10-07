@@ -9,6 +9,7 @@ Tests cover:
 - Connection verification
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -291,10 +292,31 @@ class TestResendEmailProviderErrorHandling:
 
         result = await provider.send_email(message)
 
-        # Should still succeed but handle gracefully
+        # A bare string is taken as the message id, so delivery events can still be matched
+        # to the log (the correlation fix of 2026-09-01); the raw response is kept as given.
         assert result.success is True
-        assert result.message_id is None
+        assert result.message_id == "string_response"
         assert result.provider_response == {"raw": "string_response"}
+
+    @pytest.mark.asyncio
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
+    async def test_send_email_object_response(self, mock_resend, mock_config):
+        """The SDK's response object gives its id"""
+        mock_config.resend_api_key = "re_test_key"
+        mock_resend.Emails.send.return_value = SimpleNamespace(id="re_msg_123")
+
+        result = await ResendEmailProvider().send_email(
+            EmailMessage(
+                to=[EmailRecipient(email="test@example.com")],
+                subject="Test",
+                html="<p>Test</p>",
+                from_email="from@rext.com",
+            )
+        )
+
+        assert result.success is True
+        assert result.message_id == "re_msg_123"
 
 
 class TestResendEmailProviderConnectionVerification:
