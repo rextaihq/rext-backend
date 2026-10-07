@@ -123,8 +123,10 @@ def _without_name(text: Any, brand_name: str) -> str:
     written, they put the name in front of the writer on every article, whatever the user
     chose about mentioning it. What the company knows is the point here, not what it is called.
     """
-    text = text if isinstance(text, str) else ""
-    name = (brand_name or "").strip()
+    # Whitespace first: a profile drafted from a site can hold "Acme  CMS", which the name
+    # ("Acme CMS") would not match, and the later clipping would close the gap again.
+    text = " ".join(text.split()) if isinstance(text, str) else ""
+    name = " ".join((brand_name or "").split())
     if not name or not text:
         return text
     pattern = r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])"
@@ -157,6 +159,11 @@ def format_expertise_for_writer(voice: dict[str, Any]) -> str:
         "- **How to use this:** write as a practitioner at this company would: choose the "
         "examples, the level of detail and the angle its customers need, and where the article "
         "touches what the company does, speak from that knowledge."
+    )
+    lines.append(
+        "- **No facts from here:** this shapes how you write, it is not a source. Do not state "
+        "the company's own numbers, clients, results or history from it. Every figure, name "
+        "and result in the article follows the evidence rules of this prompt, as before."
     )
     lines.append(
         "- **What this is not:** permission to name the company or its product, or to pitch "

@@ -299,43 +299,29 @@ def test_a_long_name_and_the_lists_are_cleared_of_it_too():
     assert "**Who it serves:** The company customers; Developers" in block
 
 
-def test_the_companys_own_statements_are_claim_evidence_without_a_mention():
+def test_the_profile_shapes_the_writing_and_is_not_a_source_of_facts():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
     from src.flow.engines.content.generation.claim_integrity import build_claim_evidence
 
-    voice = article_voice(
-        None, {**FULL_PROFILE, "about": "Acme CMS has served 500 stores since 2018."}
-    )
+    voice = article_voice(None, {**FULL_PROFILE, "about": "Acme CMS has served 500 stores."})
+    block = format_expertise_for_writer(voice)
 
+    assert "**No facts from here:** this shapes how you write, it is not a source." in block
+    assert "Do not state the company's own numbers, clients, results or history" in block
+    # So it is not claim evidence either: a figure from it is as unsupported as any other,
+    # and what may be said about the brand stays with the approved mention's own facts.
     evidence = build_claim_evidence(
         outline={}, brand_context=None, generation_meta={"article_voice": voice}
     )
-
-    # No mention was approved, so no brand is named as the subject; its statements still count.
-    assert evidence["brand_name"] == ""
-    assert evidence["brand_documents"] == [
-        "The company has served 500 stores since 2018.",
-        "The quickest way to move a marketing site off a monolith.",
-    ]
-    # With a mention approved the same text isn't listed twice.
-    promoted = build_claim_evidence(
-        outline={},
-        brand_context={"brand_name": "Acme CMS", "about": voice["about"], "selling_position": ""},
-        generation_meta={"article_voice": voice},
-    )
-    assert promoted["brand_documents"].count(voice["about"]) == 1
+    assert evidence["brand_documents"] == []
 
 
-def test_the_writers_block_carries_the_voice_then_the_expertise():
-    block = format_voice_for_writer(article_voice("Calm.", FULL_PROFILE))
+def test_the_name_is_matched_whatever_the_spacing_in_the_profile():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
 
-    voice_at = block.index("## THE BRAND'S VOICE")
-    expertise_at = block.index("## WHAT THE COMPANY BEHIND THIS SITE KNOWS AND OFFERS")
-    assert voice_at < expertise_at
-    # A profile with only the offer still reaches the writer; one with nothing adds nothing.
-    only_offer = format_voice_for_writer(article_voice(None, {"selling_position": "Fast."}))
-    assert only_offer.startswith("## WHAT THE COMPANY BEHIND THIS SITE KNOWS AND OFFERS")
-    assert format_voice_for_writer(article_voice(None, {})) == ""
+    profile = {"brand_name": "Acme  CMS", "about": "Acme   CMS builds sites.\nAcme CMS ships."}
 
+    block = format_expertise_for_writer(article_voice(None, profile))
 
-def test_the_rewrite_is_not_given_the_offer():
-    assert "monolith" not in format_voice_for_rewrite(article_voice("Calm.", FULL_PROFILE))
+    assert "Acme" not in block
+    assert "**What it does:** The company builds sites. the company ships." in block
