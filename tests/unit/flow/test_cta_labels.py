@@ -241,6 +241,83 @@ def test_raw_field_names_and_heading_labels_are_dropped(line):
     assert strip_cta_label_lines(f"Before.\n{line}\nAfter.", labels) == "Before.\nAfter."
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "> **Primary CTA:** Explore Features",
+        ">> Primary CTA: Explore Features",
+        "> - **Secondary CTA**: Compare Tools",
+    ],
+)
+def test_a_blockquoted_label_line_is_dropped(line):
+    labels = outline_cta_labels(BEST_TOOLS_OUTLINE)
+    assert strip_cta_label_lines(f"Before.\n{line}\nAfter.", labels) == "Before.\nAfter."
+
+
+def test_a_blockquoted_sentence_about_ctas_stays():
+    body = "> A primary CTA: the one action you want a visitor to take.\n> Our advice: Explore Features."
+    labels = outline_cta_labels(BEST_TOOLS_OUTLINE)
+    assert strip_cta_label_lines(body, labels) == body
+
+
+def test_a_case_studys_cta_is_its_action():
+    from src.flow.engines.content.generation.requirements_spec import (
+        build_requirements_spec,
+        resolve_outline_cta,
+    )
+
+    outline = {
+        "cta": {
+            "message": "Teams like this one cut their reporting time in half.",
+            "action": "Book a strategy call",
+        }
+    }
+    assert resolve_outline_cta(outline) == {"text": "Book a strategy call", "source": "cta.action"}
+    spec = build_requirements_spec(outline, "case-study")
+    assert spec["cta_required"] is True
+    assert spec["outline_cta"]["text"] == "Book a strategy call"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [">  > **Primary CTA:** Explore Features", " > > Primary CTA: Explore Features"],
+)
+def test_a_label_line_in_a_spaced_nested_blockquote_is_dropped(line):
+    labels = outline_cta_labels(BEST_TOOLS_OUTLINE)
+    assert strip_cta_label_lines(f"Before.\n{line}\nAfter.", labels) == "Before.\nAfter."
+
+
+def test_indented_code_inside_a_blockquote_keeps_its_cta_lines():
+    body = ">     Primary CTA: Explore Features\n\n**Primary CTA:** Explore Features"
+    cleaned = strip_cta_label_lines(body, outline_cta_labels(BEST_TOOLS_OUTLINE))
+    assert cleaned == ">     Primary CTA: Explore Features"
+
+
+def test_a_longer_fence_holds_a_shorter_one_and_its_cta_lines():
+    body = (
+        "> ````markdown\n"
+        "> ```\n"
+        "> **Primary CTA:** Explore Features\n"
+        "> ```\n"
+        "> ````\n\n"
+        "**Primary CTA:** Explore Features"
+    )
+    cleaned = strip_cta_label_lines(body, outline_cta_labels(BEST_TOOLS_OUTLINE))
+    assert cleaned == body.rsplit("\n\n", 1)[0]
+
+
+def test_a_code_example_inside_a_blockquote_keeps_its_cta_lines():
+    body = (
+        "> Mark up the button like this:\n"
+        "> ```markdown\n"
+        "> **Primary CTA:** Explore Features\n"
+        "> ```\n\n"
+        "**Primary CTA:** Explore Features"
+    )
+    cleaned = strip_cta_label_lines(body, outline_cta_labels(BEST_TOOLS_OUTLINE))
+    assert cleaned == body.rsplit("\n\n", 1)[0]
+
+
 def test_code_examples_keep_their_cta_lines():
     body = (
         "Mark up the button like this:\n\n"
@@ -291,3 +368,64 @@ async def test_final_validation_strips_the_label_and_then_judges_the_cta(monkeyp
     assert "Primary CTA" not in final["body_markdown"]
     failed = result["content"]["review"]["final_validation"]["failed_checks"]
     assert [check["name"] for check in failed] == ["cta_presence"]
+
+
+async def test_a_final_repair_that_brings_a_label_line_back_is_cleaned_before_its_recheck(
+    monkeypatch,
+):
+    """The repaired body is a new text: a label line in it is dropped before the recheck,
+    so a CTA only that line carries fails, and the repair is not accepted on it."""
+    from src.flow.engines.content.generation import validation
+
+    async def unchanged(content, *args, **kwargs):
+        return content
+
+    def keyword_presence(content, spec):
+        if "focus keyphrase" in content.get("body_markdown", ""):
+            return validation._pass("keyword_presence", "present")
+        return validation._fail("keyword_presence", "blocking", "missing")
+
+    repaired_bodies = []
+
+    async def repair(final_content, **kwargs):
+        body = (
+            "## Picks\n\nOur picks, with the focus keyphrase.\n\n**Primary CTA:** Explore Features"
+        )
+        repaired_bodies.append(body)
+        return {**final_content, "body_markdown": body}
+
+    monkeypatch.setattr(validation, "enforce_onpage_seo", lambda content, **kwargs: content)
+    monkeypatch.setattr(validation, "enforce_subheadings_for_spec", unchanged)
+    monkeypatch.setattr(validation, "restore_links_for_spec", lambda content, *a, **k: content)
+    monkeypatch.setattr(validation, "apply_density_report", lambda content, spec: content)
+    monkeypatch.setattr(validation, "run_targeted_repair", repair)
+    monkeypatch.setattr(
+        validation,
+        "build_requirements_spec",
+        lambda *a, **k: {"cta_required": True, "outline_cta": {"text": "Explore Features"}},
+    )
+    monkeypatch.setattr(
+        validation, "FINAL_VALIDATE_CHECKS", [validation.check_cta_presence, keyword_presence]
+    )
+
+    original = "## Picks\n\nOur picks. Explore Features of each tool below."
+    state = {
+        "content": {
+            "outline": BEST_TOOLS_OUTLINE,
+            "content_type": "best-tools",
+            "final_content": {
+                "introduction": "Choosing a tool is hard.",
+                "body_markdown": original,
+                "cta": {"text": "Explore Features"},
+            },
+        }
+    }
+
+    result = await validation.final_validate_content(state)
+
+    assert repaired_bodies, "the repair ran"
+    final = result["content"]["final_content"]
+    # The repair's only CTA was its label line: cleaned, its CTA check fails, so it isn't taken.
+    assert final["body_markdown"] == original
+    failed = result["content"]["review"]["final_validation"]["failed_checks"]
+    assert [check["name"] for check in failed] == ["keyword_presence"]

@@ -13,7 +13,7 @@ Usage:
     html = compose_email([
         simple_header("My Workspace"),
         "<h1>Welcome!</h1>",
-        primary_button("Get Started", "https://app.rext.com"),
+        primary_button("Get Started", "https://app.rext.ai"),
         simple_footer()
     ])
 """

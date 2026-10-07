@@ -21,6 +21,7 @@ def create_seo_engine() -> CompiledStateGraph:
     Returns:
         CompiledStateGraph: Compiled SEO engine subgraph.
     """
+    from src.flow.engines.router.credits import serp_unpaid
     from src.flow.engines.seo.fetch_dataforseo_backlinks import fetch_dataforseo_backlinks
     from src.flow.engines.seo.keyword_recomendation import (
         keyword_recommendation,
@@ -39,7 +40,13 @@ def create_seo_engine() -> CompiledStateGraph:
 
     graph.add_edge(START, "seo_entry")
     graph.add_edge("seo_entry", "fetch_dataforseo_backlinks")
-    graph.add_edge("fetch_dataforseo_backlinks", "save_keyword_research")
+    # A refused SERP charge saves nothing and opens no gate: keyword_router ends
+    # the run (rext-control#524).
+    graph.add_conditional_edges(
+        "fetch_dataforseo_backlinks",
+        lambda state: "end" if serp_unpaid(state) else "save_keyword_research",
+        {"save_keyword_research": "save_keyword_research", "end": END},
+    )
     # Nothing saved (no user or workspace, no organic result, a store error):
     # no gate, as before; keyword_router decides what follows.
     graph.add_conditional_edges(

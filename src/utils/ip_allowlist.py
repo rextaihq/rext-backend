@@ -17,6 +17,7 @@ Security notes:
   resolve to "not allowlisted", so the account-creation cap stays in force.
 """
 
+from functools import lru_cache
 from ipaddress import (
     IPv4Network,
     IPv6Network,
@@ -166,6 +167,51 @@ def proxy_trust_is_spoofable(trusted_proxy_ips: Optional[str]) -> bool:
     return False
 
 
+# The connection's own peer, kept in the ASGI scope before ProxyHeadersMiddleware
+# replaces scope["client"] with an X-Forwarded-For entry.
+DIRECT_PEER_SCOPE_KEY = "rext.direct_peer"
+
+
+class DirectPeerMiddleware:
+    """Keeps the connection's own peer address in the scope, for limiter_client_host().
+
+    Added outside ProxyHeadersMiddleware (src/api/server.py), so it runs first.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] in ("http", "websocket"):
+            client = scope.get("client")
+            scope[DIRECT_PEER_SCOPE_KEY] = client[0] if client else None
+        await self.app(scope, receive, send)
+
+
+@lru_cache(maxsize=8)
+def _trust_is_spoofable(trusted_proxy_ips: Optional[str]) -> bool:
+    return proxy_trust_is_spoofable(trusted_proxy_ips)
+
+
+def limiter_client_host(request: Any) -> str:
+    """
+    The address the rate limiters and the request log key a visitor on.
+
+    It's ``request.client.host`` (the visitor's address, from ``X-Forwarded-For``
+    through a trusted proxy), unless ``TRUSTED_PROXY_IPS`` is a catch-all: then
+    that address is whatever the caller wrote, so a caller could pick a fresh
+    key for every request. Under that setting it's the connection's own peer
+    instead, and every visitor behind the proxy shares one key until the setting
+    names the proxy (``src/api/server.py`` logs the error at start).
+    """
+    from src.api.config import get_settings
+
+    if _trust_is_spoofable(get_settings().TRUSTED_PROXY_IPS):
+        return request.scope.get(DIRECT_PEER_SCOPE_KEY) or "unknown"
+    client = getattr(request, "client", None)
+    return getattr(client, "host", None) or "unknown"
+
+
 def get_verified_client_ip(request: Any) -> Optional[str]:
     """
     The client IP this app is willing to base a security decision on, else None.
@@ -249,3 +295,18 @@ def is_account_creation_ip_allowlisted(client_ip: Optional[str]) -> bool:
     raw = getattr(get_settings(), "ACCOUNT_CREATION_IP_ALLOWLIST", "") or ""
     entries = [item.strip() for item in raw.split(",") if item.strip()]
     return ip_matches_allowlist(client_ip, entries)
+
+
+def mask_ip(host: Optional[str]) -> str:
+    """
+    The network an address belongs to, for a log line: an IPv4 address to its /24,
+    an IPv6 address to its /48. A visitor's address is personal data and never goes
+    into a log (AGENTS.md); the network still tells one source of traffic from
+    another. Anything that isn't an address ("unknown", a test client) passes as is.
+    """
+    try:
+        address = ip_address(host or "")
+    except ValueError:
+        return host or "unknown"
+    prefix = 24 if address.version == 4 else 48
+    return str(ip_network(f"{address}/{prefix}", strict=False))

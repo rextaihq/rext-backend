@@ -3,7 +3,7 @@
 Matching kept only a-z and 0-9, so a Chinese, Arabic or Cyrillic keyword flattened to nothing and
 an accented one lost its accented letters: no title could contain it, every title was dropped as
 missing the keyphrase, and the run ended at the title step. Text is now NFC-normalized and
-casefolded, the letters, marks and digits of every script are kept, and a keyword in a script
+lowercased, the letters, marks and digits of every script are kept, and a keyword in a script
 written without spaces is matched as a run of characters.
 """
 
@@ -16,6 +16,7 @@ from src.flow.engines.content.generation import topic_generation as tg
 from src.flow.engines.content.generation.seo_title_rules import (
     contains_keyphrase,
     keyphrase_fits_a_title,
+    keyphrase_title,
     normalize_title,
     title_is_valid,
     title_max_chars,
@@ -61,10 +62,41 @@ def _nfd(text: str) -> str:
         # Lowercase, not casefold: ß and ss are different words.
         ("Maße und Gewichte", "Masse", False),
         ("MASSE UND GEWICHTE", "masse", True),
+        # Turkish: a capital dotted İ is an i; the dotless ı is a letter of its own.
+        ("İstanbul'da En İyi SEO Ajansları", "istanbul", True),
+        ("ISTANBUL İÇİN SEO REHBERİ", "İstanbul", True),
+        ("ıstanbul için seo", "istanbul", False),
+        # Greek: a capital Σ at a word's end lowercases to ς, which the user types as σ.
+        ("ΟΔΗΓΟΣ SEO ΓΙΑ ΜΙΚΡΕΣ ΕΠΙΧΕΙΡΗΣΕΙΣ", "οδηγοσ seo", True),
+        ("Οδηγός SEO για μικρές επιχειρήσεις", "οδηγός seo", True),
+        # An invisible format character inside a word is no word break (a soft hyphen, a
+        # zero-width joiner in Devanagari).
+        ("How to cooperate effectively in small teams", "co\u00adoperate", True),
+        ("हिन्दी में सबसे अच्छा सॉफ्टवेयर", "हिन्\u200dदी", True),
+        # An emoji's variation selector goes with the emoji: one emoji doesn't match another.
+        ("\u2600\ufe0f weather guide for travellers", "\u2764\ufe0f", False),
+        # Punctuation between unspaced characters is no word break, either way round.
+        ("生成AI・ツール比較", "生成AIツール", True),
+        ("生成AIツール比較", "生成AI・ツール", True),
+        # Armenian: the ligature և is եւ, as its capital ԵՒ lowercases.
+        ("ՍՈՒՐՃ ԵՒ ԹԵՅ ԳՆԵԼՈՒ ՈՒՂԵՑՈՒՅՑ", "սուրճ և թեյ", True),
+        # The iteration mark 々 is part of a Japanese word.
+        ("人々2026年ガイド", "人々", True),
+        # A letter and accent that lowercasing leaves apart are still the one letter.
+        ("J\u030c guide for beginners", "\u01f0", True),
+        # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
+        ("𠀀𠀁𠀂", "𠀁", True),
+        ("2026年𠮷野家の店舗", "𠮷野家", True),
     ],
 )
 def test_a_keyphrase_in_any_script_is_matched(title, keyphrase, expected):
     assert contains_keyphrase(title, keyphrase) is expected
+
+
+def test_a_keyphrase_whose_capital_is_longer_can_still_be_repaired():
+    """Capitalizing "և" gives "ԵՒ": the repair leaves such a letter as typed."""
+    assert keyphrase_title("սուրճ և թեյ") is not None
+    assert contains_keyphrase(keyphrase_title("սուրճ և թեյ"), "սուրճ և թեյ")
 
 
 def test_an_empty_or_punctuation_only_keyphrase_matches_nothing():

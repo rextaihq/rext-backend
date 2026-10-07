@@ -570,6 +570,8 @@ async def oauth_login(
             "user": UserResponse.model_validate(new_user).model_dump(),
             "roles": tokens.get("roles", []),
             "permissions": tokens.get("permissions", []),
+            # True only when this login created the account: the dashboard records a sign-up then.
+            "is_new_user": tokens.get("is_new_user", False),
         },
         request=request,
         message="OAuth login successful",

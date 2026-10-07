@@ -8,12 +8,13 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.model.llm_manager import load_model
+from src.flow.model.provider_outage import provider_outage
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
     normalize_content_type,
 )
-from src.flow.prompts.human.outline import get_outline_prompt
+from src.flow.prompts.human.outline import get_outline_prompt, outline_subsection_rule
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import (
     build_cluster_heading_map,
@@ -543,6 +544,9 @@ async def generate_outline(state: REXT) -> dict:
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
             cluster_heading_map=cluster_heading_map_context,
+            subsection_rule=outline_subsection_rule(
+                content_type, content_type_raw, outline_rejected_reason
+            ),
             rejected_reason=outline_rejected_reason,
             previous_outline=outline_state,
         )
@@ -627,7 +631,10 @@ async def generate_outline(state: REXT) -> dict:
             }
         }
 
-    except Exception:
+    except Exception as e:
+        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1).
+        if provider_outage(e) is not None:
+            raise
         logger.exception("Error generating outline")
         return {
             "content": {

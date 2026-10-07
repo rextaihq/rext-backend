@@ -33,6 +33,7 @@ class _MemoryDatabase:
         self.blacklist: dict[str, TokenBlacklist] = {}
         self.session = None
         self.statements = []
+        self.user_exists = True
 
     def add(self, value) -> None:
         if isinstance(value, TokenBlacklist):
@@ -44,6 +45,11 @@ class _MemoryDatabase:
     async def execute(self, statement):
         self.statements.append(statement)
         return _ScalarResult(self.session)
+
+    async def scalar(self, statement):
+        """The refresh's check that the token's user still exists."""
+        self.statements.append(statement)
+        return uuid4() if self.user_exists else None
 
 
 class _ConflictDatabase(_MemoryDatabase):
@@ -152,6 +158,22 @@ def test_successor_derivation_and_explicit_token_are_deterministic() -> None:
     first_token = create_refresh_token(claims, jti=first_jti, expires_at=expires_at)
     second_token = create_refresh_token(claims, jti=first_jti, expires_at=expires_at)
     assert first_token == second_token
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_users_refresh_token_is_refused() -> None:
+    """A token whose account no longer exists gets a 401, and nothing is written."""
+    now = datetime.now(timezone.utc)
+    user_id = uuid4()
+    db = _MemoryDatabase()
+    db.user_exists = False
+    service = _RefreshHarness(db, now, user_id)
+
+    with pytest.raises(RextAuthenticationException, match="no longer exists"):
+        await service.refresh_token(_original_refresh_token(user_id, str(uuid4()), now))
+
+    assert db.blacklist == {}
+    assert service.access_payloads == []
 
 
 @pytest.mark.asyncio
