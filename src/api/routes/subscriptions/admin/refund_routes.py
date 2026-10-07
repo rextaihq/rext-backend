@@ -44,6 +44,7 @@ from src.api.schema.subscription.refund_schemas import (
 )
 from src.api.security.dependencies import get_current_user
 from src.config.payment_config import payment_settings
+from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.providers.payment.providers.lemonsqueezy import (
     LemonSqueezyAPIError,
     LemonSqueezyError,
@@ -85,16 +86,12 @@ router = APIRouter()
 
 
 async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
-    """Get LemonSqueezy provider instance."""
+    """The shared Lemon Squeezy provider (G80a): one built per refund opened an HTTP client that
+    nothing closed."""
     if not payment_settings.lemonsqueezy_api_key or not payment_settings.lemonsqueezy_store_id:
         raise HTTPException(status_code=503, detail="Payment provider is not configured")
 
-    return LemonSqueezyProvider(
-        api_key=payment_settings.lemonsqueezy_api_key,
-        store_id=payment_settings.lemonsqueezy_store_id,
-        webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
-        sandbox_mode=payment_settings.payment_sandbox_mode,
-    )
+    return get_payment_provider_singleton()
 
 
 async def _issue_refund(

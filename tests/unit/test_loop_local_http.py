@@ -112,6 +112,24 @@ def test_every_chat_model_and_the_competitors_client_use_the_shared_client(monke
     assert llm_client._client._client is SHARED_ASYNC_CLIENT
 
 
+def test_image_generation_uses_the_shared_client(monkeypatch):
+    """A client of its own per image opened a new connection pool each time and never closed it."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from openai import AsyncOpenAI
+
+    from src.flow.engines.agent.tools import tools
+
+    built = MagicMock()
+    built.return_value.images.generate = AsyncMock(side_effect=RuntimeError("no network here"))
+    monkeypatch.setattr(tools, "AsyncOpenAI", built)
+
+    assert asyncio.run(tools.generate_image_standalone("a lighthouse at dusk")) is None
+    # The client the OpenAI SDK wires in from those arguments.
+    sdk = AsyncOpenAI(**{**built.call_args.kwargs, "api_key": "sk-test"})
+    assert sdk._client is SHARED_ASYNC_CLIENT
+
+
 def test_the_per_loop_pools_share_one_tls_context_built_outside_any_loop():
     """Building a TLS context reads the CA bundle from disk: never inside a request."""
     from src.utils import loop_local_http
