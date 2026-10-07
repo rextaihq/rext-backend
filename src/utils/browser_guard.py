@@ -13,6 +13,7 @@ connection is a CONNECT tunnel, so TLS stays between the browser and the site.
 """
 
 import asyncio
+import time
 from urllib.parse import urlsplit
 
 from src.api.lib.logger import auto_logger
@@ -27,8 +28,12 @@ _HEAD_LIMIT_BYTES = 64 * 1024
 _CHUNK_BYTES = 64 * 1024
 # A plain http request is forwarded on a connection of its own; the browser opens the next.
 _HOP_BY_HOP = (b"proxy-connection:", b"proxy-authorization:", b"connection:", b"keep-alive:")
-# Chromium sends loopback addresses past a proxy unless told otherwise.
-PROXY_BROWSER_ARGS = ["--proxy-bypass-list=<-loopback>"]
+PROXY_BROWSER_ARGS = [
+    # Chromium sends loopback addresses past a proxy unless told otherwise.
+    "--proxy-bypass-list=<-loopback>",
+    # WebRTC may otherwise send UDP on its own, outside any proxy.
+    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+]
 
 
 def _host_port(authority: str, default_port: int) -> tuple[str, int]:
@@ -53,17 +58,24 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
 
 async def _connect_checked(host: str, port: int):
     """Open a connection to a checked public address of ``host``. Raises SSRFValidationError
-    when any address it resolves to isn't public; nothing is sent then."""
+    when any address it resolves to isn't public; nothing is sent then. The lookup and every
+    address tried share one deadline, as public_client()'s connections do."""
+    deadline = time.monotonic() + _CONNECT_TIMEOUT_SECONDS
     # On url_validator's own lookup threads: a stalled lookup can't hold up other work.
     addresses = await asyncio.wait_for(
         url_validator._in_lookup_thread(url_validator._checked_addresses, host),
         _CONNECT_TIMEOUT_SECONDS,
     )
     failure: Exception = OSError(f"no address to connect to for {host}")
-    for address in addresses:
+    for index, address in enumerate(addresses):
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError(f"connecting to {host} took over {_CONNECT_TIMEOUT_SECONDS} s")
+        # What is left is shared among the addresses still to try, so an address that never
+        # answers can't use up the time of one that would.
         try:
             return await asyncio.wait_for(
-                asyncio.open_connection(address, port), _CONNECT_TIMEOUT_SECONDS
+                asyncio.open_connection(address, port), left / (len(addresses) - index)
             )
         except (OSError, TimeoutError) as exc:
             failure = exc
@@ -75,7 +87,9 @@ class PublicOnlyProxy:
 
     def __init__(self) -> None:
         self._server: asyncio.base_events.Server | None = None
-        self._open: set[asyncio.StreamWriter] = set()
+        # Each connection's handler, so closing the proxy ends them all, including one still
+        # looking up or connecting.
+        self._handlers: set[asyncio.Task] = set()
         self.url = ""
 
     async def __aenter__(self) -> "PublicOnlyProxy":
@@ -88,8 +102,10 @@ class PublicOnlyProxy:
 
     async def __aexit__(self, *exc) -> None:
         self._server.close()
-        for writer in list(self._open):
-            writer.close()
+        handlers = list(self._handlers)
+        for handler in handlers:
+            handler.cancel()
+        await asyncio.gather(*handlers, return_exceptions=True)
         await self._server.wait_closed()
 
     async def _answer(self, writer: asyncio.StreamWriter, status: str) -> None:
@@ -99,7 +115,8 @@ class PublicOnlyProxy:
         await writer.drain()
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        self._open.add(writer)
+        handler = asyncio.current_task()
+        self._handlers.add(handler)
         upstream: asyncio.StreamWriter | None = None
         try:
             try:
@@ -153,4 +170,4 @@ class PublicOnlyProxy:
             for stream in (upstream, writer):
                 if stream is not None and not stream.is_closing():
                     stream.close()
-            self._open.discard(writer)
+            self._handlers.discard(handler)

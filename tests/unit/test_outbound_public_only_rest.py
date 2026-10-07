@@ -6,6 +6,7 @@ address isn't public."""
 import asyncio
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
@@ -16,6 +17,8 @@ from src.api.tool.tools import broken_link_checker
 from src.flow.engines.competitors import listicle
 from src.services.brand_voice_service import BrandVoiceService
 from src.utils import browser_guard, fast_scraper, helper, url_validator
+
+_open_connection = asyncio.open_connection
 
 PUBLIC_IP = "93.184.216.34"
 PRIVATE_REDIRECTS = [
@@ -253,6 +256,53 @@ async def test_a_request_that_is_not_an_absolute_http_address_is_refused(servers
     assert status == "HTTP/1.1 400 Bad Request"
 
 
+async def test_the_lookup_and_every_address_share_one_deadline(monkeypatch):
+    """Three addresses that never answer take the connect timeout once, not three times."""
+    monkeypatch.setattr(browser_guard, "_CONNECT_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(
+        url_validator, "_checked_addresses", lambda host: ["192.0.2.1", "192.0.2.2", "192.0.2.3"]
+    )
+
+    async def never_answers(host, port):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(browser_guard.asyncio, "open_connection", never_answers)
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        await browser_guard._connect_checked("slow.example.com", 443)
+
+    assert time.monotonic() - started < 0.6
+
+
+async def test_closing_the_proxy_ends_a_handler_that_is_still_connecting(monkeypatch):
+    monkeypatch.setattr(url_validator, "_checked_addresses", lambda host: ["192.0.2.1"])
+
+    async def never_answers(host, port):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(browser_guard.asyncio, "open_connection", never_answers)
+    proxy = browser_guard.PublicOnlyProxy()
+    await proxy.__aenter__()
+    port = int(proxy.url.rsplit(":", 1)[1])
+    reader, writer = await _open_connection("127.0.0.1", port)
+    writer.write(b"CONNECT slow.example.com:443 HTTP/1.1\r\n\r\n")
+    await writer.drain()
+    await asyncio.sleep(0.1)
+
+    started = time.monotonic()
+    await proxy.__aexit__(None, None, None)
+
+    assert time.monotonic() - started < 1
+    assert proxy._handlers == set()
+    writer.close()
+
+
+def test_the_browser_sends_no_webrtc_udp_outside_the_proxy():
+    assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in (
+        browser_guard.PROXY_BROWSER_ARGS
+    )
+
+
 class _Crawler:
     """AsyncWebCrawler's shape: the config it was built with."""
 
@@ -296,15 +346,19 @@ async def test_both_browser_renders_go_through_the_proxy_and_check_certificates(
     (crawler,) = _Crawler.made
     assert crawler.config.proxy_config.server.startswith("http://127.0.0.1:")
     assert "--proxy-bypass-list=<-loopback>" in crawler.config.extra_args
+    assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in crawler.config.extra_args
     assert crawler.config.ignore_https_errors is False
 
 
 async def test_chromium_reaches_no_private_address_through_the_proxy(servers):
-    """A page that names a frame, a script, an image and a fetch on 127.0.0.1, and a redirect
-    there: none of them reaches the private server. Skipped where no browser is installed."""
+    """A page that names a frame, a script, an image, a fetch and a WebRTC server on 127.0.0.1,
+    and a redirect there: none of them reaches it. Skipped where no browser is installed."""
     playwright_api = pytest.importorskip("playwright.async_api")
     private = f"http://127.0.0.1:{servers.private}"
     _Hits.redirect_to = f"{private}/secret"
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.bind(("127.0.0.1", 0))
+    udp.setblocking(False)
     async with browser_guard.PublicOnlyProxy() as proxy, playwright_api.async_playwright() as p:
         try:
             browser = await p.chromium.launch(
@@ -316,10 +370,20 @@ async def test_chromium_reaches_no_private_address_through_the_proxy(servers):
         await page.goto(f"http://127.0.0.2:{servers.public}/redirect")
         await page.set_content(
             f'<iframe src="{private}/frame"></iframe><script src="{private}/app.js"></script>'
-            f'<img src="{private}/img.png"><script>fetch("{private}/data").catch(() => {{}})</script>'
+            f'<img src="{private}/img.png"><script>fetch("{private}/data").catch(() => {{}});'
+            "const pc = new RTCPeerConnection({iceServers: [{urls: 'stun:127.0.0.1:%d'}]});"
+            "pc.createDataChannel('x'); pc.createOffer().then(o => pc.setLocalDescription(o));"
+            "</script>" % udp.getsockname()[1]
         )
         await asyncio.sleep(1)
         await browser.close()
 
+    try:
+        udp_packets = len(udp.recv(2048))
+    except BlockingIOError:
+        udp_packets = 0
+    udp.close()
+
     assert _private_hits() == []
+    assert udp_packets == 0  # WebRTC sent nothing to the private address
     assert ("127.0.0.2", "/redirect") in _Hits.hits
