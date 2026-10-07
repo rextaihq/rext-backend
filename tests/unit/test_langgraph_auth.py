@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -703,19 +702,20 @@ async def test_an_admission_counts_from_after_the_busy_read(role, monkeypatch, r
 
 async def test_a_read_slow_to_cancel_cant_hold_the_start_past_the_bound(role, monkeypatch):
     # asyncio.wait_for waits for a cancelled read to finish cancelling; a read whose
-    # cleanup is slow would then hold the lock past its lifetime. The bound is hard.
+    # cleanup is slow would then hold the lock past its lifetime. The bound is hard: the
+    # start returns while the read's cleanup is still held open.
     from src.api.security import run_admission
 
     redis = _with_redis(monkeypatch)
     monkeypatch.setattr(run_admission, "_READ_TIMEOUT_S", 0.05)
-    cleaned = asyncio.Event()
+    release, cleaned = asyncio.Event(), asyncio.Event()
 
     class _Threads:
         async def search(self, **kwargs):
             try:
-                await asyncio.sleep(5)
+                await asyncio.sleep(60)
             except asyncio.CancelledError:
-                await asyncio.sleep(0.5)  # a slow cleanup
+                await release.wait()  # the cleanup lasts until the test lets it end
                 cleaned.set()
                 raise
             return []
@@ -725,8 +725,61 @@ async def test_a_read_slow_to_cancel_cant_hold_the_start_past_the_bound(role, mo
 
     monkeypatch.setattr("langgraph_sdk.get_client", lambda: _Client())
 
-    started = time.monotonic()
-    assert await _start("t-a") == "admitted"
-    assert time.monotonic() - started < 0.4  # not the read's 0.5 s cleanup on top
+    # Waiting for the cleanup would never return, as it ends only after this does.
+    assert await asyncio.wait_for(_start("t-a"), 5) == "admitted"
+    assert not cleaned.is_set()
     assert f"run_admission:lock:{USER}" not in redis.values
-    await asyncio.wait_for(cleaned.wait(), 2)  # the read still finishes cancelling, apart
+    release.set()
+    await asyncio.wait_for(cleaned.wait(), 5)  # the read still finishes cancelling, apart
+
+
+@pytest.mark.parametrize("redis", [False, True], ids=["in process", "redis"])
+async def test_admissions_that_expire_during_the_read_no_longer_count(role, monkeypatch, redis):
+    # The window is judged when the read is done: two admissions that pass their window
+    # while a slow read runs don't refuse the start that waited on it.
+    from src.api.security import run_admission
+
+    if redis:
+        _with_redis(monkeypatch)
+    clock = [1_000.0]
+    slow = [False]
+    monkeypatch.setattr(run_admission.time, "time", lambda: clock[0])
+
+    class _Threads:
+        async def search(self, **kwargs):
+            if slow[0]:
+                clock[0] += 4  # the window of the first two ends during this read
+            return []
+
+    class _Client:
+        threads = _Threads()
+
+    monkeypatch.setattr("langgraph_sdk.get_client", lambda: _Client())
+    assert [await _start("t-a"), await _start("t-b")] == ["admitted", "admitted"]
+
+    clock[0] += run_admission.ADMISSION_WINDOW_S - 1
+    slow[0] = True
+    assert await _start("t-c") == "admitted"
+
+
+async def test_a_cancelled_start_cancels_its_read():
+    # A start cancelled mid-read (a client gone, a shutdown) doesn't leave the read pending.
+    from src.api.security import run_admission
+
+    events = []
+
+    async def stalled():
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            events.append("read cancelled")
+            raise
+        return set()
+
+    caller = asyncio.ensure_future(run_admission._read_busy(stalled))
+    await asyncio.sleep(0.01)
+    caller.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    await asyncio.sleep(0.01)
+    assert events == ["read cancelled"]
