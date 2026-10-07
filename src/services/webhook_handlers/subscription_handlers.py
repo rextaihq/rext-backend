@@ -225,7 +225,10 @@ def _ignore_payment_after_refund(
 
 
 def _ignore_settled_duplicate(
-    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+    subscription: UserSubscription,
+    sub_data: Dict[str, Any],
+    event: str,
+    known: bool = False,
 ) -> bool:
     """A subscription settled as the older of two ends when it was settled.
 
@@ -234,7 +237,7 @@ def _ignore_settled_duplicate(
     subscription would give the plan again. A settled duplicate that Lemon Squeezy
     reports live again (resumed in its portal) bills again, so a person is told.
     """
-    if not is_settled_duplicate(subscription):
+    if not (is_known_duplicate if known else is_settled_duplicate)(subscription):
         return False
     logger.info(
         f"{event}: ignored, the subscription was settled as a duplicate",
@@ -1833,10 +1836,13 @@ async def handle_subscription_payment_recovered(
             },
         )
         return None
-    # Paid again after it was cancelled and refunded as the older of two: it stays
-    # ended here, and a person is told the customer was charged again.
+    # Paid again after it was settled as the older of two, or marked for a person to
+    # settle: it isn't restored, and a person is told the customer was charged again.
     if _ignore_settled_duplicate(
-        subscription, {**sub_data, "status": "active"}, "subscription_payment_recovered"
+        subscription,
+        {**sub_data, "status": "active"},
+        "subscription_payment_recovered",
+        known=True,
     ):
         return None
 

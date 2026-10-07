@@ -19,7 +19,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.subscription_models.subscriptions import (
@@ -28,7 +28,11 @@ from src.api.models.subscription_models.subscriptions import (
     not_a_known_duplicate,
 )
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.services.duplicate_subscriptions import LIVE_STATUSES, settle_duplicate_subscriptions
+from src.services.duplicate_subscriptions import (
+    LIVE_STATUSES,
+    is_known_duplicate,
+    settle_duplicate_subscriptions,
+)
 from src.services.webhook_handlers.subscription_handlers import (
     cancellation_email_task,
     handle_subscription_updated,
@@ -82,6 +86,9 @@ async def reconcile_subscriptions(
         pending: Optional[Dict[str, Any]] = None
         before = after = None
         try:
+            # Lemon Squeezy is read before the row is locked, so a webhook for it never
+            # waits on the request; an older state than the stored one is ignored anyway.
+            attributes = await provider.get_subscription_attributes(ls_id)
             # A failure undoes only this subscription's half-applied changes.
             async with db.begin_nested():
                 # The status now, under the row's lock: a webhook may have changed it
@@ -95,7 +102,6 @@ async def reconcile_subscriptions(
                     )
                 ).scalar_one()
                 before = row.status
-                attributes = await provider.get_subscription_attributes(ls_id)
                 result = await handle_subscription_updated(
                     _as_webhook(ls_id, attributes), _ReconcileEvent(ls_id), db
                 )
@@ -105,6 +111,9 @@ async def reconcile_subscriptions(
                     # customer has since replaced, in any state that bills or can bill:
                     # the duplicate check runs as after a webhook.
                     await settle_duplicate_subscriptions(db, user_id)
+                    if is_known_duplicate(row):
+                        # It's the duplicate: no "update your card" or similar for it.
+                        result = None
                 if after == SubscriptionStatus.CANCELLED and before != after:
                     # A missed subscription_cancelled: its audit, email and notice, as the
                     # webhook's, ahead of any plan-change email the update produced.
@@ -143,13 +152,25 @@ async def reconcile_subscriptions(
 
 
 async def _stamp_attempt(db: AsyncSession, row_id) -> None:
-    row = await db.get(UserSubscription, row_id, populate_existing=True)
-    if row is not None:
-        row.subscription_metadata = {
-            **(row.subscription_metadata or {}),
-            _RECONCILED_AT: datetime.now(timezone.utc).isoformat(),
-        }
-        await db.flush()
+    """Record the attempt: one JSON key, merged in place, and updated_at left as it was.
+
+    In place, so it never overwrites metadata a webhook wrote meanwhile (the row's
+    lock may be gone after a failed read). updated_at stays the subscription's own
+    last change: retention (anonymize_cancelled_subscriptions) goes by it.
+    """
+    await db.execute(
+        update(UserSubscription)
+        .where(UserSubscription.id == row_id)
+        .values(
+            subscription_metadata=func.coalesce(
+                UserSubscription.subscription_metadata, literal_column("'{}'::jsonb")
+            ).op("||")(
+                func.jsonb_build_object(_RECONCILED_AT, datetime.now(timezone.utc).isoformat())
+            ),
+            updated_at=UserSubscription.updated_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def _pause() -> None:
