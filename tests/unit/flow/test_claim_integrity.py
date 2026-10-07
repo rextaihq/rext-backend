@@ -496,6 +496,11 @@ def test_a_hedged_or_framing_sentence_is_not_a_testing_claim(text):
         ("We never guessed; we tested every tool for a month.", "tested"),
         ("Without hesitation, we tested every tool for a month.", "tested"),
         ("We never rank products without hands-on testing.", "hands-on testing"),
+        # A graded denial still says some testing was done.
+        ("We have not fully tested every integration.", "tested"),
+        ("We haven't properly tested the enterprise tier.", "tested"),
+        ("We have not formally benchmarked the free plan.", "benchmarked"),
+        ("We haven't officially tested the API yet.", "tested"),
     ],
 )
 def test_a_real_testing_claim_is_still_caught(text, span):

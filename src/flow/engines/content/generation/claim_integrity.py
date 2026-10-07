@@ -223,11 +223,9 @@ _TESTING_RE = re.compile(
 # a testing claim. Only words that belong inside such a denial may stand between the two,
 # with no comma, semicolon or full stop, so "we never guessed; we tested" and "without
 # hesitation, we tested" are still claims. "Without" is no denial here: "we never rank
-# products without hands-on testing" asserts the test.
-_DENIAL_FILLERS = (
-    "been|be|being|yet|ever|personally|independently|actually|really|formally|officially|"
-    "properly|fully|directly|lab"
-)
+# products without hands-on testing" asserts the test. Nor is a word that grades the
+# testing: "we haven't fully tested every integration" says some testing was done.
+_DENIAL_FILLERS = "been|be|being|yet|ever|personally|independently|actually|really|directly|lab"
 _NEGATION_BEFORE_RE = re.compile(
     r"(?:\b(?:not|never)\b|n['\u2019]t\b)"
     rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
