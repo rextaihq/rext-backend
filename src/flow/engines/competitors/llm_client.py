@@ -13,10 +13,13 @@ from openai import AsyncOpenAI
 
 from src.api.config import settings
 from src.flow.engines.competitors.constants import OPENAI_MODEL
+from src.utils.loop_local_http import SHARED_ASYNC_CLIENT
 
 logger = logging.getLogger(__name__)
 
-_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+# The shared client keeps one connection pool per event loop, so runs on their own loops never
+# share a connection (G80).
+_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, http_client=SHARED_ASYNC_CLIENT)
 
 
 async def call_openai_json(prompt: str, max_tokens: int = 512) -> dict:
