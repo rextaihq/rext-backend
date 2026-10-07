@@ -16,7 +16,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.subscription_models.subscriptions import (
-    SubscriptionStatus,
     UserSubscription,
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
@@ -33,6 +32,12 @@ from src.services.order_service import (
 )
 from src.services.order_service import (
     _parse_datetime as _parse_ls_datetime,
+)
+from src.services.refund_cancellation import (
+    cancel_at_provider_for_refund,
+    end_for_refund,
+    no_subscription_to_end,
+    refunded_subscription,
 )
 from src.services.refund_service import RefundService
 from src.services.usage_tracking_service import UsageTrackingService
@@ -290,18 +295,32 @@ async def handle_order_refunded(
             )
         return
 
-    # Cancel subscription
+    # A full refund ends the subscription at Lemon Squeezy and here (F8c,
+    # revnix/rext-control#538). A refund made in Lemon Squeezy's dashboard arrives only
+    # here, so the cancel is made here too; one made through _issue_refund has made it
+    # already (recorded, so not again), and one that lands in between is found
+    # cancelled there. Ended with provider_updated_at moved on, so Lemon Squeezy's
+    # later events (still active, or cancelled with a grace period) can't bring it back.
+    subscription = await refunded_subscription(
+        db,
+        order_id=str(lemonsqueezy_order_id),
+        user_id=user_id,
+        order=order,
+        subscription_id=subscription.id if subscription else subscription_id,
+    )
     if subscription:
-        subscription.status = SubscriptionStatus.CANCELLED
-        subscription.cancelled_at = datetime.now(timezone.utc)
-        subscription.end_date = datetime.now(timezone.utc)
-        subscription.updated_at = datetime.now(timezone.utc)
+        await cancel_at_provider_for_refund(
+            subscription, order_id=str(lemonsqueezy_order_id), provider=get_payment_provider()
+        )
+        end_for_refund(subscription, order_id=str(lemonsqueezy_order_id))
         await db.flush()
 
         logger.info(
             f"Cancelled subscription {subscription.id} due to refund",
             extra={"subscription_id": str(subscription.id)},
         )
+    else:
+        no_subscription_to_end(order_id=str(lemonsqueezy_order_id), user_id=user_id)
 
     # TODO: Send refund confirmation email
     # For now, logging that email should be sent

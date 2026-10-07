@@ -57,6 +57,7 @@ from src.services.duplicate_subscriptions import (
     provider_created_record,
     settle_duplicate_subscriptions,
 )
+from src.services.refund_cancellation import is_ended_by_refund, refund_ended_at
 from src.services.trial_service import TrialService
 from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
@@ -136,6 +137,88 @@ def _ignore_older(subscription: UserSubscription, sub_data: Dict[str, Any], even
             "subscription_id": str(subscription.id),
             "event_updated_at": sub_data.get("updated_at"),
         },
+    )
+    return True
+
+
+def _ignore_ended_by_refund(
+    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+) -> bool:
+    """A subscription a full refund ended stays ended (F8c, revnix/rext-control#538).
+
+    Lemon Squeezy's events about it (still active until the cancel there lands, or
+    cancelled with a grace period) would give the refunded plan back if written here.
+    One that Lemon Squeezy reports live means it can bill again, so a person is told.
+    """
+    if not is_ended_by_refund(subscription):
+        return False
+    logger.info(
+        f"{event}: ignored, a full refund ended the subscription",
+        extra={"subscription_id": str(subscription.id), "status": sub_data.get("status")},
+    )
+    if lemonsqueezy_status(sub_data.get("status")) in LIVE_STATUSES:
+        trigger_payment_alert(
+            alert_type="refund_cancel_failed",
+            message=(
+                f"Fully refunded subscription {subscription.lemonsqueezy_subscription_id} for "
+                f"user {subscription.user_id} is {sub_data.get('status')} at Lemon Squeezy "
+                f"({event}): it can bill again; cancel it there"
+            ),
+            severity="critical",
+            context={"lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id},
+            user_id=str(subscription.user_id),
+            subscription_id=str(subscription.id),
+            operation=event,
+        )
+    return True
+
+
+def _ignore_payment_after_refund(
+    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+) -> bool:
+    """A payment on a subscription a full refund ended charged the customer again.
+
+    It gives no plan and no credits back (F8c, revnix/rext-control#538); a person
+    refunds it and cancels the subscription at Lemon Squeezy. A payment made before
+    the refund and delivered late is the one refunded: it's ignored without an alert.
+    The invoice's `updated_at` is when it was paid (a recovered charge's invoice was
+    created earlier, before it failed).
+
+    Lemon Squeezy sends subscription_payment_success with every
+    subscription_payment_recovered, so only the success event alerts: one per charge.
+    """
+    if not is_ended_by_refund(subscription):
+        return False
+    paid_at = _provider_time(sub_data.get("updated_at"))
+    ended_at = refund_ended_at(subscription)
+    if paid_at is not None and ended_at is not None and paid_at < ended_at:
+        logger.info(
+            f"{event}: ignored, a payment from before the full refund that ended the subscription",
+            extra={"subscription_id": str(subscription.id)},
+        )
+        return True
+    if event == "subscription_payment_recovered":
+        logger.warning(
+            f"{event}: ignored, a full refund ended the subscription (its payment_success alerts)",
+            extra={"subscription_id": str(subscription.id)},
+        )
+        return True
+    trigger_payment_alert(
+        alert_type="refund_cancel_failed",
+        message=(
+            f"Fully refunded subscription {subscription.lemonsqueezy_subscription_id} for user "
+            f"{subscription.user_id} was charged again ({event}): refund this payment and "
+            "cancel the subscription in Lemon Squeezy"
+        ),
+        severity="critical",
+        context={"lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id},
+        user_id=str(subscription.user_id),
+        subscription_id=str(subscription.id),
+        operation=event,
+    )
+    logger.warning(
+        f"{event}: ignored, a full refund ended the subscription",
+        extra={"subscription_id": str(subscription.id)},
     )
     return True
 
@@ -868,6 +951,8 @@ async def handle_subscription_updated(
         return None
     if _ignore_settled_duplicate(subscription, sub_data, "subscription_updated"):
         return None
+    if _ignore_ended_by_refund(subscription, sub_data, "subscription_updated"):
+        return None
 
     internal_status = lemonsqueezy_status(status)
 
@@ -1177,6 +1262,8 @@ async def handle_subscription_cancelled(
         return None
     if _ignore_settled_duplicate(subscription, sub_data, "subscription_cancelled"):
         return None
+    if _ignore_ended_by_refund(subscription, sub_data, "subscription_cancelled"):
+        return None
 
     now = datetime.now(timezone.utc)
     end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
@@ -1351,6 +1438,9 @@ async def handle_subscription_payment_success(
             },
         )
         raise ValueError(error_msg)
+
+    if _ignore_payment_after_refund(subscription, sub_data, "subscription_payment_success"):
+        return None
 
     # A payment older than the state stored since (a delayed or retried event) never
     # changes the status. Its credits still come while the plan runs: a renewal can
@@ -1694,6 +1784,9 @@ async def handle_subscription_payment_recovered(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    if _ignore_payment_after_refund(subscription, sub_data, "subscription_payment_recovered"):
+        return None
+
     # A recovery older than a stopped state stored since belongs to an earlier
     # renewal: it doesn't bring the plan back.
     if _is_older_than_stored(subscription, sub_data) and not _still_paid_through(subscription):
@@ -1911,6 +2004,8 @@ async def handle_subscription_resumed(
     if _ignore_older(subscription, sub_data, "subscription_resumed"):
         return None
     if _ignore_settled_duplicate(subscription, sub_data, "subscription_resumed"):
+        return None
+    if _ignore_ended_by_refund(subscription, sub_data, "subscription_resumed"):
         return None
 
     # Update subscription - resumed, so it no longer ends. Its status is the one

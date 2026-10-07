@@ -394,6 +394,16 @@ def rank_personas(
     return sorted(scored, key=lambda relevance: relevance.score, reverse=True)
 
 
+def recommend_persona(ranked: Iterable[PersonaRelevance]) -> Optional[str]:
+    """The persona an article defaults to: the best-ranked one whose stated expertise fits the subject.
+
+    None when no persona fits (E26, rext-control#559): an article on a subject the workspace's
+    people don't speak to is written by no persona unless the user picks one, rather than by
+    whichever of them ranked first.
+    """
+    return next((relevance.persona_id for relevance in ranked if relevance.fits_topic), None)
+
+
 def persona_fits_topic(
     persona: Any, *, topic: Optional[str] = None, title: Optional[str] = None
 ) -> bool:
