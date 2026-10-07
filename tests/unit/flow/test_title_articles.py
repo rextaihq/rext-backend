@@ -65,6 +65,16 @@ from src.flow.model.structure.topics import SEOTopics
         ),
         ("Hiring a LLM Engineer: What to Look For", "Hiring an LLM Engineer: What to Look For"),
         ("How to Start an Podcast on YouTube", "How to Start a Podcast on YouTube"),
+        (
+            "A Unitemized Expense Guide for Small Teams",
+            "An Unitemized Expense Guide for Small Teams",
+        ),
+        ("An Utensil Guide for First-Time Home Cooks", "A Utensil Guide for First-Time Home Cooks"),
+        (
+            "A Unaware Team's Guide to Content Planning",
+            "An Unaware Team's Guide to Content Planning",
+        ),
+        ("A Update Guide for Your Content Plan", "An Update Guide for Your Content Plan"),
         ("An URL's Role in SEO: A Guide for Teams", "A URL's Role in SEO: A Guide for Teams"),
         ("An ONE-PAGE SEO Checklist for Small Teams", "A ONE-PAGE SEO Checklist for Small Teams"),
     ],
@@ -92,6 +102,11 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "How to Uninstall a Plugin: An Uninstall Checklist",
         "A Unidirectional Data Flow Architecture for React Apps",
         "A Unimodal Analytics Model for Modern Marketing Teams",
+        "An Unitemized Expense Guide for Small Business Tax Teams",
+        "A Utensil Guide for First-Time Home Cooks and Bakers",
+        # "u", one consonant, a vowel: unsure.
+        "An Uber Guide for Small Business Teams",
+        "A Uber Guide for Small Business Teams",
         "An Unindexed Page Guide for SEO Teams and Site Owners",
         # A "uni" word it doesn't know: unsure.
         "A Unigram Model Guide for Search Teams",
@@ -180,3 +195,17 @@ def test_every_title_is_put_right_but_never_at_the_keyphrases_cost():
         _topics("A Effective Guide: How to Write a SEO Brief for Teams"), "a effective guide"
     )
     assert kept.topics[0].title == "A Effective Guide: How to Write an SEO Brief for Teams"
+
+
+def test_two_options_never_become_the_same_title():
+    """Options that differed only by an article stay distinct: the second keeps its wording."""
+    fixed = fix_title_articles(
+        _topics(
+            "An Effective Content Strategy Guide for Small Business",
+            "A Effective Content Strategy Guide for Small Business",
+        ),
+        "content strategy",
+    )
+    titles = [topic.title for topic in fixed.topics]
+    assert len(set(titles)) == 2
+    assert titles[0] == "An Effective Content Strategy Guide for Small Business"
