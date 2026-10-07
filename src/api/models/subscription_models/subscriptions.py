@@ -231,6 +231,18 @@ def subscription_grants_access(now: Optional[datetime] = None):
     )
 
 
+def not_a_settled_duplicate():
+    """SQLAlchemy filter: the row wasn't cancelled here as the older of two.
+
+    A duplicate found and left to a person (`duplicate_found_of`) passes: it is still
+    live at Lemon Squeezy until that person cancels it there.
+    """
+    return or_(
+        UserSubscription.subscription_metadata.is_(None),
+        ~UserSubscription.subscription_metadata.has_key("duplicate_of"),
+    )
+
+
 def not_a_known_duplicate():
     """SQLAlchemy filter: the row isn't a duplicate settled here or left to a person."""
     return or_(

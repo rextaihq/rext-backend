@@ -150,6 +150,65 @@ async def test_expired_and_settled_duplicates_are_not_read(session):
 
 
 @pytest.mark.asyncio
+async def test_a_duplicate_left_to_a_person_is_still_read(session):
+    """Marked, not settled: it is live at Lemon Squeezy until a person cancels it there.
+
+    When that cancellation's webhook is missed, the night's read catches it up (#724);
+    left out of the batch, the row would stay active here for good.
+    """
+    flagged = await _subscription(
+        session, SubscriptionStatus.ACTIVE, metadata={"duplicate_found_of": str(uuid4())}
+    )
+    api = _api(
+        {
+            flagged.lemonsqueezy_subscription_id: {
+                "status": "cancelled",
+                "ends_at": (T2 + timedelta(days=20)).isoformat(),
+                "updated_at": T2.isoformat(),
+            }
+        }
+    )
+
+    result = await module.reconcile_subscriptions(session, api)
+
+    assert flagged.status == SubscriptionStatus.CANCELLED
+    assert {k: result[k] for k in ("checked", "changed", "failed")} == {
+        "checked": 1,
+        "changed": 1,
+        "failed": 0,
+    }
+    # The mark stays: the row is still the duplicate, and still grants nothing.
+    assert "duplicate_found_of" in flagged.subscription_metadata
+
+
+@pytest.mark.asyncio
+async def test_the_customer_s_lock_is_taken_before_the_row_s(session, monkeypatch):
+    """One order for the two locks, as storing a new purchase takes them (#724)."""
+    row = await _subscription(session, SubscriptionStatus.PAST_DUE)
+    api = _api(
+        {row.lemonsqueezy_subscription_id: {"status": "active", "updated_at": T2.isoformat()}}
+    )
+    statements = []
+    execute = session.execute
+
+    async def recording(statement, *args, **kwargs):
+        statements.append((str(statement), args[0] if args else None))
+        return await execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", recording)
+
+    await module.reconcile_subscriptions(session, api)
+
+    customer_lock = next(
+        i for i, (sql, _) in enumerate(statements) if "pg_advisory_xact_lock" in sql
+    )
+    row_lock = next(i for i, (sql, _) in enumerate(statements) if "FOR UPDATE" in sql)
+    assert customer_lock < row_lock
+    assert statements[customer_lock][1] == {"key": f"subscriptions:settle:{row.user_id}"}
+    assert row.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.asyncio
 async def test_settled_duplicates_never_take_the_batch(session):
     """Left out before the limit, so a pile of them can't push the real ones out for good."""
     for _ in range(2):

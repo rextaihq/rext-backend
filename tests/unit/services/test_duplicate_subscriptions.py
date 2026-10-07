@@ -282,6 +282,104 @@ async def test_one_settlement_per_customer_at_a_time(session, alerts, monkeypatc
     assert params == {"key": f"subscriptions:settle:{user.id}"}
 
 
+def _record_statements(session, monkeypatch):
+    """Every statement the session executes from here on, as (sql, parameters)."""
+    statements = []
+    execute = session.execute
+
+    async def recording(statement, *args, **kwargs):
+        statements.append((str(statement), args[0] if args else None))
+        return await execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", recording)
+    return statements
+
+
+def _customer_lock_then_row_lock(statements, user_id):
+    """Whether the customer's settlement lock was taken before any row was locked."""
+    customer_lock = next(
+        i for i, (sql, _) in enumerate(statements) if "pg_advisory_xact_lock" in sql
+    )
+    row_lock = next(i for i, (sql, _) in enumerate(statements) if "FOR UPDATE" in sql)
+    assert statements[customer_lock][1] == {"key": f"subscriptions:settle:{user_id}"}
+    return customer_lock < row_lock
+
+
+@pytest.mark.asyncio
+async def test_a_recovery_takes_the_customer_s_lock_before_the_row_s(session, alerts, monkeypatch):
+    """It can end in a settlement, so it takes the locks in the settlement's order (#724).
+
+    Storing a new purchase holds the customer's lock and then writes the older rows; a
+    recovery that held its row and then waited for the customer's lock would deadlock with it.
+    """
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_recovered,
+    )
+
+    user, (older, _) = await _customer_with(
+        session, SubscriptionStatus.UNPAID, SubscriptionStatus.ACTIVE
+    )
+    provider = _provider()
+    monkeypatch.setattr(module, "get_payment_provider_singleton", lambda: provider)
+    statements = _record_statements(session, monkeypatch)
+
+    await handle_subscription_payment_recovered(
+        {
+            "data": {
+                "type": "subscription-invoices",
+                "id": "inv-order",
+                "attributes": {
+                    "subscription_id": older.lemonsqueezy_subscription_id,
+                    "total": 8900,
+                },
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_payment_recovered"),
+        session,
+    )
+
+    assert _customer_lock_then_row_lock(statements, user.id)
+
+
+@pytest.mark.asyncio
+async def test_a_new_purchase_takes_the_customer_s_lock_before_any_row_s(
+    session, alerts, monkeypatch
+):
+    """subscription_created locks its own row if one exists already: the customer first."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    provider = _provider()
+    monkeypatch.setattr(module, "get_payment_provider_singleton", lambda: provider)
+    monkeypatch.setattr(handlers, "grant_promotion_bonus", AsyncMock())
+    user, (newer,) = await _customer_with(session, SubscriptionStatus.ACTIVE)
+    newer.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    plan = await session.get(SubscriptionPlan, newer.plan_id)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{uuid4().hex[:6]}"
+    await session.flush()
+    statements = _record_statements(session, monkeypatch)
+
+    await handlers.handle_subscription_created(
+        {
+            "data": {
+                "type": "subscriptions",
+                "id": "ls-lock-order",
+                "attributes": {
+                    "status": "active",
+                    "variant_id": plan.lemonsqueezy_variant_id_monthly,
+                    "user_email": user.email,
+                    "created_at": "2026-10-06T09:00:00Z",
+                    "updated_at": "2026-10-06T09:00:05Z",
+                },
+            },
+            "custom_data": {"user_id": str(user.id)},
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_created"),
+        session,
+    )
+
+    assert _customer_lock_then_row_lock(statements, user.id)
+
+
 @pytest.mark.asyncio
 async def test_a_settled_duplicate_keeps_its_end_when_lemon_squeezy_cancels_it(
     session, alerts, monkeypatch
