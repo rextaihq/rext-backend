@@ -138,3 +138,29 @@ async def test_without_the_right_to_read_the_workspaces_content_it_is_refused(li
     assert response.status_code == 403
     assert asked == [["content.read"]]
     assert list(store.items) == [(("library", USER, WORKSPACE), KEY)]
+
+
+@pytest.mark.asyncio
+async def test_if_the_kept_results_cant_be_deleted_the_keyword_stays_for_a_retry(
+    library, allow_permissions
+):
+    store, remove = library
+    store.items = {
+        (("library", USER, WORKSPACE), KEY): {"value": {}},
+        (("library_research", USER, WORKSPACE), KEY): {"value": {"serp": []}},
+    }
+    delete = store.delete_item
+
+    async def research_unavailable(namespace, /, key):
+        if namespace[0] == "library_research":
+            raise RuntimeError("store unavailable")
+        await delete(namespace, key=key)
+
+    store.delete_item = research_unavailable
+
+    response = await remove()
+
+    assert response.status_code == 500
+
+    # Nothing is orphaned: the keyword is still listed, and Remove can be tried again.
+    assert (("library", USER, WORKSPACE), KEY) in store.items

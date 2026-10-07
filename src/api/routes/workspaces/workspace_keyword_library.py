@@ -10,11 +10,11 @@ workspace, deleting needs the content delete permission instead.
 """
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.schema.response.keyword_library_responses import LibraryItemDeleted
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.utils.response_utils import success
@@ -24,10 +24,6 @@ from src.utils.workspace_utils import resolve_workspace_for_route
 router = APIRouter(tags=["workspace-keyword-library"])
 
 NOT_IN_LIBRARY = "That keyword isn't in your library."
-
-
-class LibraryItemDeleted(BaseModel):
-    deleted_key: str
 
 
 def library_namespace(user_id: str, workspace_id: str) -> tuple[str, str, str]:
@@ -70,11 +66,13 @@ async def delete_library_item(
     if not item:
         raise ResourceNotFoundException(message=NOT_IN_LIBRARY, resource_type="keyword")
 
-    await store.delete_item(namespace, key=key)
+    # The kept search results go first: if that fails, the item is still there, and Remove can
+    # be tried again rather than leaving the results behind an item that's gone.
     try:
         await store.delete_item(library_research_namespace(owner, workspace_key), key=key)
     except NotFoundError:
         pass  # nothing kept for this item
+    await store.delete_item(namespace, key=key)
     return success(
         data={"deleted_key": key},
         request=request,
