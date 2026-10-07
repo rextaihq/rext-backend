@@ -440,26 +440,11 @@ def build_claim_evidence(
 
     brand = brand_context or {}
     author_profile = meta.get("author_profile") or ""
-    # The workspace's own profile is evidence whether or not a mention was approved: the writer
-    # reads its about and selling position as expertise on every article (article_voice.py),
-    # so a figure it carries ("500 stores since 2018") is the company's own statement, not a
-    # guess. A sentence that names another product is still held to evidence about that one.
-    voice = meta.get("article_voice") or {}
-    brand_documents = list(
-        dict.fromkeys(
-            text
-            for text in (
-                brand.get("about") or "",
-                brand.get("selling_position") or "",
-                voice.get("about") or "",
-                voice.get("selling_position") or "",
-            )
-            if isinstance(text, str) and text.strip()
-        )
-    )
     return ClaimEvidence(
         brand_name=(brand.get("brand_name") or "").strip(),
-        brand_documents=brand_documents,
+        brand_documents=[
+            t for t in (brand.get("about") or "", brand.get("selling_position") or "") if t.strip()
+        ],
         source_documents=sources,
         author_documents=[author_profile] if author_profile.strip() else [],
         entity_names=outline_entity_names(outline, brand.get("brand_name") or ""),
