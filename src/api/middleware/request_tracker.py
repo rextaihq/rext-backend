@@ -20,7 +20,7 @@ from fastapi import Request, Response
 
 from src.api.cache.redis_client import cache
 from src.api.config import get_settings
-from src.utils.ip_allowlist import mask_ip
+from src.utils.ip_allowlist import limiter_client_host, mask_ip
 from src.utils.logger import logger
 
 # Minute counters must outlive the rollup interval by a wide margin: anything
@@ -285,9 +285,10 @@ class RequestTrackerMiddleware:
         """
         The client's network, masked for the log (IPv4 /24, IPv6 /48), never its
         address: request.client.host is the visitor's own IP once ProxyHeadersMiddleware
-        has applied X-Forwarded-For.
+        has applied X-Forwarded-For, and the direct peer's under a catch-all
+        trusted-proxy setting (limiter_client_host).
         """
-        return mask_ip(getattr(request.client, "host", None) if request.client else None)
+        return mask_ip(limiter_client_host(request))
 
     async def _record_api_metrics(
         self, processing_time_ms: int, status_code: int, path: str = ""
