@@ -21,6 +21,7 @@ from src.services.content_cluster_mapping_service import (
     format_cluster_heading_map_for_prompt,
 )
 from src.utils.credit_manager import deduct_credits
+from src.utils.stage_timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -661,7 +662,10 @@ async def generate_outline(state: REXT) -> dict:
 
         logger.info("Outline prompt formatted successfully")
 
-        generated_outline = await outline_model.ainvoke(messages)
+        with timed_stage(
+            "outline_model", regenerating=outline_rejected_reason not in (None, "", "None")
+        ):
+            generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
 
         # Persist the selected topic as the outline title
