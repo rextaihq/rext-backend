@@ -77,10 +77,10 @@ def _nfc(text: Any) -> str:
 
 
 def _capitalized(word: str) -> str:
-    """The word with a capital first letter, unless that capital is longer than the letter
-    (Armenian և is ԵՒ, German ß is SS), which would change what the phrase matches."""
-    first = word[:1].upper()
-    return first + word[1:] if len(first) == len(word[:1]) else word
+    """The word with a capital first letter, unless that capital would match differently: German
+    ß is SS, and the Turkish dotless ı is I, which lowercases to a dotted i."""
+    capital = word[:1].upper() + word[1:]
+    return capital if _normalize_for_match(capital) == _normalize_for_match(word) else word
 
 
 def normalize_title(title: Any) -> str:
@@ -110,8 +110,9 @@ def _normalize_for_match(text: Any) -> str:
     base_flattened = False
     for char in lowered:
         category = unicodedata.category(char)
-        if category == "Cf":
-            # Invisible inside a word (a soft hyphen, a zero-width joiner): not a word break.
+        if category == "Cf" and char != "\u200b":
+            # Invisible inside a word (a soft hyphen, a zero-width joiner): not a word break. The
+            # zero-width space is one, and is flattened below.
             continue
         if category[0] == "M":
             # A mark goes with the character it sits on: an emoji's variation selector is not
@@ -167,6 +168,12 @@ def _at_boundary(edge: str, beside: str) -> bool:
     )
 
 
+def _matched_length(keyphrase: Any) -> int:
+    """The keyphrase's length as matching reads it (punctuation flattened), but with the
+    Armenian ligature և as the one character it takes in a title, not the two it is matched as."""
+    return len(_normalize_for_match(keyphrase).strip()) - _nfc(keyphrase).count("և")
+
+
 def title_max_chars(keyphrase: Any = "") -> int:
     """The longest a title for this keyphrase may be.
 
@@ -175,7 +182,7 @@ def title_max_chars(keyphrase: Any = "") -> int:
     """
     # Measured as keyphrase_fits_a_title measures it, so a keyword the gate lets through is
     # never given a smaller limit than the gate assumed.
-    length = len(_normalize_for_match(keyphrase).strip()) if keyphrase else 0
+    length = _matched_length(keyphrase) if keyphrase else 0
     return min(TITLE_MAX_CHARS_CEILING, max(TITLE_MAX_CHARS, length + TITLE_ROOM_BESIDE_KEYPHRASE))
 
 
@@ -188,7 +195,7 @@ def keyphrase_fits_a_title(keyphrase: Any) -> bool:
     It is measured as contains_keyphrase matches it (case, quotes and other
     punctuation flattened), so a keyword some title could hold is never refused.
     """
-    return len(_normalize_for_match(keyphrase).strip()) <= TITLE_MAX_CHARS_CEILING
+    return _matched_length(keyphrase) <= TITLE_MAX_CHARS_CEILING
 
 
 def title_violations(title: Any, keyphrase: Any = "") -> list[str]:
@@ -218,24 +225,34 @@ def title_is_valid(title: Any, keyphrase: Any = "") -> bool:
 _TRAILING_PUNCTUATION = " ,;:-–—"
 # Words a trimmed title must not end on: a trim that stops just after one leaves the phrase
 # hanging ("Innovations in AI content writing tools for agencies in", G69a). Not "is", "are",
-# "this", "these" or "those": they can close a clause ("Who We Are", "Why You Need This").
+# "this", "these" or "those": they can close a clause ("Who We Are", "Why You Need This"). "that"
+# can too, so it dangles only when the trim cut more than a time ("Tools That [Save Time]", but
+# "Needs That [Today]").
 _DANGLING_END_WORDS = frozenset(
     {
         "a", "an", "the", "and", "or", "but", "nor", "&", "via", "per", "than", "vs", "versus",
-        "your", "our", "their", "its", "my", "that",
+        "your", "our", "their", "its", "my",
+        # A modal whose verb, or a conjunction whose clause, was cut ("What Marketing Can",
+        # "Works Because"). Not "may", "will" or "though": a month, a noun, a clause's end.
+        "can", "could", "would", "should", "might", "must", "shall", "because", "although",
+        "unless", "whether", "if",
     }
 )  # fmt: skip
 
 
 def _verb_forms(verb: str) -> set[str]:
     """A regular verb's written forms ("rely": relies, relied, relying), for the table below."""
-    stem = verb[:-1] if verb.endswith("e") else verb
-    forms = {verb, f"{verb}s", f"{stem}ed", f"{stem}ing"}
+    past = f"{verb}d" if verb.endswith("e") else f"{verb}ed"
+    # "care": caring, but "agree": agreeing.
+    progressive = (
+        f"{verb[:-1]}ing" if verb.endswith("e") and not verb.endswith("ee") else f"{verb}ing"
+    )
+    forms = {verb, f"{verb}s", past, progressive}
     if re.search(r"[^aeiou][aeiou][^aeiouwxy]$", verb):  # commit: committed, committing
         forms |= {f"{verb}{verb[-1]}ed", f"{verb}{verb[-1]}ing"}
     if verb.endswith("y") and verb[-2:-1] not in ("a", "e", "i", "o", "u"):
         forms |= {f"{verb[:-1]}ies", f"{verb[:-1]}ied"}
-    if verb.endswith(("s", "sh", "ch", "x")):
+    if verb.endswith(("s", "sh", "ch", "x", "o")):  # go: goes
         forms.add(f"{verb}es")
     return forms
 
@@ -262,6 +279,24 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
         "over": ("think", "thought", "argue", "fight"),
         "under": ("fall", "fell", "fallen"),
         "onto": ("hold", "held", "latch"),
+        "without": ("live", "do", "go"),
+        "through": ("go", "get", "walk", "talk", "think", "break"),
+        "after": ("look", "take", "go"),
+        "across": ("come", "run"),
+        "around": ("look", "get", "work", "shop"),
+        "against": ("go", "stand", "fight"),
+        "beyond": ("go", "look"),
+        "behind": ("stand", "fall", "leave"),
+        "upon": ("rely", "depend", "call"),
+        "before": (),
+        "during": (),
+        "between": (),
+        "within": (),
+        "among": (),
+        "toward": (),
+        "towards": (),
+        "until": (),
+        "despite": (),
     }.items()
 }  # fmt: skip
 
@@ -269,9 +304,19 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
 # Words that follow a preposition without being its object ("Turns To Today", "Sign Up Now"),
 # and the time phrases that do the same ("Catch Up On This Year").
 _TIME_ADVERBS = frozenset(
-    {"today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon", "anyway"}
-)
+    {
+        "today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon",
+        "anyway", "online", "offline", "here", "there", "everywhere", "anywhere", "locally",
+        "globally", "worldwide", "abroad", "together", "alone", "quickly", "easily",
+        "ultimately", "finally", "really", "actually", "too", "also", "ever", "yet", "already",
+    }
+)  # fmt: skip
 _TIME_PHRASE_STARTS = frozenset({"this", "next", "last", "every"})
+# Prepositions that take a time as their object, and the times that can be one.
+_TIME_OBJECT_PREPOSITIONS = frozenset(
+    {"for", "until", "till", "since", "by", "before", "after", "from", "during"}
+)
+_TIME_WORDS = frozenset({"today", "now", "tonight", "tomorrow", "soon"})
 _TIME_NOUNS = frozenset(
     {
         "year", "month", "week", "weekend", "season", "quarter", "time", "spring", "summer",
@@ -281,6 +326,18 @@ _TIME_NOUNS = frozenset(
 # Particles a verb takes before its preposition ("Catch Up On", "Fall Back On"). Not before "of"
 # or "to", which make compound prepositions of them ("Out Of", "Up To 50%").
 _PARTICLES = frozenset({"up", "out", "down", "back", "off", "away", "along", "ahead"})
+# The verbs those particles make phrasal verbs of; a particle after anything else is part of a
+# noun ("Round Up For Teams" lost its object).
+_PHRASAL_VERBS = frozenset(
+    form
+    for verb in (
+        "catch", "fall", "look", "sign", "keep", "cut", "set", "follow", "show", "end", "give",
+        "come", "stand", "check", "reach", "figure", "find", "work", "carry", "go", "get", "turn",
+        "line", "team", "build", "open", "sum", "log", "opt", "speak", "think", "start", "hold",
+        "put", "take", "bring", "call", "pick", "run", "sort", "point", "back", "clean", "move",
+    )
+    for form in _verb_forms(verb)
+)  # fmt: skip
 
 
 def _bare(word: str) -> str:
@@ -293,24 +350,36 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     last = _bare(words[kept - 1])
     if last in _DANGLING_END_WORDS:
         return True
+    # What the trim cut, all of it: only a time ("Today", "This Year") leaves a word whole;
+    # "for Today and Tomorrow" was the preposition's object.
+    removed = [word for word in (_bare(word) for word in words[kept:]) if word]
+    only_time_cut = (
+        not removed
+        or (len(removed) == 1 and removed[0] in _TIME_ADVERBS)
+        or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS and removed[1] in _TIME_NOUNS)
+    )
+    if last == "that":
+        # "Needs That: Guide" ended a clause on it, as "Needs That Today" did.
+        return not (only_time_cut or words[kept - 1][-1] in _TRAILING_PUNCTUATION)
     if last not in _PREPOSITION_AFTER_VERB:
         return False
     # A preposition that ended a clause, or stood before another one or an adverb of time, had
     # no object for the trim to cut ("Rely On: A Guide", "Fall Back On in 2026", "Turns To
     # Today"). One before a conjunction may share the object that follows it ("for and by
     # Industry Experts"), so a conjunction proves nothing.
-    following = _bare(words[kept]) if kept < len(words) else ""
-    after_that = _bare(words[kept + 1]) if kept + 1 < len(words) else ""
-    if (
-        words[kept - 1][-1] in _TRAILING_PUNCTUATION
-        or not following
-        or following in _PREPOSITION_AFTER_VERB
-        or following in _TIME_ADVERBS
-        or (following in _TIME_PHRASE_STARTS and after_that in _TIME_NOUNS)
-    ):
+    # "for", "until" or "since" take a time as their object ("Guide for [Today]"): a time cut
+    # after one of them cut its object; after the others it didn't ("Turns To [Today]").
+    time_was_object = last in _TIME_OBJECT_PREPOSITIONS and (
+        (len(removed) == 1 and removed[0] in _TIME_WORDS)
+        or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS)
+    )
+    # A preposition before another one is no proof it had no object: "in [under 10 Minutes]"
+    # nests the second in the first's object. "Rely On in 2026" is kept by its verb.
+    if words[kept - 1][-1] in _TRAILING_PUNCTUATION or (only_time_cut and not time_was_object):
         return False
     verb = _bare(words[kept - 2]) if kept > 1 else ""
-    if verb in _PARTICLES and last not in ("of", "to"):
+    before_particle = _bare(words[kept - 3]) if kept > 2 else ""
+    if verb in _PARTICLES and before_particle in _PHRASAL_VERBS and last not in ("of", "to"):
         return False
     return verb not in _PREPOSITION_AFTER_VERB[last]
 
