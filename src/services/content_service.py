@@ -7,12 +7,12 @@ Strictly separates core content from SEO metadata.
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import urlparse
 from uuid import UUID
 
 import markdown
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -29,6 +29,7 @@ from src.api.models.content_models.publishing_result import (
     PublishingStatus,
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.content_schema import (
     ContentCreate,
     ContentSEODataSchema,
@@ -105,6 +106,71 @@ async def notify_content_published(content: Content, workspace_id) -> None:
         },
         workspace_id=workspace_id,
     )
+
+
+# The library's statuses (the trash, deleted_at, is left out), in the order a
+# status sort puts them; and the columns it can sort by (rext-control#381).
+CONTENT_LIST_STATUSES = (
+    "draft",
+    "generating",
+    "ready",
+    "review",
+    "scheduled",
+    "published",
+    "failed",
+    "archived",
+)
+CONTENT_LIST_SORTS = (
+    "title",
+    "status",
+    "persona",
+    "updated_at",
+    "published_to",
+    "seo",
+    "created_at",
+)
+
+
+def _escape_like(text: str) -> str:
+    """A search text taken literally by ILIKE: its own % and _ match themselves."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _sent_to_site():
+    """A publishing result that went out: it has an address, or the site says published."""
+    return or_(
+        ContentPublishingResult.external_url.isnot(None),
+        ContentPublishingResult.status.in_(("published", "synced")),
+    )
+
+
+def _sort_key(sort: str):
+    """The SQL expression a library column sorts by."""
+    if sort == "title":
+        return func.lower(Content.title)
+    if sort == "status":
+        return case(
+            *((Content.status == name, rank) for rank, name in enumerate(CONTENT_LIST_STATUSES)),
+            else_=len(CONTENT_LIST_STATUSES),
+        )
+    if sort == "persona":
+        return func.lower(Persona.name)
+    if sort == "updated_at":
+        return func.coalesce(Content.updated_at, Content.created_at)
+    if sort == "published_to":
+        sent = (
+            select(func.count(ContentPublishingResult.id))
+            .where(ContentPublishingResult.content_id == Content.id, _sent_to_site())
+            .scalar_subquery()
+        )
+        # An older article has only its WordPress address: one site.
+        return case(
+            (and_(sent == 0, Content.wordpress_url.isnot(None)), 1),
+            else_=sent,
+        )
+    if sort == "seo":
+        return ContentSEOData.seo_score
+    return Content.created_at
 
 
 class ContentService:
@@ -384,26 +450,65 @@ class ContentService:
         status: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        *,
+        statuses: Optional[Sequence[str]] = None,
+        personas: Optional[Sequence[str]] = None,
+        q: Optional[str] = None,
+        sort: str = "created_at",
+        descending: bool = True,
     ) -> Dict[str, Any]:
-        query = (
-            select(Content)
-            .where(Content.workspace_id == workspace_id, Content.deleted_at.is_(None))
-            .options(selectinload(Content.seo_data))
-        )
-        if status:
-            query = query.where(Content.status == status)
+        """The workspace's content (trash left out), a page at a time.
 
-        count_query = (
-            select(func.count())
-            .select_from(Content)
-            .where(Content.workspace_id == workspace_id, Content.deleted_at.is_(None))
-        )
-        if status:
-            count_query = count_query.where(Content.status == status)
+        The library's search, filters and sort run here so it can page on the
+        server (rext-control#381). ``statuses`` and ``personas`` are lists; a
+        persona of ``"none"`` matches articles without one. ``q`` matches the
+        title, or the address of a site the article was sent to. ``sort`` is one
+        of ``CONTENT_LIST_SORTS``; empty values sort last either way, and the id
+        breaks ties so a page never repeats or skips an article. ``total_count``
+        counts the filtered set.
+        """
+        filters = [Content.workspace_id == workspace_id, Content.deleted_at.is_(None)]
+        wanted = list(statuses or ([status] if status else []))
+        if wanted:
+            filters.append(Content.status.in_(wanted))
+        if personas:
+            ids = [UUID(p) for p in personas if p != "none"]
+            matches = [Content.persona_id.in_(ids)] if ids else []
+            if "none" in personas:
+                matches.append(Content.persona_id.is_(None))
+            filters.append(or_(*matches))
+        if q and q.strip():
+            pattern = f"%{_escape_like(q.strip())}%"
+            filters.append(
+                or_(
+                    Content.title.ilike(pattern, escape="\\"),
+                    exists(
+                        select(ContentPublishingResult.id)
+                        .join(
+                            WorkspaceIntegration,
+                            WorkspaceIntegration.id == ContentPublishingResult.site_id,
+                        )
+                        .where(
+                            ContentPublishingResult.content_id == Content.id,
+                            _sent_to_site(),
+                            WorkspaceIntegration.site_url.ilike(pattern, escape="\\"),
+                        )
+                    ),
+                )
+            )
 
+        count_query = select(func.count()).select_from(Content).where(*filters)
         total_count = (await self.db.execute(count_query)).scalar()
+
+        query = select(Content).where(*filters).options(selectinload(Content.seo_data))
+        key = _sort_key(sort)
+        if sort == "persona":
+            query = query.outerjoin(Persona, Persona.id == Content.persona_id)
+        elif sort == "seo":
+            query = query.outerjoin(ContentSEOData, ContentSEOData.content_id == Content.id)
+        ordered = key.desc() if descending else key.asc()
         result = await self.db.execute(
-            query.order_by(Content.created_at.desc()).offset(offset).limit(limit)
+            query.order_by(ordered.nulls_last(), Content.id.asc()).offset(offset).limit(limit)
         )
         items = result.scalars().all()
 
