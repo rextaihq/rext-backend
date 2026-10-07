@@ -64,7 +64,9 @@ async def _token(request: Request) -> Optional[str]:
     except ValueError:
         return None
     token = body.get(TOKEN_FIELD) if isinstance(body, dict) else None
-    return token if isinstance(token, str) and token else None
+    # Cloudflare's tokens are ASCII. Anything else (a lone surrogate, which JSON allows and UTF-8
+    # can't encode) is no token at all.
+    return token if isinstance(token, str) and token and token.isascii() else None
 
 
 async def token_bytes(request: Request) -> int:
@@ -73,7 +75,7 @@ async def token_bytes(request: Request) -> int:
     token = await _token(request)
     if not token or len(token) > MAX_TOKEN_LENGTH:
         return 0
-    return len(token.encode()) + len(TOKEN_FIELD) + len(',"":""')
+    return len(token) + len(TOKEN_FIELD) + len(',"":""')
 
 
 async def verify_turnstile(request: Request, remote_ip: Optional[str]) -> None:

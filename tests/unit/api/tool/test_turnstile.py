@@ -198,3 +198,18 @@ def test_the_token_counts_toward_neither_the_size_limit_nor_the_cost(settings, m
 
     assert response.status_code == 200
     assert model.await_count == 1
+
+
+@pytest.mark.parametrize(("secret", "status"), [(SECRET, 403), (None, 200)])
+def test_a_token_that_isnt_ascii_is_no_token(settings, model, cloudflare, secret, status):
+    """A lone surrogate is valid JSON but no UTF-8: refused with the check on, ignored without it,
+    never a 500."""
+    settings.TURNSTILE_SECRET_KEY = secret
+    response = client.post(
+        QUESTIONS,
+        content=b'{"text":"Hi?","turnstile_token":"\\ud800"}',
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == status
+    assert cloudflare["seen"] == []
