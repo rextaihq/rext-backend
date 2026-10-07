@@ -23,7 +23,7 @@ def test_the_reader_and_the_offer_are_shown_apart():
     block = _format_reader_and_offer(PROFILE)
 
     reader, offer = block.split("WHAT THE BRAND OFFERS:")
-    assert reader.startswith("WHO THIS IS FOR:")
+    assert reader.startswith("WHO THE SITE SERVES:")
     assert "Customer profile: Marketing leads at 10–50 person B2B SaaS teams" in reader
     assert "Audiences: Content marketers; SEO specialists" in reader
     assert "About: Rext AI writes SEO articles" in offer
@@ -114,10 +114,18 @@ def outline_prompt(monkeypatch):
 async def test_the_outline_is_planned_for_the_workspaces_reader_and_offer(outline_prompt):
     human = await outline_prompt(PROFILE)
 
-    assert "The Workspace's Reader and Offer" in human
+    assert "The Workspace's Customers and Offer" in human
     assert "Customer profile: Marketing leads at 10–50 person B2B SaaS teams" in human
     assert "What it offers: Researched, cited drafts" in human
-    assert "WRITE FOR THIS READER" in human
+    # The reader is the searcher, narrowed toward the site's customers; never their list copied.
+    assert "WRITE FOR THE PERSON SEARCHING THIS KEYWORD, AS THIS SITE'S CUSTOMER" in human
+    assert "the reader is whoever types the Focus Keyword above" in human
+    # The keyword itself is stated: a title the user wrote may not contain it.
+    assert (
+        "Focus Keyword (what the reader typed into the search engine):\nseo content brief" in human
+    )
+    assert "`target_audience` names the searcher this article serves" in human
+    assert "Never copy the site's customer list into `target_audience`" in human
     assert "LET THE INTENT SHAPE THE STRUCTURE" in human
     assert "Commercial → how to choose (criteria)" in human
     assert "Intent Distribution:\nCommercial" in human
@@ -130,6 +138,6 @@ async def test_without_a_profile_the_outline_says_none_available(outline_prompt)
     human = await outline_prompt({})
 
     assert (
-        "The Workspace's Reader and Offer (who this site writes for, and what it offers):\nNone available."
+        "The Workspace's Customers and Offer (who this site serves, and what it offers):\nNone available."
         in human
     )

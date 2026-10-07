@@ -87,6 +87,100 @@ def test_a_time_phrase_or_a_particle_before_the_preposition_keeps_it():
     assert repaired == "SEO Agencies: What Small Businesses Need to Catch Up On"
 
 
+def test_that_closing_a_clause_stays_and_a_relative_that_goes():
+    assert repair_title(
+        "SEO Agencies: Learn Why Your Business Really Needs That Today", "seo agencies"
+    ) == ("SEO Agencies: Learn Why Your Business Really Needs That")
+    # Its clause was cut: "that" goes with it.
+    assert _trim_to_max(
+        "SEO Agencies: The Proven Tools Small Businesses Need That Save Hours", "seo agencies"
+    ) == ("SEO Agencies: The Proven Tools Small Businesses Need")
+
+
+def test_a_time_word_counts_only_when_it_is_all_the_trim_cut():
+    """The trim cut "Today and Tomorrow", the object of "for", not a time after it."""
+    title = "SEO Agencies: The Complete Strategic Marketing Plan for Today and Tomorrow"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: The Complete Strategic Marketing Plan"
+    )
+
+
+def test_agreeing_keeps_its_preposition():
+    title = "SEO Agencies: These Choices Businesses Are Agreeing With Their Advisors"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: These Choices Businesses Are Agreeing With"
+    )
+
+
+def test_a_particle_keeps_the_preposition_only_after_a_phrasal_verb():
+    """Here "Round Up" is a noun, and "For" lost its object."""
+    title = "SEO Agencies: The Complete Detailed Expert Round Up For Teams Everywhere"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: The Complete Detailed Expert Round Up"
+    )
+
+
+def test_every_common_preposition_whose_object_was_cut_goes():
+    title = "SEO Agencies: A Complete Guide for Small Businesses Without Hidden Costs"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: A Complete Guide for Small Businesses"
+    )
+
+
+def test_that_ending_a_clause_before_punctuation_stays():
+    title = "SEO Agencies: Why Every Small Business Really Needs That: Guide"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Why Every Small Business Really Needs That"
+    )
+
+
+def test_a_preposition_before_an_adverb_keeps_its_place():
+    """The trim cut "Online", not the object of "For"."""
+    title = "SEO Agencies: Complete Guide to What Businesses Search For Online"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Complete Guide to What Businesses Search For"
+    )
+
+
+def test_a_preposition_whose_object_was_a_time_goes():
+    """Here "Today" was the object of "for"; "Turns To Today" keeps its "To"."""
+    title = "SEO Agencies: A Complete Strategic Marketing Guide for Today"  # 60
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: A Complete Strategic Marketing Guide"
+    )
+
+
+def test_a_sentence_adverb_is_no_object_either():
+    title = "SEO Agencies: Learn Why This Useful Guide Was Made For Ultimately"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Learn Why This Useful Guide Was Made For"
+    )
+
+
+def test_a_preposition_whose_object_began_with_another_goes():
+    title = "SEO Agencies: A Guide to Building Better Search Rankings in under 10 Minutes"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: A Guide to Building Better Search Rankings"
+    )
+
+
+def test_a_modal_or_a_conjunction_whose_clause_was_cut_goes():
+    assert _trim_to_max(
+        "SEO Agencies: A Practical Look at What Better Marketing Can Achieve Today",
+        "seo agencies",
+    ) == ("SEO Agencies: A Practical Look at What Better Marketing")
+    assert _trim_to_max(
+        "SEO Agencies: Better Content Marketing Works Because Experts Plan Ahead", "seo agencies"
+    ) == ("SEO Agencies: Better Content Marketing Works")
+
+
+def test_a_verb_ending_in_o_keeps_its_preposition():
+    title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To"
+    )
+
+
 def test_a_verb_that_doubles_its_last_consonant_keeps_its_preposition():
     title = "SEO Agencies: A Strategy Your Whole Team Is Committed To Today"  # 62
     repaired = repair_title(title, "seo agencies")
