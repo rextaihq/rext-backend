@@ -76,6 +76,21 @@ def _redact_urls(text: str, *addresses: object) -> str:
     return _ADDRESS_IN_TEXT.sub(lambda match: _loggable_url(match.group(0)), text)
 
 
+def _body_image_refusal(error: Exception, image_url: str) -> RextExternalServiceException:
+    """Why a publish stops on an image in the post's body that couldn't be copied to the site's
+    media library. Published anyway, the image would keep its original address, often a signed
+    storage address that expires, and the live post would show it broken."""
+    reason = _redact_urls(getattr(error, "message", None) or str(error), image_url)
+    return RextExternalServiceException(
+        message=(
+            f"Publishing stopped: an image in the article ({_loggable_url(image_url)}) couldn't be "
+            f"copied to the site's media library. Replace or remove it, then publish again. "
+            f"Reason: {reason}"
+        ),
+        service_name="WordPress",
+    )
+
+
 # Domains that only ever show up when an image URL was hallucinated by the
 # model rather than being a real generated/uploaded asset.
 _PLACEHOLDER_IMAGE_MARKERS = (
@@ -661,9 +676,10 @@ class WordPressPublisher:
         image's alt text is carried over to the WordPress media library, and an
         image embedded without any alt text gets one derived from the article so
         it isn't published with an empty alt attribute. Images already uploaded
-        as the featured image are reused instead of being uploaded twice. A
-        failure on one image is logged and skipped (its original URL is kept) so
-        one bad image can't fail the whole publish.
+        as the featured image are reused instead of being uploaded twice. An
+        image that can't be copied stops the publish with the reason
+        (_body_image_refusal): left in, its original address would break on the
+        live post.
         """
         media_by_source = dict(uploaded_media or {})
         resolved_alt_by_src: Dict[str, str] = {}
@@ -686,12 +702,12 @@ class WordPressPublisher:
             if media_info is None:
                 try:
                     media_info = await self._upload_featured_image(image_url, alt_text=alt_text)
-                except Exception:
-                    logger.exception(
-                        "[WordPress Publish] failed to sync embedded image=%s; keeping original URL",
+                except Exception as exc:
+                    logger.error(
+                        "[WordPress Publish] failed to sync embedded image=%s; stopping the publish",
                         _loggable_url(image_url),
                     )
-                    continue
+                    raise _body_image_refusal(exc, image_url) from None
                 media_by_source[image_url] = media_info
             elif alt_text and media_info.get("media_id"):
                 # Reused (e.g. the featured image) but embedded with alt text —
@@ -1534,7 +1550,8 @@ class WordPressPublisher:
             # Resolve alt text while the image is still in the body — the alt the
             # user typed in the editor lives on the <img>, and the inline copy is
             # stripped below before the embedded-image sync could ever see it.
-            body_alt = dict(self._extract_images_with_alt(content)).get(image_url, "")
+            body_images = dict(self._extract_images_with_alt(content))
+            body_alt = body_images.get(image_url, "")
             featured_alt = build_image_alt_text(
                 user_alt=images_data_alt or body_alt,
                 title=title,
@@ -1543,7 +1560,16 @@ class WordPressPublisher:
             logger.info("[WordPress Publish] featured image alt=%r", featured_alt)
             try:
                 media_info = await self._upload_featured_image(image_url, alt_text=featured_alt)
-            except Exception:
+            except Exception as exc:
+                if image_url in body_images:
+                    # It's in the body too, where it can't stay with its original
+                    # address: stop now rather than download it a second time.
+                    logger.error(
+                        "[WordPress Publish] failed to upload featured image=%s, which the body "
+                        "shows too; stopping the publish",
+                        _loggable_url(image_url),
+                    )
+                    raise _body_image_refusal(exc, image_url) from None
                 # A missing/broken featured image (e.g. deleted from storage)
                 # must not abort the whole publish - post without one instead.
                 logger.exception(
