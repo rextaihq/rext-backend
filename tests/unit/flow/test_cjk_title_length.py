@@ -11,6 +11,7 @@ is padded in its own language, never in English.
 import pytest
 
 from src.flow.engines.content.generation.seo_title_rules import (
+    _local_language,
     keyphrase_fits_a_title,
     keyphrase_title,
     repair_title,
@@ -111,7 +112,28 @@ def _prompt(keyphrase: str) -> str:
 def test_the_prompt_states_the_range_in_the_characters_a_writer_counts():
     chinese = _prompt("项目管理软件")
     assert "BETWEEN 20 AND 30 CHARACTERS" in chinese
-    assert "Count each Chinese, Japanese or Korean character as one" in chinese
+    assert "Count each Chinese, Japanese or Korean character" in chinese
     thai = _prompt("โปรแกรมจัดการโครงการ")
     assert "BETWEEN 38 AND 55 CHARACTERS" in thai
     assert "BETWEEN 50 AND 59 CHARACTERS" in _prompt("seo agencies")
+
+
+@pytest.mark.parametrize(
+    ("title", "language"),
+    [
+        ("東京観光", "ja"),  # Japanese kanji forms, no kana
+        ("プロジェクト管理ツール", "ja"),
+        ("项目管理软件", "zh-Hans"),
+        ("專案管理軟體推薦與選擇", "zh-Hant"),
+        ("人工知能", "han"),  # nothing tells Chinese from Japanese: neutral qualifiers
+        ("프로젝트 관리 도구", "ko"),
+    ],
+)
+def test_a_han_title_is_padded_in_its_language_only_when_the_characters_show_it(title, language):
+    assert _local_language(title) == language
+
+
+def test_the_prompt_counts_full_width_punctuation_and_names_the_other_scripts_ranges():
+    assert "each full-width punctuation mark" in _prompt("项目管理软件")
+    # A Latin keyword may still get a Chinese title ("最佳seo工具推荐").
+    assert "20-30 of those characters" in _prompt("seo")

@@ -65,6 +65,9 @@ _LOCAL_PADDING: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("", "了解", "一文讀懂"),
         ("：概述", "：基本概念", "：定義、用途與選擇要點", "：基本概念、常見用途與選擇方法"),
     ),
+    # A title in Han characters alone, with no sign of its language: qualifiers read alike in
+    # Chinese and Japanese.
+    "han": (("",), ("：概要", "：基本概念")),
     "ja": (
         ("", "基礎から学ぶ"),
         ("：概要", "：基本ガイド", "：入門ガイド", "の基本：意味・使い方・選び方"),
@@ -78,14 +81,15 @@ _LOCAL_PADDING: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         (" | ภาพรวม", " | ความรู้พื้นฐาน", " | คู่มือเบื้องต้น", " | ความหมาย การใช้งาน และวิธีเลือก"),
     ),
 }
-# Characters written differently in Traditional and Simplified Chinese, to tell which a title is
-# in; a title with neither is taken as Simplified.
-_TRADITIONAL_ONLY = frozenset(
-    "們這個與為體學實點選擇導對開關時說讀義麼來會將當從還進電動應發現機係種類語"
-)
+# Characters written only in Traditional Chinese, only in Simplified Chinese, or only in
+# Japanese (its own simplified forms), to tell which language a Han-only title is in. None is
+# shared with another of the three; a title with no such character gets the neutral qualifiers.
+_TRADITIONAL_ONLY = frozenset("們這與體學實點擇對說讀麼來將當從應發關會營銷產圖戲匯賣價處")
 _SIMPLIFIED_ONLY = frozenset(
-    "们这个与为体学实点选择导对开关时说读义么来会将当从还进电动应发现机系种类语"
+    "们这个为实选择导对开关时说读义么从还进电动应发现机种类语叶书车门马鱼鸟长东网软处务价优买卖"
+    "荐营销产业热题视频图戏页评测词"
 )
+_JAPANESE_ONLY = frozenset("観気広歩楽図駅売発対総経済読続験検権県辺変転伝")
 
 _WHITESPACE_RE = re.compile(r"\s+")
 # Scripts written without spaces between words (Thai, Lao, Myanmar, Khmer, kana including the
@@ -264,12 +268,21 @@ def title_length_terms(keyphrase: Any = "") -> tuple[int, int, str]:
         return (
             low // 2,
             high // 2,
-            "Count each Chinese, Japanese or Korean character as one, and a Latin letter, digit, "
-            "space or punctuation mark as half of one.",
+            "Count each Chinese, Japanese or Korean character, and each full-width punctuation "
+            "mark (such as ：、。), as one, and a Latin letter, digit, space or half-width "
+            "punctuation mark as half of one.",
         )
     if family == "thai":
         return low, high, "Thai vowel and tone marks written above or below a letter don't count."
-    return low, high, "Count spaces and punctuation as characters."
+    cjk_low, cjk_high, _ = _TITLE_RANGES["cjk"]
+    thai_low, thai_high, _ = _TITLE_RANGES["thai"]
+    return (
+        low,
+        high,
+        "Count spaces and punctuation as characters. A title written in Chinese, Japanese or "
+        f"Korean is {cjk_low // 2}-{cjk_high // 2} of those characters instead (a Latin letter, "
+        f"digit or space counting half), and one in Thai {thai_low}-{thai_high} characters.",
+    )
 
 
 def title_max_chars(keyphrase: Any = "") -> int:
@@ -508,12 +521,15 @@ def _local_language(title: str) -> Optional[str]:
         return "th"
     if family != "cjk":
         return None
-    if _KANA_RE.search(title):
+    if _KANA_RE.search(title) or any(char in _JAPANESE_ONLY for char in title):
         return "ja"
     if _HANGUL_RE.search(title):
         return "ko"
     traditional = sum(char in _TRADITIONAL_ONLY for char in title)
-    return "zh-Hant" if traditional > sum(char in _SIMPLIFIED_ONLY for char in title) else "zh-Hans"
+    simplified = sum(char in _SIMPLIFIED_ONLY for char in title)
+    if traditional > simplified:
+        return "zh-Hant"
+    return "zh-Hans" if simplified > traditional else "han"
 
 
 def _pad_to_min(title: str, keyphrase: str = "") -> str:
