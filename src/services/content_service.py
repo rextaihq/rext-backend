@@ -184,6 +184,8 @@ class ContentService:
         finished article while the editor's manual Save reconciles to the same
         row (no duplicate, no title-collision error).
         """
+        persona_id = await self._workspace_persona_id(workspace_id, data.persona_id)
+
         # Idempotency: reconcile to the existing row for this generation thread.
         if data.langgraph_thread_id:
             existing_by_thread = (
@@ -210,7 +212,7 @@ class ContentService:
                     images_data=data.images_data,
                     links_data=data.links_data,
                     schema_markup=data.schema_markup,
-                    persona_id=data.persona_id,
+                    persona_id=persona_id,
                 )
                 return await self.update_content(
                     existing_by_thread.id,
@@ -245,7 +247,7 @@ class ContentService:
             links_data=data.links_data,
             schema_markup=data.schema_markup,
             langgraph_thread_id=data.langgraph_thread_id,
-            persona_id=data.persona_id,
+            persona_id=persona_id,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -337,6 +339,8 @@ class ContentService:
         ]
         for field in updatable_fields:
             val = getattr(data, field, None)
+            if field == "persona_id":
+                val = await self._workspace_persona_id(workspace_id, val)
             if val is not None:
                 setattr(content, field, val)
 
@@ -549,12 +553,41 @@ class ContentService:
             "author_email": persona.email if persona else None,
         }
 
+    async def _workspace_persona_id(
+        self, workspace_id: UUID, persona_id: Optional[UUID]
+    ) -> Optional[UUID]:
+        """`persona_id` when that persona is this workspace's own, else None.
+
+        The id arrives as the caller sent it, from the outline step or the API. Another
+        workspace's persona is never saved as an article's author: publishing would
+        credit it by name. An article is saved either way, with no author persona.
+        """
+        if not persona_id:
+            return None
+        from src.api.models.knowledge_models.persona_model import Persona
+
+        owned = (
+            await self.db.execute(
+                select(Persona.id).where(
+                    Persona.id == persona_id, Persona.workspace_id == workspace_id
+                )
+            )
+        ).scalar_one_or_none()
+        if owned is None:
+            logger.warning(
+                "content: persona %s is not in workspace %s; saved with no author persona",
+                persona_id,
+                workspace_id,
+            )
+        return owned
+
     async def author_persona_for(self, content: Content):
         """The author persona chosen for this article in the outline step, if any.
 
         Returns None when the article was written with no persona, or when the
         persona has since been deleted — in both cases WordPress publishes under
-        the connected account, as it did before a persona could be chosen.
+        the connected account, as it did before a persona could be chosen. Only a
+        persona of the article's own workspace is ever returned.
         """
         persona_id = getattr(content, "persona_id", None)
         if not persona_id:
@@ -562,11 +595,15 @@ class ContentService:
         from src.api.models.knowledge_models.persona_model import Persona
 
         persona = (
-            await self.db.execute(select(Persona).where(Persona.id == persona_id))
+            await self.db.execute(
+                select(Persona).where(
+                    Persona.id == persona_id, Persona.workspace_id == content.workspace_id
+                )
+            )
         ).scalar_one_or_none()
         if persona is None:
             logger.warning(
-                "[PUBLISH] content_id=%s references persona %s which no longer exists",
+                "[PUBLISH] content_id=%s references persona %s which is not in its workspace",
                 content.id,
                 persona_id,
             )

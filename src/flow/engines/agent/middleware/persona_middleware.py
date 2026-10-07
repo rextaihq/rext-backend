@@ -71,6 +71,20 @@ def persona_fits_outline(persona: Any, outline: Optional[dict]) -> bool:
     )
 
 
+def persona_query(workspace_id, selected_id):
+    """The persona an article is written as, always one of the workspace's own.
+
+    With a selection: that persona, and only inside this workspace. The id comes back from
+    the outline screen as the caller sent it, so another workspace's persona, or one since
+    deleted, finds nothing and the article is written with no persona (never as whichever
+    is newest). Without one (a run from before the outline step chose): the newest.
+    """
+    query = select(Persona).where(Persona.workspace_id == workspace_id)
+    if selected_id:
+        return query.where(Persona.id == uuid.UUID(str(selected_id)))
+    return query.order_by(Persona.created_at.desc()).limit(1)
+
+
 class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Runs before the agent loop starts.
@@ -794,22 +808,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         async def _fetch() -> Optional[Persona]:
             async with get_pooled_langgraph_db_context() as db:
-                if selected_id:
-                    from uuid import UUID as _UUID
-
-                    result = await db.execute(
-                        select(Persona).where(Persona.id == _UUID(str(selected_id)))
-                    )
-                    persona = result.scalar_one_or_none()
-                    if persona:
-                        return persona
-                # Fallback: most recently created persona for this workspace
-                result = await db.execute(
-                    select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
-                    .order_by(Persona.created_at.desc())
-                    .limit(1)
-                )
+                result = await db.execute(persona_query(workspace_id, selected_id))
                 return result.scalar_one_or_none()
 
         try:
