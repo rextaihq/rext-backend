@@ -81,6 +81,23 @@ async def test_turning_a_kind_off_on_the_preferences_page_sticks(client, prefs):
 
 
 @pytest.mark.asyncio
+async def test_a_null_in_the_request_changes_nothing(client, prefs):
+    """The fields are optional, so a client can send null. Stored, a null would read as an
+    opt-out when sending (and the columns refuse it); it is no change instead."""
+    async with client as ac:
+        response = await ac.put(
+            "/user/email-preferences/",
+            json={"payment_succeeded": None, "marketing": None, "payment_failed": False},
+        )
+
+    assert response.status_code == 200
+    assert None not in (prefs.category_preferences or {}).values()
+    assert prefs.get_preference("billing_payment_success") is True
+    assert prefs.marketing_updates is False  # as it was, not null
+    assert prefs.get_preference("billing_payment_failed") is False  # the real change still lands
+
+
+@pytest.mark.asyncio
 async def test_unsubscribing_from_one_kind_by_link_sticks(client, prefs):
     async with client as ac:
         response = await ac.post(
@@ -92,3 +109,41 @@ async def test_unsubscribing_from_one_kind_by_link_sticks(client, prefs):
     assert prefs.get_preference("billing_payment_success") is False
     assert prefs.get_preference("billing_payment_failed") is True  # only the one kind
     assert prefs.email_notifications is True  # not every email
+
+
+@pytest.mark.asyncio
+async def test_a_null_in_the_profiles_notification_settings_changes_nothing(prefs):
+    """The profile's notification settings take the category keys too, each optional."""
+    from src.api.routes.users.profile import router as profile_router
+
+    profile = "src.api.routes.users.profile"
+    db = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    service = MagicMock()
+    service.get_or_create = AsyncMock(return_value=prefs)
+
+    app = FastAPI()
+    app.include_router(profile_router)
+
+    async def override_db():
+        yield db
+
+    app.dependency_overrides[get_async_db] = override_db
+    app.dependency_overrides[get_current_user] = lambda: {"identity": str(USER_ID)}
+    with (
+        patch(f"{profile}.NotificationPreferencesService", return_value=service),
+        patch(f"{profile}.create_audit_log", AsyncMock()),
+        patch(f"{profile}.schedule_if_allowed", AsyncMock()),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.patch(
+                "/preferences/notifications",
+                json={"billing_payment_success": None, "gen_failed": False},
+            )
+
+    assert response.status_code == 200
+    assert None not in (prefs.category_preferences or {}).values()
+    assert prefs.get_preference("billing_payment_success") is True
+    assert prefs.get_preference("gen_failed") is False  # the real change still lands

@@ -409,7 +409,8 @@ async def update_notification_preferences(
             }
 
             for cat, value in categories.items():
-                if cat in mapping:
+                # A null is no change: in the JSONB it would read as an opt-out.
+                if cat in mapping and value is not None:
                     for db_field in mapping[cat]:
                         # A category key lives in JSONB, not as an attribute (G61, #523).
                         current_value = preferences.get_preference(db_field)
@@ -426,6 +427,8 @@ async def update_notification_preferences(
     for field, value in update_data.items():
         column_name = alias_to_column.get(field, field)
         if column_name in jsonb_fields:
+            if value is None:
+                continue
             old_val = preferences.get_preference(column_name)
             if old_val != value:
                 old_values[column_name] = old_val
