@@ -18,6 +18,7 @@ from a fixed ladder.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Optional
 
 TITLE_MIN_CHARS = 50
@@ -54,25 +55,42 @@ _NEUTRAL_PREFIXES: tuple[str, ...] = (
 )
 
 _WHITESPACE_RE = re.compile(r"\s+")
-_NON_WORD_RE = re.compile(r"[^a-z0-9]+")
+# Scripts written without spaces between words: a keyphrase in one of them is matched as a run of
+# characters, since no space marks where its words begin and end (Thai, Lao, Myanmar, Khmer,
+# kana, CJK ideographs).
+_UNSPACED_SCRIPT_RE = re.compile(
+    "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"
+)
 _SURROUNDING_QUOTES = "\"'`“”‘’ "
 
 
+def _nfc(text: Any) -> str:
+    """One spelling per character: an accent typed as a separate mark (NFD) is the same
+    letter as its precomposed form (NFC), and counts as one character."""
+    return unicodedata.normalize("NFC", str(text or ""))
+
+
 def normalize_title(title: Any) -> str:
-    """Whitespace/quote normalization only — never changes meaning."""
+    """Whitespace/quote (and NFC) normalization only — never changes meaning."""
     if not title:
         return ""
-    text = _WHITESPACE_RE.sub(" ", str(title).strip())
+    text = _WHITESPACE_RE.sub(" ", _nfc(title).strip())
     return text.strip(_SURROUNDING_QUOTES).strip()
 
 
 def _normalize_for_match(text: Any) -> str:
-    """Lowercase, punctuation-flattened form used for keyphrase containment.
+    """Casefolded, punctuation-flattened form used for keyphrase containment (G69b).
 
     Padded with spaces so a containment test is implicitly word-boundary
     aware: "seo agency" must not match inside "seo agencyx".
     """
-    return f" {_NON_WORD_RE.sub(' ', str(text or '').lower()).strip()} "
+    # Letters, marks and digits of every script are kept (an accented letter, Arabic, Cyrillic,
+    # Devanagari's vowel signs); punctuation, symbols, separators and the underscore become spaces.
+    flattened = "".join(
+        " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char
+        for char in _nfc(text).casefold()
+    )
+    return f" {' '.join(flattened.split())} "
 
 
 def contains_keyphrase(text: Any, keyphrase: Any) -> bool:
@@ -85,6 +103,9 @@ def contains_keyphrase(text: Any, keyphrase: Any) -> bool:
     normalized_keyphrase = _normalize_for_match(keyphrase).strip()
     if not normalized_keyphrase:
         return False
+    if _UNSPACED_SCRIPT_RE.search(normalized_keyphrase):
+        # No spaces mark word boundaries in these scripts: the phrase as a run of characters.
+        return normalized_keyphrase in _normalize_for_match(text)
     return f" {normalized_keyphrase} " in _normalize_for_match(text)
 
 
