@@ -76,6 +76,8 @@ from src.flow.model.structure.topics import SEOTopics
         ),
         ("A Update Guide for Your Content Plan", "An Update Guide for Your Content Plan"),
         ("An URL's Role in SEO: A Guide for Teams", "A URL's Role in SEO: A Guide for Teams"),
+        ("A M2 MacBook Guide for Content Teams", "An M2 MacBook Guide for Content Teams"),
+        ("How to Write a H1 Heading for Your Blog", "How to Write an H1 Heading for Your Blog"),
         ("An ONE-PAGE SEO Checklist for Small Teams", "A ONE-PAGE SEO Checklist for Small Teams"),
     ],
 )
@@ -106,6 +108,9 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "A Utensil Guide for First-Time Home Cooks and Bakers",
         # "u", one consonant, a vowel: unsure.
         "An Uber Guide for Small Business Teams",
+        "A Ouija Board Guide for Paranormal Content Creators",
+        "An M2 MacBook Guide for Creative Content Teams Today",
+        "A B2B Content Plan for Small Teams",
         "A Uber Guide for Small Business Teams",
         "An Unindexed Page Guide for SEO Teams and Site Owners",
         # A "uni" word it doesn't know: unsure.

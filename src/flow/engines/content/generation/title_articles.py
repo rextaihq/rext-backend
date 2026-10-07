@@ -137,7 +137,8 @@ def _an_before(word: str) -> bool | None:
     if first is None:
         return None
     letters = "".join(_base_letter(char) or "" for char in head)
-    if len(head) == 1:
+    if len(head) == 1 or re.match(r"[A-Za-z][0-9]", head):
+        # A letter, or a name led by one and a digit (M2, F1, X1): said by the letter's name.
         return first.upper() in _VOWEL_SOUND_NAMES
     lower = letters.lower()
     # "URLs", "APIs": an acronym's plural.
@@ -165,6 +166,8 @@ def _an_before(word: str) -> bool | None:
         return True if lower.startswith(_UN_I) else False if lower.startswith(_UNI_YOU) else None
     if lower.startswith(_YOU_SOUND) or lower.startswith(_U_YOU):
         return False
+    if lower.startswith("oui"):
+        return None  # "Ouija" is "wee"
     if (
         lower.startswith("u")
         and not lower.startswith("un")
