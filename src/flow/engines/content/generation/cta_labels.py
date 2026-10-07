@@ -31,9 +31,10 @@ _TEXT_FIELDS = ("introduction", "body_markdown", "conclusion")
 _MAX_DEPTH = 8
 
 # "**Primary CTA:** Explore Features", "- **Secondary CTA**: Compare Tools",
-# "### Primary CTA: X", "primary_cta: X".
+# "### Primary CTA: X", "primary_cta: X", and any of them in a blockquote ("> ...").
 _LABEL_LINE = re.compile(
-    r"^[ \t]{0,3}(?:[-*+][ \t]+)?(?:#{1,6}[ \t]+)?(?:\*\*|__)?[ \t]*(?P<label>[^:*\n]{1,60}?)[ \t]*"
+    r"^[ \t]{0,3}(?:>[ \t]?)*(?:[-*+][ \t]+)?(?:#{1,6}[ \t]+)?(?:\*\*|__)?[ \t]*"
+    r"(?P<label>[^:*\n]{1,60}?)[ \t]*"
     r"(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*(?P<value>.*?)[ \t]*$"
 )
 # A fenced code block opens and closes with ``` or ~~~; an indented one is four spaces or a tab.
