@@ -6,6 +6,7 @@ import asyncio
 import os
 from typing import AsyncGenerator, Generator
 
+import openai._base_client
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -158,3 +159,47 @@ def allow_permissions(monkeypatch):
 
     monkeypatch.setattr("src.utils.rbac_utils.check_all_permissions", _allow)
     monkeypatch.setattr("src.utils.rbac_utils.check_any_permission", _allow)
+
+
+# --- No real model provider in the tests (G76, rext-control#613) ---------------------------------
+# A test that reached OpenAI spent real credits on every check, and when the account ran out on
+# 2026-10-07 (G75) unrelated branches failed. Every request the OpenAI client would send is refused
+# here, and the test that tried fails, so a new live call is caught where it's written. A test that
+# truly needs a live model is marked `live_model`, and runs only with RUN_LIVE_MODEL_TESTS=1.
+RUN_LIVE_MODEL_TESTS = os.environ.get("RUN_LIVE_MODEL_TESTS") == "1"
+
+
+class LiveModelCallBlocked(RuntimeError):
+    """A unit test reached a real model provider."""
+
+
+def pytest_collection_modifyitems(config, items):
+    if RUN_LIVE_MODEL_TESTS:
+        return
+    skip = pytest.mark.skip(reason="calls a real model provider: set RUN_LIVE_MODEL_TESTS=1")
+    for item in items:
+        if item.get_closest_marker("live_model"):
+            item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def no_live_model_calls(request, monkeypatch):
+    if RUN_LIVE_MODEL_TESTS and request.node.get_closest_marker("live_model"):
+        yield
+        return
+    reached = request.node.live_model_calls = []
+    message = "a unit test reached the OpenAI API: give it a fake model, or mark it live_model"
+
+    def refuse(self, *args, **kwargs):
+        reached.append(type(self).__name__)
+        raise LiveModelCallBlocked(message)
+
+    async def refuse_async(self, *args, **kwargs):
+        reached.append(type(self).__name__)
+        raise LiveModelCallBlocked(message)
+
+    monkeypatch.setattr(openai._base_client.SyncAPIClient, "request", refuse)
+    monkeypatch.setattr(openai._base_client.AsyncAPIClient, "request", refuse_async)
+    yield
+    if reached:
+        pytest.fail(f"{request.node.nodeid}: {message} ({len(reached)} request(s))", pytrace=False)
