@@ -361,9 +361,10 @@ def format_cluster_heading_map_for_prompt(
         section_label = "Topics and keywords to place (map each onto the closest approved section):"
         entry_prefix = "Topic"
 
-    lines.append(
-        f"H1 keyword focus: {h1.get('suggested_heading', '')} | Primary keyword: {h1.get('primary_keyword', '')}"
-    )
+    h1_line = f"H1 keyword focus: {h1.get('suggested_heading', '')}"
+    if h1.get("primary_keyword"):
+        h1_line += f" | Primary keyword: {h1['primary_keyword']}"
+    lines.append(h1_line)
     lines.append(f"Content-type guidance: {cluster_heading_map.get('content_type_guidance', '')}")
     lines.append("Rules:")
 
@@ -499,6 +500,9 @@ def cluster_heading_map_without_keywords(
     if not removed or not cluster_heading_map or not cluster_heading_map.get("enabled"):
         return cluster_heading_map
     trimmed = dict(cluster_heading_map)
+    h1 = cluster_heading_map.get("h1")
+    if isinstance(h1, dict) and _keyword_key(h1.get("primary_keyword")) in removed:
+        trimmed["h1"] = {**h1, "primary_keyword": ""}
     for key in ("h2_sections", "h3_sections", "body_copy_clusters"):
         trimmed[key] = _entries_without_keywords(cluster_heading_map.get(key), removed)
     trimmed["additional_keywords"] = [

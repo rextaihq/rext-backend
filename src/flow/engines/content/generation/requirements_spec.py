@@ -237,6 +237,17 @@ def _typed_content_fields(content_type: str) -> frozenset[str]:
         return frozenset()
 
 
+def approved_secondary_keywords(outline: dict, focus_keyphrase: str) -> list[str]:
+    """The keywords the user approved at the outline besides the focus keyphrase. The writer,
+    the check and the saved article all read this list, never the model's own copy of it."""
+    focus = (focus_keyphrase or "").casefold()
+    return [
+        str(k).strip()
+        for k in (outline or {}).get("keywords_to_include") or []
+        if str(k).strip() and str(k).strip().casefold() != focus
+    ]
+
+
 def build_requirements_spec(
     outline: dict,
     content_type: str,
@@ -285,11 +296,7 @@ def build_requirements_spec(
             for s in (outline.get("keyphrase_synonyms") or [])
             if normalize_focus_keyword(s)
         ],
-        secondary_keywords=[
-            str(k).strip()
-            for k in keywords_to_include
-            if str(k).strip() and str(k).strip().casefold() != focus_keyphrase.casefold()
-        ],
+        secondary_keywords=approved_secondary_keywords(outline, focus_keyphrase),
         selected_title=selected_title or outline.get("title") or "",
         content_type=content_type or "",
         expected_sections=resolve_expected_headings(blocks),

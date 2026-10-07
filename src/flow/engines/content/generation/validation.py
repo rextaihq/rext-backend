@@ -470,6 +470,22 @@ def check_keyword_presence(final_content: dict, spec: RequirementsSpec) -> Valid
     )
 
 
+# Characters that change what a term means: "C++" is not "C#", ".NET" is not "net",
+# "node.js" is not "node js". A closing "?" or "." on a phrase is only punctuation.
+_MEANINGFUL_SYMBOL = re.compile(r"[+#]|\.(?=\w)")
+
+
+def _keyword_appears(text: str, keyword: str) -> bool:
+    """Whether a secondary keyword is in the text. Words are matched as a word sequence (the
+    density matcher); a term with a meaningful symbol in it is matched as written, since that
+    matcher drops symbols and would read "C#" as the "C++" the user approved."""
+    keyword = keyword.strip().rstrip("?!.,;:")
+    if not _MEANINGFUL_SYMBOL.search(keyword):
+        return bool(count_keyphrase_occurrences(text, keyword))
+    as_written = r"\s+".join(re.escape(word) for word in keyword.split())
+    return re.search(rf"(?<![\w+#]){as_written}(?![\w+#])", text or "", re.IGNORECASE) is not None
+
+
 def check_secondary_keywords(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     """Each secondary keyword the user approved appears at least once (FB2.18,
     rext-control#699). A warning, not blocking: a close natural variant is allowed
@@ -478,7 +494,7 @@ def check_secondary_keywords(final_content: dict, spec: RequirementsSpec) -> Val
     if not keywords:
         return _pass("secondary_keywords", "No secondary keywords approved; nothing to check.")
     text = _combined_text(final_content)
-    missing = [k for k in keywords if not count_keyphrase_occurrences(text, k)]
+    missing = [k for k in keywords if not _keyword_appears(text, k)]
     if not missing:
         return _pass("secondary_keywords", f"All {len(keywords)} secondary keywords appear.")
     return _fail(
