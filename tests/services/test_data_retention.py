@@ -2,7 +2,7 @@
 Tests for the data retention cleanup service.
 
 - cleanup_all() on old and recent rows in every table it cleans
-- the batched deletes, and the dry run the nightly job starts in
+- the batched deletes, and the dry run the nightly job starts in (its counts)
 - cleanup_webhook_events()
 - anonymize_cancelled_subscriptions(), which cleanup_all() doesn't run yet
 """
@@ -577,19 +577,24 @@ class TestCleanupAll:
             for row in kept:
                 assert await _exists(db_session, row), table
 
-    async def test_dry_run_counts_every_table_and_deletes_nothing(self, db_session, test_user):
+    async def test_dry_run_counts_what_the_real_run_deletes(self, db_session, test_user):
+        """The dry run is the preview the nightly job starts with: it deletes nothing, and
+        its count for every table is what the real run then deletes. That includes the old
+        events of email logs the real run deletes first."""
         rows = await _old_and_recent_rows(db_session, test_user)
 
-        results = await DataCleanupService(db=db_session, dry_run=True).cleanup_all()
+        preview = await DataCleanupService(db=db_session, dry_run=True).cleanup_all()
 
-        for table, deleted in rows["deleted"].items():
-            # an old email event whose log is still there isn't an orphan yet
-            expected = 1 if table == "email_events" else len(deleted)
-            assert results[table] >= expected, table
         for group in rows.values():
             for table, table_rows in group.items():
                 for row in table_rows:
                     assert await _exists(db_session, row), table
+
+        results = await DataCleanupService(db=db_session, dry_run=False).cleanup_all()
+
+        assert preview == results
+        for table, deleted in rows["deleted"].items():
+            assert preview[table] >= len(deleted), table
 
     async def test_cleanup_all_leaves_cancelled_subscriptions_linked(
         self, db_session, test_user, plan

@@ -175,12 +175,20 @@ class DataCleanupService:
         self._log_result(deleted, "email logs", retention_days=retention_days)
         return deleted
 
-    async def cleanup_email_events(self, retention_days: Optional[int] = None) -> int:
+    async def cleanup_email_events(
+        self,
+        retention_days: Optional[int] = None,
+        logs_older_than: Optional[datetime] = None,
+    ) -> int:
         """
         Clean up orphaned email events (events without email_log).
 
         Args:
             retention_days: Number of days to retain (default from config)
+            logs_older_than: Also take the events whose email log is older than this.
+                cleanup_all passes the email logs' cutoff: a real run has just deleted
+                those logs (orphaning their events), and a dry run, which hasn't, then
+                counts the same events.
 
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
@@ -193,8 +201,14 @@ class DataCleanupService:
             extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()},
         )
 
+        orphaned = EmailEvent.email_log_id.is_(None)
+        if logs_older_than is not None:
+            orphaned = orphaned | EmailEvent.email_log_id.in_(
+                select(EmailLog.id).where(EmailLog.created_at < logs_older_than)
+            )
+
         deleted = await self._delete_in_batches(
-            EmailEvent, EmailEvent.created_at < cutoff_date, EmailEvent.email_log_id.is_(None)
+            EmailEvent, EmailEvent.created_at < cutoff_date, orphaned
         )
         self._log_result(deleted, "orphaned email events", retention_days=retention_days)
         return deleted
@@ -331,10 +345,13 @@ class DataCleanupService:
         """
         logger.info(f"{'[DRY RUN] ' if self.dry_run else ''}Starting full data cleanup")
 
+        email_logs_cutoff = datetime.now(timezone.utc) - timedelta(
+            days=cleanup_config.EMAIL_LOG_RETENTION_DAYS
+        )
         results = {
             "audit_logs": await self.cleanup_audit_logs(),
             "email_logs": await self.cleanup_email_logs(),
-            "email_events": await self.cleanup_email_events(),
+            "email_events": await self.cleanup_email_events(logs_older_than=email_logs_cutoff),
             "error_logs": await self.cleanup_error_logs(),
             "user_sessions": await self.cleanup_inactive_sessions(),
             "webhook_events": await self.cleanup_webhook_events(),
