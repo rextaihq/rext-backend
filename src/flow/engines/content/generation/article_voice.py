@@ -28,6 +28,8 @@ MAX_TRAIT_CHARS = 60
 MAX_TEXT_CHARS = 600
 MAX_LIST_ITEMS = 6
 MAX_ITEM_CHARS = 80
+# The profile accepts a name this long; it is kept whole, since it is what gets matched.
+MAX_NAME_CHARS = 255
 
 
 def _clip(text: Any, limit: int) -> str:
@@ -43,22 +45,27 @@ def article_voice(persona_tone: Any, profile: Optional[dict]) -> dict[str, Any]:
         for t in (profile.get("traits") or [])
         if isinstance(t, str) and t.strip()
     ][:MAX_TRAITS]
+    name = _clip(profile.get("brand_name"), MAX_NAME_CHARS)
     return {
         "persona_tone": _clip(persona_tone, MAX_TEXT_CHARS),
         "brand_traits": traits,
         "customer_profile": _clip(profile.get("customer_profile"), MAX_TEXT_CHARS),
         # What the company knows and offers (FB2.21, rext-control#702): the writer's expertise.
-        "brand_name": _clip(profile.get("brand_name"), MAX_ITEM_CHARS),
-        "about": _clip(profile.get("about"), MAX_TEXT_CHARS),
-        "selling_position": _clip(profile.get("selling_position"), MAX_TEXT_CHARS),
-        "target_audience": _short_list(profile.get("target_audience")),
-        "content_pillars": _short_list(profile.get("content_pillars")),
+        # Kept without the company's own name (taken out before the text is cut, so a long
+        # name can't survive as a fragment); the name itself is kept whole beside it.
+        "brand_name": name,
+        "about": _clip(_without_name(profile.get("about"), name), MAX_TEXT_CHARS),
+        "selling_position": _clip(
+            _without_name(profile.get("selling_position"), name), MAX_TEXT_CHARS
+        ),
+        "target_audience": _short_list(profile.get("target_audience"), name),
+        "content_pillars": _short_list(profile.get("content_pillars"), name),
     }
 
 
-def _short_list(values: Any) -> list[str]:
+def _short_list(values: Any, name: str = "") -> list[str]:
     return [
-        _clip(value, MAX_ITEM_CHARS)
+        _clip(_without_name(value, name), MAX_ITEM_CHARS)
         for value in (values if isinstance(values, list) else [])
         if isinstance(value, str) and value.strip()
     ][:MAX_LIST_ITEMS]
@@ -109,16 +116,17 @@ async def fetch_brand_voice_profile(workspace_id: Any) -> Optional[dict[str, Any
     }
 
 
-def _without_name(text: str, brand_name: str) -> str:
+def _without_name(text: Any, brand_name: str) -> str:
     """``text`` with the company's own name replaced by "the company".
 
     The profile's own sentences name the brand ("Acme Tools is a planner for …"). Read as
     written, they put the name in front of the writer on every article, whatever the user
     chose about mentioning it. What the company knows is the point here, not what it is called.
     """
+    text = text if isinstance(text, str) else ""
     name = (brand_name or "").strip()
     if not name or not text:
-        return text or ""
+        return text
     pattern = r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])"
     replaced = re.sub(pattern, "the company", text, flags=re.IGNORECASE)
     return replaced[:1].upper() + replaced[1:]
@@ -127,9 +135,8 @@ def _without_name(text: str, brand_name: str) -> str:
 def format_expertise_for_writer(voice: dict[str, Any]) -> str:
     """What the company knows and offers, as the writer's expertise; empty when the profile
     holds none of it. Never a reason to name the brand: the mention has its own rules."""
-    name = voice.get("brand_name") or ""
-    about = _without_name(voice.get("about") or "", name)
-    offer = _without_name(voice.get("selling_position") or "", name)
+    about = voice.get("about") or ""
+    offer = voice.get("selling_position") or ""
     pillars = voice.get("content_pillars") or []
     audiences = voice.get("target_audience") or []
     if not (about or offer or pillars or audiences):
@@ -154,7 +161,8 @@ def format_expertise_for_writer(voice: dict[str, Any]) -> str:
     lines.append(
         "- **What this is not:** permission to name the company or its product, or to pitch "
         "it. Whether the brand is mentioned, and where, is set only by the brand rules of this "
-        "prompt (a PRODUCT-LED MENTION or a BRAND EXCLUSION block). With neither, do not name it."
+        "prompt (a PRODUCT-LED MENTION or a BRAND EXCLUSION block). With neither, name it only "
+        "where the article's own title or focus keyphrase already does."
     )
     return "\n".join(lines)
 

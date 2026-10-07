@@ -275,7 +275,54 @@ def test_the_companys_own_name_is_not_put_in_front_of_the_writer():
     )
     # Knowing the company is never permission to name it: the mention has its own rules.
     assert "permission to name the company or its product" in block
-    assert "With neither, do not name it." in block
+    # A title or keyphrase that is the brand's own name must still carry it.
+    assert "name it only where the article's own title or focus keyphrase already does" in block
+
+
+def test_a_long_name_and_the_lists_are_cleared_of_it_too():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    long_name = "Acme Content Management Systems and Publishing Tools for Small Software Teams Ltd"
+    assert len(long_name) > 80
+    profile = {
+        "brand_name": long_name,
+        "about": f"{long_name} builds a headless CMS.",
+        "target_audience": [f"{long_name} customers", "Developers"],
+        "content_pillars": [f"{long_name} tutorials", "Content operations"],
+    }
+
+    block = format_expertise_for_writer(article_voice(None, profile))
+
+    assert "Acme Content Management" not in block
+    assert "**What it does:** The company builds a headless CMS." in block
+    assert "**What it writes about:** The company tutorials; Content operations" in block
+    assert "**Who it serves:** The company customers; Developers" in block
+
+
+def test_the_companys_own_statements_are_claim_evidence_without_a_mention():
+    from src.flow.engines.content.generation.claim_integrity import build_claim_evidence
+
+    voice = article_voice(
+        None, {**FULL_PROFILE, "about": "Acme CMS has served 500 stores since 2018."}
+    )
+
+    evidence = build_claim_evidence(
+        outline={}, brand_context=None, generation_meta={"article_voice": voice}
+    )
+
+    # No mention was approved, so no brand is named as the subject; its statements still count.
+    assert evidence["brand_name"] == ""
+    assert evidence["brand_documents"] == [
+        "The company has served 500 stores since 2018.",
+        "The quickest way to move a marketing site off a monolith.",
+    ]
+    # With a mention approved the same text isn't listed twice.
+    promoted = build_claim_evidence(
+        outline={},
+        brand_context={"brand_name": "Acme CMS", "about": voice["about"], "selling_position": ""},
+        generation_meta={"article_voice": voice},
+    )
+    assert promoted["brand_documents"].count(voice["about"]) == 1
 
 
 def test_the_writers_block_carries_the_voice_then_the_expertise():
