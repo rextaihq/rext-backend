@@ -86,18 +86,18 @@ def create_content_engine():
     graph.add_node("topics_failed", topics_failed)
     graph.add_node("keyword_clustering", keyword_clustering_node)
     graph.add_node("map_keyword_clusters", map_keyword_clusters)
-    # The model steps of the outline and the article end the run with a notice when the AI provider is
-    # unavailable, at provider_unavailable (G75.1, rext-control#614).
+    # The outline and the article end the run with a notice when the AI provider is unavailable, at
+    # provider_unavailable (G75.1, rext-control#614).
     graph.add_node("generate_outline", stop_on_outage(generate_outline))
     graph.add_node("review_outline", review_outline)
     graph.add_node(
         "generate_content", stop_on_outage(generate_content), retry_policy=_LLM_RETRY_POLICY
     )
     graph.add_node("validate_content", validate_content)
-    graph.add_node("repair_content", stop_on_outage(repair_content), retry_policy=_LLM_RETRY_POLICY)
-    graph.add_node(
-        "humanize_content", stop_on_outage(humanize_content), retry_policy=_LLM_RETRY_POLICY
-    )
+    # Repair and humanizing stay best effort on any model error, an outage included: the article is
+    # written by then, and the run goes on to save it rather than end without it.
+    graph.add_node("repair_content", repair_content, retry_policy=_LLM_RETRY_POLICY)
+    graph.add_node("humanize_content", humanize_content, retry_policy=_LLM_RETRY_POLICY)
     graph.add_node(PROVIDER_UNAVAILABLE_NODE, provider_unavailable)
     graph.add_node("final_validate_content", final_validate_content)
     graph.add_node("review_content", review_content())
@@ -158,22 +158,8 @@ def create_content_engine():
             "humanize_content": "humanize_content",
         },
     )
-    graph.add_conditional_edges(
-        "repair_content",
-        unless_outage("validate_content"),
-        {
-            "validate_content": "validate_content",
-            PROVIDER_UNAVAILABLE_NODE: PROVIDER_UNAVAILABLE_NODE,
-        },
-    )
-    graph.add_conditional_edges(
-        "humanize_content",
-        unless_outage("final_validate_content"),
-        {
-            "final_validate_content": "final_validate_content",
-            PROVIDER_UNAVAILABLE_NODE: PROVIDER_UNAVAILABLE_NODE,
-        },
-    )
+    graph.add_edge("repair_content", "validate_content")
+    graph.add_edge("humanize_content", "final_validate_content")
     graph.add_edge(PROVIDER_UNAVAILABLE_NODE, END)
     graph.add_edge("final_validate_content", "review_content")
     graph.add_edge("review_content", "persist_content")

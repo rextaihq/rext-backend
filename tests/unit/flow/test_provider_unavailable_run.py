@@ -9,6 +9,8 @@ import httpx
 import openai
 import pytest
 
+import src.flow.engines.content.generation.content_generation as content_module
+import src.flow.engines.content.generation.outline as outline_module
 import src.flow.engines.content.generation.provider_unavailable as module
 from src.flow.engines.content.content_engine import create_content_engine
 from src.flow.engines.content.generation.provider_unavailable import (
@@ -113,18 +115,95 @@ async def test_the_end_tells_the_user_through_the_stream_and_the_state(monkeypat
     assert result == NOTICE
 
 
-def test_the_graph_ends_each_model_step_at_provider_unavailable():
+def test_the_graph_ends_the_outline_and_the_article_at_provider_unavailable():
     edges = {(e.source, e.target) for e in create_content_engine().get_graph().edges}
 
     for step, onward in [
         ("generate_outline", "review_outline"),
         ("generate_content", "validate_content"),
-        ("repair_content", "validate_content"),
-        ("humanize_content", "final_validate_content"),
     ]:
         assert (step, PROVIDER_UNAVAILABLE_NODE) in edges
         assert (step, onward) in edges
     assert (PROVIDER_UNAVAILABLE_NODE, "__end__") in edges
+    # Repair and humanizing keep their best effort: the article is written, and the run saves it.
+    for step in ("repair_content", "humanize_content"):
+        assert (step, PROVIDER_UNAVAILABLE_NODE) not in edges
+
+
+@pytest.fixture
+def outline_state(monkeypatch):
+    async def no_sync(workspace_id):
+        return None
+
+    monkeypatch.setattr(outline_module, "_bulk_sync_workspace", no_sync)
+    return {"content": {"selected_topic": "How to plan a garden", "content_type": "blog"}}
+
+
+async def test_the_outline_lets_an_outage_through_to_the_notice(monkeypatch, outline_state):
+    def outage(content_type):
+        raise out_of_credits()
+
+    monkeypatch.setattr(outline_module, "get_outline_model", outage)
+
+    assert await stop_on_outage(outline_module.generate_outline)(outline_state) == NOTICE
+
+
+async def test_any_other_outline_error_keeps_its_message(monkeypatch, outline_state):
+    def broken(content_type):
+        raise ValueError("a schema error")
+
+    monkeypatch.setattr(outline_module, "get_outline_model", broken)
+
+    result = await stop_on_outage(outline_module.generate_outline)(outline_state)
+
+    assert "error_code" not in result["content"]
+    assert result["content"]["error"].startswith("We couldn't generate")
+
+
+async def test_the_article_lets_an_outage_through_to_the_notice(monkeypatch):
+    def outage(outline, content_type):
+        raise out_of_credits()
+
+    monkeypatch.setattr(content_module, "_format_outline_for_generation", outage)
+    state = {"content": {"selected_topic": "How to plan a garden", "outline": {"title": "x"}}}
+
+    assert await stop_on_outage(content_module.generate_content)(state) == NOTICE
+
+
+STALE = {
+    "content": {"error": PROVIDER_UNAVAILABLE_MESSAGE, "error_code": PROVIDER_UNAVAILABLE_CODE}
+}
+
+
+async def test_a_retry_that_works_clears_the_old_notice():
+    @stop_on_outage
+    async def step(state):
+        return {"content": {"outline": {"status": "draft"}}}
+
+    result = await step(STALE)
+
+    assert result["content"] == {"outline": {"status": "draft"}, "error": None, "error_code": None}
+    assert unless_outage("review_outline")({"content": result["content"]}) == "review_outline"
+
+
+async def test_an_old_notice_copied_into_the_answer_is_cleared_too():
+    @stop_on_outage
+    async def step(state):
+        return {"content": {**state["content"], "status": "content_generated"}}
+
+    result = await step(STALE)
+
+    assert result["content"]["error_code"] is None
+    assert result["content"]["error"] is None
+    assert result["content"]["status"] == "content_generated"
+
+
+async def test_a_steps_own_error_is_kept_after_an_old_notice():
+    @stop_on_outage
+    async def step(state):
+        return {"content": {"error": "Insufficient credits", "error_code": "insufficient_credits"}}
+
+    assert (await step(STALE))["content"]["error_code"] == "insufficient_credits"
 
 
 def test_the_message_makes_no_promise_about_credits():
