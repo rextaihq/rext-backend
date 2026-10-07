@@ -607,3 +607,12 @@ def test_the_writer_is_not_told_to_adapt_the_order():
 
     assert "adapt where needed" not in block
     assert "in this order, under these headings" in block
+
+
+def test_the_writer_is_given_the_target_length_not_3000_words():
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+
+    block = PersonaInjectionMiddleware()._build_outline_block(_tools_outline(), "blog")
+
+    assert "3000 words" not in block
+    assert "Keep to the target word count" in block
