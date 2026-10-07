@@ -6,6 +6,7 @@ from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langgraph.constants import TAG_NOSTREAM
 
 from src.api.config import get_settings
+from src.flow.model.provider_outage import provider_outage, report_provider_outage
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -27,7 +28,18 @@ def _remember_loop() -> None:
             pass
 
 
+def _alert_if_outage(service: str, error: BaseException) -> None:
+    """An empty account, a rate limit or the provider down: the team hears of it, once an hour (G75)."""
+    try:
+        outage = provider_outage(error, service)
+        if outage is not None:
+            report_provider_outage(outage)
+    except Exception:  # noqa: BLE001 - reporting never breaks generation
+        pass
+
+
 async def _report_ai_failure(service: str, error: BaseException) -> None:
+    _alert_if_outage(service, error)
     try:
         from src.services.monitoring_service import MonitoringService
 
@@ -79,6 +91,7 @@ class _SyncAIProviderFailureReporter(BaseCallbackHandler):
         loop = _MAIN_LOOP
         if loop is None or loop.is_closed():
             logger.warning("AI provider call failed (no loop to record it): %s", error)
+            _alert_if_outage(self.service, error)
             return
         try:
             asyncio.run_coroutine_threadsafe(_report_ai_failure(self.service, error), loop)
