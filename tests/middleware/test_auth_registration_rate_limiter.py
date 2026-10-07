@@ -4,8 +4,8 @@ import pytest
 from fastapi import HTTPException, Request
 
 from src.api.middleware.rate_limiter import (
-    REGISTRATION_REQUESTS_PER_HOUR,
-    REGISTRATION_WINDOW_MINUTES,
+    REGISTRATION_LIMIT,
+    EndpointLimitProfile,
     registration_rate_limit,
 )
 
@@ -20,26 +20,26 @@ def mock_registration_request() -> Request:
     return request
 
 
-def test_registration_constants_match_policy() -> None:
-    """Constants must match the documented security policy (3 req / 60 min)."""
-    assert REGISTRATION_REQUESTS_PER_HOUR == 3
-    assert REGISTRATION_WINDOW_MINUTES == 60
+def test_registration_limit_matches_policy() -> None:
+    """10 sign-ups an hour per address: enough for an office or an event behind one network
+    (raised from 3 in 9dcbd6f3; the breach check and email verification still apply)."""
+    assert REGISTRATION_LIMIT == EndpointLimitProfile(10, 60, "registration")
 
 
 def test_registration_rate_limiter_initialization() -> None:
     limiter = registration_rate_limit()
-    assert limiter.requests == 3
+    assert limiter.requests == 10
     assert limiter.window_seconds == 3600
     assert limiter.description == "registration"
 
 
 @pytest.mark.asyncio
-async def test_registration_rate_limiter_blocks_fourth_request(
+async def test_registration_rate_limiter_blocks_the_request_after_the_limit(
     mock_registration_request: Request,
 ) -> None:
     limiter = registration_rate_limit()
 
-    for _ in range(3):
+    for _ in range(REGISTRATION_LIMIT.requests):
         await limiter(mock_registration_request)
 
     with pytest.raises(HTTPException) as exc_info:

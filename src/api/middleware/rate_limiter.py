@@ -25,13 +25,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 
-from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException, Request, status
 
 from src.api.cache.redis_client import cache
 from src.api.lib.log_policy import get_event_level, log_with_level
-from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
 
 SECONDS_PER_MINUTE = 60
@@ -534,10 +531,6 @@ def notification_write_rate_limit() -> EndpointRateLimiter:
     return _build_endpoint_limiter(NOTIFICATION_WRITE_LIMIT)
 
 
-REGISTRATION_REQUESTS_PER_HOUR = 3
-REGISTRATION_WINDOW_MINUTES = 60
-
-
 def email_verification_rate_limit() -> EndpointRateLimiter:
     """
     Rate limiter for email verification attempts.
@@ -603,223 +596,6 @@ def admin_invitation_rate_limit():
     return EndpointRateLimiter(
         requests=5, window_minutes=5, description="admin invitation creation"
     )
-
-
-# ============================================================================
-# AI ENDPOINT RATE LIMITERS (Tier-Based)
-# ============================================================================
-
-
-class AIEndpointRateLimiter:
-    """
-    Rate limiter for expensive AI operations with subscription tier awareness.
-
-    Applies different rate limits based on user's subscription plan:
-    - Free tier: 10 requests/hour
-    - Pro tier: 50 requests/hour
-    - Enterprise tier: 200 requests/hour
-    """
-
-    # Default limits per tier (requests per hour)
-    TIER_LIMITS = {
-        "free": 10,
-        "pro": 50,
-        "enterprise": 200,
-        "default": 10,  # For users without subscription
-    }
-
-    def __init__(self, custom_limits: Optional[dict] = None, description: str = "AI operation"):
-        """
-        Initialize AI endpoint rate limiter.
-
-        Args:
-            custom_limits: Optional custom limits per tier (dict with tier names as keys)
-            description: Description for error messages
-        """
-        self.limits = custom_limits or self.TIER_LIMITS
-        self.description = description
-        self.window_seconds = 3600  # 1 hour
-        self.storage: Dict[str, deque] = defaultdict(deque)
-
-    async def _get_user_tier(self, db: AsyncSession, user_id: str) -> str:
-        """
-        Get user's subscription tier.
-
-        Args:
-            db: Async database session
-            user_id: User UUID
-
-        Returns:
-            Tier name (free, pro, enterprise, or default)
-        """
-        from sqlalchemy import case
-
-        from src.api.models.subscription_models.plans import SubscriptionPlan
-        from src.api.models.subscription_models.subscriptions import (
-            SubscriptionStatus,
-            UserSubscription,
-        )
-
-        # Get active subscription (prioritize ACTIVE over TRIAL, then most recent)
-        priority = case((UserSubscription.status == SubscriptionStatus.ACTIVE, 1), else_=0)
-        stmt = (
-            select(UserSubscription)
-            .where(
-                UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            )
-            .order_by(priority.desc(), UserSubscription.created_at.desc())
-            .limit(1)
-        )
-        result = await db.execute(stmt)
-        subscription = result.scalar_one_or_none()
-
-        if not subscription:
-            return "default"
-
-        # Get plan
-        stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-        result = await db.execute(stmt)
-        plan = result.scalar_one_or_none()
-
-        if not plan:
-            return "default"
-
-        # Map plan name to tier
-        plan_name_lower = plan.name.lower()
-        if plan_name_lower in self.limits:
-            return plan_name_lower
-
-        # Try to match common tier names
-        if "free" in plan_name_lower:
-            return "free"
-        elif "pro" in plan_name_lower or "professional" in plan_name_lower:
-            return "pro"
-        elif "enterprise" in plan_name_lower or "business" in plan_name_lower:
-            return "enterprise"
-
-        return "default"
-
-    async def __call__(
-        self,
-        request: Request,
-        current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(lambda: None),
-    ):
-        """
-        Check AI operation rate limit based on user's subscription tier.
-
-        Tries Redis first, falls back to in-memory.
-
-        Args:
-            request: FastAPI request
-            current_user: Authenticated user
-            db: Async database session (will be injected by FastAPI)
-
-        Raises:
-            HTTPException: If rate limit exceeded
-        """
-        from src.api.database.async_database import get_async_db_context
-
-        user_id = current_user.get("identity")
-
-        # Get user's subscription tier
-        async with get_async_db_context() as db:
-            tier = await self._get_user_tier(db, user_id)
-            max_requests = self.limits.get(tier, self.limits["default"])
-
-        client_key = f"ai:{user_id}:{tier}"
-
-        # Try Redis sliding window
-        redis_checked = False
-        try:
-            redis = cache.redis
-            if redis is not None:
-                now_ts = time.time()
-                key = f"ratelimit:ai:{self.description}:{client_key}"
-
-                pipe = redis.pipeline()
-                pipe.zremrangebyscore(key, 0, now_ts - self.window_seconds)
-                pipe.zcount(key, now_ts - self.window_seconds, "+inf")
-                results = await pipe.execute()
-                count = results[1]
-
-                if count >= max_requests:
-                    log_with_level(
-                        logger,
-                        get_event_level("rate_limit_exceeded"),
-                        f"AI rate limit exceeded for user {user_id} (tier: {tier}): "
-                        f"{count}/{max_requests} in {self.window_seconds}s",
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail=f"AI {self.description} rate limit exceeded ({count}/{max_requests} per hour for {tier} tier). Upgrade your plan for higher limits.",
-                        headers={
-                            "Retry-After": str(self.window_seconds),
-                            "X-RateLimit-Limit": str(max_requests),
-                            "X-RateLimit-Remaining": "0",
-                            "X-RateLimit-Tier": tier,
-                        },
-                    )
-
-                pipe2 = redis.pipeline()
-                pipe2.zadd(key, {str(now_ts): now_ts})
-                pipe2.expire(key, self.window_seconds + 60)
-                await pipe2.execute()
-                redis_checked = True
-        except HTTPException:
-            raise
-        except Exception:
-            pass  # Fall through to in-memory
-
-        if redis_checked:
-            return
-
-        # Fallback: in-memory
-        now = datetime.now(timezone.utc)
-        timestamps = self.storage[client_key]
-
-        cutoff = now - timedelta(seconds=self.window_seconds)
-        while timestamps and timestamps[0] < cutoff:
-            timestamps.popleft()
-
-        if len(timestamps) >= max_requests:
-            oldest = timestamps[0]
-            retry_after = (
-                int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
-            )
-
-            log_with_level(
-                logger,
-                get_event_level("rate_limit_exceeded"),
-                f"AI rate limit exceeded for user {user_id} (tier: {tier}): "
-                f"{len(timestamps)}/{max_requests} in {self.window_seconds}s",
-            )
-
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"AI {self.description} rate limit exceeded ({len(timestamps)}/{max_requests} per hour for {tier} tier). Upgrade your plan for higher limits.",
-                headers={
-                    "Retry-After": str(retry_after),
-                    "X-RateLimit-Limit": str(max_requests),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Tier": tier,
-                },
-            )
-
-        timestamps.append(now)
-
-
-def ai_content_generation_rate_limit():
-    """
-    Rate limiter for AI content generation endpoint.
-
-    Limits:
-    - Free tier: 10 requests/hour
-    - Pro tier: 50 requests/hour
-    - Enterprise tier: 200 requests/hour
-    """
-    return AIEndpointRateLimiter(description="content generation")
 
 
 # ============================================================================
