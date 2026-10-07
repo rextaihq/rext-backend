@@ -69,7 +69,13 @@ _UN_I = (
     "uninh", "unissu", "uniron", "unimm", "unitem",
 )  # fmt: skip
 # More words whose "u" says "you": "a utensil", "a unanimous".
-_U_YOU = ("unanim", "utens", "utop", "uter", "ukul", "ubiq")
+_U_YOU = ("unanim", "unary", "unesco", "utens", "utop", "uter", "ukul", "ubiq")
+# "One" said "wun": "a one-off", "a oneness". Any other "one…" word starts with a vowel sound
+# ("an onerous", "an oneiric").
+_ONE_WUN = ("once", "oneself", "oneness", "onetime", "onesie", "onefold")
+# A vowel letter that may say "w" or "you" in a borrowed word or a name: "Ouija", "Oaxaca",
+# "Ouagadougou", "Ewing", and "Euler" ("oiler"). Left as written.
+_UNSURE_VOWEL = ("oui", "oua", "oax", "euler")
 # Silent h: "an hour", "an honest". Said either way by dialect ("an herb" in America): left.
 _SILENT_H = ("hour", "honest", "honor", "honour", "heir")
 _EITHER_H = ("herb", "homage", "historic", "humble")
@@ -136,10 +142,13 @@ def _an_before(word: str) -> bool | None:
     if first is None:
         return None
     letters = "".join(_base_letter(char) or "" for char in head)
-    if len(head) == 1 or re.match(r"[A-Za-z][0-9]", head):
-        # A letter, or a name led by one and a digit (M2, F1, X1): said by the letter's name.
+    if len(head) == 1 or re.match(r"[A-Za-z][0-9]|[a-z][A-Z]", head):
+        # A letter, or a name led by one and a digit (M2, F1, X1) or by a small one and a capital
+        # (mRNA, iOS, pH): said by the letter's name.
         return first.upper() in _VOWEL_SOUND_NAMES
     lower = letters.lower()
+    if lower.startswith(_UNSURE_VOWEL):
+        return None
     # "URLs", "APIs": an acronym's plural.
     acronym = letters[:-1] if re.fullmatch(r"[A-Z]{2,}s", letters) else letters
     # An all-caps word is a word, not letters, when it's one of the words below: "A ONE-PAGE",
@@ -162,23 +171,23 @@ def _an_before(word: str) -> bool | None:
         return _acronym_takes_an(acronym)
     if lower.startswith(_SILENT_H):
         return True
-    if lower.startswith(_EITHER_H):
+    if first.lower() == "h":
+        # Any other h word is left: "an" before one is a dialect ("an herb", "an historic") or a
+        # silent h it doesn't know ("an hors d'oeuvre") more often than a mistake.
         return None
-    if (
-        lower == "one"
-        or lower.startswith(("one-", "once"))
-        or re.match(r"one[a-z]", lower)
-        and not lower.startswith("oner")
-    ):
+    if lower in ("one", "ones") or lower.startswith(_ONE_WUN):
         return False
     if lower.startswith("uni"):
         return True if lower.startswith(_UN_I) else False if lower.startswith(_UNI_YOU) else None
-    if lower.startswith("euler"):
-        return None  # "Euler" is "oiler", and some say "you-ler"
     if lower.startswith(_YOU_SOUND) or lower.startswith(_U_YOU):
         return False
-    if lower.startswith("oui"):
-        return None  # "Ouija" is "wee"
+    if lower.startswith("ew"):
+        return None  # "ewe" is "you" (above); "Ewing" is, "Ewok" isn't
+    if first.lower() == "x":
+        # "Ex" before a consonant ("an Xbox", "an Xfinity"); "z" or another sound before a vowel.
+        return True if re.match(r"x[^aeiouy]", lower) else None
+    if re.match(r"y[^aeiou]", lower):
+        return None  # "Yves", "Ypres", "yttrium": a vowel sound, or not
     if (
         lower.startswith("u")
         and not lower.startswith("un")

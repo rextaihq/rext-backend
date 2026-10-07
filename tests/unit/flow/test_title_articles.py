@@ -23,6 +23,15 @@ from src.flow.model.structure.topics import SEOTopics
         ("Why You Need a Hour-by-Hour Content Plan", "Why You Need an Hour-by-Hour Content Plan"),
         ("A Honest Review of the Best SEO Tools", "An Honest Review of the Best SEO Tools"),
         ("An One-Page SEO Checklist for Your Site", "A One-Page SEO Checklist for Your Site"),
+        # "Ex-box", and a name said by its first letter.
+        (
+            "A Xbox Setup Guide for Parents and New Players",
+            "An Xbox Setup Guide for Parents and New Players",
+        ),
+        (
+            "A mRNA Vaccine Guide for Curious Readers and Students",
+            "An mRNA Vaccine Guide for Curious Readers and Students",
+        ),
         ("How to build an URL structure that ranks", "How to build a URL structure that ranks"),
         # No word from the short English list, and all ASCII: English.
         (
@@ -114,6 +123,29 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         "An Euler Diagram Guide for Content Strategy Teams Today",
         "A Euler Diagram Guide for Content Strategy Teams Today",
         "AN EULER DIAGRAM GUIDE FOR CONTENT STRATEGY TEAMS",
+        # A vowel letter that says "w" or "you" in a borrowed word or a name, in capitals too.
+        "A OUIJA Board Guide for Paranormal Content Creators",
+        "A Oaxaca Travel Guide for First-Time Visitors to Mexico",
+        "A Ewing Sarcoma Guide for Patients and Their Families",
+        "An Ewok Costume Guide for Star Wars Fans and Cosplayers",
+        # "You-nary", and a name said as a word.
+        "A Unary Operator Guide for Python Developers and Students",
+        "A Unesco Heritage Site Guide for Curious Travelers",
+        # Only the "wun" words take "a": "oneiric" and "onerous" start with a vowel sound.
+        "An Oneiric Art Guide for Creative Content Teams Today",
+        "An Onerous Contract Guide for Small Business Owners",
+        "A Oneness Meditation Guide for Complete Beginners",
+        # "An" before an h word is a silent h or a dialect more often than a mistake.
+        "An Hors d'Oeuvre Guide for Caterers and Event Planners",
+        "A Hors d'Oeuvre Guide for Caterers and Event Planners",
+        "An Hotel Booking Guide for Budget Travelers in Europe",
+        # x before a vowel, and y before a consonant: the sound isn't clear.
+        "A Xylophone Buying Guide for Parents and Music Teachers",
+        "An Yves Saint Laurent Bag Guide for First-Time Buyers",
+        # A small letter, then a capital: said by the letter's name.
+        "An mRNA Vaccine Guide for Curious Readers and Students",
+        "A pH Testing Guide for Home Gardeners and Pool Owners",
+        "An Xbox Setup Guide for Parents and New Players",
         "An M2 MacBook Guide for Creative Content Teams Today",
         "A B2B Content Plan for Small Teams",
         "A Uber Guide for Small Business Teams",
