@@ -106,6 +106,15 @@ class Settings(HidesSecrets, BaseSettings):
     USER_DELETION_RETENTION_DAYS: int = Field(
         default=14, description="Days to retain soft-deleted users before permanent purge"
     )
+    TRASH_RETENTION_DAYS: int = Field(
+        default=30,
+        ge=1,
+        le=3650,
+        description=(
+            "Days a deleted article or persona stays restorable in its workspace's trash before "
+            "the nightly purge deletes it for good (30, as a deleted workspace has)"
+        ),
+    )
 
     # ============================================================================
     # DATABASE

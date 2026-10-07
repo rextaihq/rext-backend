@@ -99,6 +99,20 @@ class ContentEmbeddingService:
             )
             return False
 
+    @staticmethod
+    async def delete_content_embedding(workspace_id: uuid.UUID, content_id: uuid.UUID) -> bool:
+        """Remove an article's embedding once the article is deleted for good (G45).
+
+        Best effort: a failure leaves an entry pointing at nothing, never a failed delete.
+        """
+        try:
+            async with generate_store() as store:
+                await store.adelete(namespace=("content", str(workspace_id)), key=str(content_id))
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to delete the embedding of content {content_id}: {str(e)}")
+            return False
+
     async def search_related_content(
         self, workspace_id: uuid.UUID, query: str, limit: int = 5
     ) -> List[dict]:

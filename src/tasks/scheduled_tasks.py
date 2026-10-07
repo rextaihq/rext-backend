@@ -69,6 +69,7 @@ from src.services.digest_service import run_digest_task
 from src.services.email_helpers import send_content_publish_failed_email
 from src.services.notification_helper import notify_now
 from src.services.notifications_services import notification_service
+from src.services.workspace_trash_service import run_trash_purge_task
 from src.utils.logger import logger
 from src.web.wordpress import BodyImageUploadError, WordPressPublisher
 
@@ -212,7 +213,14 @@ async def run_scheduled_publish_task() -> None:
         personas_map: dict = (
             {
                 p.id: p
-                for p in (await db.execute(select(Persona).where(Persona.id.in_(persona_ids))))
+                for p in (
+                    await db.execute(
+                        # A persona in the trash credits no one (G45).
+                        select(Persona).where(
+                            Persona.id.in_(persona_ids), Persona.deleted_at.is_(None)
+                        )
+                    )
+                )
                 .scalars()
                 .all()
             }
@@ -710,6 +718,21 @@ class ScheduledTaskManager:
             logger.info("Registered task: subscription_maintenance")
         else:
             logger.info("Subscription maintenance task disabled (BILLING_TASKS_ENABLED=false)")
+
+        # The workspaces' trash: what has been there past TRASH_RETENTION_DAYS goes for good
+        # (G45) - daily at 3:30 AM, with the other cleanups.
+        if cleanup_config.CLEANUP_ENABLED:
+            self.scheduler.add_job(
+                run_trash_purge_task,
+                trigger=CronTrigger(hour=3, minute=30),
+                id="workspace_trash_purge",
+                name="Daily purge of the workspaces' trash",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: workspace_trash_purge")
+        else:
+            logger.info("Workspace trash purge disabled (CLEANUP_ENABLED=false)")
 
         # Only start the scheduler if at least one job was registered
         if self.scheduler.get_jobs():

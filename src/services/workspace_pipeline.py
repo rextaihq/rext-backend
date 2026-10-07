@@ -2176,11 +2176,13 @@ class WorkspacePipeline:
         async with self.db.begin_nested():
             # Replace only previously extracted personas. Extraction always
             # writes custom_metadata; manually created personas never have it,
-            # so they survive a refresh.
+            # so they survive a refresh. One in the trash stays there until it
+            # is restored or purged (G45).
             await self.db.execute(
                 delete(Persona).where(
                     Persona.workspace_id == self.workspace_id,
                     Persona.custom_metadata.isnot(None),
+                    Persona.deleted_at.is_(None),
                 )
             )
 
@@ -2211,7 +2213,9 @@ class WorkspacePipeline:
         await self.db.commit()
 
         result = await self.db.execute(
-            select(Persona).where(Persona.workspace_id == self.workspace_id)
+            select(Persona).where(
+                Persona.workspace_id == self.workspace_id, Persona.deleted_at.is_(None)
+            )
         )
         saved_personas = list(result.scalars().all())
         # Keep the contributor ranking; the database does not keep insert order.

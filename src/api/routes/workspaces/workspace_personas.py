@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
-    DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
 )
@@ -19,6 +18,7 @@ from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
 from src.api.schema.response.persona_responses import PersonaListResponse, PersonaResponse
 from src.api.schema.response_schemas import GenericResponse, SuccessResponse
 from src.api.security.dependencies import get_current_user
+from src.services.persona_names import reject_duplicate_persona_name
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -50,7 +50,7 @@ async def list_workspace_personas(
     # Fetch personas
     result = await db.execute(
         select(Persona)
-        .where(Persona.workspace_id == workspace.id)
+        .where(Persona.workspace_id == workspace.id, Persona.deleted_at.is_(None))
         .order_by(Persona.created_at.desc())
     )
     personas = result.scalars().all()
@@ -100,7 +100,11 @@ async def get_persona(
 
     # Fetch persona
     result = await db.execute(
-        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
+        select(Persona).where(
+            Persona.id == UUID(persona_id),
+            Persona.workspace_id == workspace.id,
+            Persona.deleted_at.is_(None),
+        )
     )
     persona = result.scalar_one_or_none()
 
@@ -153,7 +157,11 @@ async def upload_persona_avatar(
         db=db, workspace_identifier=workspace_id, user=user
     )
     result = await db.execute(
-        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
+        select(Persona).where(
+            Persona.id == UUID(persona_id),
+            Persona.workspace_id == workspace.id,
+            Persona.deleted_at.is_(None),
+        )
     )
     persona = result.scalar_one_or_none()
     if not persona:
@@ -340,41 +348,6 @@ async def _resolve_avatar(persona_data) -> dict:
     }
 
 
-def _normalized_name(name: str):
-    """A persona name as it is compared for duplicates.
-
-    Case and repeated or surrounding whitespace are not distinctions anyone
-    means to make: "Mary Jane", "mary  jane" and " Mary Jane " are one name.
-    Expressed in SQL so the comparison happens in the database and two
-    concurrent requests see the same answer.
-    """
-    return func.lower(func.regexp_replace(func.trim(name), r"\s+", " ", "g"))
-
-
-async def _reject_duplicate_name(db, workspace_id, name: str, exclude_id=None) -> None:
-    """Refuse a name another persona in this workspace already holds.
-
-    This is what makes a rapid double-click on Create produce one persona
-    rather than several: the second request finds the first one's row and is
-    turned away. The frontend blocks the second click too, but a dropped
-    connection, a retry or anything that is not the form would otherwise get
-    through, and the check has to live where the row is written.
-    """
-    query = select(Persona.id).where(
-        Persona.workspace_id == workspace_id,
-        _normalized_name(Persona.name) == _normalized_name(name),
-    )
-    if exclude_id is not None:
-        query = query.where(Persona.id != exclude_id)
-    if (await db.execute(query.limit(1))).scalar_one_or_none():
-        raise DuplicateResourceException(
-            message=f"A persona named '{name.strip()}' already exists in this workspace",
-            resource_type="persona",
-            conflicting_field="name",
-            conflicting_value=name.strip(),
-        )
-
-
 @router.post(
     "/{workspace_id}/personas",
     status_code=status.HTTP_201_CREATED,
@@ -394,7 +367,7 @@ async def create_persona(
         db=db, workspace_identifier=workspace_id, user=user
     )
 
-    await _reject_duplicate_name(db, workspace.id, persona_data.name)
+    await reject_duplicate_persona_name(db, workspace.id, persona_data.name)
 
     def _to_csv(v: list | None) -> str | None:
         return ", ".join(v) if v else None
@@ -454,7 +427,11 @@ async def update_persona(
 
     # Fetch persona
     result = await db.execute(
-        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
+        select(Persona).where(
+            Persona.id == UUID(persona_id),
+            Persona.workspace_id == workspace.id,
+            Persona.deleted_at.is_(None),
+        )
     )
     persona = result.scalar_one_or_none()
 
@@ -472,7 +449,9 @@ async def update_persona(
     # one; the persona being edited is excluded so re-saving it is not a clash
     # with itself.
     if persona_data.name is not None:
-        await _reject_duplicate_name(db, workspace.id, persona_data.name, exclude_id=persona.id)
+        await reject_duplicate_persona_name(
+            db, workspace.id, persona_data.name, exclude_id=persona.id
+        )
 
     # Update fields — coerce list fields to match DB column types
     _TEXT_LIST_FIELDS = {"pain_points", "goals", "behaviors"}
@@ -583,14 +562,18 @@ async def delete_persona(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    """Delete a persona."""
+    """Move a persona to the workspace's trash (G45): restorable there until it's purged."""
     workspace, _ = await resolve_workspace_for_route(
         db=db, workspace_identifier=workspace_id, user=user
     )
 
     # Fetch persona
     result = await db.execute(
-        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
+        select(Persona).where(
+            Persona.id == UUID(persona_id),
+            Persona.workspace_id == workspace.id,
+            Persona.deleted_at.is_(None),
+        )
     )
     persona = result.scalar_one_or_none()
 
@@ -600,16 +583,17 @@ async def delete_persona(
             resource_id=persona_id,
         )
 
-    await db.delete(persona)
+    persona.deleted_at = datetime.now(timezone.utc)
+    persona.deleted_by = UUID(user["identity"]) if user.get("identity") else None
     logger.info(
-        "Deleted persona",
+        "Moved persona to the trash",
         extra={
             "workspace_id": str(workspace.id),
             "persona_id": str(persona.id),
         },
     )
 
-    return success(data={}, request=request, message="Persona deleted successfully")
+    return success(data={}, request=request, message="Persona moved to the trash")
 
 
 __all__ = ["router"]

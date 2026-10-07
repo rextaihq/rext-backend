@@ -10,6 +10,7 @@ from .workspace_members import router as members_router
 from .workspace_permissions import router as permissions_router
 from .workspace_personas import router as personas_router
 from .workspace_stats import router as stats_router
+from .workspace_trash import router as trash_router
 
 # Orchestrator router for plural "/workspaces" endpoints
 workspaces_router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -26,6 +27,7 @@ workspaces_router.include_router(members_router)
 workspaces_router.include_router(invitations_router)
 workspaces_router.include_router(permissions_router)
 workspaces_router.include_router(stats_router)
+workspaces_router.include_router(trash_router)
 
 # Singular router for frontend parity (TASK-336)
 workspace_router = APIRouter(prefix="/workspace", tags=["workspace"])

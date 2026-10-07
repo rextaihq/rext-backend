@@ -1,16 +1,42 @@
-from sqlalchemy import CheckConstraint, Column, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-from src.api.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin, WorkspaceScopedMixin
+from src.api.models.mixins import (
+    SoftDeleteMixin,
+    TimestampMixin,
+    UUIDPrimaryKeyMixin,
+    WorkspaceScopedMixin,
+)
 
 
-class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin):
+class Persona(
+    Base,
+    SerializableMixin,
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    WorkspaceScopedMixin,
+    SoftDeleteMixin,
+):
     """Persona model - Stores extracted user personas for workspaces...."""
 
     __tablename__ = "persona"
+    # A deleted persona waits in the workspace's trash (deleted_at set) until it is restored,
+    # deleted for good, or purged (G45): every reader leaves it out.
+    __table_args__ = (
+        Index(
+            "ix_persona_trash",
+            "workspace_id",
+            "deleted_at",
+            postgresql_where=text("deleted_at IS NOT NULL"),
+        ),
+        # The nightly purge looks across every workspace by deletion time.
+        Index(
+            "ix_persona_trash_purge", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")
+        ),
+    )
 
     # id, workspace_id, created_at, updated_at provided by mixins
     name = Column(String(255), nullable=False)
@@ -55,6 +81,10 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     )
     email = Column(String(320), nullable=True)
     custom_metadata = Column(JSONB, nullable=True)
+    # Who put it in the trash, for the trash's listing.
+    deleted_by = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="personas")

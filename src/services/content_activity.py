@@ -45,6 +45,8 @@ ACTION_UPDATED = "content.updated"
 ACTION_STATUS_CHANGED = "content.status_changed"
 ACTION_PUBLISHED = "content.published"
 ACTION_DELETED = "content.deleted"
+#: Back from the workspace's trash (G45). Its entry shows the status it returns with.
+ACTION_RESTORED = "content.restored"
 
 #: The status a deletion reports. A deleted article's last real status was
 #: whatever it happened to be - "draft", usually - and showing that would make
@@ -103,6 +105,7 @@ __all__ = [
     "ACTION_CREATED",
     "ACTION_DELETED",
     "ACTION_PUBLISHED",
+    "ACTION_RESTORED",
     "ACTION_STATUS_CHANGED",
     "ACTION_UPDATED",
     "CONTENT_RESOURCE",
