@@ -6,7 +6,7 @@ Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -33,9 +33,10 @@ from src.api.models.subscription_models.refund_requests import (
     RefundRequestStatus,
 )
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.schema.response.checkout_responses import (
+    BillingActionResponse,
     CheckoutSessionResponse,
     SubscriptionStatusResponse,
     UsageMetricsResponse,
@@ -46,6 +47,7 @@ from src.api.schema.response.refund_responses import (
 )
 from src.api.schema.response.subscription_responses import (
     BillingUrlsResponse,
+    CreditBalanceResponse,
     InvoiceListResponse,
     OrderListResponse,
     SubscriptionCancelResponse,
@@ -59,7 +61,6 @@ from src.api.schema.subscription import (
     CheckoutSessionRequest,
     Invoice,
     SubscriptionCancelRequest,
-    SubscriptionCreateRequest,
     SubscriptionUpgradeRequest,
 )
 from src.api.schema.subscription.enums import BillingPeriod
@@ -71,15 +72,17 @@ from src.services.audit_logger import audit_logger
 from src.services.billing_email_service import (
     send_billing_email_in_background,
 )
+from src.services.credit_grants import bonus_summary, live_grants
 from src.services.notification_helper import notify_now, schedule_if_allowed
 from src.services.order_service import order_to_invoice_dict, refundable_amount
 from src.services.refund_request_service import (
     RefundRequestError,
     RefundRequestService,
+    credit_rule_refusal,
 )
 from src.services.refund_service import RefundService
 from src.services.subscription_plan_service import SubscriptionPlanService
-from src.services.subscription_service import SubscriptionService
+from src.services.subscription_service import RESUME, SubscriptionService, billing_action
 from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.logger import logger
 from src.utils.response_utils import success
@@ -112,58 +115,6 @@ async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) 
             logger.error(
                 f"Failed to send subscription cancellation email for user {user_id}: {exc}"
             )
-
-
-@router.post(
-    "/subscribe",
-    response_model=SuccessResponse[SubscriptionDetails],
-    status_code=status.HTTP_201_CREATED,
-)
-@db_transaction_handler("subscribe to plan")
-async def subscribe_to_plan(
-    request: Request,
-    subscription_data: SubscriptionCreateRequest,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Subscribe to a plan.
-
-    Creates a new subscription for the current user.
-    - Free plans: Activated immediately
-    - Paid plans: Start with 14-day trial
-
-    Body:
-    - plan_id: UUID of the subscription plan
-    - billing_period: monthly, yearly, or lifetime
-
-    Returns:
-    - Created subscription details
-    """
-    user_id = current_user.get("identity")
-    service = SubscriptionService(db)
-
-    # Create subscription
-    new_subscription = await service.subscribe(
-        user_id=user_id,
-        plan_id=subscription_data.plan_id,
-        billing_period=subscription_data.billing_period,
-    )
-
-    # Get plan name for response
-    plan = await service.get_plan_by_id(subscription_data.plan_id)
-
-    # Build response
-    response_data = new_subscription.to_dict()
-    response_data["plan_name"] = plan.name
-    response_data["plan_display_name"] = plan.display_name
-
-    return success(
-        data=response_data,
-        request=request,
-        message="Subscribed to plan successfully",
-        status_code=status.HTTP_201_CREATED,
-    )
 
 
 @router.post(
@@ -218,7 +169,11 @@ async def create_checkout_session(
     )
 
 
-@router.get("/credits", status_code=status.HTTP_200_OK)
+@router.get(
+    "/credits",
+    response_model=SuccessResponse[CreditBalanceResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("get credit balance", auto_commit=False)
 async def get_credit_balance(
     request: Request,
@@ -241,6 +196,7 @@ async def get_credit_balance(
     )
     from src.api.models.workspace_models.workspace_member import WorkspaceMembers
     from src.api.models.workspace_models.workspace_model import WorkspaceModel
+    from src.services.plan_catalog import CREDITS_PER_ARTICLE, run_costs
 
     caller_id = UUID(str(current_user.get("identity")))
     target_user_id = caller_id
@@ -298,41 +254,57 @@ async def get_credit_balance(
         return success(
             data={
                 "current_credits": 0,
+                "monthly_credits": 0,
+                "bonus": None,
                 "credits_per_month": None,
                 "credits_reset_date": None,
                 "articles_remaining": 0,
                 "plan_name": None,
                 "target_user_id": str(target_user_id),
                 "is_workspace_credits": workspace_id is not None,
+                "runs": run_costs(0),
             },
             message="No active subscription.",
         )
 
     plan = subscription.plan
-    credits = subscription.current_credits or 0
+    # What can be spent: this month's credits plus any unexpired grant (an
+    # offer's bonus, spent first). `bonus` says what the grant is and until when.
+    bonus = bonus_summary(await live_grants(db, subscription.id))
+    monthly_balance = subscription.current_credits or 0
+    credits = monthly_balance + (bonus["credits"] if bonus else 0)
     monthly = plan.credits_per_month if plan else None
     unlimited = monthly is None
 
     return success(
         data={
             "current_credits": credits,
+            "monthly_credits": monthly_balance,
+            "bonus": bonus,
             "credits_per_month": monthly,
             "credits_reset_date": subscription.credits_reset_date.isoformat()
             if subscription.credits_reset_date is not None
             else None,
-            "articles_remaining": None if unlimited else max(0, credits // 15),
+            "articles_remaining": None if unlimited else max(0, credits // CREDITS_PER_ARTICLE),
             "plan_name": plan.display_name if plan else None,
             "target_user_id": str(target_user_id),
             "is_workspace_credits": workspace_id is not None,
+            # What each billed button costs now and leaves (GET /api/v1/plans has the table).
+            "runs": run_costs(credits),
         },
         message="Credit balance retrieved.",
     )
 
 
-@router.get("/my-subscription", response_model=SuccessResponse[SubscriptionDetails])
+@router.get("/current", response_model=SuccessResponse[SubscriptionDetails])
+# The live dashboard still reads /my-subscription until the release that moves it to /current; kept
+# out of the spec (one operation per route) and removed after that release is live.
 @router.get(
-    "/current", response_model=SuccessResponse[SubscriptionDetails]
-)  # Alias for compatibility
+    "/my-subscription",
+    response_model=SuccessResponse[SubscriptionDetails],
+    include_in_schema=False,
+    deprecated=True,
+)
 @db_transaction_handler(
     "get my subscription", "Subscription retrieved successfully", auto_commit=False
 )
@@ -382,8 +354,6 @@ async def get_my_subscription(
     response_data["plan_limits"] = {
         "max_workspaces": plan.max_workspaces,
         "max_members_per_workspace": plan.max_members_per_workspace,
-        "max_topics": plan.max_topics,
-        "max_knowledge_items": plan.max_knowledge_items,
         "max_api_calls_per_month": plan.max_api_calls_per_month,
     }
 
@@ -411,8 +381,6 @@ async def get_my_subscription(
         current_usage = await service.calculate_usage(user_id)
         response_data["current_usage"] = {
             "workspaces": current_usage["workspaces"],
-            "topics": current_usage["topics"],
-            "knowledge_items": current_usage["knowledge_items"],
             "api_calls": subscription.current_api_calls,
         }
 
@@ -456,9 +424,6 @@ async def get_my_subscription(
         request=request,
         message="Subscription retrieved successfully",
     )
-
-
-# NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
 
 
 @router.get("/history", response_model=SuccessResponse[SubscriptionHistoryResponse])
@@ -814,9 +779,11 @@ async def cancel_subscription(
             resource_type="subscription", message="No active subscription found to cancel"
         )
 
+    # The service keeps a plan Lemon Squeezy bills to its period end even when asked
+    # to end it now, so the message follows what it did, not what was asked.
     message = (
         "Subscription cancelled immediately"
-        if cancel_data.cancel_immediately
+        if not subscription.cancel_at_period_end
         else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
     )
 
@@ -1020,13 +987,9 @@ async def get_orders(
                 f"Refunds can only be requested within "
                 f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
             )
-        if (
-            usage_details["granted"] > 0
-            and usage_details["max_partial_refund_cents"] <= 0
-            and usage_details["used"] > 50
-        ):
-            return f"You have used {usage_details['used']} credits. No unused credit value remains for a refund."
-        return None
+        # The same credit rule the request applies, so the button is offered
+        # exactly when the request would be accepted.
+        return credit_rule_refusal(usage_details)
 
     rows = []
     for order in orders:
@@ -1066,8 +1029,6 @@ async def get_orders(
                 "refund_ineligible_reason": ineligible_reason,
                 "refunded_amount": refunded_amt,
                 "refundable_amount": refundable_amt,
-                "max_partial_refund_amount": usage["max_partial_refund_cents"],
-                "full_refund_eligible": (usage["granted"] == 0 or usage["used"] <= 50),
                 "credits_used": usage["used"],
                 "credits_granted": usage["granted"],
             }
@@ -1321,9 +1282,7 @@ async def create_refund_request(
             user_id=user_id,
             lemonsqueezy_order_id=body.lemonsqueezy_order_id,
             reason=body.reason,
-            # Validated against the order's remaining balance in the service,
-            # so a customer cannot ask for more than is left.
-            requested_amount=body.requested_amount,
+            # No amount: the customer's request is the whole remaining payment.
         )
     except RefundRequestError as exc:
         # These messages are written for the customer.
@@ -1548,15 +1507,30 @@ async def resume_subscription(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Resume a paused subscription.
+    Resume a paused subscription, or a cancelled one before it ends.
 
-    The subscription_resumed webhook updates our local record.
+    It resumes exactly the subscription the dashboard's Resume is for (billing_action()
+    on the unfinished one), never another of the user's rows: a settled duplicate or an
+    older subscription un-cancelled here would bill again.
+
+    The subscription_resumed / subscription_updated webhook updates our local record.
     """
     user_id = current_user.get("identity")
-    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+    unfinished = await SubscriptionService(db).unfinished_subscription(user_id)
+    action = billing_action(unfinished)
+    if not action or action["action"] != RESUME:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="There is no paused or cancelled subscription to resume.",
+        )
+    ls_subscription_id = unfinished.lemonsqueezy_subscription_id
+    provider = get_payment_provider_singleton()
 
     try:
-        await get_payment_provider_singleton().resume_subscription(ls_subscription_id)
+        if unfinished.status == SubscriptionStatus.CANCELLED:
+            await provider.uncancel_subscription(ls_subscription_id)
+        else:
+            await provider.resume_subscription(ls_subscription_id)
     except Exception:
         logger.error("Failed to resume subscription", exc_info=True)
         raise HTTPException(
@@ -1584,8 +1558,15 @@ async def resume_subscription(
     )
 
 
-@router.api_route(
-    "/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK
+@router.post("/portal", response_model=dict, status_code=status.HTTP_200_OK)
+# The live dashboard still opens the portal with a GET until the release that moves it to the POST;
+# kept out of the spec (one operation per route) and removed after that release is live.
+@router.get(
+    "/portal",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+    deprecated=True,
 )
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
@@ -1618,6 +1599,43 @@ async def create_portal_session(
     )
 
 
+def _billing_action_entry(unfinished: Optional[UserSubscription]) -> Optional[Dict[str, Any]]:
+    """billing_action() for the user's unfinished subscription, with its status and dates."""
+    action = billing_action(unfinished)
+    if not action:
+        return None
+    return {
+        "action": action["action"],
+        "status": unfinished.status.value,
+        "payment_failed_at": unfinished.payment_failed_at,
+        "ends_at": unfinished.end_date,
+    }
+
+
+@router.get("/billing-action", response_model=SuccessResponse[BillingActionResponse])
+@db_transaction_handler("get billing action", auto_commit=False)
+async def get_billing_action(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    What the user does about a subscription that isn't finished, for the dashboard's banner.
+
+    "update_payment_method" for a failed renewal, "resume" for a paused subscription or a
+    cancelled one before its end, null otherwise. It reads only our database, never the
+    payment provider, so the dashboard's shell can ask on every page.
+    """
+    user_id = current_user.get("identity")
+    unfinished = await SubscriptionService(db).unfinished_subscription(user_id)
+
+    return success(
+        data={"billing_action": _billing_action_entry(unfinished)},
+        request=request,
+        message="Billing action retrieved successfully",
+    )
+
+
 @router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse])
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status(
@@ -1633,7 +1651,9 @@ async def get_subscription_status(
     usage_service = UsageTrackingService(db)
 
     subscription = await service.get_subscription_by_user(user_id)
+    ended_trial = await service.get_ended_trial(user_id)
     usage = await usage_service.get_usage_metrics(user_id)
+    unfinished = await service.unfinished_subscription(user_id)
 
     portal_url = await service.get_customer_portal_url(
         user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
@@ -1645,6 +1665,15 @@ async def get_subscription_status(
             "plan": subscription.plan.to_dict() if subscription and subscription.plan else None,
             "usage": usage,
             "portal_url": portal_url,
+            "expired_trial": (
+                {
+                    "started_at": ended_trial.start_date,
+                    "ended_at": ended_trial.trial_end_date or ended_trial.end_date,
+                }
+                if ended_trial
+                else None
+            ),
+            "billing_action": _billing_action_entry(unfinished),
         },
         request=request,
         message="Subscription status retrieved successfully",

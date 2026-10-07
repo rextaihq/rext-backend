@@ -47,17 +47,21 @@ async def test_list_permissions_includes_roles_when_requested():
         action="create",
     )
 
-    mock_db.execute.return_value = FakeResult(scalars=[permission])
+    # The total, then the page.
+    mock_db.execute.side_effect = [FakeResult(scalar=1), FakeResult(scalars=[permission])]
     service._ensure_user_can = AsyncMock()
-    service._serialize_permission_with_roles = AsyncMock(
-        return_value={"name": "content.create", "roles": []}
+    service._serialize_permissions_with_roles_batch = AsyncMock(
+        return_value=[{"name": "content.create", "roles": []}]
     )
 
     result = await service.list_permissions(user_id=uuid4(), resource=None, include_roles=True)
 
     service._ensure_user_can.assert_awaited_once()
-    service._serialize_permission_with_roles.assert_awaited_once()
+    # Every permission's roles are read in one batch.
+    service._serialize_permissions_with_roles_batch.assert_awaited_once_with([permission])
     assert result["data"]["count"] == 1
+    assert result["data"]["permissions"] == [{"name": "content.create", "roles": []}]
+    assert result["data"]["pagination"]["total"] == 1
 
 
 @pytest.mark.asyncio
@@ -89,7 +93,9 @@ async def test_create_permission_validates_and_persists():
 
 
 @pytest.mark.asyncio
-async def test_update_permission_updates_name_when_resource_changes():
+async def test_update_permission_changes_its_labels_not_its_name():
+    """A permission's name is what every role check matches: an update changes only
+    its display name and description."""
     mock_db = AsyncMock()
     service = PermissionService(mock_db)
 
@@ -103,19 +109,23 @@ async def test_update_permission_updates_name_when_resource_changes():
 
     service._ensure_user_can = AsyncMock()
     service._get_permission_or_404 = AsyncMock(return_value=permission)
-    service._ensure_unique_name = AsyncMock()
     mock_db.flush = AsyncMock()
     mock_db.refresh = AsyncMock()
 
-    payload = PermissionUpdate(resource="content", action="view")
+    payload = PermissionUpdate(display_name="View content", description="See any article")
 
     result = await service.update_permission(
         user_id=uuid4(), permission_id=uuid4(), payload=payload
     )
 
-    assert permission.action == "view"
-    assert permission.name == "content.view"
-    service._ensure_unique_name.assert_awaited_once()
+    service._ensure_user_can.assert_awaited_once()
+    assert permission.display_name == "View content"
+    assert permission.description == "See any article"
+    assert (permission.name, permission.resource, permission.action) == (
+        "content.read",
+        "content",
+        "read",
+    )
     mock_db.flush.assert_awaited_once()
     mock_db.refresh.assert_awaited_once()
     assert "permission" in result["data"]

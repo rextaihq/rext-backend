@@ -258,6 +258,9 @@ async def test_selected_topic_is_never_rewritten_at_selection(monkeypatch):
         "content": {"content_type": "comparison"},
     }
 
+    # The titles are made before the gate (rext-control#330); the gate takes the pick.
+    prepared = await tg.generate_topics(state)
+    state = {**state, "content": {**state["content"], **prepared["content"]}}
     result = await tg.topic_generation(state)
 
     assert result["content"]["selected_topic"] == odd_selection

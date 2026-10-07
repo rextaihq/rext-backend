@@ -31,6 +31,7 @@ Security:
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -168,6 +169,102 @@ class LemonSqueezyWebhookService:
             # Re-raise for proper HTTP error response
             raise WebhookProcessingError(error_message) from e
 
+    async def record_webhook(self, payload: bytes) -> Dict[str, Any]:
+        """
+        Store a verified webhook event before it is acknowledged.
+
+        The route answers Lemon Squeezy only once the event is in webhook_events
+        (its own transaction, as _log_webhook does), and answers with an error
+        when it can't be stored, so Lemon Squeezy sends it again. Processing then
+        runs from the stored row (process_recorded), and a row left unprocessed
+        is picked up by the reprocessing job.
+
+        Returns:
+            Dict with event_id, event_type and duplicate (already stored before).
+
+        Raises:
+            WebhookParsingError: If payload cannot be parsed
+        """
+        try:
+            webhook_data = parse_webhook_payload(payload)
+        except Exception as e:
+            logger.error(f"Failed to parse webhook payload: {str(e)}")
+            raise WebhookParsingError(f"Invalid payload: {str(e)}") from e
+
+        event_id = webhook_data.get("event_id")
+        event_type = webhook_data.get("event_type")
+        duplicate = await self._check_idempotency(event_id)
+        if not duplicate:
+            # Two deliveries at once both pass the check above; the insert decides
+            # which one stored the event, and only that one processes it.
+            webhook_event = await self._log_webhook(webhook_data)
+            duplicate = not getattr(webhook_event, "_inserted_here", True)
+        return {"event_id": event_id, "event_type": event_type, "duplicate": duplicate}
+
+    async def process_recorded(self, event_id: str) -> Dict[str, Any]:
+        """
+        Run the handler for an event record_webhook() stored.
+
+        Returns:
+            Dict with the result and the handler's result (emails to send).
+
+        Raises:
+            WebhookProcessingError: If the handler fails (the row is marked failed)
+        """
+        # Claim the row for this transaction: a concurrent worker (the reprocessing
+        # job, a second delivery) skips it instead of running the handler twice.
+        webhook_event = (
+            await self.db.execute(
+                select(WebhookEvent)
+                .where(WebhookEvent.event_id == event_id)
+                .with_for_update(skip_locked=True)
+            )
+        ).scalar_one_or_none()
+        if webhook_event is None or webhook_event.processed:
+            return {"success": True, "event_id": event_id, "message": "Nothing to process"}
+
+        event_type = webhook_event.event_name
+        try:
+            handler_result = await self._route_event(
+                event_type, self._webhook_data_from_event(webhook_event), webhook_event
+            )
+            await self._mark_processed(webhook_event)
+        except Exception as e:
+            error_message = f"Error processing event: {str(e)}"
+            logger.error(
+                error_message, extra={"event_id": event_id, "event_type": event_type}, exc_info=True
+            )
+            # Release the claim first: _mark_failed writes the row from its own session.
+            await self.db.rollback()
+            await self._mark_failed(webhook_event, error_message)
+            raise WebhookProcessingError(error_message) from e
+
+        return {
+            "success": True,
+            "event_id": event_id,
+            "event_type": event_type,
+            "message": "Event processed successfully",
+            "handler_result": handler_result,
+        }
+
+    @staticmethod
+    def _webhook_data_from_event(webhook_event: WebhookEvent) -> Dict[str, Any]:
+        """The parsed webhook data for a stored event."""
+        raw_payload = webhook_event.payload or {}
+        meta = raw_payload.get("meta", {}) or {}
+        # Mirror the shape produced by parse_webhook_payload on the live path so
+        # handlers (and get_user_identifier) see the same keys - notably the
+        # top-level ``custom_data`` carrying the checkout ``user_id``.
+        return {
+            "event_id": webhook_event.event_id,
+            "event_type": webhook_event.event_name,
+            "data": raw_payload.get("data", {}),
+            "meta": meta,
+            "custom_data": meta.get("custom_data", {}) or {},
+            "raw_payload": raw_payload,
+            "timestamp": webhook_event.created_at,
+        }
+
     async def reprocess_event(self, webhook_event: WebhookEvent) -> Dict[str, Any]:
         """
         Reprocess a webhook event from the database.
@@ -179,27 +276,15 @@ class LemonSqueezyWebhookService:
             Dict with result.
         """
         event_type = webhook_event.event_name
-        raw_payload = webhook_event.payload or {}
-        meta = raw_payload.get("meta", {}) or {}
-        # Mirror the shape produced by parse_webhook_payload on the live path so
-        # handlers (and get_user_identifier) see the same keys - notably the
-        # top-level ``custom_data`` carrying the checkout ``user_id``.
-        webhook_data = {
-            "event_id": webhook_event.event_id,
-            "event_type": event_type,
-            "data": raw_payload.get("data", {}),
-            "meta": meta,
-            "custom_data": meta.get("custom_data", {}) or {},
-            "raw_payload": raw_payload,
-            "timestamp": webhook_event.created_at,
-        }
+        webhook_data = self._webhook_data_from_event(webhook_event)
 
-        await self._route_event(event_type, webhook_data, webhook_event)
+        handler_result = await self._route_event(event_type, webhook_data, webhook_event)
 
         return {
             "success": True,
             "event_id": webhook_event.event_id,
             "message": "Event reprocessed successfully",
+            "handler_result": handler_result,
         }
 
     async def _check_idempotency(self, event_id: str) -> bool:
@@ -253,6 +338,7 @@ class LemonSqueezyWebhookService:
             try:
                 bookkeeping_db.add(webhook_event)
                 await bookkeeping_db.commit()
+                webhook_event._inserted_here = True
 
                 logger.debug(
                     "Logged webhook event to database",
@@ -266,7 +352,9 @@ class LemonSqueezyWebhookService:
                 await bookkeeping_db.rollback()
                 stmt = select(WebhookEvent).where(WebhookEvent.event_id == event_id)
                 result = await bookkeeping_db.execute(stmt)
-                return result.scalar_one()
+                existing = result.scalar_one()
+                existing._inserted_here = False
+                return existing
 
     async def _route_event(
         self, event_type: str, webhook_data: Dict[str, Any], webhook_event: WebhookEvent
@@ -337,11 +425,16 @@ class LemonSqueezyWebhookService:
             error_message: Error description
         """
         # Persist the failure in its OWN transaction so it is retained even when
-        # the processing transaction (self.db) is rolled back by the caller.
+        # the processing transaction (self.db) is rolled back by the caller. That
+        # rollback expires the instance, and reading an expired attribute is a query
+        # async code can't make, so the row is found by its identity key and every
+        # value is read from the bookkeeping session's copy.
         now = datetime.now(timezone.utc)
-        new_retry_count = webhook_event.retry_count or 0
+        identity = sa_inspect(webhook_event).identity
+        row_id = identity[0] if identity else webhook_event.id
+        new_retry_count, event_id = None, None
         async with AsyncSessionLocal() as bookkeeping_db:
-            row = await bookkeeping_db.get(WebhookEvent, webhook_event.id)
+            row = await bookkeeping_db.get(WebhookEvent, row_id)
             if row is not None:
                 row.processed = False
                 row.error_message = error_message
@@ -349,20 +442,17 @@ class LemonSqueezyWebhookService:
                 row.processed_at = None
                 row.updated_at = now
                 await bookkeeping_db.commit()
-                new_retry_count = row.retry_count
+                new_retry_count, event_id = row.retry_count, row.event_id
 
         # Reflect on the in-memory instance for callers.
         webhook_event.processed = False
         webhook_event.error_message = error_message
-        webhook_event.retry_count = new_retry_count
+        if new_retry_count is not None:
+            webhook_event.retry_count = new_retry_count
 
         logger.error(
-            f"Marked webhook event as failed (retry {webhook_event.retry_count})",
-            extra={
-                "event_id": webhook_event.event_id,
-                "error": error_message,
-                "retry_count": webhook_event.retry_count,
-            },
+            f"Marked webhook event as failed (retry {new_retry_count})",
+            extra={"event_id": event_id, "error": error_message, "retry_count": new_retry_count},
         )
 
     def register_handler(self, event_type: str, handler: Callable) -> None:

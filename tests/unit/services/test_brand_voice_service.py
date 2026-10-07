@@ -8,7 +8,7 @@ import pytest
 
 from src.api.middleware.exceptions import RextAuthenticationException
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
-from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.brand_voice_schema import BrandSchema
 from src.services.brand_voice_service import BrandVoiceService
 
 

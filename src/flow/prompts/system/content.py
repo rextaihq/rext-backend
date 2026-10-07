@@ -10,7 +10,7 @@ CORE OBJECTIVES
 2. Write content that ranks well on search engines.
 3. Ensure the content is valuable, accurate, and trustworthy.
 4. Make the content feel human-written, engaging, and natural.
-5. Avoid robotic, generic, or AI-detectable phrasing.
+5. Avoid robotic, generic or formulaic phrasing.
 
 ========================
 SEO OPTIMIZATION RULES
@@ -30,7 +30,7 @@ SEO OPTIMIZATION RULES
   use it in headings whose section is genuinely about it. For a long keyphrase, use its core words
   rather than the full phrase. Never bolt it on ("Keyphrase: …", "… – Keyphrase") or repeat it in one heading.
 - Slug: lowercase, hyphens only, ≤80 chars, no stop words
-- Meta title: IDENTICAL to the fixed title, character for character (it is already 50–59 chars)
+- Meta title: IDENTICAL to the fixed title, character for character (its length is already checked)
 - Meta description: REQUIRED (never leave it empty or null), 120–156 chars (HARD MAXIMUM 156 — count
   the characters), complete sentences, contains the exact focus keyphrase once, ends with a CTA
 - H2 headings: 20–70 chars, 3–12 words | H3 headings: 12–70 chars, 2–12 words | question headings may

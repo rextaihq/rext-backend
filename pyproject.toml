@@ -9,52 +9,59 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    "alembic>=1.13.0",
-    "crawl4ai>=0.7.2",
-    "faiss-cpu>=1.12.0",
-    "fastapi[standard]>=0.116.1",
-    "langchain-community>=0.3.27",
-    "langchain[groq,openai]>=0.3.27",
-    "langgraph[cli]>=0.5.4",
-    "langgraph-api>=0.2.102",
-    "langgraph-checkpoint-postgres>=2.0.23",
-    "langgraph-cli[inmem]>=0.3.6",
-    "langgraph-sdk>=0.1.74",
-    "markdown>=3.8.2",
-    "numpy>=2.3.2",
-    "bcrypt>=4.0.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "PyJWT[crypto]>=2.8.0",
-    "python-dotenv>=1.1.1",
-    "httpx>=0.27.0",
-    "requests>=2.32.4",
-    "user-agents>=2.2.0",
-    "structlog>=25.4.0",
-    "asyncpg>=0.30.0",
-    "psycopg[binary]>=3.2.0",
-    "filetype>=1.2.0",
-    "werkzeug>=3.0.1",
-    "pillow>=11.3.0",
-    "sse-starlette>=2.1.3",
-    "resend>=2.16.0",
-    "svix>=1.77.0",
-    "tenacity>=8.2.0",
-    "sentry-sdk[fastapi]>=2.0.0",
-    "redis[hiredis]>=5.0.0",
-    "boto3>=1.40.56",
-    "langchain-openai>=1.0.1",
-    "scikit-learn>=1.8.0",
-    "textstat>=0.7.12",
-    "seokar>=1.0.0",
-    "aiosmtplib>=3.0.0",
-    "apscheduler>=3.10.0,<4.0.0",
-    "beautifulsoup4>=4.14.3",
-    "langchain-tavily>=0.2.17",
-    "sqlalchemy[asyncio]>=2.0.45",
-    "tzdata>=2024.1",
-    "openai>=1.109.1",
-    "tldextract>=5.1.0",
+    "alembic>=1.20,<2",
+    "crawl4ai>=0.9.4,<0.10",
+    # 0.142 requires OpenTelemetry 1.44 or newer; the LangGraph server of api_version 0.12.6 ships
+    # 1.37 (its Prometheus exporter needs it), so 0.141 is the newest that fits beside it.
+    "fastapi[standard]>=0.141.1,<0.142",
+    "langchain-community>=0.4.2,<0.5",
+    "langchain[openai]>=1.4,<2",
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-postgres>=3.1,<4",
+    "langgraph-sdk>=0.4.2,<0.5",
+    "markdown>=3.11,<4",
+    "bcrypt>=5.0,<6",
+    "pydantic>=2.13,<3",
+    "pydantic-settings>=2.15,<3",
+    "PyJWT[crypto]>=2.13,<3",
+    "python-dotenv>=1.2,<2",
+    "httpx>=0.28.1,<0.29",
+    "requests>=2.34,<3",
+    "user-agents>=2.2,<3",
+    "structlog>=25.5,<26",
+    "asyncpg>=0.31,<0.32",
+    "psycopg[binary]>=3.3,<4",
+    "filetype>=1.2,<2",
+    "werkzeug>=3.1,<4",
+    "pillow>=12.3,<13",
+    "sse-starlette>=3.3,<4",
+    "resend>=2.49,<3",
+    "svix>=2.6,<3",
+    "tenacity>=9.1,<10",
+    "sentry-sdk[fastapi]>=2.71,<3",
+    "redis[hiredis]>=7.4,<8",
+    "boto3>=1.43,<2",
+    "langchain-openai>=1.6,<2",
+    "scikit-learn>=1.9,<2",
+    "textstat>=0.7.13,<0.8",
+    "seokar>=1.0,<2",
+    "aiosmtplib>=5.1,<6",
+    "apscheduler>=3.11,<4",
+    "beautifulsoup4>=4.15,<5",
+    "langchain-tavily>=0.2.18,<0.3",
+    "sqlalchemy[asyncio]>=2.1.3,<2.2",
+    "tzdata>=2026.5",
+    "openai>=3.24,<4",
+    "tldextract>=5.4,<6",
+    # Imported by the code directly; until now installed only because another package needs them.
+    "aiofiles>=25.1,<26",
+    "langchain-core>=1.6,<2",
+    "langchain-text-splitters>=1.1,<2",
+    "langsmith>=0.8.18,<0.9",
+    "nltk>=3.10,<4",
+    "python-dateutil>=2.9,<3",
+    "pyyaml>=6.0,<7",
+    "tqdm>=4.70,<5",
 ]
 
 [project.scripts]
@@ -66,16 +73,21 @@ core-metadata-version = "2.3"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.2",
-    "pytest-asyncio>=1.2.0",
-    "factory-boy>=3.3.1",
-    "faker>=20.0.0",
-    "pytest-cov>=4.1.0",
-    "ruff>=0.13.0",
-    "pylint>=4.0.5",
-    "flake8>=7.3.0",
-    "radon>=6.0.1",
-    "bandit>=1.9.4",
+    # The LangGraph server and CLI, for `langgraph dev`. The image does not install these: its
+    # server comes from the base image that langgraph.json's "api_version" selects. Keep the two
+    # versions equal, so local runs use the server the deployed image runs.
+    "langgraph-api==0.12.6",
+    "langgraph-cli[inmem]>=0.4.32,<0.5",
+    "pytest>=9.0.2,<10",
+    "pytest-asyncio>=1.3,<2",
+    "factory-boy>=3.3.3,<4",
+    "faker>=40.1,<41",
+    "pytest-cov>=7.0,<8",
+    "ruff>=0.15.5,<0.16",
+    "pylint>=4.0.5,<5",
+    "flake8>=7.3,<8",
+    "radon>=6.0.1,<7",
+    "bandit>=1.9.4,<2",
 ]
 
 [tool.ruff]
@@ -94,12 +106,3 @@ ignore = ["E501"]
 "tests/**/*.py" = ["F401"]
 "scripts/**/*.py" = ["I001"]
 "alembic/env.py" = ["E402"]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }

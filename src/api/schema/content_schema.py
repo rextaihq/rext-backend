@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -38,6 +38,59 @@ class ContentSEODataSchema(BaseModel):
     keyword_difficulty: Optional[int] = None
     intent_label: Optional[str] = None
     seo_details: Optional[str] = None
+
+
+class ChecklistReadability(BaseModel):
+    """The band of the saved Flesch reading-ease score."""
+
+    score: float
+    band: str = Field(
+        description="very_easy, easy, fairly_easy, standard, fairly_difficult, difficult or "
+        "very_difficult"
+    )
+    label: str
+
+
+class ChecklistDensity(BaseModel):
+    """The focus keyphrase's density, as the on-page analysis measured it."""
+
+    value: Optional[float] = None
+    status: Optional[str] = Field(None, description="ok, too_low, too_high or not_applicable")
+    occurrences: Optional[int] = None
+    detail: Optional[str] = None
+
+
+class ChecklistIssue(BaseModel):
+    name: str
+    severity: Optional[str] = None
+    detail: str = ""
+
+
+class ChecklistValidation(BaseModel):
+    """The validator's verdict on the saved article."""
+
+    passed: bool
+    gave_up: bool = Field(description="True when the article was saved with checks still failing")
+    stage: Optional[str] = Field(None, description="post_humanize or pre_repair")
+    issues: List[ChecklistIssue] = Field(default_factory=list, description="Blocking failures")
+    warnings: List[ChecklistIssue] = Field(default_factory=list)
+
+
+class ChecklistClaim(BaseModel):
+    """A factual claim nothing the run verified supports."""
+
+    category: str
+    sentence: str
+    unsupported: str = Field(description="The part of the sentence no source supports")
+
+
+class ContentChecklist(BaseModel):
+    """What the dashboard's checklist shows beside an article (src/services/content_checklist.py)."""
+
+    readability: Optional[ChecklistReadability] = None
+    keyphrase_density: Optional[ChecklistDensity] = None
+    validation: Optional[ChecklistValidation] = None
+    claims_to_verify: List[ChecklistClaim] = Field(default_factory=list)
 
 
 class ContentCreate(ContentBase):
@@ -173,6 +226,9 @@ class ContentResponse(BaseModel):
     updated_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
 
+    # Filled on the single-article response only (GET /content/{id})
+    checklist: Optional[ContentChecklist] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -213,32 +269,6 @@ class WorkspaceIntegrationUpdate(BaseModel):
     config_json: Optional[Dict[str, Any]] = None
 
 
-class WorkspaceIntegrationResponse(BaseModel):
-    """Full representation of a connected site (matches to_dict() output)."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    workspace_id: UUID
-    integration_type: str
-    is_active: bool
-    site_url: Optional[str] = None
-    api_endpoint: Optional[str] = None
-    username: Optional[str] = None
-    config_json: Optional[Dict[str, Any]] = None
-    has_app_password: bool = False
-    has_api_key: bool = False
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    deleted_at: Optional[datetime] = None
-
-
-class WorkspaceIntegrationListResponse(BaseModel):
-    sites: List[WorkspaceIntegrationResponse]
-    total_count: int
-    workspace_id: UUID
-
-
 class PublishToSiteRequest(BaseModel):
     """Request schema for publishing content to WordPress site(s)"""
 
@@ -252,6 +282,13 @@ class PublishToSiteRequest(BaseModel):
     @classmethod
     def normalize_wordpress_status(cls, value):
         return normalize_wordpress_post_status(value)
+
+
+class RescheduleRequest(BaseModel):
+    """Request schema for moving a scheduled publish to another day"""
+
+    # The new day in the caller's account timezone; each site keeps its time of day.
+    day: date
 
 
 class PublishResponse(BaseModel):

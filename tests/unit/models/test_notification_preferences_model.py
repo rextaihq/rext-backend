@@ -48,8 +48,6 @@ class TestDefaultCategoryPreferences:
             "billing_trial_ending",
             "billing_usage_limit_warning",
             "billing_usage_limit_exceeded",
-            "kb_processing_completed",
-            "kb_processing_failed",
         }
         assert expected.issubset(DEFAULT_CATEGORY_PREFERENCES.keys())
 
@@ -136,7 +134,6 @@ class TestToDict:
             "workspace_notifications",
             "content_generation",
             "billing",
-            "knowledge_base",
             "marketing",
         }
         assert set(result.keys()) == expected_keys
@@ -170,7 +167,6 @@ class TestToDict:
         assert result["workspace_notifications"]["invite_received"] is True
         assert result["content_generation"]["generation_started"] is True
         assert result["billing"]["payment_success"] is True
-        assert result["knowledge_base"]["processing_completed"] is True
 
     def test_reflects_updated_preference(self, prefs):
         prefs.set_preference("ws_invite_received", False)

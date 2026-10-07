@@ -28,7 +28,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.config import get_settings
 from src.api.database.async_database import get_async_db as get_db
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     SubscriptionStatus,
@@ -38,9 +37,9 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.security.dependencies import get_current_user
+from src.services.credit_grants import grant_balance
 from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.datetime_utils import next_billing_anchor
-from src.utils.embedding_rate_limiter import get_embedding_rate_limiter
 from src.utils.logger import logger
 
 
@@ -230,71 +229,6 @@ class MemberLimitChecker:
             )
 
 
-class KnowledgeItemLimitChecker:
-    """
-    Dependency for checking knowledge item creation limit.
-
-    Verifies that the user hasn't exceeded their plan's max_knowledge_items limit.
-    """
-
-    async def __call__(
-        self,
-        request: Request,
-        current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db),
-    ):
-        """Check if user can create another knowledge item."""
-        user_id = current_user.get("identity")
-        settings = get_settings()
-        if settings.ENVIRONMENT.lower() == "local" and settings.LOCAL_UNLIMITED_WORKSPACES:
-            logger.warning("Local unlimited workspace override enabled")
-            return
-
-        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
-
-        # Count all knowledge items across all types
-        # Query count for each knowledge type that belongs to user's workspaces
-        website_result = await db.execute(
-            select(func.count(Website.id))
-            .join(Workspace, Website.workspace_id == Workspace.id)
-            .where(Workspace.user_id == user_id, Workspace.deleted_at.is_(None))
-        )
-        website_count = website_result.scalar() or 0
-
-        files_result = await db.execute(
-            select(func.count(KnowledgeFiles.id))
-            .join(Workspace, KnowledgeFiles.workspace_id == Workspace.id)
-            .where(Workspace.user_id == user_id, Workspace.deleted_at.is_(None))
-        )
-        files_count = files_result.scalar() or 0
-
-        text_result = await db.execute(
-            select(func.count(TextKnowledge.id))
-            .join(Workspace, TextKnowledge.workspace_id == Workspace.id)
-            .where(Workspace.user_id == user_id, Workspace.deleted_at.is_(None))
-        )
-        text_count = text_result.scalar() or 0
-
-        # Total knowledge items across all types
-        current_count = website_count + files_count + text_count
-
-        if not subscription or not plan:
-            # No subscription = default free tier
-            return
-
-        # Check plan limit
-        if plan.max_knowledge_items == -1:
-            # Unlimited
-            return
-
-        # Enforce plan limit
-        if current_count >= plan.max_knowledge_items:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Knowledge item limit reached ({current_count}/{plan.max_knowledge_items}). Upgrade your plan to add more items.",
-            )
-
-
 class APICallLimiter:
     """
     Dependency for tracking and limiting API calls per month.
@@ -394,11 +328,13 @@ class CreditLimiter:
         if plan.credits_per_month is None:
             return  # Enterprise: unlimited
 
-        if subscription.current_credits < self.required:
+        # The monthly credits plus any unexpired grant (an offer's bonus).
+        available = (subscription.current_credits or 0) + await grant_balance(db, subscription.id)
+        if available < self.required:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(
-                    f"Insufficient credits: {subscription.current_credits} available, "
+                    f"Insufficient credits: {available} available, "
                     f"{self.required} required. Upgrade your plan or wait for your monthly reset."
                 ),
             )
@@ -452,42 +388,6 @@ def check_workspace_limit():
 def check_member_limit(workspace_id_param: str = "workspace_id"):
     """Factory function to create member limit checker dependency."""
     return MemberLimitChecker(workspace_id_param)
-
-
-def check_knowledge_item_limit():
-    """Factory function to create knowledge item limit checker dependency."""
-    return KnowledgeItemLimitChecker()
-
-
-def check_embedding_rate_limit():
-    """
-    FastAPI dependency that checks per-user embedding rate limits.
-
-    Usage:
-        @router.post("/knowledge/web")
-        async def create_web_knowledge(
-            ...,
-            _rate: None = Depends(check_embedding_rate_limit()),
-        ):
-    """
-
-    async def _check(
-        request: Request,
-        current_user: dict = Depends(get_current_user),
-    ) -> None:
-        user_id = str(current_user.get("identity", ""))
-        limiter = get_embedding_rate_limiter()
-
-        allowed = await limiter.check_rate_limit(user_id)
-        if not allowed:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Embedding rate limit exceeded. Please wait before adding more knowledge items.",
-            )
-
-        await limiter.record_request(user_id)
-
-    return _check
 
 
 def check_api_limit(increment: bool = True):

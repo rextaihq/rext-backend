@@ -22,6 +22,7 @@ load_dotenv()
 # Import SQLAlchemy Base and all models — these are required by Alembic
 # autogenerate even though they appear unused (they register on Base.metadata)
 from src.api.database.base import Base  # noqa: E402, F401
+from src.api.database.migrations import include_object, render_item  # noqa: E402
 from src.api.models.admin_models import (  # noqa: E402, F401
     AccountCreationIpAllowlist,
     ApiUsageHourly,
@@ -36,19 +37,16 @@ from src.api.models.email_models import EmailEvent, EmailLog  # noqa: E402, F401
 from src.api.models.integrations.shopify_app_install import (  # noqa: E402
     ShopifyAppInstall,  # noqa: F401
 )
-from src.api.models.knowledge_models.knowledge_model import (  # noqa: E402, F401
-    BrandVoice,
-    KnowledgeFiles,
-    TextKnowledge,
-    Website,
-)
+from src.api.models.knowledge_models.knowledge_model import BrandVoice  # noqa: E402, F401
 from src.api.models.knowledge_models.persona_model import Persona  # noqa: E402, F401
 from src.api.models.notification.notification_model import Notification  # noqa: E402, F401
 from src.api.models.subscription_models import (  # noqa: E402, F401
+    CreditGrant,
     DiscountUsage,
     License,
     LicenseActivation,
     PaymentMethod,
+    Promotion,
     Refund,
     SubscriptionPlan,
     TrialConversion,
@@ -84,18 +82,14 @@ from src.api.models.workspace_models.workspace_integration import (  # noqa: E40
 config = context.config
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# This line sets up loggers basically. The server's start (src/api/database/
+# migrate_on_start.py) keeps its own logging and says so.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
 target_metadata = Base.metadata
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
 
 
 def get_url():
@@ -125,6 +119,8 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
+        render_item=render_item,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -159,7 +155,12 @@ async def run_async_migrations() -> None:
 
 def do_run_migrations(connection):
     """Execute migrations with the provided connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+        render_item=render_item,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
@@ -167,6 +168,11 @@ def do_run_migrations(connection):
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode using asyncio."""
+    # The server's start hands over its own connection, which holds the migration lock.
+    connection = config.attributes.get("connection")
+    if connection is not None:
+        do_run_migrations(connection)
+        return
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(run_async_migrations())

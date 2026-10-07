@@ -27,7 +27,9 @@ from src.api.middleware.exceptions import (
 )
 from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.utils.integration_urls import ensure_public_site_urls
 from src.utils.logger import logger
+from src.utils.url_validator import public_client
 from src.web.shopify import SHOPIFY_API_VERSION, ShopifyConnector
 from src.web.shopify_bridge import normalize_store_url
 
@@ -474,6 +476,9 @@ class IntegrationService:
             store_url=shop_url,
             access_token=clean_token,
         ) as connector:
+            # Checked as the connector will call it (scheme added, bare names on
+            # myshopify.com), before the token goes anywhere.
+            await ensure_public_site_urls(connector.store_url)
             await connector.test_connection()
 
         return True
@@ -491,7 +496,7 @@ class IntegrationService:
         )
 
         try:
-            async with httpx.AsyncClient(
+            async with public_client(
                 headers={
                     "X-Shopify-Access-Token": clean_token,
                     "Accept": "application/json",

@@ -21,13 +21,30 @@ Every tool endpoint returns responses in the standard `SuccessResponse` envelope
 }
 ```
 
-Error responses return standard HTTP error status codes (e.g. `400 Bad Request`, `500 Internal Server Error`) with `detail`:
+Error responses use the HTTP status (`400`, `413`, `422`, `429`, `500`) and the standard error envelope. Its top-level `message` is written for the visitor; show it as it is:
 
 ```json
 {
-  "detail": "Error description message"
+  "success": false,
+  "message": "You've reached today's limit for this free tool. Please try again tomorrow.",
+  "data": null,
+  "error": { "code": "...", "message": "...", "severity": "...", "status_code": 429 }
 }
 ```
+
+---
+
+## Limits
+
+The tools are public (no login) and bounded per UTC day (`src/api/tool/limits.py`):
+
+- **Per visitor:** each address gets 20 calls a day to each tool that runs a model (meta description, title tags, questions, content ideas, grammar, hooks, SEO blog titles, outline, headline analyzer, paragraph rewriter), and 100 a day to each of the other tools. Past that, the tool answers `429`. A request that fails validation (`422`) isn't counted. When the server can't trust the address (`TRUSTED_PROXY_IPS` names no proxy), every caller counts as one visitor.
+- **A daily budget for the model tools:** together they spend at most `FREE_TOOLS_DAILY_BUDGET_USD` (US$5 by default). Each call is charged its worst case before it runs: one token per byte of its body, as many times as its prompt repeats a field, plus its output cap. When the budget is used up, every model tool answers `429` ("The free AI tools have reached today's limit. Please try again tomorrow.") until midnight UTC; the other tools go on.
+- **Input size:** a model tool's request body is at most 20,000 bytes (about 3,000 words); a longer one gets `413`.
+- A `429` carries `Retry-After` (readable from the browser): the seconds until midnight UTC.
+- Settings: `FREE_TOOLS_MODEL_CALLS_PER_DAY`, `FREE_TOOLS_CALLS_PER_DAY`, `FREE_TOOLS_DAILY_BUDGET_USD`.
+
+The canonical tag and hreflang generators run no model: Google's rules for both are mechanical. An address without a scheme gets `https://`; one that isn't a full web address (a valid host name or IP) is refused (`400`), and in hreflang it is left out with a warning. Hreflang takes the ISO 639-1 languages, ISO 15924 scripts and ISO 3166-1 regions Google supports (`src/api/tool/iso_codes.py`).
 
 ---
 
@@ -217,7 +234,7 @@ Error responses return standard HTTP error status codes (e.g. `400 Bad Request`,
 ### 5. Hreflang Tag Generator (New)
 
 **Endpoint:** `POST /api/v1/tools/hreflang-generator`  
-**Description:** Generates Google-compliant XML sitemap tags or HTML `<link rel="alternate" ...>` tags with automatic duplicate detection and x-default fallback.
+**Description:** Generates Google-compliant XML sitemap tags (`output_format: "sitemap"`) or HTML `<link rel="alternate" ...>` tags, one per line, with x-default for the default URL. Codes are normalized (`EN_us` is `en-US`, a script as in `zh-Hant-TW` is kept). An entry whose language or region isn't a code is left out with a warning, and so is a repeated code.
 
 #### Request Body Schema: `HreflangRequest`
 ```json
@@ -237,14 +254,8 @@ Error responses return standard HTTP error status codes (e.g. `400 Bad Request`,
 {
   "success": true,
   "data": {
-    "hreflang_tags": [
-      "<link rel=\"alternate\" hreflang=\"en-us\" href=\"https://example.com/en-us\" />",
-      "<link rel=\"alternate\" hreflang=\"es-es\" href=\"https://example.com/es-es\" />",
-      "<link rel=\"alternate\" hreflang=\"x-default\" href=\"https://example.com/en-us\" />"
-    ],
-    "output_format": "html",
-    "total_urls": 2,
-    "warnings": []
+    "hreflang_tags": "<link rel=\"alternate\" hreflang=\"en-US\" href=\"https://example.com/en-us\" />\n<link rel=\"alternate\" hreflang=\"es-ES\" href=\"https://example.com/es-es\" />\n<link rel=\"alternate\" hreflang=\"x-default\" href=\"https://example.com/en-us\" />",
+    "warnings": null
   },
   "message": "Operation completed successfully"
 }

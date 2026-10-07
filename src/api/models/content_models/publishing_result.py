@@ -1,4 +1,5 @@
 import enum
+import uuid
 
 from sqlalchemy import (
     BigInteger,
@@ -41,6 +42,10 @@ class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UniqueConstraint("content_id", "site_id", name="uq_content_publishing_result_content_site"),
     )
 
+    # The mixin's id without its separate unique constraint, which this table
+    # never had (the primary key is unique already).
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+
     content_id = Column(
         UUID(as_uuid=True),
         ForeignKey("content.id", ondelete="CASCADE"),
@@ -67,7 +72,7 @@ class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     status = Column(String, nullable=False, default=PublishingStatus.UNKNOWN)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_error = Column(Text, nullable=True)
-    scheduled_publish_at = Column(DateTime(timezone=True), nullable=True)
+    scheduled_publish_at = Column(DateTime(timezone=True), nullable=True, index=True)
     retry_count = Column(Integer, nullable=False, default=0, server_default="0")
 
     def __repr__(self):

@@ -24,10 +24,9 @@
 
 1. **Open the test client**:
    ```bash
-   # Open in your browser
-   open notification-test-client.html
-   # or
-   firefox notification-test-client.html
+   # Serve it from an origin in ALLOWED_ORIGINS (the page sends an Authorization header,
+   # so the browser checks CORS), then open http://localhost:3000/notification-test-client.html
+   python3 -m http.server 3000 --directory docs
    ```
 
 2. **Configure the test client**:
@@ -44,9 +43,8 @@
 3. **Click "Connect to SSE"**
 
 4. **Trigger a notification**:
-   - Create a knowledge base (web, file, or text)
-   - Wait for processing to complete
-   - Check if `kb_processing_completed` event appears in test client
+   - Update your profile (`PATCH /api/v1/user/profile` with a new `display_name`)
+   - Check if a `notification.success` event appears in test client
 
 ### Step 2: Verify Backend Endpoint
 
@@ -257,7 +255,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
 ## 📚 Related Files
 
-- **Analysis**: `NOTIFICATION_ANALYSIS.md` - Detailed technical analysis
 - **Test Client**: `notification-test-client.html` - SSE testing tool
 - **SSE Provider**: `providers/sse-provider.tsx` - Core SSE infrastructure
 - **Notification Schemas**: `schemas/notification-schemas.ts` - Notification types
@@ -288,8 +285,8 @@ open notification-test-client.html
    - Update notification parsing accordingly
 
 3. **How is authentication handled?**
-   - Query parameter? `?token=...`
-   - Header? (EventSource doesn't support headers)
+   - The `Authorization: Bearer <token>` header only; the `?token=` query parameter is no longer accepted
+   - The browser's `EventSource` cannot send headers: use `fetch` or `@microsoft/fetch-event-source`
 
 4. **What is the channel/operation ID?**
    - `notifications` (global)
@@ -303,8 +300,8 @@ open notification-test-client.html
 3. ⏳ **Implement hook** - Create useUserNotifications
 4. ⏳ **Add provider** - Wrap app with NotificationProvider
 5. ⏳ **Connect UI** - Update NotificationsDrawer
-6. ⏳ **Test end-to-end** - Trigger KB processing and verify notification appears
+6. ⏳ **Test end-to-end** - Update your profile and verify notification appears
 
 ---
 
-**Need help?** Check the detailed analysis in `NOTIFICATION_ANALYSIS.md`
+**Need help?** Follow `NOTIFICATION_TESTING_GUIDE.md` step by step

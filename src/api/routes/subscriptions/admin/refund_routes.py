@@ -58,6 +58,12 @@ from src.services.order_service import (
     apply_refund_state,
     refundable_amount,
 )
+from src.services.refund_cancellation import (
+    cancel_at_provider_for_refund,
+    end_for_refund,
+    no_subscription_to_end,
+    refunded_subscription,
+)
 from src.services.refund_request_service import (
     RefundRequestError,
     RefundRequestService,
@@ -226,6 +232,28 @@ async def _issue_refund(
                 f"{adjustment['credits_before']} -> {adjustment['credits_after']}",
                 extra={"order_id": str(lemonsqueezy_order_id), **adjustment},
             )
+
+    else:
+        # A full refund ends the subscription at Lemon Squeezy as well as here: left
+        # active there, it renews and charges the refunded customer again, and its next
+        # "active" update would give the plan back (F8c, revnix/rext-control#538). The
+        # cancel is made once and recorded; a failed one alerts a person, and the
+        # refund stands either way.
+        subscription = await refunded_subscription(
+            db,
+            order_id=str(lemonsqueezy_order_id),
+            user_id=user_id,
+            order=order,
+            subscription_id=subscription_id,
+        )
+        if subscription is not None:
+            await cancel_at_provider_for_refund(
+                subscription, order_id=str(lemonsqueezy_order_id), provider=provider
+            )
+            end_for_refund(subscription, order_id=str(lemonsqueezy_order_id))
+            await db.flush()
+        else:
+            no_subscription_to_end(order_id=str(lemonsqueezy_order_id), user_id=user_id)
 
     return refund, {
         "total": original_amount,
@@ -603,7 +631,7 @@ async def create_refund_request_for_customer(
             lemonsqueezy_order_id=order.lemonsqueezy_order_id,
             reason=body.reason,
             requested_amount=body.requested_amount,
-            enforce_window=False,
+            enforce_policy=False,
         )
     except RefundRequestError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

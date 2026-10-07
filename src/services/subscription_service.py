@@ -23,20 +23,21 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import BackgroundTasks
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.api.cache.decorators import invalidate_cache
+from src.api.cache.redis_client import cache
 from src.api.lib.sentry_config import capture_payment_exception
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
+    FAILED_PAYMENT_STATUSES,
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
@@ -47,11 +48,129 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.config.payment_config import payment_settings
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
+from src.services.duplicate_subscriptions import is_known_duplicate
 from src.services.notification_helper import schedule_if_allowed
+from src.services.refund_cancellation import is_ended_by_refund
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
+
+_RETRY_NEW_SUBSCRIPTION = (
+    "Your last payment failed and is being retried. Update your payment method "
+    "to keep your plan instead of starting a new subscription."
+)
+_UNPAID_NEW_SUBSCRIPTION = (
+    "Your last payment couldn't be collected. Update your payment method to "
+    "reactivate your plan instead of starting a new subscription."
+)
+_CANCELLED_NEW_SUBSCRIPTION = (
+    "Your cancelled subscription hasn't ended yet. Resume it instead of starting "
+    "a new subscription."
+)
+_PAUSED_NEW_SUBSCRIPTION = "Your subscription is paused. Resume it instead of starting a new one."
+_RETRY_PLAN_CHANGE = (
+    "Your last payment failed and is being retried. Update your payment method "
+    "first; your plan can change once the payment goes through."
+)
+_UNPAID_PLAN_CHANGE = (
+    "Your last payment couldn't be collected. Update your payment method "
+    "first; your plan can change once the payment goes through."
+)
+
+# What a customer whose subscription isn't finished does instead of a new checkout.
+UPDATE_PAYMENT_METHOD = "update_payment_method"
+RESUME = "resume"
+
+# A repeated checkout request (a double click, a second tab) within this window
+# gets the same Lemon Squeezy checkout, so it can't be paid twice.
+_CHECKOUT_REUSE_SECONDS = 600
+
+
+def billing_action(
+    subscription: Optional[UserSubscription], now: Optional[datetime] = None
+) -> Optional[Dict[str, str]]:
+    """What the customer does with a subscription that isn't finished, else None.
+
+    A failed renewal is fixed with a new card (Lemon Squeezy recovers the same
+    subscription); a paused one, or a cancelled one whose end hasn't come, is
+    resumed. Either way a second subscription would bill twice.
+    """
+    # A duplicate, or a subscription a full refund ended, is never offered back.
+    if subscription is None or is_known_duplicate(subscription) or is_ended_by_refund(subscription):
+        return None
+    status = subscription.status
+    if status in (SubscriptionStatus.PAST_DUE, SubscriptionStatus.SUSPENDED):
+        return {"action": UPDATE_PAYMENT_METHOD, "message": _RETRY_NEW_SUBSCRIPTION}
+    if status == SubscriptionStatus.UNPAID:
+        return {"action": UPDATE_PAYMENT_METHOD, "message": _UNPAID_NEW_SUBSCRIPTION}
+    if not subscription.lemonsqueezy_subscription_id:
+        return None
+    if status == SubscriptionStatus.PAUSED:
+        return {"action": RESUME, "message": _PAUSED_NEW_SUBSCRIPTION}
+    if status == SubscriptionStatus.CANCELLED:
+        end = subscription.end_date
+        if end is not None and end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if end is None or end > (now or datetime.now(timezone.utc)):
+            return {"action": RESUME, "message": _CANCELLED_NEW_SUBSCRIPTION}
+    return None
+
+
+def trial_has_ended(
+    latest: Optional[UserSubscription],
+    granting: Optional[UserSubscription],
+    now: datetime,
+) -> bool:
+    """Whether the user's latest subscription is a trial that ended unpaid, with nothing after it.
+
+    A trial is the signup trial (the trial plan) or the trial days a paid plan starts
+    with when subscribed to without paying (`subscribe`); either way the row has a
+    trial end date and no Lemon Squeezy subscription (a paid trial converts to
+    ACTIVE instead). The daily expiry job (`utils/trial_manager.py`) sets an unpaid
+    trial past its end date to EXPIRED, because no free plan exists to move it to;
+    until the job runs the row is still TRIAL with its end date in the past. A
+    subscription bought since, or any other one that still grants access, means the
+    trial is no longer the state.
+    """
+    if latest is None or (granting is not None and granting.id != latest.id):
+        return False
+    was_trial = latest.trial_end_date is not None or (
+        latest.plan is not None and latest.plan.is_trial_plan
+    )
+    if not was_trial or latest.lemonsqueezy_subscription_id is not None:
+        return False
+    if latest.status == SubscriptionStatus.EXPIRED:
+        return True
+    return (
+        latest.status == SubscriptionStatus.TRIAL
+        and latest.trial_end_date is not None
+        and latest.trial_end_date <= now
+    )
+
+
+def _refuse_during_payment_retry(
+    subscription: Optional[UserSubscription],
+    user_id: UUID,
+    message: str = _RETRY_NEW_SUBSCRIPTION,
+) -> None:
+    """A subscription whose renewal failed is fixed by a new card, not another plan.
+
+    Starting another subscription would bill the user twice once the old one is
+    paid (Lemon Squeezy's retry, or a new card on an UNPAID one), and a plan change
+    would hand out the new plan's full allowance before anything was paid.
+    """
+    if subscription is not None and subscription.status in FAILED_PAYMENT_STATUSES:
+        if message == _RETRY_PLAN_CHANGE and subscription.status == SubscriptionStatus.UNPAID:
+            message = _UNPAID_PLAN_CHANGE
+        raise DuplicateResourceException(
+            message=message,
+            resource_type="subscription",
+            conflicting_field="user_id",
+            conflicting_value=str(user_id),
+            context={"billing_action": UPDATE_PAYMENT_METHOD},
+        )
 
 
 class SubscriptionService:
@@ -108,7 +227,7 @@ class SubscriptionService:
         - User cannot have duplicate active subscriptions
         - Plan must exist and be active
         - Free plans: Activated immediately
-        - Paid plans: Start with 14-day trial
+        - Paid plans: Start with the trial's days (TRIAL_DURATION_DAYS)
         - Usage reset date set to 30 days from start
 
         Args:
@@ -129,6 +248,7 @@ class SubscriptionService:
         # (so credit/plan-limit checks keep working) - that must NOT block a fresh
         # subscribe here, otherwise a cancelled user could never resubscribe until
         # their old grace period fully expired.
+        await self._refuse_while_a_subscription_is_unfinished(user_id)
         existing_subscription = await self.get_subscription_by_user(user_id)
         if existing_subscription and existing_subscription.status != SubscriptionStatus.CANCELLED:
             raise DuplicateResourceException(
@@ -141,9 +261,9 @@ class SubscriptionService:
         # Get the plan and validate it's active
         plan = await self._get_plan_or_404(plan_id, active_only=True)
 
-        # Determine if this is a trial (paid plans get 14 days trial)
+        # Determine if this is a trial (a paid plan starts with the trial's length)
         is_trial = plan.price_monthly > 0 or plan.price_yearly > 0
-        trial_days = 14 if is_trial else 0
+        trial_days = TRIAL_DURATION_DAYS if is_trial else 0
 
         # Create subscription
         new_subscription = UserSubscription(
@@ -234,12 +354,17 @@ class SubscriptionService:
             ResourceNotFoundException: If plan not found or inactive
             RextValidationException: If variant ID not configured for plan
         """
+        # One checkout at a time per user: the lock holds until the transaction
+        # ends, so a double click waits for the first request and then reuses its
+        # checkout (below) instead of opening a second one that could be paid too.
+        await self._lock_checkout(user_id)
+
         # Check if user already has an active subscription
-        # Allow checkout if user is on free or trial plan (they can upgrade via checkout),
-        # or if their existing subscription is already cancelled (still shows up here
-        # because get_subscription_by_user() keeps it visible through its paid-through
-        # grace period for credit/limit purposes) - a cancelled user must be able to
-        # resubscribe right away, not wait out their old grace period.
+        # Allow checkout if user is on free or trial plan (they can upgrade via checkout).
+        # A subscription that isn't finished (a failed renewal, a pause, or a
+        # cancellation whose end hasn't come) is fixed or resumed, never replaced.
+        if not skip_subscription_check:
+            await self._refuse_while_a_subscription_is_unfinished(user_id)
         existing_subscription = await self.get_subscription_by_user(user_id)
         if (
             existing_subscription
@@ -283,6 +408,16 @@ class SubscriptionService:
             )
 
         logger.info(f"🔍 DEBUG: Variant ID is {variant_id}")
+
+        # A repeated request for the same checkout gets the one already open.
+        reuse_key = f"checkout:open:{user_id}:{variant_id}:{discount_code or ''}"
+        open_checkout = await cache.get(reuse_key)
+        if open_checkout:
+            logger.info(
+                "Returning the user's open checkout instead of a second one",
+                extra={"user_id": str(user_id), "plan_id": str(plan_id)},
+            )
+            return open_checkout
         # Get user to retrieve/store customer ID
         result = await self.db.execute(select(Users).where(Users.id == user_id))
         user = result.scalar_one_or_none()
@@ -371,10 +506,18 @@ class SubscriptionService:
         logger.info(
             f"Checkout session created for user {user_id}, checkout_url: {checkout_session.checkout_url}, session_id: {checkout_session.session_id}"
         )
-        return {
+        checkout = {
             "checkout_url": checkout_session.checkout_url,
             "session_id": checkout_session.session_id,
         }
+        if not await cache.set(reuse_key, checkout, ttl=_CHECKOUT_REUSE_SECONDS):
+            # Without the cache a repeat request opens another checkout. Both would have to
+            # be paid to bill twice, and settle_duplicate_subscriptions() refunds the older.
+            logger.warning(
+                "The open checkout could not be kept for reuse (cache unavailable)",
+                extra={"user_id": str(user_id), "plan_id": str(plan_id)},
+            )
+        return checkout
 
     async def upgrade(
         self, user_id: UUID, new_plan_id: UUID, billing_period: Optional[BillingPeriod] = None
@@ -402,6 +545,7 @@ class SubscriptionService:
             RextValidationException: If same plan or usage exceeds limits
         """
         # Get current subscription
+        await self._refuse_while_a_renewal_is_unpaid(user_id, _RETRY_PLAN_CHANGE)
         current_subscription = await self.get_subscription_by_user(user_id)
         if not current_subscription:
             raise ResourceNotFoundException(
@@ -683,7 +827,8 @@ class SubscriptionService:
         Args:
             user_id: User UUID
             reason: Optional cancellation reason
-            cancel_immediately: If True, cancel now; if False, at end of period
+            cancel_immediately: If True, cancel now; if False, at end of period. A
+                subscription the payment provider bills always ends at the period end.
             background_tasks: Optional background tasks for notifications
             fail_on_provider_error: If True, raise exception if payment provider call fails
 
@@ -707,8 +852,24 @@ class SubscriptionService:
                 message="No active subscription found",
             )
 
+        # Lemon Squeezy only cancels at the end of the paid period, and its webhooks
+        # then set that end, so an immediate end for a subscription it bills would
+        # be undone within seconds. Founder decision on F12 (2026-10-06): the plan
+        # runs to the end of the paid period, and the app says so. Only a
+        # subscription Lemon Squeezy doesn't bill (a local trial) can end now.
+        billed_by_provider = bool(
+            subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id
+        )
+        if cancel_immediately and billed_by_provider:
+            logger.info(
+                "Immediate cancel of a provider subscription: it ends at the paid period's end",
+                extra={"user_id": str(user_id), "subscription_id": str(subscription.id)},
+            )
+            cancel_immediately = False
+
         # Cancel subscription with payment provider if provider subscription exists
-        if subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id:
+        provider_ends_at = None
+        if billed_by_provider:
             try:
                 provider_sub_id = (
                     subscription.lemonsqueezy_subscription_id
@@ -716,9 +877,10 @@ class SubscriptionService:
                 )
 
                 # Cancel with payment provider
-                await self.payment_provider.cancel_subscription(
+                provider_state = await self.payment_provider.cancel_subscription(
                     subscription_id=provider_sub_id, at_period_end=not cancel_immediately
                 )
+                provider_ends_at = getattr(provider_state, "current_period_end", None)
 
                 logger.info(
                     f"Cancelled subscription {provider_sub_id} with payment provider",
@@ -781,7 +943,14 @@ class SubscriptionService:
         else:
             # Deferred cancellation: record when the paid-through period ends so
             # the UI/email can show it and credits/limits keep working until then.
-            if subscription.renews_at:
+            # Lemon Squeezy's own end comes first: the local renewal date can be stale.
+            if (
+                isinstance(provider_ends_at, datetime)
+                and provider_ends_at.tzinfo is not None
+                and provider_ends_at > datetime.now(timezone.utc)
+            ):
+                subscription.end_date = provider_ends_at
+            elif subscription.renews_at:
                 subscription.end_date = subscription.renews_at
             elif subscription.billing_period == BillingPeriod.MONTHLY:
                 subscription.end_date = subscription.usage_reset_date
@@ -791,6 +960,9 @@ class SubscriptionService:
                 subscription.end_date = None
 
         subscription.updated_at = datetime.now(timezone.utc)
+        # Read before the refresh, which expires the relationship: loading it again
+        # afterwards would be lazy IO in async code.
+        plan_name = subscription.plan.name if subscription.plan else "Unknown"
         await self.db.flush()
         await self.db.refresh(subscription)
 
@@ -809,7 +981,7 @@ class SubscriptionService:
         await audit_logger.log_subscription_cancelled(
             user_id=user_id,
             subscription_id=subscription.id,
-            plan_name=subscription.plan.name if subscription.plan else "Unknown",
+            plan_name=plan_name,
             reason=reason,
             cancel_immediately=cancel_immediately,
             db=self.db,
@@ -825,7 +997,7 @@ class SubscriptionService:
                 message="Your subscription has been cancelled.",
                 payload={
                     "subscription_id": str(subscription.id),
-                    "plan_name": subscription.plan.name if subscription.plan else "Unknown",
+                    "plan_name": plan_name,
                     "end_date": subscription.end_date.isoformat()
                     if subscription.end_date
                     else None,
@@ -846,12 +1018,7 @@ class SubscriptionService:
             Dict with usage counts:
             {
                 "workspaces": count,
-                "members": count,
-                "topics": count,
-                "knowledge_files": count,
-                "knowledge_text": count,
-                "knowledge_web": count,
-                "knowledge_items": count
+                "members": count
             }
         """
         # Count workspaces owned by user (excluding soft-deleted ones)
@@ -876,41 +1043,23 @@ class SubscriptionService:
         )
         members_count = members_result.scalar() or 0
 
-        # Count knowledge files
-        files_result = await self.db.execute(
-            select(func.count(KnowledgeFiles.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        knowledge_files_count = files_result.scalar() or 0
-
-        # Count text knowledge
-        text_result = await self.db.execute(
-            select(func.count(TextKnowledge.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        knowledge_text_count = text_result.scalar() or 0
-
-        # Count websites
-        web_result = await self.db.execute(
-            select(func.count(Website.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        knowledge_web_count = web_result.scalar() or 0
-
-        # Total knowledge items
-        total_knowledge = knowledge_files_count + knowledge_text_count + knowledge_web_count
-
         return {
             "workspaces": workspaces_count,
             "members": members_count,
-            "knowledge_files": knowledge_files_count,
-            "knowledge_text": knowledge_text_count,
-            "knowledge_web": knowledge_web_count,
-            "knowledge_items": total_knowledge,  # For backward compatibility
         }
+
+    async def get_ended_trial(self, user_id: UUID) -> Optional[UserSubscription]:
+        """The user's trial if it is over and nothing replaced it (see `trial_has_ended`)."""
+        result = await self.db.execute(
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.created_at.desc())
+            .limit(1)
+        )
+        latest = result.scalar_one_or_none()
+        granting = await self.get_subscription_by_user(user_id)
+        return latest if trial_has_ended(latest, granting, datetime.now(timezone.utc)) else None
 
     async def check_trial_status(self, user_id: UUID) -> Dict[str, Any]:
         """
@@ -931,11 +1080,14 @@ class SubscriptionService:
         subscription = await self.get_subscription_by_user(user_id)
 
         if not subscription:
+            # A trial the expiry job has already closed grants nothing, so it is not
+            # found above; it is still the state to report.
+            ended = await self.get_ended_trial(user_id)
             return {
                 "is_trial": False,
-                "trial_end_date": None,
-                "days_remaining": None,
-                "trial_expired": False,
+                "trial_end_date": (ended.trial_end_date or ended.end_date) if ended else None,
+                "days_remaining": 0 if ended else None,
+                "trial_expired": ended is not None,
             }
 
         is_trial = subscription.status == SubscriptionStatus.TRIAL
@@ -962,7 +1114,7 @@ class SubscriptionService:
 
         Args:
             user_id: User UUID
-            resource_type: 'workspace', 'topic', or 'knowledge'
+            resource_type: 'workspace'
             increment: Number of resources to add (default: 1)
 
         Returns:
@@ -986,13 +1138,12 @@ class SubscriptionService:
         # Map resource type to plan limit
         limit_map = {
             "workspace": (plan.max_workspaces, current_usage["workspaces"]),
-            "knowledge": (plan.max_knowledge_items, current_usage["knowledge_items"]),
         }
 
         if resource_type not in limit_map:
             raise RextValidationException(
                 message=f"Invalid resource type: {resource_type}",
-                field_errors={"resource_type": ["Must be workspace or knowledge"]},
+                field_errors={"resource_type": ["Must be workspace"]},
             )
 
         max_allowed, current_count = limit_map[resource_type]
@@ -1013,6 +1164,89 @@ class SubscriptionService:
             )
 
         return True
+
+    async def _refuse_while_a_renewal_is_unpaid(
+        self, user_id: UUID, message: str = _RETRY_PLAN_CHANGE
+    ) -> None:
+        """Refuse a plan change while one of the user's renewals is unpaid.
+
+        Looked up on its own, not through get_subscription_by_user(): an UNPAID
+        subscription grants no access, so that lookup never returns it, yet a new
+        card can still recover it at Lemon Squeezy.
+        """
+        unpaid = await self.db.scalar(
+            select(UserSubscription)
+            .where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_(FAILED_PAYMENT_STATUSES),
+            )
+            .order_by(UserSubscription.created_at.desc())
+            .limit(1)
+        )
+        _refuse_during_payment_retry(unpaid, user_id, message)
+
+    async def unfinished_subscription(self, user_id: UUID) -> Optional[UserSubscription]:
+        """The user's newest subscription that billing_action() has an action for.
+
+        A paused or cancelled one isn't offered back to resume while another of the
+        user's Lemon Squeezy subscriptions is active or on trial: a customer who
+        cancelled and subscribed again before the checkout guard holds both, and
+        resuming the old one would bill twice.
+        """
+        rows = (
+            await self.db.scalars(
+                select(UserSubscription)
+                .where(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status.in_(
+                        [
+                            *FAILED_PAYMENT_STATUSES,
+                            SubscriptionStatus.PAUSED,
+                            SubscriptionStatus.CANCELLED,
+                            SubscriptionStatus.ACTIVE,
+                            SubscriptionStatus.TRIAL,
+                        ]
+                    ),
+                )
+                .order_by(UserSubscription.created_at.desc())
+            )
+        ).all()
+        current = any(
+            row.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
+            and row.lemonsqueezy_subscription_id
+            for row in rows
+        )
+        for row in rows:
+            action = billing_action(row)
+            if action is None or (current and action["action"] == RESUME):
+                continue
+            return row
+        return None
+
+    async def _refuse_while_a_subscription_is_unfinished(self, user_id: UUID) -> None:
+        """No new subscription while one isn't finished: the customer gets its action instead.
+
+        The refusal carries `billing_action` ("update_payment_method" or "resume")
+        so the dashboard can offer that button.
+        """
+        unfinished = await self.unfinished_subscription(user_id)
+        action = billing_action(unfinished)
+        if action is None:
+            return
+        raise DuplicateResourceException(
+            message=action["message"],
+            resource_type="subscription",
+            conflicting_field="user_id",
+            conflicting_value=str(user_id),
+            context={"billing_action": action["action"]},
+        )
+
+    async def _lock_checkout(self, user_id: UUID) -> None:
+        """Serialize one user's checkout requests until this transaction ends."""
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"checkout:{user_id}"},
+        )
 
     async def get_subscription_by_user(self, user_id: UUID) -> Optional[UserSubscription]:
         """
@@ -1226,7 +1460,9 @@ class SubscriptionService:
         # Try cache first
         from src.api.cache.redis_client import cache
 
-        cache_key = f"subscription:plan:{plan_id}:active={active_only}"
+        # The version is part of the key: raise it when the plan's columns change, so a
+        # deploy never rebuilds a plan from a cached row that has columns it no longer has.
+        cache_key = f"subscription:plan:v2:{plan_id}:active={active_only}"
 
         if cache.is_enabled:
             cached_plan = await cache.get(cache_key)
@@ -1263,8 +1499,6 @@ class SubscriptionService:
                 "price_yearly": float(plan.price_yearly) if plan.price_yearly is not None else 0.0,
                 "max_workspaces": plan.max_workspaces,
                 "max_members_per_workspace": plan.max_members_per_workspace,
-                "max_topics": plan.max_topics,
-                "max_knowledge_items": plan.max_knowledge_items,
                 "max_api_calls_per_month": plan.max_api_calls_per_month,
                 "lemonsqueezy_variant_id_monthly": plan.lemonsqueezy_variant_id_monthly,
                 "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
@@ -1307,10 +1541,6 @@ class SubscriptionService:
             new_plan.max_workspaces is not None
             and new_plan.max_workspaces != -1
             and new_plan.max_workspaces < current_usage["workspaces"]
-        ) or (
-            new_plan.max_knowledge_items is not None
-            and new_plan.max_knowledge_items != -1
-            and new_plan.max_knowledge_items < current_usage["knowledge_items"]
         )
 
         return is_price_downgrade or is_usage_downgrade
@@ -1337,15 +1567,4 @@ class SubscriptionService:
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
                 field_errors={"new_plan_id": ["Workspace limit exceeded"]},
-            )
-
-        # Check knowledge items limit
-        if (
-            new_plan.max_knowledge_items is not None
-            and new_plan.max_knowledge_items != -1
-            and current_usage["knowledge_items"] > new_plan.max_knowledge_items
-        ):
-            raise RextValidationException(
-                message=f"Cannot downgrade: You have {current_usage['knowledge_items']} knowledge items, new plan allows {new_plan.max_knowledge_items}",
-                field_errors={"new_plan_id": ["Knowledge items limit exceeded"]},
             )

@@ -20,6 +20,7 @@ from src.api.middleware.exceptions import (
     ExternalServiceTimeoutException,
     RextExternalServiceException,
 )
+from src.utils.url_validator import public_client
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,9 @@ class ShopifyConnector:
         self.access_token = access_token
         self.base_url = f"{self.store_url}/admin/api/{SHOPIFY_API_VERSION}"
 
-        self._client = httpx.AsyncClient(
+        # The store address is customer-given and the token goes with every
+        # request: none may reach a private or reserved network.
+        self._client = public_client(
             headers={
                 "X-Shopify-Access-Token": self.access_token,
                 "Content-Type": "application/json",

@@ -23,7 +23,7 @@ async def main():
             text("""
                 SELECT id, event_name, event_id, payload, processed, error_message, created_at
                 FROM webhook_events
-                WHERE event_name IN ('order_created', 'license_key_created')
+                WHERE event_name = 'order_created'
                 ORDER BY created_at DESC
                 LIMIT 2
             """)

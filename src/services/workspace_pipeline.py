@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from uuid import UUID
 
 import tldextract
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.cache.decorators import invalidate_cache_key
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.brand_voice_schema import BrandSchema
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
@@ -23,6 +23,7 @@ from src.services.sse_service import (
     emit_step_start,
     emit_step_success,
 )
+from src.services.workspace_favicon import delete_favicon, find_favicon, store_favicon
 from src.utils.fast_scraper import (
     _GENERIC_BYLINES,
     _ROLE_WORD_RE,
@@ -40,10 +41,8 @@ from src.utils.fast_scraper import (
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.site_compliance import assess_site_compliance
-from src.utils.vector_store import add_to_vector_store
 
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
-VectorUploaderCallable = Callable[[Sequence[Any], str], Awaitable[bool]]
 BrandVoiceGeneratorCallable = Callable[[str], Awaitable[Optional[BrandSchema]]]
 
 
@@ -780,7 +779,6 @@ class WorkspacePipeline:
         user_id: UUID,
         url: str,
         scraper: Optional[ScrapeCallable] = None,
-        vector_uploader: Optional[VectorUploaderCallable] = None,
         brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
     ) -> None:
         self.db = db
@@ -789,7 +787,6 @@ class WorkspacePipeline:
         self.url = url
         self.user_id = user_id
         self._scraper = scraper or self._default_scraper
-        self._vector_uploader = vector_uploader or self._default_vector_uploader
         self._brand_voice_generator = brand_voice_generator or self._default_brand_voice_generator
         # The per-person analysis calls the same model, so it runs only with
         # the default extraction, never under an injected generator.
@@ -809,7 +806,6 @@ class WorkspacePipeline:
             started = asyncio.get_event_loop().time()
             self._started = started
             scrape_result = await self._scrape_website()
-            await self._create_vector_embeddings(scrape_result.chunks)
             brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
             await self._persist_brand_voice(brand_voice_schema)
             await self._embed_brand_voice(brand_voice_schema)
@@ -820,6 +816,10 @@ class WorkspacePipeline:
             discovered_competitors = await self._discover_competitors()
             if discovered_competitors is not None:
                 await self._persist_competitors([c["domain"] for c in discovered_competitors])
+
+            # The site's favicon for the workspace switcher: best-effort and
+            # independent, like the competitor step; it never fails the pipeline.
+            replaced_favicon = await self._store_favicon()
 
             payload: Dict[str, Any] = {"workspace_id": str(self.workspace_id)}
             if brand_voice_schema:
@@ -838,6 +838,9 @@ class WorkspacePipeline:
                 payload["top_competitors"] = discovered_competitors
 
             await self.db.commit()
+            if replaced_favicon:
+                # The row now names the new file, so the old one belongs to nobody.
+                await delete_favicon(replaced_favicon)
 
             # The workspace detail API serves brand_voice from a 10-minute
             # Redis cache (workspace:brand_voice:{id}). Without this
@@ -877,11 +880,41 @@ class WorkspacePipeline:
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="pipeline",
-                message="Workspace creation pipeline failed",
-                error=str(exc),
+                message="Workspace creation pipeline encountered an error.",
+                error=None,
                 user_id=self.user_id,
             )
             raise
+
+    async def _store_favicon(self) -> Optional[str]:
+        """Fetch the site's favicon once and keep it with the workspace.
+
+        Returns the previous favicon's object name when a refresh replaced it, so
+        the caller removes that file once the new name is committed. Never raises.
+        """
+        try:
+            found = await find_favicon(getattr(self, "_homepage_html", None), self.url)
+            if not found:
+                logger.info(
+                    "No usable favicon on the site", extra={"workspace_id": str(self.workspace_id)}
+                )
+                return None
+            object_name = await store_favicon(str(self.workspace_id), found["data"], found["mime"])
+            if not object_name:
+                return None
+            from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+            workspace = await self.db.get(WorkspaceModel, self.workspace_id)
+            if workspace is None:
+                return None
+            previous, workspace.favicon_url = workspace.favicon_url, object_name
+            await self.db.flush()
+            return previous if previous and previous != object_name else None
+        except Exception as exc:  # noqa: BLE001 - a favicon is a nicety, never a failure
+            logger.warning(
+                "Favicon step failed: %r", exc, extra={"workspace_id": str(self.workspace_id)}
+            )
+            return None
 
     async def _scrape_website(self) -> _ScrapeResult:
         await emit_step_start(
@@ -895,19 +928,21 @@ class WorkspacePipeline:
 
         try:
             content, raw_html, used_fallback = await self._fast_or_fallback_scrape()
+            self._homepage_html = raw_html
             await self._merge_feed_authors()
             self._seed_authors_from_stamps()
-        except Exception as exc:
+        except Exception:
             await self._cancel_browser("scrape failed")
             feed_task = getattr(self, "_feed_task", None)
             if feed_task is not None and not feed_task.done():
                 feed_task.cancel()
+            logger.error("Scrape failed", exc_info=True)
             await emit_step_failure(
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="scrape",
-                message=f"Failed to scrape website: {exc}",
-                error=str(exc),
+                message="We couldn't retrieve the website content. Please verify the URL and try again.",
+                error=None,
                 user_id=self.user_id,
             )
             raise
@@ -1356,9 +1391,6 @@ class WorkspacePipeline:
             except Exception:
                 pass
 
-    async def _create_vector_embeddings(self, chunks: Sequence[Any]) -> None:
-        return
-
     async def _extract_brand_voice(self, content: str) -> Optional[BrandSchema]:
         await emit_step_start(
             operation_id=self.operation_id,
@@ -1383,13 +1415,14 @@ class WorkspacePipeline:
 
         try:
             brand_voice_schema = await self._brand_voice_generator(content)
-        except Exception as exc:
+        except Exception:
+            logger.error("Brand voice extraction failed", exc_info=True)
             await emit_step_failure(
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="brand_voice",
-                message=f"Failed to extract brand voice: {exc}",
-                error=str(exc),
+                message="We couldn't analyze the brand voice right now. Please try again.",
+                error=None,
                 user_id=self.user_id,
             )
             raise
@@ -1446,8 +1479,8 @@ class WorkspacePipeline:
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="competitor_discovery",
-                message=f"Competitor discovery failed: {exc}",
-                error=str(exc),
+                message="Competitor discovery could not be completed. You can add competitors manually.",
+                error=None,
                 user_id=self.user_id,
             )
             return None
@@ -2197,12 +2230,6 @@ class WorkspacePipeline:
     async def _default_scraper(url: str) -> Tuple[List[Any], List[Any]]:
         return await web_page_scraper(urls=[url])
 
-    @staticmethod
-    async def _default_vector_uploader(chunks: Sequence[Any], workspace_id: str) -> bool:
-        return await asyncio.to_thread(
-            add_to_vector_store, blog_context=list(chunks), workspace_id=workspace_id
-        )
-
     async def _default_brand_voice_generator(self, content: str) -> Optional[BrandSchema]:
         if not content.strip():
             return None
@@ -2333,7 +2360,6 @@ async def run_workspace_pipeline(
     user_id: UUID,
     url: str,
     scraper: Optional[ScrapeCallable] = None,
-    vector_uploader: Optional[VectorUploaderCallable] = None,
     brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
 ) -> None:
     pipeline = WorkspacePipeline(
@@ -2343,7 +2369,6 @@ async def run_workspace_pipeline(
         user_id=user_id,
         url=url,
         scraper=scraper,
-        vector_uploader=vector_uploader,
         brand_voice_generator=brand_voice_generator,
     )
     await pipeline.run()

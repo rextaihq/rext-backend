@@ -1,0 +1,298 @@
+"""Tests for the public plan catalogue (GET /api/v1/plans)."""
+
+import importlib.util
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from typing import AsyncGenerator
+from unittest.mock import AsyncMock
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from scripts.seeds.seed_promotions import LAUNCH_PROMOTION, PROMOTIONS
+from scripts.seeds.seed_subscription_plans import PLANS
+from src.api.database.async_database import get_async_db
+from src.config.plan_rules import TRIAL_DURATION_DAYS
+from src.services.plan_catalog import CREDITS_PER_ARTICLE, build_plan_catalog
+from src.services.subscription_plan_service import SubscriptionPlanService
+from src.utils.credit_manager import STAGE_CREDITS
+
+
+def seeded_plans():
+    """The plan rows exactly as the seed writes them."""
+    return [SimpleNamespace(**plan) for plan in PLANS]
+
+
+def by_name(catalog):
+    return {plan["name"]: plan for plan in catalog["plans"]}
+
+
+class FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return SimpleNamespace(all=lambda: self._rows)
+
+
+class InMemoryCache:
+    is_enabled = True
+
+    def __init__(self):
+        self.store = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, ttl=None):
+        self.store[key] = value
+        self.ttl = ttl
+
+
+def test_catalog_lists_the_public_plans_cheapest_first():
+    catalog = build_plan_catalog(seeded_plans(), currency="USD")
+
+    assert catalog["currency"] == "USD"
+    assert [plan["name"] for plan in catalog["plans"]] == ["starter", "growth", "pro", "agency"]
+
+
+def test_catalog_derives_the_figures_the_pricing_pages_print():
+    starter = by_name(build_plan_catalog(seeded_plans(), currency="USD"))["starter"]
+
+    assert starter["price_monthly"] == 39.0
+    assert starter["price_yearly"] == 390.0
+    assert starter["price_monthly_billed_yearly"] == 32.5
+    assert starter["yearly_saving_percent"] == 17
+    assert starter["credits_per_month"] == 400
+    assert starter["articles_per_month"] == 26
+    assert starter["price_per_article_monthly"] == 1.5
+    assert starter["price_per_article_yearly"] == 1.25
+    assert starter["max_workspaces"] == 1
+    assert starter["max_members_per_workspace"] == 5
+
+
+def test_per_article_price_rounds_to_the_cent():
+    growth = by_name(build_plan_catalog(seeded_plans(), currency="USD"))["growth"]
+
+    # $89 over the 66 whole articles 1,000 credits pay for is $1.3484..., shown as $1.35.
+    assert growth["articles_per_month"] == 66
+    assert growth["price_per_article_monthly"] == 1.35
+
+
+def test_unlimited_caps_read_as_null():
+    agency = by_name(build_plan_catalog(seeded_plans(), currency="USD"))["agency"]
+
+    assert agency["max_workspaces"] is None
+    assert agency["max_members_per_workspace"] is None
+
+
+def test_trial_and_private_plans_are_not_for_sale():
+    names = by_name(build_plan_catalog(seeded_plans(), currency="USD"))
+
+    assert "trial" not in names
+    assert "enterprise" not in names
+
+
+def test_trial_rules_come_from_the_trial_plan_and_the_signup_length():
+    trial = build_plan_catalog(seeded_plans(), currency="USD")["trial"]
+
+    assert trial == {
+        "plan_name": "trial",
+        "days": TRIAL_DURATION_DAYS,
+        "credits": 60,
+        "articles": 4,
+        "credits_renew": False,
+        "card_required": False,
+        "max_workspaces": 1,
+        "max_members_per_workspace": 3,
+    }
+
+
+def test_trial_is_null_without_a_trial_plan():
+    plans = [plan for plan in seeded_plans() if not plan.is_trial_plan]
+
+    assert build_plan_catalog(plans, currency="USD")["trial"] is None
+
+
+def test_the_refund_rule_is_the_refund_requests():
+    refund = build_plan_catalog(seeded_plans(), currency="USD")["refund"]
+
+    assert refund == {"window_days": 14, "credit_limit": 100}
+
+
+def test_credit_rules_are_the_credit_managers():
+    credits = build_plan_catalog(seeded_plans(), currency="USD")["credits"]
+
+    assert credits["per_article"] == sum(STAGE_CREDITS.values()) == CREDITS_PER_ARTICLE == 15
+    assert credits["stages"] == [{"key": k, "credits": v} for k, v in STAGE_CREDITS.items()]
+    # A change runs the SERP stage again; topics are charged once, when a keyword is kept.
+    assert credits["keyword_change"] == STAGE_CREDITS["serp_seo"] == 1
+    assert credits["outline_regeneration"] == 1
+    assert credits["minimum_to_start"] == 15
+    assert credits["low_balance_threshold"] == 15
+    assert credits["carry_over"] is False
+
+
+def test_the_seeded_promotions_have_unique_codes_and_sane_windows():
+    assert len({p["code"] for p in PROMOTIONS}) == len(PROMOTIONS)
+    for promotion in PROMOTIONS:
+        assert promotion["starts_at"].tzinfo is not None
+        assert promotion["starts_at"] < promotion["ends_at"]
+        assert (promotion["credit_multiplier"] or 0) > 1 or (promotion["bonus_credits"] or 0) > 0
+
+
+def test_the_launch_offer_runs_launch_week_in_the_seed_and_the_migration():
+    """Founder, 2026-10-06 (rext-control #427): 2026-10-08 07:00 to 2026-10-15 06:59 UTC."""
+    path = next(Path(__file__).parents[3].glob("alembic/versions/3d51938f0c7e_*.py"))
+    spec = importlib.util.spec_from_file_location("launch_window_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    window = (
+        datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc),
+        datetime(2026, 10, 15, 6, 59, tzinfo=timezone.utc),
+    )
+
+    assert (LAUNCH_PROMOTION["starts_at"], LAUNCH_PROMOTION["ends_at"]) == window
+    assert (migration.STARTS_AT, migration.ENDS_AT) == window
+
+
+@pytest.mark.asyncio
+async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch):
+    fake_cache = InMemoryCache()
+    monkeypatch.setattr("src.api.cache.decorators.cache", fake_cache)
+    launch = SimpleNamespace(**LAUNCH_PROMOTION)
+
+    async def promotion_at(db, now):
+        return launch if launch.starts_at <= now < launch.ends_at else None
+
+    monkeypatch.setattr("src.services.subscription_plan_service.active_promotion", promotion_at)
+
+    db = AsyncMock()
+    db.execute.return_value = FakeResult(seeded_plans())
+    service = SubscriptionPlanService(db)
+
+    inside = await service.get_catalog(now=launch.starts_at + timedelta(hours=1))
+    after = await service.get_catalog(now=launch.ends_at)
+
+    assert db.execute.await_count == 1
+    assert fake_cache.ttl == 900
+    assert list(fake_cache.store) == ["subscription:plans:catalog:v5"]
+    assert "offer" not in fake_cache.store["subscription:plans:catalog:v5"]
+    assert inside["offer"] == {
+        "id": "launch-2026-10",
+        "label": "Launch bonus",
+        "kind": "first_month_credit_multiplier",
+        "credit_multiplier": 2,
+        "bonus_credits": None,
+        "starts_at": "2026-10-08T07:00:00+00:00",
+        "ends_at": "2026-10-15T06:59:00+00:00",
+    }
+    assert after["offer"] is None
+    assert inside["plans"] == after["plans"]
+
+
+@pytest.mark.asyncio
+async def test_get_plans_is_public_and_returns_the_catalogue(monkeypatch):
+    from src.api.server import app
+
+    monkeypatch.setattr("src.api.cache.decorators.cache", InMemoryCache())
+    monkeypatch.setattr(
+        "src.services.subscription_plan_service.active_promotion", AsyncMock(return_value=None)
+    )
+
+    class _DummyDB:
+        async def execute(self, _query):
+            return FakeResult(seeded_plans())
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+    async def override_get_db() -> AsyncGenerator[_DummyDB, None]:
+        yield _DummyDB()
+
+    app.dependency_overrides[get_async_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/plans")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert [plan["name"] for plan in data["plans"]] == ["starter", "growth", "pro", "agency"]
+    assert data["trial"]["days"] == TRIAL_DURATION_DAYS
+    assert data["credits"]["per_article"] == 15
+    assert data["offer"] is None
+
+
+@pytest.mark.asyncio
+async def test_creating_a_plan_clears_the_plan_caches(monkeypatch):
+    from src.api.schema.subscription import SubscriptionPlanCreate
+
+    invalidate = AsyncMock()
+    monkeypatch.setattr("src.services.subscription_plan_service.invalidate_cache", invalidate)
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(scalar_one_or_none=lambda: None)
+    db.add = lambda plan: None
+
+    await SubscriptionPlanService(db).create_plan(
+        SubscriptionPlanCreate(name="team", display_name="Team", price_monthly=59, price_yearly=590)
+    )
+
+    invalidate.assert_awaited_once_with("subscription:plans:*")
+
+
+def test_each_billed_button_costs_its_stages():
+    from src.services.plan_catalog import RUN_STAGES, run_costs
+
+    runs = run_costs(400)
+
+    assert {name: run["cost"] for name, run in runs.items()} == {
+        "analyze": 1,
+        "change_keyword": 1,
+        "regenerate_outline": 1,
+        "generate": 12,
+    }
+    assert [s["key"] for s in runs["generate"]["stages"]] == list(RUN_STAGES["generate"])
+    # The buttons cover the article: analyze, the topics charge, one outline, then generate.
+    assert (
+        runs["analyze"]["cost"]
+        + STAGE_CREDITS["title_generation"]
+        + runs["regenerate_outline"]["cost"]
+        + runs["generate"]["cost"]
+        == CREDITS_PER_ARTICLE
+    )
+    assert runs["analyze"]["balance_after"] == 399
+    assert runs["generate"]["balance_after"] == 388
+
+
+def test_a_run_starts_only_with_a_whole_article_in_hand():
+    from src.services.plan_catalog import run_costs
+
+    runs = run_costs(14)
+
+    assert runs["analyze"] == {
+        "cost": 1,
+        "minimum_balance": 15,
+        "can_run": False,
+        "balance_after": None,
+        "stages": [{"key": "serp_seo", "credits": 1}],
+    }
+    # Later steps need only their own cost.
+    assert runs["generate"]["can_run"] is True
+    assert runs["generate"]["balance_after"] == 2
+    assert run_costs(11)["generate"]["can_run"] is False
+
+
+def test_the_catalogue_and_the_buttons_agree():
+    from src.services.plan_catalog import run_costs
+
+    credits = build_plan_catalog(seeded_plans(), currency="USD")["credits"]
+    runs = run_costs(100)
+
+    assert credits["keyword_change"] == runs["change_keyword"]["cost"]
+    assert credits["outline_regeneration"] == runs["regenerate_outline"]["cost"]

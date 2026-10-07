@@ -7,6 +7,7 @@ Sent when a scheduled content publish fails due to a network/server error.
 from typing import Optional
 
 from emails.components import primary_button, secondary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -21,7 +22,7 @@ def render_content_publish_failed_email(
     retry_url: str,
     reschedule_url: str,
     next_retry_at: Optional[str] = None,
-    support_url: str = "https://app.rext.ai/support",
+    support_url: str = SITE_CONTACT_URL,
     frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
@@ -90,15 +91,15 @@ def render_content_publish_failed_email(
         [
             simple_header(),
             f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             {heading}
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             {intro}
         </p>
         """,
@@ -115,8 +116,8 @@ def render_content_publish_failed_email(
             status_box,
             buttons,
             f"""
-        <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 24px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            If this problem persists, our <a href="{support_url}" style="color: #2563eb;">support team</a> is here to help.
+        <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 24px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            If this problem persists, our <a href="{support_url}" style="color: #171717; text-decoration: underline;">support team</a> is here to help.
         </p>
         """,
             simple_footer(),

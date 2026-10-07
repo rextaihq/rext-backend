@@ -40,7 +40,7 @@ FROM permissions p
 CROSS JOIN roles r
 LEFT JOIN role_permissions rp ON rp.permission_id = p.id AND rp.role_id = r.id
 WHERE r.name IN ('workspace_owner', 'workspace_admin', 'editor', 'viewer')
-  AND p.resource IN ('workspace', 'subscription', 'billing', 'usage', 'content', 'topic', 'knowledge', 'media', 'member', 'license')
+  AND p.resource IN ('workspace', 'subscription', 'billing', 'usage', 'content', 'media', 'member', 'license')
 GROUP BY p.id, p.name, p.resource, p.action
 ORDER BY p.resource, p.action;
 
@@ -109,7 +109,7 @@ SELECT
 FROM permissions p
 LEFT JOIN role_permissions rp ON rp.permission_id = p.id
 LEFT JOIN roles r ON r.id = rp.role_id AND r.name IN ('workspace_owner', 'workspace_admin', 'editor', 'viewer')
-WHERE p.resource IN ('workspace', 'subscription', 'billing', 'usage', 'content', 'topic', 'knowledge', 'media', 'member', 'license')
+WHERE p.resource IN ('workspace', 'subscription', 'billing', 'usage', 'content', 'media', 'member', 'license')
 GROUP BY p.resource
 ORDER BY p.resource;
 
@@ -232,7 +232,7 @@ SELECT
 \echo ''
 
 -- Generate CSV-ready output
-\copy (SELECT p.name as permission, p.resource, p.action, CASE WHEN bool_or(r.name = 'workspace_owner' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as owner, CASE WHEN bool_or(r.name = 'workspace_admin' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as admin, CASE WHEN bool_or(r.name = 'editor' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as editor, CASE WHEN bool_or(r.name = 'viewer' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as viewer FROM permissions p CROSS JOIN roles r LEFT JOIN role_permissions rp ON rp.permission_id = p.id AND rp.role_id = r.id WHERE r.name IN ('workspace_owner', 'workspace_admin', 'editor', 'viewer') AND p.resource IN ('workspace', 'subscription', 'billing', 'usage', 'content', 'topic', 'knowledge', 'media', 'member', 'license') GROUP BY p.id, p.name, p.resource, p.action ORDER BY p.resource, p.action) TO '/tmp/permission_matrix.csv' CSV HEADER;
+\copy (SELECT p.name as permission, p.resource, p.action, CASE WHEN bool_or(r.name = 'workspace_owner' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as owner, CASE WHEN bool_or(r.name = 'workspace_admin' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as admin, CASE WHEN bool_or(r.name = 'editor' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as editor, CASE WHEN bool_or(r.name = 'viewer' AND rp.id IS NOT NULL) THEN 'YES' ELSE 'NO' END as viewer FROM permissions p CROSS JOIN roles r LEFT JOIN role_permissions rp ON rp.permission_id = p.id AND rp.role_id = r.id WHERE r.name IN ('workspace_owner', 'workspace_admin', 'editor', 'viewer') AND p.resource IN ('workspace', 'subscription', 'billing', 'usage', 'content', 'media', 'member', 'license') GROUP BY p.id, p.name, p.resource, p.action ORDER BY p.resource, p.action) TO '/tmp/permission_matrix.csv' CSV HEADER;
 
 \echo ''
 \echo '✅ CSV exported to /tmp/permission_matrix.csv'

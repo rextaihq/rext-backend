@@ -35,7 +35,6 @@ EXPECTED_HANDLERS = {
     "subscription_payment_recovered",
     "order_created",
     "order_refunded",
-    "license_key_created",
 }
 
 
@@ -108,3 +107,70 @@ async def test_retry_webhook_looks_up_by_database_id():
     where_clause = captured["sql"].split("WHERE", 1)[1]
     assert "webhook_events.id" in where_clause
     assert "webhook_events.event_id" not in where_clause
+
+
+def _session_returning(row):
+    db = MagicMock()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = row
+    db.execute = AsyncMock(return_value=result)
+    db.commit, db.rollback, db.close = AsyncMock(), AsyncMock(), AsyncMock()
+    return db
+
+
+@pytest.mark.parametrize(
+    "claimed_row",
+    [None, _fake_event(processed=True, error_message=None)],
+    ids=["held by another run", "processed by the time it is held"],
+)
+@pytest.mark.asyncio
+async def test_a_retry_runs_nothing_when_another_run_has_the_event(monkeypatch, claimed_row):
+    """The scheduled and an admin retry can overlap: one claims the row, the other skips."""
+    import src.services.webhook_monitoring_service as monitoring
+
+    failed = _fake_event(processed=False, error_message="boom")
+    service = WebhookMonitoringService(_session_returning(failed))
+    processing_db = _session_returning(claimed_row)
+    monkeypatch.setattr(monitoring, "AsyncSessionLocal", lambda: processing_db)
+    reprocess = AsyncMock()
+    monkeypatch.setattr(LemonSqueezyWebhookService, "reprocess_event", reprocess)
+
+    out = await service.retry_webhook(failed.id)
+
+    assert out["success"] is False
+    assert "another run" in out["message"]
+    reprocess.assert_not_called()
+    claim = processing_db.execute.await_args.args[0]
+    assert claim._for_update_arg is not None and claim._for_update_arg.skip_locked
+
+
+@pytest.mark.asyncio
+async def test_a_claimed_retry_is_marked_done_in_the_handlers_transaction(monkeypatch):
+    import src.services.webhook_monitoring_service as monitoring
+
+    failed = _fake_event(processed=False, error_message="boom")
+    service = WebhookMonitoringService(_session_returning(failed))
+    processing_db = _session_returning(_fake_event(processed=False, error_message="boom"))
+    status_db = MagicMock()
+    status_db.__aenter__.return_value.get = AsyncMock(return_value=_fake_event())
+    status_db.__aenter__.return_value.commit = AsyncMock()
+    sessions = iter([processing_db, status_db])
+    monkeypatch.setattr(monitoring, "AsyncSessionLocal", lambda: next(sessions))
+    order = []
+    monkeypatch.setattr(
+        LemonSqueezyWebhookService,
+        "reprocess_event",
+        AsyncMock(side_effect=lambda **_: order.append("handler") or {"handler_result": None}),
+    )
+    monkeypatch.setattr(
+        LemonSqueezyWebhookService,
+        "_mark_processed",
+        AsyncMock(side_effect=lambda *_: order.append("marked")),
+    )
+    processing_db.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+    monkeypatch.setattr(monitoring, "_send_post_commit_tasks", AsyncMock())
+
+    out = await service.retry_webhook(failed.id)
+
+    assert out["success"] is True
+    assert order == ["handler", "marked", "commit"]

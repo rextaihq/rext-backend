@@ -11,12 +11,14 @@ from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.config.hidden_secrets import HidesSecrets
+
 load_dotenv()
 
 PaymentProviderType = Literal["lemonsqueezy"]
 
 
-class PaymentSettings(BaseSettings):
+class PaymentSettings(HidesSecrets, BaseSettings):
     """Payment provider settings"""
 
     # Provider selection (only lemonsqueezy supported)

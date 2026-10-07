@@ -1,5 +1,5 @@
 import calendar
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone, tzinfo
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -101,31 +101,54 @@ def parse_iso_datetime(date_str: str) -> datetime:
         raise ValueError(f"Invalid ISO datetime format: {date_str}") from e
 
 
+def account_zone(user_timezone: Optional[str]) -> tzinfo:
+    """The timezone a user's account names, as a tzinfo.
+
+    An unknown or invalid name falls back to UTC rather than raising, so a bad
+    profile value can't crash scheduling or the calendar.
+    """
+    tz_name = user_timezone or "UTC"
+    try:
+        return ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning("account_zone: unknown timezone %r, falling back to UTC", tz_name)
+        # Use the stdlib UTC singleton, not ZoneInfo("UTC") - if the IANA tzdata
+        # database isn't installed (e.g. a slim container missing the tzdata
+        # package), ZoneInfo("UTC") throws too, and scheduling must not depend
+        # on tzdata being present to handle the plain-UTC case.
+        return timezone.utc
+
+
 def resolve_scheduled_datetime(dt: datetime, user_timezone: Optional[str]) -> datetime:
     """Interpret a user-picked scheduling datetime and return it as UTC-aware.
 
     - If `dt` already carries an explicit UTC offset, that offset is trusted
       as-is (e.g. a programmatic caller that already computed the exact instant).
     - If `dt` is naive (no offset), it is wall-clock time in the user's account
-      timezone — NOT the server's or browser's — and is converted to UTC here.
-      An unknown/invalid timezone name falls back to UTC rather than raising,
-      so a bad profile value can't crash scheduling.
+      timezone — NOT the server's or browser's — and is converted to UTC here
+      (see `account_zone` for an unknown timezone).
     """
     if dt.tzinfo is not None:
         return dt.astimezone(timezone.utc)
 
-    tz_name = user_timezone or "UTC"
-    try:
-        tz = ZoneInfo(tz_name)
-    except (ZoneInfoNotFoundError, ValueError):
-        logger.warning(
-            "resolve_scheduled_datetime: unknown timezone %r, falling back to UTC",
-            tz_name,
-        )
-        # Use the stdlib UTC singleton, not ZoneInfo("UTC") - if the IANA tzdata
-        # database isn't installed (e.g. a slim container missing the tzdata
-        # package), ZoneInfo("UTC") throws too, and scheduling must not depend
-        # on tzdata being present to handle the plain-UTC case.
-        tz = timezone.utc
+    return dt.replace(tzinfo=account_zone(user_timezone)).astimezone(timezone.utc)
 
-    return dt.replace(tzinfo=tz).astimezone(timezone.utc)
+
+def moved_to_day(when: datetime, day: date, user_timezone: Optional[str]) -> datetime:
+    """`when` moved to another calendar day, keeping its time of day.
+
+    The day and the time of day are the account timezone's, so a 09:00 publish
+    stays at 09:00 on the new day across a daylight-saving change. Returns UTC.
+    Raises ValueError when that time doesn't exist on the new day (the clocks
+    jump past it); a time that happens twice (the clocks go back) is the first.
+    """
+    zone = account_zone(user_timezone)
+    # fold=0: the first of a time that happens twice, whichever one `when` was.
+    wall = datetime.combine(day, when.astimezone(zone).time().replace(fold=0))
+    moved = wall.replace(tzinfo=zone).astimezone(timezone.utc)
+    if moved.astimezone(zone).replace(tzinfo=None) != wall:
+        raise ValueError(
+            f"{wall:%H:%M} doesn't happen on {day.isoformat()} in {zone}: "
+            "the clocks go forward past it that night"
+        )
+    return moved

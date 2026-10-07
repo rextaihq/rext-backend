@@ -46,8 +46,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install ruff
-        run: pip install "ruff>=0.13.0"
+      - name: Install ruff (the version uv.lock holds)
+        run: pip install "ruff==$(sed -n '/^name = "ruff"$/{n;s/^version = "\(.*\)"$/\1/p;}' uv.lock)"
 
       - name: Lint and format-check files changed by this PR
         run: |
@@ -61,3 +61,119 @@ jobs:
           echo "$changed"
           echo "$changed" | xargs ruff check --force-exclude
           echo "$changed" | xargs ruff format --check --force-exclude
+
+  # The test suite against a fresh PostgreSQL with pgvector, migrated first. Part of the suite fails on stage
+  # today (rext-control#200 triages it), so the tests report and do not block yet: the job summary lists the counts
+  # and every failure. What blocks: more than one migration head, a malformed migration id, a migration that does
+  # not apply to an empty database.
+  tests:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: rext
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: rext_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rext -d rext_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      # Placeholders for a database that lives and dies with this job; nothing here reaches a real service.
+      POSTGRES_URI_CUSTOM: postgresql://rext:ci-only-not-a-secret@localhost:5432/rext_test
+      # Some tests read DATABASE_URL instead (the RBAC floor); the seed step below adds the roles and permissions.
+      DATABASE_URL: postgresql://rext:ci-only-not-a-secret@localhost:5432/rext_test
+      REDIS_URL: redis://localhost:6379/0
+      ENVIRONMENT: development
+      SECRET_KEY: ci-only-signing-key-not-a-secret-0123456789
+      REFRESH_SECRET_KEY: ci-only-refresh-key-not-a-secret-0123456789
+      ALLOWED_ORIGINS: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      EMAIL_PROVIDER: mock
+      REQUIRE_EMAIL_VERIFICATION: "false"
+      LEMONSQUEEZY_SANDBOX_MODE: "true"
+      LEMONSQUEEZY_API_KEY: ci-placeholder
+      LEMONSQUEEZY_STORE_ID: "0"
+      REXT_STORAGE_SKIP_BUCKET_CHECK: "1"
+      OPENAI_API_KEY: ci-placeholder
+      LANGSMITH_TRACING: "false"
+      PYTHONUNBUFFERED: "1"
+      LANGCHAIN_TRACING_V2: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v10.2.0  # this action publishes full version tags only
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      - name: OpenAPI spec, the dashboard's contract
+        # --strict fails on a duplicate operation id, which a typed client cannot be generated from.
+        run: uv run python scripts/export_openapi.py --strict openapi.json
+
+      - name: Keep the spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json
+          retention-days: 30
+
+      - name: One migration head
+        run: |
+          heads=$(uv run alembic heads | grep -c '(head)')
+          echo "migration heads: $heads"
+          [ "$heads" = 1 ]
+
+      - name: Migration ids
+        run: uv run python scripts/validate_migration_ids.py
+
+      - name: Migrations apply to an empty database
+        run: uv run alembic upgrade head
+
+      - name: Roles and permissions
+        # The baseline migration is schema only; the RBAC seed is idempotent and prints only role and permission names.
+        run: set -o pipefail; uv run python -m scripts.seed_permissions | tail -n 3
+
+      - name: Tests (reported, not blocking yet)
+        continue-on-error: true
+        # tests/ci_quarantine.py reports the failures of the tests in tests/quarantine.list as expected, so a failure
+        # listed below is a new one, and ends the process once pytest has reported. A test that hangs fails after a
+        # minute and the run goes on; the step stops after ten (the suite takes about four). pytest-timeout comes with
+        # this run only, not into the lock.
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          uv run --with pytest-timeout python -m pytest -q -p no:cacheprovider --no-cov -o addopts= -rfE -p tests.ci_quarantine \
+            --timeout=60 --timeout-method=signal --durations=25 2>&1 | tee pytest.log
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Tests"
+            echo
+            echo "$(grep -E ' in [0-9.]+s' pytest.log 2>/dev/null | tail -n 1)"
+            echo
+            echo "Failures and errors outside tests/quarantine.list (new ones): $(grep -cE '^(FAILED|ERROR) ' pytest.log 2>/dev/null || true)"
+            echo
+            echo '```'
+            grep -E '^(FAILED|ERROR) ' pytest.log 2>/dev/null | head -n 600 || true
+            echo '```'
+            echo
+            echo "<details><summary>Quarantined tests that passed (take them off the list)</summary>"
+            echo
+            echo '```'
+            grep -E '^QUARANTINE-PASSED ' pytest.log 2>/dev/null | cut -d' ' -f2- || true
+            echo '```'
+            echo "</details>"
+            grep -E '^threads still alive at exit' pytest.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"

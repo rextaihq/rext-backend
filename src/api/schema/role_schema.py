@@ -65,42 +65,6 @@ class RoleUpdate(BaseModel):
     )
 
 
-class PermissionSummary(BaseModel):
-    """Minimal permission info for role responses."""
-
-    id: str
-    name: str
-    display_name: str
-    resource: Optional[str]
-    action: Optional[str]
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class RoleResponse(BaseModel):
-    """Schema for role response."""
-
-    id: str
-    name: str
-    display_name: str
-    description: Optional[str]
-    hierarchy_level: int
-    is_system_role: bool
-    is_workspace_role: bool
-    created_at: str
-    updated_at: Optional[str]
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class RoleWithPermissions(RoleResponse):
-    """Schema for role with permissions."""
-
-    permissions: List[PermissionSummary] = []
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class AssignPermissionsRequest(BaseModel):
     """Schema for assigning permissions to a role."""
 

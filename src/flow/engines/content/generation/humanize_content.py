@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from src.flow.engines.content.generation.article_voice import format_voice_for_rewrite
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
     build_brand_structural_injection,
@@ -99,9 +100,16 @@ def _build_brand_instruction(
         else policy["placement"]
     )
     structural_injection = build_brand_structural_injection(content_type, brand_name, policy)
+    # A high-intensity placement (a sales page, or a prominent mention the user
+    # chose) asks for several mentions; "one approved mention" would undo it.
+    approved = (
+        "approved mentions"
+        if policy["intensity"] in ("high", "maximal")
+        else "one approved mention"
+    )
 
     return (
-        f'BRAND INTEGRATION — REQUIRED: this article carries one approved mention of "{brand_name}". '
+        f'BRAND INTEGRATION — REQUIRED: this article carries {approved} of "{brand_name}". '
         "While rewriting for human tone, also make sure it is placed and weighted correctly for this "
         "content type — reposition or rewrite it if the current draft has it in the wrong place or as a "
         "weak, bolted-on name-drop; do not just leave it untouched if it doesn't comply.\n"
@@ -161,6 +169,8 @@ def _build_prompt_data(
     brand_context: dict[str, str] | None = None,
     content_type: str = "",
     focus_keyword: str = "",
+    brand_policy: BrandPlacementPolicy | None = None,
+    article_voice: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     introduction = content_payload.get("introduction") or ""
     body_markdown = content_payload.get("body_markdown") or ""
@@ -227,7 +237,9 @@ def _build_prompt_data(
 
     brand_instruction = ""
     if brand_context:
-        policy = resolve_brand_placement_policy(content_type)
+        # The requirements spec's policy: the content type's, at the prominence
+        # the user chose, the same one validation grades against.
+        policy = brand_policy or resolve_brand_placement_policy(content_type)
         brand_instruction = _build_brand_instruction(
             brand_name=brand_context["brand_name"],
             brand_url=brand_context.get("brand_url", ""),
@@ -240,6 +252,7 @@ def _build_prompt_data(
         "introduction": introduction,
         "body_markdown": body_markdown,
         "length_instruction": length_instruction,
+        "voice_instruction": format_voice_for_rewrite(article_voice),
         "brand_instruction": brand_instruction,
         "keyword_instruction": _build_keyword_instruction(
             content_payload=content_payload,
@@ -359,6 +372,8 @@ async def humanize_content(state: REXT) -> dict:
         brand_context=brand_context,
         content_type=content_type,
         focus_keyword=spec.get("target_keyword") or "",
+        brand_policy=spec.get("brand_placement_policy"),
+        article_voice=generation_meta.get("article_voice"),
     )
     model = load_humanize_model().with_structured_output(schema)
     messages = get_humanize_prompt().format_messages(**prompt_data)
@@ -443,6 +458,7 @@ async def humanize_content(state: REXT) -> dict:
             searched_results=searched_results,
             article_stage="post-humanization (tone finalized — preserve it)",
             protected=protected,
+            brand_policy=spec.get("brand_placement_policy"),
         )
         if repaired is not None and _repair_fixed(
             repaired, merged_payload, brand_failed, brand_context, spec, protected

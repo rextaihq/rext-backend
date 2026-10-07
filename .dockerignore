@@ -18,8 +18,21 @@ venv/
 *.json
 .langgraph_api
 .idea
-data/
 my_faiss_index3
 my_faiss_index
 logs
 rext/
+
+# Coverage & test suite
+htmlcov/
+tests/
+.coverage
+.coveragerc
+
+# Root test configs
+conftest.py
+pytest.ini
+tox.ini
+
+# GitHub
+.github/

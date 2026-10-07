@@ -23,11 +23,11 @@ IMPORTANT: Email sending happens AFTER database commit to prevent orphaned notif
 Handlers return email task data instead of sending emails directly.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logging_config import (
@@ -37,6 +37,7 @@ from src.api.lib.sentry_config import (
     add_payment_breadcrumb,
     alert_subscription_creation_failure,
     set_payment_context,
+    trigger_payment_alert,
 )
 from src.api.models.subscription_models.discount_usage import DiscountUsage
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -44,10 +45,19 @@ from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
+    lemonsqueezy_status,
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.services.audit_logger import audit_logger
+from src.services.credit_grants import grant_promotion_bonus, order_refunded
+from src.services.duplicate_subscriptions import (
+    LIVE_STATUSES,
+    is_settled_duplicate,
+    provider_created_record,
+    settle_duplicate_subscriptions,
+)
+from src.services.refund_cancellation import is_ended_by_refund, refund_ended_at
 from src.services.trial_service import TrialService
 from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
@@ -67,6 +77,253 @@ def _stamp_card_details(subscription: UserSubscription, sub_data: Dict[str, Any]
         meta["card_last_four"] = sub_data["card_last_four"]
     if meta != (subscription.subscription_metadata or {}):
         subscription.subscription_metadata = meta
+
+
+def _provider_time(value: Optional[str]) -> Optional[datetime]:
+    """A Lemon Squeezy timestamp as an aware UTC datetime."""
+    if not value:
+        return None
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _is_older_than_stored(subscription: UserSubscription, sub_data: Dict[str, Any]) -> bool:
+    """The event carries an older state of the subscription than the row holds.
+
+    Lemon Squeezy does not send events in order, and retries a failed delivery
+    later, so an event is compared on the subscription's `updated_at`, and an
+    older one is ignored. Invoice events carry the invoice's time, not the
+    subscription's, so only subscription events are compared and stamp the row.
+    """
+    incoming = _provider_time(sub_data.get("updated_at"))
+    stored = subscription.provider_updated_at
+    if incoming is None or stored is None:
+        return False
+    if stored.tzinfo is None:
+        stored = stored.replace(tzinfo=timezone.utc)
+    return incoming < stored
+
+
+def _stamp_provider_state(subscription: UserSubscription, sub_data: Dict[str, Any]) -> None:
+    incoming = _provider_time(sub_data.get("updated_at"))
+    if incoming is not None:
+        subscription.provider_updated_at = incoming
+
+
+# When the newest payment credited was made (its invoice's updated_at), kept in the
+# subscription's metadata: invoice events don't stamp provider_updated_at, so this
+# orders them among themselves.
+_PAID_INVOICE_AT = "paid_invoice_at"
+
+
+def _last_paid_invoice_at(subscription: UserSubscription) -> Optional[datetime]:
+    return _provider_time((subscription.subscription_metadata or {}).get(_PAID_INVOICE_AT))
+
+
+def _record_paid_invoice(subscription: UserSubscription, paid_at: datetime) -> None:
+    # Reassigned, not mutated in place: SQLAlchemy doesn't track a plain JSONB's insides.
+    subscription.subscription_metadata = {
+        **(subscription.subscription_metadata or {}),
+        _PAID_INVOICE_AT: paid_at.isoformat(),
+    }
+
+
+def _ignore_older(subscription: UserSubscription, sub_data: Dict[str, Any], event: str) -> bool:
+    if not _is_older_than_stored(subscription, sub_data):
+        return False
+    logger.info(
+        f"{event}: ignored, Lemon Squeezy's state is older than the stored one",
+        extra={
+            "subscription_id": str(subscription.id),
+            "event_updated_at": sub_data.get("updated_at"),
+        },
+    )
+    return True
+
+
+def _ignore_ended_by_refund(
+    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+) -> bool:
+    """A subscription a full refund ended stays ended (F8c, revnix/rext-control#538).
+
+    Lemon Squeezy's events about it (still active until the cancel there lands, or
+    cancelled with a grace period) would give the refunded plan back if written here.
+    One that Lemon Squeezy reports live means it can bill again, so a person is told.
+    """
+    if not is_ended_by_refund(subscription):
+        return False
+    logger.info(
+        f"{event}: ignored, a full refund ended the subscription",
+        extra={"subscription_id": str(subscription.id), "status": sub_data.get("status")},
+    )
+    if lemonsqueezy_status(sub_data.get("status")) in LIVE_STATUSES:
+        trigger_payment_alert(
+            alert_type="refund_cancel_failed",
+            message=(
+                f"Fully refunded subscription {subscription.lemonsqueezy_subscription_id} for "
+                f"user {subscription.user_id} is {sub_data.get('status')} at Lemon Squeezy "
+                f"({event}): it can bill again; cancel it there"
+            ),
+            severity="critical",
+            context={"lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id},
+            user_id=str(subscription.user_id),
+            subscription_id=str(subscription.id),
+            operation=event,
+        )
+    return True
+
+
+def _ignore_payment_after_refund(
+    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+) -> bool:
+    """A payment on a subscription a full refund ended charged the customer again.
+
+    It gives no plan and no credits back (F8c, revnix/rext-control#538); a person
+    refunds it and cancels the subscription at Lemon Squeezy. A payment made before
+    the refund and delivered late is the one refunded: it's ignored without an alert.
+    The invoice's `updated_at` is when it was paid (a recovered charge's invoice was
+    created earlier, before it failed).
+
+    Lemon Squeezy sends subscription_payment_success with every
+    subscription_payment_recovered, so only the success event alerts: one per charge.
+    """
+    if not is_ended_by_refund(subscription):
+        return False
+    paid_at = _provider_time(sub_data.get("updated_at"))
+    ended_at = refund_ended_at(subscription)
+    if paid_at is not None and ended_at is not None and paid_at < ended_at:
+        logger.info(
+            f"{event}: ignored, a payment from before the full refund that ended the subscription",
+            extra={"subscription_id": str(subscription.id)},
+        )
+        return True
+    if event == "subscription_payment_recovered":
+        logger.warning(
+            f"{event}: ignored, a full refund ended the subscription (its payment_success alerts)",
+            extra={"subscription_id": str(subscription.id)},
+        )
+        return True
+    trigger_payment_alert(
+        alert_type="refund_cancel_failed",
+        message=(
+            f"Fully refunded subscription {subscription.lemonsqueezy_subscription_id} for user "
+            f"{subscription.user_id} was charged again ({event}): refund this payment and "
+            "cancel the subscription in Lemon Squeezy"
+        ),
+        severity="critical",
+        context={"lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id},
+        user_id=str(subscription.user_id),
+        subscription_id=str(subscription.id),
+        operation=event,
+    )
+    logger.warning(
+        f"{event}: ignored, a full refund ended the subscription",
+        extra={"subscription_id": str(subscription.id)},
+    )
+    return True
+
+
+def _ignore_settled_duplicate(
+    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+) -> bool:
+    """A subscription settled as the older of two ends when it was settled.
+
+    Lemon Squeezy's own cancellation leaves it a grace period, and its events say
+    so (cancelled, with ends_at in the future): written back here, the refunded
+    subscription would give the plan again. A settled duplicate that Lemon Squeezy
+    reports live again (resumed in its portal) bills again, so a person is told.
+    """
+    if not is_settled_duplicate(subscription):
+        return False
+    logger.info(
+        f"{event}: ignored, the subscription was settled as a duplicate",
+        extra={"subscription_id": str(subscription.id), "status": sub_data.get("status")},
+    )
+    if lemonsqueezy_status(sub_data.get("status")) in LIVE_STATUSES:
+        trigger_payment_alert(
+            alert_type="duplicate_subscription",
+            message=(
+                f"Settled duplicate subscription {subscription.lemonsqueezy_subscription_id} for "
+                f"user {subscription.user_id} is {sub_data.get('status')} at Lemon Squeezy again "
+                f"({event}): it can bill again"
+            ),
+            severity="critical",
+            context={"lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id},
+            user_id=str(subscription.user_id),
+            subscription_id=str(subscription.id),
+            operation=event,
+        )
+    return True
+
+
+async def _locked_subscription(
+    db: AsyncSession, lemonsqueezy_subscription_id: Optional[str]
+) -> Optional[UserSubscription]:
+    """The subscription's row, locked until the handler's transaction ends.
+
+    Two events for one subscription can run at once, each in its own transaction:
+    the lock makes the second wait, then compare its time with what the first
+    stored (populate_existing reads the row again rather than a copy in memory).
+    """
+    result = await db.execute(
+        select(UserSubscription)
+        .where(UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
+
+
+def _still_paid_through(subscription: UserSubscription) -> bool:
+    """The plan runs: active or on trial, or cancelled with its paid period not over."""
+    if subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL):
+        return True
+    end = subscription.end_date
+    if subscription.status != SubscriptionStatus.CANCELLED or end is None:
+        return False
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    return end > datetime.now(timezone.utc)
+
+
+def _left_on_replaced(subscriptions) -> int:
+    """The most credits left on the local rows a new subscription replaces (a signup trial)."""
+    return max((sub.current_credits or 0 for sub in subscriptions), default=0)
+
+
+def _opening_credits(
+    plan: SubscriptionPlan, status: SubscriptionStatus, left_on_replaced: int = 0
+) -> int:
+    """A new subscription's credits: the plan's month once it is paid (ACTIVE).
+
+    Credits come with a payment; one on trial or with a failed first payment
+    gets them from subscription_payment_success. Until then it keeps what is left
+    on the local row it replaces (a signup trial), so a checkout that isn't paid
+    yet doesn't empty the account. A Lemon Squeezy subscription is never replaced
+    here: settle_duplicate_subscriptions() cancels and refunds the older one, so
+    its balance and its grants are not carried.
+    """
+    if status != SubscriptionStatus.ACTIVE:
+        return left_on_replaced
+    return plan.credits_per_month or 0
+
+
+async def _unpaid_email_task(db: AsyncSession, subscription: UserSubscription) -> Dict[str, Any]:
+    """The stopped-plan email and notice for a subscription that became unpaid."""
+    plan_row = (
+        await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+        )
+    ).scalar_one_or_none()
+    return {
+        "send_email": True,
+        "email_type": "subscription_unpaid",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": (plan_row.display_name or plan_row.name) if plan_row else "Your Plan",
+            "subscription_id": str(subscription.id),
+        },
+    }
 
 
 async def handle_subscription_created(
@@ -205,26 +462,16 @@ async def handle_subscription_created(
         else BillingPeriod.MONTHLY
     )
 
-    # Map LemonSqueezy status to internal status
-    status_map = {
-        "on_trial": SubscriptionStatus.TRIAL,
-        "active": SubscriptionStatus.ACTIVE,
-        "paused": SubscriptionStatus.PAUSED,
-        "past_due": SubscriptionStatus.PAST_DUE,
-        "unpaid": SubscriptionStatus.PAST_DUE,
-        "cancelled": SubscriptionStatus.CANCELLED,
-        "expired": SubscriptionStatus.EXPIRED,
-    }
-    internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+    internal_status = lemonsqueezy_status(status)
 
     # Check if subscription already exists (shouldn't happen due to idempotency, but be safe)
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    existing_sub = result.scalar_one_or_none()
+    existing_sub = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
-    if existing_sub:
+    if existing_sub and _ignore_older(existing_sub, sub_data, "subscription_created"):
+        # A newer event created the row and wrote its state; the creation's audit
+        # record, discount usage and email below still follow, as they do nowhere else.
+        subscription = existing_sub
+    elif existing_sub:
         logger.warning(
             f"Subscription {lemonsqueezy_subscription_id} already exists - updating",
             extra={"subscription_id": str(existing_sub.id)},
@@ -238,7 +485,7 @@ async def handle_subscription_created(
         existing_sub.trial_end_date = (
             datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
         )
-        if plan.credits_per_month is not None:
+        if plan.credits_per_month is not None and internal_status == SubscriptionStatus.ACTIVE:
             existing_sub.current_credits = plan.credits_per_month
             # LemonSqueezy `renews_at` is the authoritative billing-period end;
             # fall back to a calendar month only when it is absent.
@@ -246,6 +493,7 @@ async def handle_subscription_created(
                 utc_now_naive(), 1
             )
         existing_sub.updated_at = datetime.now(timezone.utc)
+        _stamp_provider_state(existing_sub, sub_data)
         await db.flush()
         subscription = existing_sub
     else:
@@ -254,13 +502,14 @@ async def handle_subscription_created(
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            or_(
-                UserSubscription.lemonsqueezy_subscription_id.is_(None),
-                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
-            ),
+            # Only rows Lemon Squeezy doesn't bill (a local trial): an older Lemon
+            # Squeezy subscription is cancelled there and refunded by
+            # settle_duplicate_subscriptions() once the new one is stored.
+            UserSubscription.lemonsqueezy_subscription_id.is_(None),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
+        left_on_replaced = _left_on_replaced(existing_active_subs)
 
         for old_sub in existing_active_subs:
             was_trial = (
@@ -347,7 +596,9 @@ async def handle_subscription_created(
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=parse_provider_datetime(renews_at),
             current_api_calls=0,
-            current_credits=plan.credits_per_month or 0,
+            current_credits=_opening_credits(plan, internal_status, left_on_replaced),
+            provider_updated_at=_provider_time(sub_data.get("updated_at")),
+            subscription_metadata=provider_created_record(sub_data.get("created_at")),
             # `renews_at` from the provider is the authoritative period end;
             # fall back to a calendar month only when it is absent.
             credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
@@ -371,11 +622,30 @@ async def handle_subscription_created(
             },
         )
 
+    # A second live Lemon Squeezy subscription bills twice: settle the older one.
+    await settle_duplicate_subscriptions(db, user.id)
+
     # Update user's provider_customer_id if not set
     if not user.provider_customer_id and lemonsqueezy_customer_id:
         user.provider_customer_id = lemonsqueezy_customer_id
         await db.flush()
         logger.info(f"Updated user {user.id} provider_customer_id")
+
+    # A promotion's bonus (the launch offer): a paid subscription started inside a
+    # promotion's window gets it once. The first payment's invoice tries again
+    # (handle_subscription_payment_success), for a subscription created unpaid.
+    if sub_data.get("order_id") and not subscription.lemonsqueezy_order_id:
+        subscription.lemonsqueezy_order_id = sub_data["order_id"]
+    if internal_status == SubscriptionStatus.ACTIVE:
+        await grant_promotion_bonus(
+            db,
+            subscription.id,
+            plan,
+            subscription.billing_period.value if subscription.billing_period else None,
+            parse_provider_datetime(sub_data.get("created_at")) or datetime.now(timezone.utc),
+            subscription.credits_reset_date,
+            order_id=sub_data.get("order_id"),
+        )
 
     # Track discount usage if discount was applied
     discount_data = webhook_data.get("meta", {}).get("custom_data", {})
@@ -516,11 +786,7 @@ async def handle_subscription_updated(
     cancelled = sub_data.get("cancelled", False)
 
     # Find existing subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
         # Subscription doesn't exist yet - this can happen if subscription_updated arrives before subscription_created
@@ -575,30 +841,21 @@ async def handle_subscription_updated(
             else BillingPeriod.MONTHLY
         )
 
-        # Map status
-        status_map = {
-            "on_trial": SubscriptionStatus.TRIAL,
-            "active": SubscriptionStatus.ACTIVE,
-            "paused": SubscriptionStatus.PAUSED,
-            "past_due": SubscriptionStatus.PAST_DUE,
-            "unpaid": SubscriptionStatus.PAST_DUE,
-            "cancelled": SubscriptionStatus.CANCELLED,
-            "expired": SubscriptionStatus.EXPIRED,
-        }
-        internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+        internal_status = lemonsqueezy_status(status)
 
         # IMPORTANT: Cancel any existing active/trial subscriptions for this user
         # This handles the case when user upgrades via a new checkout instead of upgrade endpoint
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            or_(
-                UserSubscription.lemonsqueezy_subscription_id.is_(None),
-                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
-            ),
+            # Only rows Lemon Squeezy doesn't bill (a local trial): an older Lemon
+            # Squeezy subscription is cancelled there and refunded by
+            # settle_duplicate_subscriptions() once the new one is stored.
+            UserSubscription.lemonsqueezy_subscription_id.is_(None),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
+        left_on_replaced = _left_on_replaced(existing_active_subs)
 
         for old_sub in existing_active_subs:
             logger.info(
@@ -635,7 +892,9 @@ async def handle_subscription_updated(
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=parse_provider_datetime(renews_at),
             current_api_calls=0,
-            current_credits=plan.credits_per_month or 0,
+            current_credits=_opening_credits(plan, internal_status, left_on_replaced),
+            provider_updated_at=_provider_time(sub_data.get("updated_at")),
+            subscription_metadata=provider_created_record(sub_data.get("created_at")),
             # `renews_at` from the provider is the authoritative period end;
             # fall back to a calendar month only when it is absent.
             credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
@@ -658,25 +917,44 @@ async def handle_subscription_updated(
             },
         )
 
+        await settle_duplicate_subscriptions(db, user.id)
+
         # Update user's provider_customer_id if not set
         if not user.provider_customer_id and lemonsqueezy_customer_id:
             user.provider_customer_id = lemonsqueezy_customer_id
             await db.flush()
 
+        # The recovered subscription gets its promotion's bonus as
+        # subscription_created would have given it (once per subscription).
+        if sub_data.get("order_id"):
+            subscription.lemonsqueezy_order_id = sub_data["order_id"]
+        if internal_status == SubscriptionStatus.ACTIVE:
+            await grant_promotion_bonus(
+                db,
+                subscription.id,
+                plan,
+                subscription.billing_period.value if subscription.billing_period else None,
+                parse_provider_datetime(sub_data.get("created_at")) or now,
+                subscription.credits_reset_date,
+                order_id=sub_data.get("order_id"),
+            )
+
+        # Created already unpaid (its earlier events were missed): the customer
+        # still gets the stopped-plan email, which a later unpaid update won't send.
+        if internal_status == SubscriptionStatus.UNPAID:
+            return await _unpaid_email_task(db, subscription)
+
         # Return early - subscription created, nothing to update
         return None
 
-    # Map status
-    status_map = {
-        "on_trial": SubscriptionStatus.TRIAL,
-        "active": SubscriptionStatus.ACTIVE,
-        "paused": SubscriptionStatus.PAUSED,
-        "past_due": SubscriptionStatus.PAST_DUE,
-        "unpaid": SubscriptionStatus.PAST_DUE,
-        "cancelled": SubscriptionStatus.CANCELLED,
-        "expired": SubscriptionStatus.EXPIRED,
-    }
-    internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+    if _ignore_older(subscription, sub_data, "subscription_updated"):
+        return None
+    if _ignore_settled_duplicate(subscription, sub_data, "subscription_updated"):
+        return None
+    if _ignore_ended_by_refund(subscription, sub_data, "subscription_updated"):
+        return None
+
+    internal_status = lemonsqueezy_status(status)
 
     # Check if plan changed (variant_id changed)
     plan_changed = False
@@ -775,6 +1053,7 @@ async def handle_subscription_updated(
     # credits until `end_date` regardless of the status flip here.
     end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
 
+    previous_status = subscription.status
     subscription.status = internal_status
     if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
         subscription.cancel_at_period_end = True
@@ -791,6 +1070,7 @@ async def handle_subscription_updated(
     )
     subscription.updated_at = datetime.now(timezone.utc)
     _stamp_card_details(subscription, sub_data)
+    _stamp_provider_state(subscription, sub_data)
 
     await db.flush()
 
@@ -885,6 +1165,13 @@ async def handle_subscription_updated(
                 db=db,
             )
 
+        # The same event can stop the plan: the customer hears that, not the plan change.
+        if (
+            internal_status == SubscriptionStatus.UNPAID
+            and previous_status != SubscriptionStatus.UNPAID
+        ):
+            return await _unpaid_email_task(db, subscription)
+
         return {
             "send_email": True,
             "email_type": email_type,
@@ -915,6 +1202,13 @@ async def handle_subscription_updated(
         },
         db=db,
     )
+
+    # Lemon Squeezy's retries ran out: the plan stops until the card is updated.
+    if (
+        internal_status == SubscriptionStatus.UNPAID
+        and previous_status != SubscriptionStatus.UNPAID
+    ):
+        return await _unpaid_email_task(db, subscription)
 
     return None
 
@@ -957,16 +1251,19 @@ async def handle_subscription_cancelled(
     ends_at = sub_data.get("ends_at")
 
     # Find subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
         error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
         logger.error(error_msg)
         raise ValueError(error_msg)
+
+    if _ignore_older(subscription, sub_data, "subscription_cancelled"):
+        return None
+    if _ignore_settled_duplicate(subscription, sub_data, "subscription_cancelled"):
+        return None
+    if _ignore_ended_by_refund(subscription, sub_data, "subscription_cancelled"):
+        return None
 
     now = datetime.now(timezone.utc)
     end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
@@ -977,6 +1274,7 @@ async def handle_subscription_cancelled(
     subscription.cancel_at_period_end = True
     subscription.end_date = end_date
     subscription.updated_at = now
+    _stamp_provider_state(subscription, sub_data)
 
     await db.flush()
 
@@ -1054,21 +1352,21 @@ async def handle_subscription_expired(
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
 
     # Find subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
         error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    if _ignore_older(subscription, sub_data, "subscription_expired"):
+        return None
+
     # Update subscription
     subscription.status = SubscriptionStatus.EXPIRED
     subscription.end_date = datetime.now(timezone.utc)
     subscription.updated_at = datetime.now(timezone.utc)
+    _stamp_provider_state(subscription, sub_data)
     await db.flush()
 
     await audit_logger.log_subscription_expired(
@@ -1098,7 +1396,7 @@ async def handle_subscription_payment_success(
 
     Actions:
     1. Find subscription
-    2. Update status to ACTIVE (if was TRIAL or SUSPENDED)
+    2. Update status to ACTIVE (if it was on trial or its renewal had failed)
     3. Reset usage counters for new billing cycle
     4. Update next renewal date
     5. Return email task data for payment success email with receipt
@@ -1121,28 +1419,69 @@ async def handle_subscription_payment_success(
     renews_at = sub_data.get("renews_at")
 
     # Find subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
-        # Payment success arrived before subscription_created - log and skip
-        # The subscription_created or subscription_updated webhook should create it
+        # Payment success can arrive before subscription_created. Skipping it would
+        # lose the month's credits for good (they come only with a payment), and a
+        # first payment's promotion bonus with them, so the event fails and the
+        # reprocessing job runs it again once the row exists.
+        error_msg = (
+            f"Subscription {lemonsqueezy_subscription_id} not found in payment_success - "
+            "retried once subscription_created/updated has created it"
+        )
         logger.warning(
-            f"Subscription {lemonsqueezy_subscription_id} not found in payment_success - will be created by subscription_created/updated webhook",
+            error_msg,
             extra={
                 "event_type": "subscription_payment_success",
                 "subscription_id": lemonsqueezy_subscription_id,
             },
         )
-        # Don't raise error - this is normal webhook ordering issue
+        raise ValueError(error_msg)
+
+    if _ignore_payment_after_refund(subscription, sub_data, "subscription_payment_success"):
         return None
 
-    # Update subscription - activate if was trial or suspended
-    if subscription.status in [SubscriptionStatus.TRIAL, SubscriptionStatus.PAST_DUE]:
+    # A payment older than the state stored since (a delayed or retried event) never
+    # changes the status. Its credits still come while the plan runs: a renewal can
+    # race its own subscription_updated. Over a stopped plan it changes nothing.
+    older_than_stored = _is_older_than_stored(subscription, sub_data)
+    if older_than_stored and not _still_paid_through(subscription):
+        logger.warning(
+            "subscription_payment_success: ignored, older than the stopped plan stored since",
+            extra={
+                "subscription_id": str(subscription.id),
+                "status": subscription.status.value,
+                "event_updated_at": sub_data.get("updated_at"),
+            },
+        )
+        return None
+
+    # A payment no newer than the last one credited (a previous cycle's, delivered
+    # late, or this one again) would give back credits already spent this cycle.
+    paid_at = _provider_time(sub_data.get("updated_at"))
+    last_paid_at = _last_paid_invoice_at(subscription)
+    if paid_at and last_paid_at and paid_at <= last_paid_at:
+        logger.info(
+            "subscription_payment_success: ignored, not newer than the last payment credited",
+            extra={
+                "subscription_id": str(subscription.id),
+                "event_updated_at": sub_data.get("updated_at"),
+            },
+        )
+        return None
+
+    # Update subscription - activate if it was on trial or its renewal had failed
+    # (PAST_DUE while Lemon Squeezy retried, UNPAID after it gave up, SUSPENDED on
+    # rows from the old grace period).
+    if not older_than_stored and subscription.status in [
+        SubscriptionStatus.TRIAL,
+        SubscriptionStatus.SUSPENDED,
+        SubscriptionStatus.PAST_DUE,
+        SubscriptionStatus.UNPAID,
+    ]:
         subscription.status = SubscriptionStatus.ACTIVE
+        subscription.grace_period_end = None
 
     # Update renewal date (invoices don't carry one; keep the current value)
     parsed_renews_at = parse_provider_datetime(renews_at)
@@ -1160,9 +1499,41 @@ async def handle_subscription_payment_success(
     # credits_reset_date stay in step with the billing period.
     plan_stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
     plan_row = (await db.execute(plan_stmt)).scalar_one_or_none()
-    if plan_row and not plan_row.is_trial_plan and plan_row.credits_per_month is not None:
+    # A first payment retried after its order was partly refunded must not hand
+    # back the credits the refund took (subscription_created allocated them).
+    refunded_first_payment = (
+        sub_data.get("billing_reason") == "initial"
+        and bool(subscription.lemonsqueezy_order_id)
+        and await order_refunded(db, subscription.lemonsqueezy_order_id)
+    )
+    if (
+        plan_row
+        and not plan_row.is_trial_plan
+        and plan_row.credits_per_month is not None
+        and not refunded_first_payment
+    ):
         subscription.current_credits = plan_row.credits_per_month
         subscription.credits_reset_date = next_period_end
+
+        # The first payment: a promotion's bonus, if subscription_created did not
+        # grant it already (it grants once per subscription and promotion).
+        if sub_data.get("billing_reason") == "initial":
+            await grant_promotion_bonus(
+                db,
+                subscription.id,
+                plan_row,
+                subscription.billing_period.value if subscription.billing_period else None,
+                # The subscription's start decides the window, not the invoice's
+                # date (a trial converts to its first payment later); the bonus
+                # runs from this payment.
+                subscription.start_date or parse_provider_datetime(sub_data.get("created_at")),
+                next_period_end,
+                paid_from=parse_provider_datetime(sub_data.get("created_at"))
+                or datetime.now(timezone.utc),
+                order_id=subscription.lemonsqueezy_order_id,
+            )
+    if paid_at:
+        _record_paid_invoice(subscription, paid_at)
 
     subscription.updated_at = datetime.now(timezone.utc)
     _stamp_card_details(subscription, sub_data)
@@ -1226,16 +1597,12 @@ async def handle_subscription_payment_failed(
 
     Actions:
     1. Find subscription
-    2. Set status to SUSPENDED (grace period)
-    3. Calculate and set grace period (7 days)
-    4. Track payment failure timestamp
-    5. Return email task data to be sent AFTER commit
-
-    Grace Period Behavior:
-    - User retains access during grace period (7 days)
-    - LemonSqueezy will automatically retry payment
-    - Dunning emails sent at 1, 3, 6 days (Task 3.4.2)
-    - Auto-suspend after grace period (Task 3.4.3)
+    2. Set status to PAST_DUE: Lemon Squeezy retries the payment (its dunning,
+       about two weeks) and the plan stays meanwhile. When the retries run out,
+       Lemon Squeezy's subscription_updated says "unpaid" and access ends then;
+       there is no deadline of our own.
+    3. Track payment failure timestamp
+    4. Return email task data to be sent AFTER commit
 
     Args:
         webhook_data: Parsed webhook data
@@ -1254,11 +1621,7 @@ async def handle_subscription_payment_failed(
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
 
     # Find subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
         error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
@@ -1280,30 +1643,51 @@ async def handle_subscription_payment_failed(
     result = await db.execute(stmt)
     plan = result.scalar_one_or_none()
 
-    # Calculate grace period (7 days from now)
+    # A failure older than the last payment credited (delivered late, after the
+    # renewal was paid) is over: it doesn't make the plan past due again.
+    failed_at = _provider_time(sub_data.get("updated_at"))
+    last_paid_at = _last_paid_invoice_at(subscription)
+    if failed_at and last_paid_at and failed_at < last_paid_at:
+        logger.info(
+            "subscription_payment_failed: ignored, older than the last payment credited",
+            extra={
+                "subscription_id": str(subscription.id),
+                "event_updated_at": sub_data.get("updated_at"),
+            },
+        )
+        return None
+
     now = datetime.now(timezone.utc)
-    grace_period_days = 7
-    grace_period_end = now + timedelta(days=grace_period_days)
+    if subscription.status in (
+        SubscriptionStatus.EXPIRED,
+        SubscriptionStatus.CANCELLED,
+        SubscriptionStatus.UNPAID,
+    ):
+        # A failed charge never reopens or moves an ending: an expired subscription
+        # stays expired, a cancelled one keeps its end_date, and an unpaid one stays
+        # unpaid until a payment succeeds.
+        logger.info(
+            f"Payment failed for {subscription.status.value} subscription {subscription.id}: "
+            "its status stays"
+        )
+        return
 
-    # Update subscription - set to SUSPENDED during grace period
-    subscription.status = SubscriptionStatus.SUSPENDED
-    subscription.grace_period_end = grace_period_end
-
-    # Only set payment_failed_at if not already set (track first failure)
-    if not subscription.payment_failed_at:
-        subscription.payment_failed_at = now
+    # A new failure episode (the subscription was paid until now) starts its own
+    # date: the emails count Lemon Squeezy's two weeks of retries from it. The
+    # invoice's own time, so a failure processed late (a retried or recovered
+    # webhook) still names the day it happened. A recovered episode's date stays
+    # in the audit log.
+    if subscription.status != SubscriptionStatus.PAST_DUE or not subscription.payment_failed_at:
+        subscription.payment_failed_at = failed_at or now
+    subscription.status = SubscriptionStatus.PAST_DUE
 
     subscription.updated_at = now
 
     await db.flush()
 
     logger.info(
-        f"Payment failed for subscription {subscription.id} - grace period set until {grace_period_end.isoformat()}",
-        extra={
-            "subscription_id": str(subscription.id),
-            "grace_period_end": grace_period_end.isoformat(),
-            "grace_period_days": grace_period_days,
-        },
+        f"Payment failed for subscription {subscription.id} - past due while Lemon Squeezy retries",
+        extra={"subscription_id": str(subscription.id)},
     )
 
     # What the failed charge was for, in cents. The subscription item carries
@@ -1328,20 +1712,13 @@ async def handle_subscription_payment_failed(
         amount=amount_cents,
         failure_reason="Payment failed",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
-        metadata={"grace_period_end": grace_period_end.isoformat()},
+        metadata={"status": SubscriptionStatus.PAST_DUE.value},
         db=db,
     )
 
-    # Calculate retry date (LemonSqueezy typically retries in 3 days)
-    retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
-
     logger.warning(
-        f"Payment failed for subscription {subscription.id} - user has access until {grace_period_end.isoformat()}",
-        extra={
-            "subscription_id": str(subscription.id),
-            "user_id": str(user.id),
-            "grace_period_end": grace_period_end.isoformat(),
-        },
+        f"Payment failed for subscription {subscription.id} - access stays while it is retried",
+        extra={"subscription_id": str(subscription.id), "user_id": str(user.id)},
     )
 
     # IMPORTANT: Return email data to be sent AFTER commit
@@ -1354,7 +1731,9 @@ async def handle_subscription_payment_failed(
             "user_email": user.email,
             "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
             "amount_cents": amount_cents,
-            "retry_date": retry_date,
+            # Lemon Squeezy gives no next-retry time; its retries run for about two
+            # weeks from the first failure, which every attempt's email names.
+            "failed_on": (subscription.payment_failed_at or now).strftime("%B %d, %Y"),
             "subscription_id": str(subscription.id),
         },
     }
@@ -1376,10 +1755,9 @@ async def handle_subscription_payment_recovered(
     5. Return email task data to be sent AFTER commit
 
     Recovery Process:
-    - Payment fails → SUSPENDED status with grace period
-    - Dunning emails sent (days 1, 3, 6)
+    - Payment fails → PAST_DUE while Lemon Squeezy retries (UNPAID once it gives up)
     - User updates payment method OR automatic retry succeeds
-    - This handler → Restore to ACTIVE, clear grace period, return email data
+    - This handler → Restore to ACTIVE, return email data
 
     Args:
         webhook_data: Parsed webhook data
@@ -1399,16 +1777,28 @@ async def handle_subscription_payment_recovered(
     renews_at = sub_data.get("renews_at")
 
     # Find subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
         error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
         logger.error(error_msg)
         raise ValueError(error_msg)
+
+    if _ignore_payment_after_refund(subscription, sub_data, "subscription_payment_recovered"):
+        return None
+
+    # A recovery older than a stopped state stored since belongs to an earlier
+    # renewal: it doesn't bring the plan back.
+    if _is_older_than_stored(subscription, sub_data) and not _still_paid_through(subscription):
+        logger.warning(
+            "subscription_payment_recovered: ignored, older than the stopped plan stored since",
+            extra={
+                "subscription_id": str(subscription.id),
+                "status": subscription.status.value,
+                "event_updated_at": sub_data.get("updated_at"),
+            },
+        )
+        return None
 
     # Get user for email
     stmt = select(Users).where(Users.id == subscription.user_id)
@@ -1441,6 +1831,9 @@ async def handle_subscription_payment_recovered(
     # Keep payment_failed_at for analytics/history
 
     await db.flush()
+
+    # A late recovery can revive a subscription the customer already replaced.
+    await settle_duplicate_subscriptions(db, subscription.user_id)
 
     logger.info(
         f"Payment recovered for subscription {subscription.id} - restored from {previous_status.value} to ACTIVE",
@@ -1536,21 +1929,21 @@ async def handle_subscription_paused(
     resumes_at = sub_data.get("resumes_at")
 
     # Find subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
         error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    if _ignore_older(subscription, sub_data, "subscription_paused"):
+        return None
+
     # Update subscription to PAUSED
     subscription.status = SubscriptionStatus.PAUSED
     subscription.updated_at = datetime.now(timezone.utc)
 
+    _stamp_provider_state(subscription, sub_data)
     await db.flush()
 
     await audit_logger.log_subscription_paused(
@@ -1601,22 +1994,30 @@ async def handle_subscription_resumed(
     renews_at = sub_data.get("renews_at")
 
     # Find subscription
-    stmt = select(UserSubscription).where(
-        UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
-    result = await db.execute(stmt)
-    subscription = result.scalar_one_or_none()
+    subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
     if not subscription:
         error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Update subscription - resume to ACTIVE
-    subscription.status = SubscriptionStatus.ACTIVE
+    if _ignore_older(subscription, sub_data, "subscription_resumed"):
+        return None
+    if _ignore_settled_duplicate(subscription, sub_data, "subscription_resumed"):
+        return None
+    if _ignore_ended_by_refund(subscription, sub_data, "subscription_resumed"):
+        return None
+
+    # Update subscription - resumed, so it no longer ends. Its status is the one
+    # Lemon Squeezy reports (past_due when it was cancelled during a payment
+    # retry: resuming does not pay); ACTIVE when the payload has none.
+    subscription.status = lemonsqueezy_status(sub_data.get("status"))
+    subscription.end_date = None
+    subscription.cancel_at_period_end = False
     subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.updated_at = datetime.now(timezone.utc)
 
+    _stamp_provider_state(subscription, sub_data)
     await db.flush()
 
     await audit_logger.log_subscription_resumed(

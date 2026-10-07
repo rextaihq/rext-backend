@@ -76,20 +76,7 @@ class DeletedWorkspaceListResponse(BaseModel):
 class WorkspaceStatsResponse(BaseModel):
     workspace_exists: bool
     content_count: int
-    knowledge_items_count: int
     members_count: int
-    topics_count: int = 0
-    has_content_builder: bool
-
-
-class EmailTemplateDeleteResponse(BaseModel):
-    template_id: str
-
-
-class DefaultEmailTemplateResponse(BaseModel):
-    template_type: str
-    subject: str
-    body: str
 
 
 class BrandVoiceResponse(BaseModel):
@@ -111,10 +98,6 @@ class BrandVoiceResponse(BaseModel):
 
 class BrandVoiceWrapperResponse(BaseModel):
     brand_voice: Optional[BrandVoiceResponse] = None
-
-
-class BrandVoiceStateResponse(BaseModel):
-    deleted: bool
 
 
 class BrandVoiceRefreshResponse(BaseModel):

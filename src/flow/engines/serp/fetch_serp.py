@@ -1,6 +1,7 @@
+import asyncio
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 from dotenv import load_dotenv
@@ -14,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 DATAFORSEO_SERP_URL = os.getenv("DATAFORSEO_SERP_URL")
+
+# DataForSEO's live SERP answers in 15 to 30 seconds and allows itself 120
+# (50401); on 2026-10-05 three live calls took 17 s, 25 s and over 30 s. A call
+# abandoned at the client is still billed when it completes, so the wait is
+# long enough for the slow tail rather than retried early.
+SERP_TIMEOUT_SECONDS = 60.0
 
 
 # @retry(
@@ -34,7 +41,18 @@ async def _do_fetch_serp(
     if not country or country.lower() == "global":
         country = "United States"
 
-    payload = [{"keyword": query, "location_name": country, "language_code": "en"}]
+    payload = [
+        {
+            "keyword": query,
+            "location_name": country,
+            "language_code": "en",
+            # Loads the AI Overviews Google adds after the page, so a SERP
+            # without one has none (G27, rext-control#342). $0.002 extra, and
+            # refunded when no asynchronous overview loads. This planning call
+            # only: the competitor sweep and bulk research stay without it.
+            "load_async_ai_overview": True,
+        }
+    ]
 
     headers = {"Authorization": f"Basic {auth_header}", "Content-Type": "application/json"}
 
@@ -42,7 +60,9 @@ async def _do_fetch_serp(
         f"Sending request to DataForSEO (live) for query: {query} with location: {country}"
     )
 
-    response = await client.post(serp_url, json=payload, headers=headers, timeout=30.0)
+    response = await client.post(
+        serp_url, json=payload, headers=headers, timeout=SERP_TIMEOUT_SECONDS
+    )
 
     if response.status_code != 200:
         logger.error(
@@ -52,17 +72,66 @@ async def _do_fetch_serp(
     return response.json()
 
 
+def _empty_serp_state() -> SERPEngineState:
+    """A fully-keyed empty SERP result.
+
+    ``serp_result`` is merged into the previous value, so returning ``{}`` on a
+    failed fetch would silently keep the previous keyword/country's SERP. Every
+    key is spelled out so a failed re-analysis overwrites it with nothing.
+    """
+    return {
+        "search_params": {},
+        "organic_results": [],
+        "people_ask": [],
+        "related_searches": [],
+        "total_results": 0,
+        "serp_status": "lookup_failed",
+        "ai_overview": None,
+    }
+
+
+# DataForSEO task codes that mean the search ran and found nothing, as opposed
+# to the search failing (https://docs.dataforseo.com/v3/appendix/errors/).
+_NO_RESULTS_STATUS_CODES = {20000, 40102}
+
+
+# A failure that is gone a moment later: the search engine's own error (40101),
+# DataForSEO's system errors (50000-50999: a live-mode timeout and the like), a
+# network timeout or an HTTP 5xx. One retry absorbs it; on 2026-10-05 a 40101
+# for a keyword whose SERP came back normally a minute later ended a run.
+SERP_ATTEMPTS = 2
+SERP_RETRY_DELAY_SECONDS = 2.0
+
+
+def _task_status(raw_data: Dict[str, Any]) -> Any:
+    """The first task's status, else the response's own (a reply with no task
+    carries its error, e.g. a 50000, only at the top level)."""
+    tasks = raw_data.get("tasks") or [{}]
+    status = (tasks[0] or {}).get("status_code")
+    return status if status is not None else raw_data.get("status_code")
+
+
+def _is_passing_status(status_code: Any) -> bool:
+    return status_code == 40101 or (isinstance(status_code, int) and 50000 <= status_code < 51000)
+
+
+def _is_passing_error(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code >= 500
+    return isinstance(error, (httpx.TimeoutException, httpx.TransportError))
+
+
+def _serp_status(status_code: Any, organic_results: list) -> str:
+    if organic_results:
+        return "ok"
+    return "no_results" if status_code in _NO_RESULTS_STATUS_CODES else "lookup_failed"
+
+
 def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
     tasks = raw_data.get("tasks", [])
     if not tasks:
         logger.warning("DataForSEO returned no tasks")
-        return {
-            "search_params": {},
-            "organic_results": [],
-            "people_ask": [],
-            "related_searches": [],
-            "total_results": 0,
-        }
+        return _empty_serp_state()
 
     task = tasks[0]
     status_code = task.get("status_code")
@@ -80,10 +149,13 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
             "people_ask": [],
             "related_searches": [],
             "total_results": 0,
+            "serp_status": _serp_status(status_code, []),
+            "ai_overview": None,
         }
 
     main_result = result[0]
-    items = main_result.get("items", [])
+    # A search with no results comes back with "items": null.
+    items = main_result.get("items") or []
 
     serp_state: SERPEngineState = {
         "search_params": task.get("data", {}),
@@ -91,6 +163,9 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "people_ask": [],
         "related_searches": [],
         "total_results": 0,
+        # True when Google shows an AI Overview, False when it shows none,
+        # None when the lookup failed. See _ai_overview_shown.
+        "ai_overview": None,
     }
 
     item_types = [item.get("type") for item in items]
@@ -130,6 +205,12 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
                 if value:
                     serp_state["related_searches"].append(value)
 
+        elif item_type == "ai_overview":
+            # A cached overview, or one Google loads after the page
+            # ("asynchronous_ai_overview": true; its content too, with the
+            # flag): either way, it is shown.
+            serp_state["ai_overview"] = True
+
         # ----------------------------
         # PEOPLE ALSO ASK
         # ----------------------------
@@ -149,7 +230,25 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
                     )
 
     serp_state["total_results"] = len(serp_state["organic_results"])
+    serp_state["serp_status"] = _serp_status(status_code, serp_state["organic_results"])
+    serp_state["ai_overview"] = _ai_overview_shown(serp_state, status_code)
     return serp_state
+
+
+def _ai_overview_shown(serp_state: SERPEngineState, status_code: Any) -> Optional[bool]:
+    """Whether Google shows an AI Overview for the keyword.
+
+    The request sets load_async_ai_overview, so DataForSEO returns the
+    overviews Google loads after the page as well as the cached ones, and a
+    complete SERP without an "ai_overview" item has none. Without the flag a
+    missing item proved nothing: on 9 such SERPs the paid load found an
+    overview behind 3 (G27, rext-control#342). A failed task (even one with
+    some results) or an empty lookup proves nothing, so it stays None.
+    """
+    if serp_state["ai_overview"]:
+        return True
+    complete = status_code == 20000 and serp_state["serp_status"] == "ok"
+    return False if complete else None
 
 
 async def fetch_serp_results(state: REXT, config, *, runtime):
@@ -163,7 +262,7 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
     serp_payload = state.get("serp_payload")
     if not serp_payload:
         logger.error("No serp_payload found in state")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
     query = serp_payload.get("query")
     country = serp_payload.get("country", "Pakistan")
@@ -181,31 +280,45 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
 
     if not query:
         logger.error("No query provided in serp_payload")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
     # Check required IDs
     user_id = serp_payload.get("user_id")
     workspace_id = serp_payload.get("workspace_id")
     if not user_id or not workspace_id:
         logger.error("No user_id or workspace_id found in serp_payload")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
     if not DATAFORSEO_SERP_URL:
         logger.error("DATAFORSEO_SERP_URL not found in environment variables")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            raw_data = await _do_fetch_serp(client, query, country, DATAFORSEO_SERP_URL)
-            serp_data = _parse_serp_response(raw_data)
+    for attempt in range(1, SERP_ATTEMPTS + 1):
+        last_attempt = attempt == SERP_ATTEMPTS
+        try:
+            async with httpx.AsyncClient(timeout=SERP_TIMEOUT_SECONDS) as client:
+                raw_data = await _do_fetch_serp(client, query, country, DATAFORSEO_SERP_URL)
+                serp_data = _parse_serp_response(raw_data)
+        except Exception as e:
+            if not last_attempt and _is_passing_error(e):
+                logger.warning(f"SERP lookup for '{query}' failed ({e}); retrying")
+                await asyncio.sleep(SERP_RETRY_DELAY_SECONDS)
+                continue
+            logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
+            return {"serp_result": _empty_serp_state()}
 
-            # Log summary for debugging
-            logger.info(
-                f"Fetched SERP for query '{query}': Found {len(serp_data['organic_results'])} organic results, {len(serp_data['related_searches'])} related searches, {len(serp_data['people_ask'])} questions."
-            )
+        status_code = _task_status(raw_data)
+        if (
+            not last_attempt
+            and serp_data["serp_status"] == "lookup_failed"
+            and _is_passing_status(status_code)
+        ):
+            logger.warning(f"SERP lookup for '{query}' got task status {status_code}; retrying")
+            await asyncio.sleep(SERP_RETRY_DELAY_SECONDS)
+            continue
 
-            return {"serp_result": serp_data}
-
-    except Exception as e:
-        logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
-        return {"serp_result": {}}
+        # Log summary for debugging
+        logger.info(
+            f"Fetched SERP for query '{query}': Found {len(serp_data['organic_results'])} organic results, {len(serp_data['related_searches'])} related searches, {len(serp_data['people_ask'])} questions."
+        )
+        return {"serp_result": serp_data}

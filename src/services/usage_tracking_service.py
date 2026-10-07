@@ -13,20 +13,26 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.subscriptions import (
+    FAILED_PAYMENT_STATUSES,
     SubscriptionStatus,
     UserSubscription,
     subscription_grants_access,
 )
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.credit_grants import (
+    bonus_summary,
+    forfeit_grants,
+    grant_balance,
+    live_grants,
+    split_cost,
+)
 from src.utils.datetime_utils import next_billing_anchor
 from src.utils.logger import logger
 
 # Default limits for free tier when no subscription plan is found
 FREE_MAX_WORKSPACES = 1
-FREE_MAX_KNOWLEDGE_ITEMS = 10
 FREE_MAX_API_CALLS = 100
 
 
@@ -45,7 +51,6 @@ class UsageTrackingService:
             Dictionary with usage metrics for each resource type:
             {
                 "workspaces": {"used": 3, "limit": 10, ...},
-                "knowledge_items": {"used": 230, "limit": 1000, ...},
                 "api_calls": {"used": 450, "limit": 10000, ...},
                 "meta": {"plan_name": "Pro", ...}
             }
@@ -83,9 +88,6 @@ class UsageTrackingService:
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
 
-        # Count knowledge items
-        knowledge_count = await self._count_knowledge_items(user_id)
-
         # Get API calls this month
         api_calls = subscription.current_api_calls or 0
 
@@ -102,7 +104,6 @@ class UsageTrackingService:
         usage_data = {
             "workspaces": build_metric(workspace_count, plan.max_workspaces),
             "members": build_metric(member_count, plan.max_members_per_workspace),
-            "knowledge_items": build_metric(knowledge_count, plan.max_knowledge_items),
             "api_calls": {
                 **build_metric(api_calls, plan.max_api_calls_per_month),
                 "reset_date": subscription.usage_reset_date.isoformat()
@@ -113,6 +114,9 @@ class UsageTrackingService:
                 "subscription_id": str(subscription.id),
                 "plan_name": plan.name,
                 "billing_period": subscription.billing_period.value,
+                # An unexpired grant, such as the launch offer's bonus: "Launch
+                # bonus: +1,000 credits until ...". None when there is none.
+                "credit_bonus": bonus_summary(await live_grants(self.db, subscription.id)),
             },
         }
 
@@ -125,7 +129,7 @@ class UsageTrackingService:
         Args:
             user_id: User UUID
             limit_type: Type of limit to check
-                        Valid values: "workspaces", "knowledge_items", "api_calls"
+                        Valid values: "workspaces", "members", "api_calls"
 
         Returns:
             Tuple of (within_limit, used, limit)
@@ -162,7 +166,8 @@ class UsageTrackingService:
         return within_limit, used, limit
 
     async def get_credit_balance(self, user_id: UUID) -> int:
-        """Return current credit balance for user's active (or cancelled-but-in-grace-period) subscription."""
+        """Return the credits a user can spend: the monthly credits of their active (or
+        cancelled-but-in-grace-period) subscription plus its unexpired grants."""
         result = await self.db.execute(
             select(UserSubscription)
             .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
@@ -170,7 +175,9 @@ class UsageTrackingService:
             .limit(1)
         )
         subscription = result.scalar_one_or_none()
-        return subscription.current_credits if subscription else 0
+        if not subscription:
+            return 0
+        return (subscription.current_credits or 0) + await grant_balance(self.db, subscription.id)
 
     async def consume_credits(self, user_id: UUID, cost: int) -> bool:
         """
@@ -190,11 +197,14 @@ class UsageTrackingService:
         if not subscription:
             return False
 
-        # Replenish if reset date passed (non-trial plans)
+        # Replenish if reset date passed (non-trial plans). Not while a renewal
+        # is unpaid: the new month's credits come with the payment
+        # (subscription_payment_success), not with Lemon Squeezy's retries.
         if (
             subscription.plan
             and not subscription.plan.is_trial_plan
             and subscription.credits_reset_date
+            and subscription.status not in FAILED_PAYMENT_STATUSES
         ):
             reset_dt = subscription.credits_reset_date
             if reset_dt.tzinfo is None:
@@ -205,10 +215,17 @@ class UsageTrackingService:
                     subscription.credits_reset_date
                 )
 
-        if subscription.current_credits < cost:
+        # Grants (an offer's bonus) are spent first, soonest expiry first; the row
+        # lock above serialises every change to them.
+        grants = await live_grants(self.db, subscription.id)
+        split = split_cost(cost, [g.remaining for g in grants], subscription.current_credits or 0)
+        if split is None:
             return False
 
-        subscription.current_credits -= cost
+        from_grants, from_monthly = split
+        for grant, taken in zip(grants, from_grants):
+            grant.remaining -= taken
+        subscription.current_credits -= from_monthly
         await self.db.flush()
         return True
 
@@ -314,6 +331,8 @@ class UsageTrackingService:
             .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
             .order_by(UserSubscription.start_date.desc())
             .limit(1)
+            # The same row lock as consume_credits: grants change under it only.
+            .with_for_update()
         )
         subscription = result.scalar_one_or_none()
         if not subscription or not subscription.plan:
@@ -341,6 +360,11 @@ class UsageTrackingService:
             else 0
         )
 
+        # Any refund forfeits the period's unspent promotional bonus.
+        bonus_forfeited = await forfeit_grants(
+            self.db, subscription.id, order_id=lemonsqueezy_order_id
+        )
+
         balance = subscription.current_credits or 0
         used = max(0, granted - balance - already_cut)
         retained_grant = granted * (original_amount - refunded_total) // original_amount
@@ -348,16 +372,18 @@ class UsageTrackingService:
 
         # Never hand credits back: a refund can only reduce an entitlement.
         if target >= balance:
-            return None
-
-        subscription.current_credits = target
-        # Reassigned rather than mutated: SQLAlchemy does not track in-place
-        # changes to a plain JSONB column.
-        meta["refund_credit_reduction"] = {
-            "order_id": str(lemonsqueezy_order_id),
-            "credits": granted - used - target,
-        }
-        subscription.subscription_metadata = meta
+            if not bonus_forfeited:
+                return None
+            target = balance
+        else:
+            subscription.current_credits = target
+            # Reassigned rather than mutated: SQLAlchemy does not track in-place
+            # changes to a plain JSONB column.
+            meta["refund_credit_reduction"] = {
+                "order_id": str(lemonsqueezy_order_id),
+                "credits": granted - used - target,
+            }
+            subscription.subscription_metadata = meta
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
 
@@ -371,6 +397,7 @@ class UsageTrackingService:
             "credits_after": target,
             "refunded_total": refunded_total,
             "original_amount": original_amount,
+            "bonus_forfeited": bonus_forfeited,
         }
 
     async def increment_api_calls(self, user_id: UUID) -> None:
@@ -423,37 +450,6 @@ class UsageTrackingService:
             await self.db.flush()
             logger.info(f"Reset monthly usage for user {user_id}")
 
-    async def _count_knowledge_items(self, user_id: UUID) -> int:
-        """Count total knowledge items across all types for user's active workspaces"""
-        # Knowledge files
-        files_query = (
-            select(func.count(KnowledgeFiles.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        files_result = await self.db.execute(files_query)
-        files_count = files_result.scalar() or 0
-
-        # Text knowledge
-        text_query = (
-            select(func.count(TextKnowledge.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        text_result = await self.db.execute(text_query)
-        text_count = text_result.scalar() or 0
-
-        # Website knowledge
-        website_query = (
-            select(func.count(Website.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        website_result = await self.db.execute(website_query)
-        website_count = website_result.scalar() or 0
-
-        return files_count + text_count + website_count
-
     def _calc_percentage(self, used: int, limit: Optional[int]) -> float:
         """Calculate usage percentage"""
         if limit is None or limit <= 0:
@@ -481,9 +477,6 @@ class UsageTrackingService:
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
 
-        # Count knowledge items
-        knowledge_count = await self._count_knowledge_items(user_id)
-
         # Helper to build metric dict
         def build_metric(used, limit):
             unlimited = limit == -1 or limit is None
@@ -497,8 +490,6 @@ class UsageTrackingService:
         usage_data = {
             "workspaces": build_metric(workspace_count, FREE_MAX_WORKSPACES),
             "members": build_metric(member_count, 3),  # Default free limit if not in plan
-            "topics": build_metric(0, 5),  # Default free limit
-            "knowledge_items": build_metric(knowledge_count, FREE_MAX_KNOWLEDGE_ITEMS),
             "api_calls": {**build_metric(0, FREE_MAX_API_CALLS), "reset_date": None},
             "meta": {"subscription_id": None, "plan_name": "Free", "billing_period": None},
         }

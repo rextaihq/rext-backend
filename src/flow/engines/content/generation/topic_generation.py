@@ -4,7 +4,8 @@ Two rules are non-negotiable and are enforced deterministically after the
 model, never by trusting the prompt alone:
 
 * Every title contains the EXACT focus keyphrase the user entered.
-* Every title is 50-59 characters inclusive.
+* Every title is 50-59 characters inclusive, or up to the keyphrase plus 20 for a long
+  keyphrase, never over 75 (``seo_title_rules.title_max_chars``).
 * Every title reads as the selected content type, for the selected intent.
 
 The enforcement ladder is: strong system prompt + schema guidance -> LLM
@@ -33,25 +34,111 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.engines.content.generation.seo_title_rules import (
-    TITLE_MAX_CHARS,
+    TITLE_MAX_CHARS_CEILING,
     TITLE_MIN_CHARS,
+    keyphrase_fits_a_title,
+    keyphrase_title,
     normalize_title,
     repair_title,
     title_is_valid,
+    title_max_chars,
     title_violations,
 )
+from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.llm_manager import topic_generation_model
-from src.flow.model.structure.topics import SEOTopics
+from src.flow.model.structure.topics import SEOTopic, SEOTopics
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
 _REGENERATE_ACTIONS = {"regenerate_topics", "regenerate", "regen"}
 
+# A run whose topic step yields no titles ends here, with this message, instead
+# of skipping the title gate into an empty outline (rext-control#359: a refused
+# model key did exactly that).
+TOPICS_FAILED_CODE = "topic_generation_failed"
+TOPICS_FAILED_MESSAGE = (
+    "Title ideas could not be written for this keyword just now. Please try again in a few minutes."
+)
+# Every title must contain the keyphrase and stay within TITLE_MAX_CHARS_CEILING, so a
+# longer keyphrase can never produce one: the user has to shorten it.
+KEYWORD_TOO_LONG_MESSAGE = (
+    f"This keyword is longer than a title can be ({TITLE_MAX_CHARS_CEILING} characters), "
+    "so no title can contain it. Try a shorter keyword."
+)
+
+
+def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
+    # The keyphrase is cleared, not pinned: `content` deep-merges, and a pinned
+    # phrase outranks the keyword chosen next (resolve_focus_keyword), so a
+    # shorter keyword picked after this message would still fail on it. None
+    # also clears one an earlier failed attempt on the thread pinned.
+    return {
+        "content": {
+            "topics": [],
+            "selected_topic": "",
+            "error": message,
+            "error_code": TOPICS_FAILED_CODE,
+            FOCUS_KEYWORD_STATE_KEY: None,
+        }
+    }
+
+
+# The title set the gate shows, and a request for a new one, kept in `content`
+# between generate_topics (the model) and topic_generation (the gate). LangGraph
+# runs a node again from its start when the user's answer resumes it, so a model
+# call in the gate's own node ran again on every answer, and the set it made in
+# place of the one shown was the one kept (rext-control#330).
+TOPIC_SET_KEY = "topic_set"
+# None, or the user's feedback for a new set ("" for none).
+TOPIC_REGENERATE_KEY = "topic_regenerate"
+
+
+def topics_router(state: REXT) -> str:
+    """After topic generation: on to the title gate, or to the end when it failed."""
+    failed = (state.get("content") or {}).get("error_code") == TOPICS_FAILED_CODE
+    return "topics_failed" if failed else "topic_generation"
+
+
+def topic_gate_router(state: REXT) -> str:
+    """After the title gate: a new set of titles, or on to clustering."""
+    regenerate = (state.get("content") or {}).get(TOPIC_REGENERATE_KEY)
+    return "generate_topics" if regenerate is not None else "keyword_clustering"
+
+
+async def topics_failed(state: REXT) -> Dict[str, Any]:
+    """Terminal node for a run whose topic step produced no titles.
+
+    Like rext.no_serp_data, the message reaches the user as a custom stream
+    event (type "run", step "run.failed") and as content.error in the thread
+    state. Operators see the failure through the logger.error calls above,
+    which the served app turns into throttled error-log rows.
+    """
+    message = (state.get("content") or {}).get("error") or TOPICS_FAILED_MESSAGE
+    try:
+        from langgraph.config import get_stream_writer
+
+        get_stream_writer()(
+            {
+                "type": "run",
+                "step": "run.failed",
+                "error_code": TOPICS_FAILED_CODE,
+                "message": message,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
+        logger.warning("topics_failed stream emit failed: %s", exc)
+
+    return {}
+
+
 # A topic set must still be usable after invalid titles are dropped. Below this
-# the set is treated as a failed generation so the caller keeps the previous
-# valid one instead of showing the user a near-empty picker.
-_MIN_USABLE_TOPICS = 2
+# the set is treated as a failed generation. On the first generation one title is
+# enough to go on: a long keyphrase leaves room for few, and stopping the run is
+# worse than a short picker (G69, rext-control #585). A regeneration needs two, as
+# before, or the caller keeps the previous valid set rather than shrink it.
+_MIN_USABLE_TOPICS = 1
+_MIN_USABLE_REGENERATED_TOPICS = 2
 
 
 def _is_regenerate_request(response: Any) -> bool:
@@ -162,7 +249,7 @@ async def _repair_invalid_titles(
                 "You are repairing article titles for SEO.\n\n"
                 "STRICT TITLE LENGTH REQUIREMENT:\n"
                 f"Every repaired title MUST contain between {TITLE_MIN_CHARS} and "
-                f"{TITLE_MAX_CHARS} characters inclusive.\n"
+                f"{title_max_chars(keyphrase)} characters inclusive.\n"
                 "Count spaces and punctuation as characters.\n\n"
                 "STRICT FOCUS KEYPHRASE REQUIREMENT:\n"
                 f'Every repaired title MUST contain the exact focus keyphrase "{keyphrase}" '
@@ -181,7 +268,7 @@ async def _repair_invalid_titles(
                 "Only repair the supplied invalid titles. "
                 "Do not modify titles that are already valid.\n\n"
                 "Before returning each repaired title, internally count its "
-                f"characters and verify the result is {TITLE_MIN_CHARS}-{TITLE_MAX_CHARS} "
+                f"characters and verify the result is {TITLE_MIN_CHARS}-{title_max_chars(keyphrase)} "
                 "characters and still contains the exact focus keyphrase."
             )
         ),
@@ -266,6 +353,7 @@ async def _generate_and_validate_topics(
     messages: List[Any],
     query: str,
     keyphrase: str,
+    regenerating: bool = False,
 ) -> Optional[SEOTopics]:
     """
     Generate topics and apply the non-breaking SEO validation/repair layer.
@@ -296,7 +384,18 @@ async def _generate_and_validate_topics(
 
         results = _apply_deterministic_title_repair(results, keyphrase)
 
-        if len(results.topics) < _MIN_USABLE_TOPICS:
+        if not results.topics and not regenerating:
+            # Every title was dropped: the keyphrase itself is offered as the one title
+            # rather than ending the run (G69). A regeneration keeps the previous set.
+            fallback = keyphrase_title(keyphrase)
+            if fallback:
+                logger.warning(
+                    "No generated title survived for query=%r; offering the keyphrase.", query
+                )
+                results.topics = [SEOTopic(title=fallback, recommended=True)]
+
+        minimum = _MIN_USABLE_REGENERATED_TOPICS if regenerating else _MIN_USABLE_TOPICS
+        if len(results.topics) < minimum:
             logger.warning(
                 "Only %d usable title(s) survived validation for query=%r.",
                 len(results.topics),
@@ -367,18 +466,18 @@ def _build_system_prompt(
         "==================================================\n"
         "STRICT SEO TITLE LENGTH REQUIREMENT\n"
         "==================================================\n"
-        f"EVERY TITLE MUST BE BETWEEN {TITLE_MIN_CHARS} AND {TITLE_MAX_CHARS} "
+        f"EVERY TITLE MUST BE BETWEEN {TITLE_MIN_CHARS} AND {title_max_chars(keyphrase)} "
         "CHARACTERS INCLUSIVE.\n\n"
         "This is a strict requirement.\n"
         f"- Minimum: {TITLE_MIN_CHARS} characters.\n"
-        f"- Maximum: {TITLE_MAX_CHARS} characters.\n"
+        f"- Maximum: {title_max_chars(keyphrase)} characters.\n"
         "- Count spaces as characters.\n"
         "- Count punctuation as characters.\n"
         "- Count the final title before returning it.\n"
         "- If the first draft is outside the range, rewrite it before returning "
         "the final answer.\n\n"
         f"Do NOT add meaningless filler just to reach {TITLE_MIN_CHARS} characters.\n"
-        f"Do NOT remove important meaning just to stay below {TITLE_MAX_CHARS} characters.\n"
+        f"Do NOT remove important meaning just to stay below {title_max_chars(keyphrase)} characters.\n"
         "The final title must be natural, readable, and useful.\n\n"
         "==================================================\n"
         "CONTENT TYPE AND SEARCH INTENT\n"
@@ -443,7 +542,7 @@ def _build_system_prompt(
         "Before returning the structured result, verify EVERY title:\n"
         f'1. Does it contain the exact phrase "{keyphrase}"?\n'
         f"2. Is it at least {TITLE_MIN_CHARS} characters?\n"
-        f"3. Is it at most {TITLE_MAX_CHARS} characters?\n"
+        f"3. Is it at most {title_max_chars(keyphrase)} characters?\n"
         f"4. Does it read like a {selected_content_type} for {selected_intent} intent?\n"
         "5. Is it readable and natural?\n"
         "6. Does it avoid keyword stuffing?\n"
@@ -495,8 +594,44 @@ def _build_human_prompt(
     )
 
 
-async def topic_generation(state: REXT) -> Dict[str, Any]:
+def _topic_query(state: REXT) -> str:
+    query = (state.get("serp_normalized") or {}).get("query")
+    return query or (state.get("serp_payload") or {}).get("query", "")
+
+
+def _regeneration_feedback(user_response: Any) -> str:
+    """The user's words for a new set of titles ("" when they gave none)."""
+    feedback = ""
+
+    if isinstance(user_response, dict):
+        feedback = (user_response.get("feedback", "") or "").strip()
+
+    elif isinstance(user_response, str):
+        value = user_response.strip()
+
+        for action in _REGENERATE_ACTIONS:
+            if value.lower().startswith(action):
+                feedback = value[len(action) :].strip()
+                feedback = feedback.lstrip(".: ").strip()
+                break
+
+    if feedback.lower() in {"none", "skip", "no", "n/a", ""}:
+        feedback = ""
+
+    return feedback
+
+
+async def generate_topics(state: REXT) -> Dict[str, Any]:
+    """The title step's model work, before its gate (topic_generation).
+
+    The first set of titles, or a new one when the gate asked for it
+    (content.topic_regenerate). The set waits in content.topic_set, so the
+    answer that resumes the gate never repeats this call.
+    """
     logger.info("Starting topic generation")
+
+    feedback = (state.get("content") or {}).get(TOPIC_REGENERATE_KEY)
+    regenerating = feedback is not None
 
     # -- Resolve query -------------------------------------------------
     normalized_result = state.get("serp_normalized", {})
@@ -507,37 +642,31 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             normalized_result["error"],
         )
 
-        return {
-            "content": {
-                "topics": [],
-                "selected_topic": "",
-            }
-        }
+        return _topics_failed()
 
-    query = normalized_result.get("query")
-
-    if not query:
-        serp_payload = state.get("serp_payload", {})
-        query = serp_payload.get("query", "")
+    query = _topic_query(state)
 
     if not query:
         logger.warning("No query found")
 
-        return {
-            "content": {
-                "topics": [],
-                "selected_topic": "",
-            }
-        }
+        return _topics_failed()
 
     # -- Resolve the EXACT user-entered focus keyphrase -----------------
     #
     # This is the single source of truth for the rest of the pipeline: it is
-    # pinned into content state below so outline, generation, repair,
+    # pinned into content state by the gate so outline, generation, repair,
     # humanization and validation all enforce the same phrase instead of each
     # re-deriving one (which is how the model's own invented keyphrase used to
     # take over downstream).
     keyphrase = resolve_focus_keyword(state) or normalize_title(query)
+
+    if not keyphrase_fits_a_title(keyphrase):
+        logger.warning(
+            "Keyphrase of %d characters can fit no title of at most %d.",
+            len(keyphrase),
+            TITLE_MAX_CHARS_CEILING,
+        )
+        return _topics_failed(KEYWORD_TOO_LONG_MESSAGE)
 
     # -- Resolve intent and content type -------------------------------
     serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
@@ -573,24 +702,43 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         ),
     ]
 
-    # -- Initial generation --------------------------------------------
+    if feedback:
+        logger.info("Adding user feedback to model prompt: %s", feedback)
+
+        messages.append(
+            HumanMessage(
+                content=(
+                    "User requested regeneration with the following feedback:\n\n"
+                    f"{feedback}\n\n"
+                    "Keep ALL strict requirements from the system prompt. In "
+                    f"particular, every title must still contain the exact phrase "
+                    f'"{keyphrase}" and be {TITLE_MIN_CHARS}-{title_max_chars(keyphrase)} '
+                    "characters, and the anti-hallucination rules still apply. "
+                    "User feedback can change the angle, wording or emphasis of a "
+                    "title -- it can NEVER change or remove the focus keyphrase."
+                )
+            )
+        )
+
     results = await _generate_and_validate_topics(
         model=model,
         messages=messages,
         query=query,
         keyphrase=keyphrase,
+        regenerating=regenerating,
     )
 
     if results is None:
+        if regenerating:
+            # Critical production behavior:
+            # Never destroy the user's existing valid topics because a
+            # regeneration attempt failed: the gate shows the set it had.
+            logger.warning("Topic regeneration failed. Keeping previous valid topics.")
+            return {"content": {TOPIC_REGENERATE_KEY: None}}
+
         logger.error("Unable to generate a valid topic set for query=%r.", query)
 
-        return {
-            "content": {
-                "topics": [],
-                "selected_topic": "",
-                FOCUS_KEYWORD_STATE_KEY: keyphrase,
-            }
-        }
+        return _topics_failed()
 
     topics, recommended_topic, recommendation_reason = _extract_topics(results)
 
@@ -600,159 +748,105 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         recommended_topic,
     )
 
-    # -- Keep the last valid result for production safety ---------------
-    last_valid_topics = topics
-    last_valid_recommended = recommended_topic
-    last_valid_reason = recommendation_reason
-
-    # -- Infinite loop until valid selection ----------------------------
-    while True:
-        user_response = interrupt(
-            {
-                "type": "topic",
-                "instruction": "Select a topic",
-                "topics": last_valid_topics,
-                "recommended_topic": last_valid_recommended,
-                "recommendation_reason": last_valid_reason,
+    return {
+        "content": {
+            TOPIC_SET_KEY: {
+                "topics": topics,
+                "recommended_topic": recommended_topic,
+                "recommendation_reason": recommendation_reason,
                 "focus_keyphrase": keyphrase,
-                "allow_regenerate": True,
-            }
+            },
+            TOPIC_REGENERATE_KEY: None,
+            # content deep-merges, and topics_router reads it next: an earlier
+            # failed attempt on this thread would still end the run here.
+            "error": None,
+            "error_code": None,
+        }
+    }
+
+
+async def topic_generation(state: REXT) -> Dict[str, Any]:
+    """The title gate: the set generate_topics wrote, and the user's choice.
+
+    It calls no model, so the answer that resumes it costs nothing; a request
+    for new titles, or an empty choice, goes back to generate_topics
+    (topic_gate_router). A run paused here before the set was kept in the
+    state resumes with an empty set, which only the answer's replay reads.
+    """
+    topic_set = (state.get("content") or {}).get(TOPIC_SET_KEY) or {}
+    keyphrase = (
+        topic_set.get("focus_keyphrase")
+        or resolve_focus_keyword(state)
+        or normalize_title(_topic_query(state))
+    )
+
+    user_response = interrupt(
+        {
+            "type": "topic",
+            "instruction": "Select a title",
+            "topics": topic_set.get("topics") or [],
+            "recommended_topic": topic_set.get("recommended_topic"),
+            "recommendation_reason": topic_set.get("recommendation_reason"),
+            "focus_keyphrase": keyphrase,
+            "allow_regenerate": True,
+            # The SERP's top ten, for the side panel beside the candidates
+            # (empty when the run has no SERP).
+            "serp_titles": build_serp_titles(state.get("serp_normalized", {})),
+        }
+    )
+
+    # -- Explicit regenerate --------------------------------------------
+    if _is_regenerate_request(user_response):
+        logger.info("User requested regeneration")
+        return {"content": {TOPIC_REGENERATE_KEY: _regeneration_feedback(user_response)}}
+
+    # -- Extract selected topic ------------------------------------------
+    if isinstance(user_response, dict):
+        selected_topic = (
+            user_response.get("Selected Topic")
+            or user_response.get("selected_topic")
+            or user_response.get("topic")
+            or ""
+        )
+    else:
+        selected_topic = str(user_response)
+
+    selected_topic = normalize_title(selected_topic)
+
+    # -- Auto regenerate if empty ----------------------------------------
+    if not selected_topic:
+        logger.warning("Empty topic selection -> attempting regeneration.")
+        return {"content": {TOPIC_REGENERATE_KEY: ""}}
+
+    # -- Selection is FINAL from here on ---------------------------------
+    #
+    # Every title offered in the picker has already been through the full
+    # contract: exact focus keyphrase, its length range, content type and
+    # search intent. That is deliberately the ONLY place a title is ever
+    # repaired. The moment the user picks one it is frozen: no outline,
+    # generation, repair, humanization or validation stage may reword,
+    # re-optimize, trim or "improve" it. So nothing is rewritten here
+    # either -- a selection that deviates is logged for observability and
+    # then used exactly as the user gave it.
+    if not title_is_valid(selected_topic, keyphrase):
+        logger.warning(
+            "Selected topic %r does not satisfy the title contract (%s). Using it "
+            "verbatim anyway -- a user-selected title is never rewritten.",
+            selected_topic,
+            title_violations(selected_topic, keyphrase),
         )
 
-        # -- Explicit regenerate ----------------------------------------
-        if _is_regenerate_request(user_response):
-            logger.info("User requested regeneration")
-
-            feedback = ""
-
-            if isinstance(user_response, dict):
-                feedback = (user_response.get("feedback", "") or "").strip()
-
-            elif isinstance(user_response, str):
-                value = user_response.strip()
-
-                for action in _REGENERATE_ACTIONS:
-                    if value.lower().startswith(action):
-                        feedback = value[len(action) :].strip()
-                        feedback = feedback.lstrip(".: ").strip()
-                        break
-
-            if feedback.lower() in {
-                "none",
-                "skip",
-                "no",
-                "n/a",
-                "",
-            }:
-                feedback = ""
-
-            regeneration_messages = list(messages)
-
-            if feedback:
-                logger.info("Adding user feedback to model prompt: %s", feedback)
-
-                regeneration_messages.append(
-                    HumanMessage(
-                        content=(
-                            "User requested regeneration with the following feedback:\n\n"
-                            f"{feedback}\n\n"
-                            "Keep ALL strict requirements from the system prompt. In "
-                            f"particular, every title must still contain the exact phrase "
-                            f'"{keyphrase}" and be {TITLE_MIN_CHARS}-{TITLE_MAX_CHARS} '
-                            "characters, and the anti-hallucination rules still apply. "
-                            "User feedback can change the angle, wording or emphasis of a "
-                            "title -- it can NEVER change or remove the focus keyphrase."
-                        )
-                    )
-                )
-
-            regenerated_results = await _generate_and_validate_topics(
-                model=model,
-                messages=regeneration_messages,
-                query=query,
-                keyphrase=keyphrase,
-            )
-
-            if regenerated_results is not None:
-                (
-                    last_valid_topics,
-                    last_valid_recommended,
-                    last_valid_reason,
-                ) = _extract_topics(regenerated_results)
-
-                logger.info("Topic regeneration succeeded with valid SEO titles.")
-            else:
-                # Critical production behavior:
-                # Never destroy the user's existing valid topics because a
-                # regeneration attempt failed.
-                logger.warning("Topic regeneration failed. Keeping previous valid topics.")
-
-            continue
-
-        # -- Extract selected topic --------------------------------------
-        if isinstance(user_response, dict):
-            selected_topic = (
-                user_response.get("Selected Topic")
-                or user_response.get("selected_topic")
-                or user_response.get("topic")
-                or ""
-            )
-        else:
-            selected_topic = str(user_response)
-
-        selected_topic = normalize_title(selected_topic)
-
-        # -- Auto regenerate if empty ------------------------------------
-        if not selected_topic:
-            logger.warning("Empty topic selection -> attempting regeneration.")
-
-            regenerated_results = await _generate_and_validate_topics(
-                model=model,
-                messages=messages,
-                query=query,
-                keyphrase=keyphrase,
-            )
-
-            if regenerated_results is not None:
-                (
-                    last_valid_topics,
-                    last_valid_recommended,
-                    last_valid_reason,
-                ) = _extract_topics(regenerated_results)
-
-            else:
-                logger.warning("Automatic regeneration failed. Keeping previous valid topics.")
-
-            continue
-
-        # -- Selection is FINAL from here on -----------------------------
-        #
-        # Every title offered in the picker has already been through the full
-        # contract: exact focus keyphrase, 50-59 characters, content type and
-        # search intent. That is deliberately the ONLY place a title is ever
-        # repaired. The moment the user picks one it is frozen: no outline,
-        # generation, repair, humanization or validation stage may reword,
-        # re-optimize, trim or "improve" it. So nothing is rewritten here
-        # either -- a selection that deviates is logged for observability and
-        # then used exactly as the user gave it.
-        if not title_is_valid(selected_topic, keyphrase):
-            logger.warning(
-                "Selected topic %r does not satisfy the title contract (%s). Using it "
-                "verbatim anyway -- a user-selected title is never rewritten.",
-                selected_topic,
-                title_violations(selected_topic, keyphrase),
-            )
-
-        # -- Valid topic -> exit loop ------------------------------------
-        logger.info("User selected topic (locked): %s", selected_topic)
-
-        break
+    logger.info("User selected topic (locked): %s", selected_topic)
 
     return {
         "content": {
-            "topics": last_valid_topics,
-            "recommended_topic": last_valid_recommended,
+            "topics": topic_set.get("topics") or [],
+            "recommended_topic": topic_set.get("recommended_topic"),
             "selected_topic": selected_topic,
             FOCUS_KEYWORD_STATE_KEY: keyphrase,
+            # content deep-merges, so an earlier failed attempt on this thread
+            # would otherwise still route the run to topics_failed.
+            "error": None,
+            "error_code": None,
         }
     }

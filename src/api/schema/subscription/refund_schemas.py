@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.api.models.subscription_models.refunds import RefundStatus
 
@@ -43,19 +43,6 @@ class RefundCreateRequest(BaseModel):
             "example": {"order_id": "123456", "amount": 5000, "reason": "Customer requested refund"}
         }
     }
-
-
-class RefundListFilters(BaseModel):
-    """Filters for listing refunds."""
-
-    user_id: Optional[UUID] = None
-    subscription_id: Optional[UUID] = None
-    status: Optional[RefundStatus] = None
-    is_partial: Optional[bool] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    page: int = Field(1, ge=1)
-    per_page: int = Field(50, ge=1, le=200)
 
 
 # ============================================================================
@@ -137,35 +124,21 @@ class RefundListResponse(BaseModel):
     }
 
 
-class RefundCreateResponse(BaseModel):
-    """Response schema for refund creation."""
-
-    success: bool
-    refund: RefundResponse
-    message: str
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {"success": True, "refund": {}, "message": "Refund initiated successfully"}
-        }
-    }
-
-
 class RefundRequestCreate(BaseModel):
-    """Body for a customer raising a refund request."""
+    """Body for a customer raising a refund request.
+
+    There is no amount: under the refund rule a request is always for the whole
+    remaining payment. An admin logging an emailed request may ask for part of
+    one (AdminRefundRequestCreate). Unknown fields are refused, so a client still
+    sending the old `requested_amount` gets a 422 instead of a request for the
+    whole payment it didn't ask for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     lemonsqueezy_order_id: str = Field(..., description="Order to refund")
     reason: str = Field(
         ..., min_length=1, max_length=2000, description="Why the customer wants a refund"
-    )
-    requested_amount: Optional[int] = Field(
-        None,
-        gt=0,
-        description=(
-            "Cents the customer is asking for, when they want part of the "
-            "order back. Omit for the whole remaining refundable balance. "
-            "Refused if it exceeds what is still refundable."
-        ),
     )
 
 

@@ -23,6 +23,7 @@ from src.api.middleware.exceptions import (
     RextExternalServiceException,
     RextValidationException,
 )
+from src.utils.integration_urls import ensure_public_site_urls
 from src.utils.logger import logger
 
 STORE_DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
@@ -64,29 +65,6 @@ def extract_store_handle(store_url: str) -> str:
     normalized = normalize_store_url(store_url)
     host = normalized.replace("https://", "", 1)
     return host.replace(".myshopify.com", "", 1)
-
-
-def build_admin_app_launch_url(
-    store_handle: str,
-    app_slug: str,
-    entry_path: str = "/app/blogpost",
-) -> str:
-    """Build Shopify Admin app launch URL."""
-    handle = (store_handle or "").strip().lower()
-    slug = (app_slug or "").strip().strip("/")
-    path = (entry_path or "/app/blogpost").strip()
-
-    if not handle:
-        raise RextValidationException(message="store handle is required.")
-    if not STORE_DOMAIN_RE.match(handle):
-        raise RextValidationException(message="Invalid store handle.")
-    if not slug:
-        raise RextValidationException(message="SHOPIFY_APP_SLUG is required.")
-
-    if not path.startswith("/"):
-        path = f"/{path}"
-
-    return f"https://admin.shopify.com/store/{handle}/apps/{slug}{path}"
 
 
 def _normalize_endpoint(endpoint: str) -> str:
@@ -145,19 +123,22 @@ class ShopifyAppBridge:
         endpoint = str(PurePosixPath(self.publish_endpoint))
         return f"{base}{endpoint}"
 
-    def _resolve_publish_url(self, config_json: Optional[Dict[str, Any]]) -> str:
+    def _resolve_publish_url(self, config_json: Optional[Dict[str, Any]]) -> tuple[str, bool]:
+        """The publish URL, and whether it comes from the customer's connection
+        (an override or the stored app launch URL) rather than the operator's
+        configured bridge base URL."""
         cfg = config_json or {}
         override_url = (cfg.get("bridge_publish_url") or "").strip()
         if override_url:
-            return override_url.rstrip("/")
+            return override_url.rstrip("/"), True
 
         if self.base_url:
-            return urljoin(f"{self.base_url}/", self.publish_endpoint.lstrip("/"))
+            return urljoin(f"{self.base_url}/", self.publish_endpoint.lstrip("/")), False
 
         app_launch_url = (cfg.get("app_launch_url") or "").strip()
         derived = self._derive_publish_url_from_launch_url(app_launch_url)
         if derived:
-            return derived
+            return derived, True
 
         raise RextValidationException(
             message=(
@@ -201,7 +182,13 @@ class ShopifyAppBridge:
     ) -> Dict[str, Any]:
         normalized_store_url = normalize_store_url(store_url)
         store_handle = extract_store_handle(normalized_store_url)
-        publish_url = self._resolve_publish_url(config_json)
+        publish_url, customer_given = self._resolve_publish_url(config_json)
+        if customer_given:
+            # A URL from the customer's connection (an override, or one derived
+            # from the stored app launch URL) must not lead to a private or
+            # reserved network. The configured bridge base URL is the operator's
+            # own and may be an internal address, so it is not checked.
+            await ensure_public_site_urls(publish_url)
         logger.info(
             f"Shopify App Bridge publishing to: {publish_url} (store: {normalized_store_url})"
         )

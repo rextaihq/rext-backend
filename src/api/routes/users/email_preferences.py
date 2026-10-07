@@ -46,10 +46,6 @@ class UpdatePreferencesRequest(BaseModel):
     usage_limit_warning: Optional[bool] = None
     usage_limit_exceeded: Optional[bool] = None
 
-    # Knowledge base
-    kb_processing_completed: Optional[bool] = None
-    kb_processing_failed: Optional[bool] = None
-
     # Digest
     digest_enabled: Optional[bool] = None
     digest_frequency: Optional[str] = None
@@ -116,8 +112,6 @@ async def update_preferences(
         "trial_ending_soon": "billing_trial_ending",
         "usage_limit_warning": "billing_usage_limit_warning",
         "usage_limit_exceeded": "billing_usage_limit_exceeded",
-        "kb_processing_completed": "kb_processing_completed",
-        "kb_processing_failed": "kb_processing_failed",
         "digest_enabled": "digest_enabled",
         "digest_frequency": "digest_frequency",
         "marketing": "marketing_updates",
@@ -219,8 +213,6 @@ async def unsubscribe(
             "trial_ending_soon": "billing_trial_ending",
             "usage_limit_warning": "billing_usage_limit_warning",
             "usage_limit_exceeded": "billing_usage_limit_exceeded",
-            "kb_processing_completed": "kb_processing_completed",
-            "kb_processing_failed": "kb_processing_failed",
             "marketing": "marketing_updates",
         }
 

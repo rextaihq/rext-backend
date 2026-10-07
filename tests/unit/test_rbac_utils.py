@@ -54,9 +54,10 @@ class TestCheckPermission:
         # Act
         has_permission = await check_permission(mock_db, user_id, permission_name, workspace_id)
 
-        # Assert
+        # Assert: the user's permissions, then the workspace's owner (the record owner
+        # always gets the owner's permissions)
         assert has_permission is True
-        mock_db.execute.assert_called_once()
+        assert mock_db.execute.await_count == 2
 
     @pytest.mark.asyncio
     async def test_check_permission_user_lacks_permission(self):
@@ -78,9 +79,9 @@ class TestCheckPermission:
         # Act
         has_permission = await check_permission(mock_db, user_id, permission_name, workspace_id)
 
-        # Assert
+        # Assert: not found among the user's permissions, and not the workspace's owner
         assert has_permission is False
-        mock_db.execute.assert_called_once()
+        assert mock_db.execute.await_count == 2
 
     @pytest.mark.asyncio
     async def test_check_permission_global_scope(self):
@@ -293,9 +294,12 @@ class TestGetUserPermissions:
         # Act
         permissions = await get_user_permissions(mock_db, user_id, workspace_id)
 
-        # Assert
-        assert permissions == permission_names
-        assert len(permissions) == 3
+        # Assert: each name in both notations, "resource.action" and "resource:action"
+        # (the frontend uses both), sorted
+        assert permissions == sorted(
+            permission_names + [name.replace(".", ":") for name in permission_names]
+        )
+        assert len(permissions) == 6
 
     @pytest.mark.asyncio
     async def test_get_user_permissions_empty(self):

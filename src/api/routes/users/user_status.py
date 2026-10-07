@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
@@ -12,7 +12,12 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     RextValidationException,
 )
-from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
+from src.api.models.subscription_models.subscriptions import (
+    ACCESS_STATUSES,
+    SubscriptionStatus,
+    UserSubscription,
+    subscription_grants_access,
+)
 from src.api.schema.response.admin_responses import (
     DeactivateAccountResponseSchema,
     UserStatusActionResponse,
@@ -184,7 +189,13 @@ async def ban_user(
 
 
 async def send_deactivation_email_task(
-    email: str, first_name: str, user_id: str, frontend_url: str, retention_days: int = 14
+    email: str,
+    first_name: str,
+    user_id: str,
+    frontend_url: str,
+    retention_days: int = 14,
+    plan_ends_on: str | None = None,
+    log_back_in_by: str | None = None,
 ):
     """Background task to send the self-deactivation confirmation email."""
     from src.api.database.async_database import get_async_db_context
@@ -200,6 +211,8 @@ async def send_deactivation_email_task(
                 user_id=UUID(user_id),
                 frontend_url=frontend_url,
                 retention_days=retention_days,
+                plan_ends_on=plan_ends_on,
+                log_back_in_by=log_back_in_by,
             )
             logger.info(f"Deactivation email sent successfully to {email}")
     except Exception as e:
@@ -238,35 +251,71 @@ async def deactivate_self(
 
     old_status = user.status
 
-    # Check active subscriptions
+    # The plans that still give access: one that renews (a past-due one included,
+    # Lemon Squeezy is still retrying its payment) and one already cancelled whose
+    # paid period hasn't ended.
     subscriptions_result = await db.execute(
         select(UserSubscription).where(
-            UserSubscription.user_id == user_id,
-            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            UserSubscription.user_id == user_id, subscription_grants_access()
         )
     )
-    active_subs = subscriptions_result.scalars().all()
+    current_subs = subscriptions_result.scalars().all()
+    active_subs = [sub for sub in current_subs if sub.status in ACCESS_STATUSES]
 
     if active_subs and not deactivate_data.cancel_subscriptions:
         raise RextValidationException(
             message="You have active subscriptions. Please cancel them first or enable automatic cancellation."
         )
 
+    # Renewals stop and the plan runs to the end of the period already paid for
+    # (founder decision on F12, 2026-10-06); the response and the email say until when.
     if active_subs:
-        sub_service = SubscriptionService(db)
+        # A local trial ends now; the service keeps a billed plan to its period end.
+        # If Lemon Squeezy can't stop the renewals, nothing changes: an account
+        # closed while its plan keeps charging is worse than trying again.
         try:
-            await sub_service.cancel(
+            await SubscriptionService(db).cancel(
                 user_id=user_id,
                 reason="Account deactivation",
                 cancel_immediately=True,
+                fail_on_provider_error=True,
             )
-        except Exception as e:
-            logger.error(f"Failed to cancel subscription during deactivation: {e}")
+        except RextValidationException as e:
+            logger.error(f"Deactivation refused, the plan's renewals could not be stopped: {e}")
+            raise RextValidationException(
+                message="We couldn't stop your plan's renewals just now, so your account "
+                "is still open. Please try again in a few minutes."
+            ) from e
+    # The latest end of every plan that still runs: the one just cancelled and any
+    # cancelled earlier whose paid period hasn't ended.
+    plan_ends_at = max(
+        (
+            sub.end_date
+            for sub in current_subs
+            if sub.status == SubscriptionStatus.CANCELLED and sub.end_date
+        ),
+        default=None,
+    )
+    # A past-due plan's period ended with the payment that failed: no date to promise.
+    if plan_ends_at and plan_ends_at <= datetime.now(timezone.utc):
+        plan_ends_at = None
 
     # Deactivate: status -> "inactive" with deactivated_at set and deleted_at
     # left NULL, so the 14-day cleanup job can pick the account up
     db_user = await service.deactivate_account(user_id)
     scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
+    # The account is deleted before a later plan end: the plan is usable only by
+    # logging back in first, so the date to come back by is said too.
+    outlasts_account = bool(plan_ends_at and plan_ends_at > scheduled_deletion)
+    if outlasts_account:
+        plan_line = (
+            f" Your plan won't renew. If you log back in before {scheduled_deletion:%B %d, %Y}, "
+            f"it stays active until {plan_ends_at:%B %d, %Y}."
+        )
+    elif plan_ends_at:
+        plan_line = f" Your plan won't renew and stays active until {plan_ends_at:%B %d, %Y}."
+    else:
+        plan_line = " Your plan has ended." if active_subs else ""
 
     # Queued, not sent inline, so a mail failure can't roll back the
     # deactivation the user just confirmed.
@@ -277,6 +326,8 @@ async def deactivate_self(
         user_id=str(db_user.id),
         frontend_url=get_settings().FRONTEND_URL,
         retention_days=get_settings().USER_DELETION_RETENTION_DAYS,
+        plan_ends_on=plan_ends_at.strftime("%B %d, %Y") if plan_ends_at else None,
+        log_back_in_by=scheduled_deletion.strftime("%B %d, %Y") if outlasts_account else None,
     )
 
     # Audit log
@@ -298,7 +349,11 @@ async def deactivate_self(
             status="inactive",
             deactivated_at=db_user.deactivated_at,
             scheduled_deletion_at=scheduled_deletion,
-            message="Your account has been deactivated. It will be permanently deleted after 14 days unless you log back in.",
+            plan_ends_at=plan_ends_at,
+            message=(
+                "Your account has been deactivated. It will be permanently deleted after 14 days "
+                "unless you log back in." + plan_line
+            ),
         ).model_dump(mode="json"),
         request=request,
         message="Account deactivated successfully",

@@ -6,10 +6,9 @@ across all database queries and API endpoints. These tests ensure that users
 from one workspace cannot access data from another workspace.
 
 Test Categories:
-1. Content isolation (content, topics)
-2. Knowledge isolation (files, text, web)
-3. Member isolation (workspace members)
-4. Workspace settings isolation
+1. Content isolation
+2. Member isolation (workspace members)
+3. Workspace settings isolation
 
 Testing Strategy:
 - Create two separate workspaces (A and B)
@@ -19,43 +18,119 @@ Testing Strategy:
 - Assert that access is denied (404 Not Found, not 403 to avoid leaking existence)
 """
 
-from uuid import UUID, uuid4
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+import pytest_asyncio
+from sqlalchemy import inspect, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from src.api.database.base import Base
 from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.content_models.content import Content
-from src.api.models.knowledge_models.knowledge_model import (
-    KnowledgeFiles,
-    TextKnowledge,
-    Website,
-)
+from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.content_embedding_service import ContentEmbeddingService
 from src.services.content_service import ContentService
-from src.services.knowledge_service import KnowledgeService
 from src.services.member_service import MemberService
 from src.services.workspace_service import WorkspaceService
+from tests.conftest import TEST_DATABASE_URL
 
 # ============================================================================
 # Fixtures
 # ============================================================================
 
 
-@pytest.fixture
+def _with_parents(*tables):
+    """The tables, and every table their foreign keys reach."""
+    found = []
+
+    def visit(table):
+        if table in found:
+            return
+        found.append(table)
+        for key in table.foreign_keys:
+            visit(key.column.table)
+
+    for table in tables:
+        visit(table)
+    return found
+
+
+def _tables_for_an_unmigrated_database(sync, tables) -> None:
+    """Make the tables on an empty test database only. A migrated one (CI's) is tested as
+    its migrations built it, so a table a migration lacks fails here instead of being made
+    from the models."""
+    if inspect(sync).has_table("alembic_version"):
+        return
+    Base.metadata.create_all(sync, tables=tables, checkfirst=True)
+
+
+@pytest.fixture(autouse=True)
+def no_embeddings(monkeypatch):
+    """Creating, updating or publishing content writes its embedding, which calls the
+    embedding provider: never from these tests."""
+    monkeypatch.setattr(ContentEmbeddingService, "upsert_content_embedding", AsyncMock())
+
+
+@pytest_asyncio.fixture
+async def db():
+    """The database these tests use, inside a transaction that is rolled back.
+
+    The services commit in places: each commit only releases a savepoint, so nothing
+    is left behind.
+    """
+    tables = _with_parents(
+        Users.__table__,
+        WorkspaceModel.__table__,
+        WorkspaceMembers.__table__,
+        Content.__table__,
+        ContentSEOData.__table__,  # creating content writes its SEO row
+        Role.__table__,  # a new member gets the viewer role
+        UserRole.__table__,
+        AuditLog.__table__,
+    )
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        await connection.run_sync(lambda sync: _tables_for_an_unmigrated_database(sync, tables))
+        async with AsyncSession(
+            bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
+        ) as session:
+            yield session
+        await transaction.rollback()
+    await engine.dispose()
+
+
+async def _viewer_role(db: AsyncSession) -> Role:
+    """The workspace viewer role a new member gets: the seeded one, or one made here."""
+    role = (await db.execute(select(Role).where(Role.name == "viewer"))).scalar_one_or_none()
+    if role is None:
+        role = Role(name="viewer", display_name="Viewer", is_workspace_role=True)
+        db.add(role)
+        await db.flush()
+    return role
+
+
+def _user(name: str) -> Users:
+    return Users(
+        id=uuid4(),
+        email=f"{name.lower().replace(' ', '-')}-{uuid4().hex[:8]}@example.com",
+        full_name=name,
+    )
+
+
+@pytest_asyncio.fixture
 async def workspace_a(db: AsyncSession) -> WorkspaceModel:
     """Create workspace A for testing"""
-    user_a = Users(
-        id=uuid4(),
-        email="user_a@example.com",
-        username="user_a",
-        password_hash="hashed",
-        first_name="User",
-        last_name="A",
-    )
+    user_a = _user("User A")
     db.add(user_a)
     await db.flush()
 
@@ -63,7 +138,7 @@ async def workspace_a(db: AsyncSession) -> WorkspaceModel:
         id=uuid4(),
         user_id=user_a.id,
         name="Workspace A",
-        slug="workspace-a",
+        slug=f"workspace-a-{uuid4().hex[:8]}",
         url="https://workspace-a.com",
     )
     db.add(workspace)
@@ -85,17 +160,10 @@ async def workspace_a(db: AsyncSession) -> WorkspaceModel:
     return workspace
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def workspace_b(db: AsyncSession) -> WorkspaceModel:
     """Create workspace B for testing"""
-    user_b = Users(
-        id=uuid4(),
-        email="user_b@example.com",
-        username="user_b",
-        password_hash="hashed",
-        first_name="User",
-        last_name="B",
-    )
+    user_b = _user("User B")
     db.add(user_b)
     await db.flush()
 
@@ -103,7 +171,7 @@ async def workspace_b(db: AsyncSession) -> WorkspaceModel:
         id=uuid4(),
         user_id=user_b.id,
         name="Workspace B",
-        slug="workspace-b",
+        slug=f"workspace-b-{uuid4().hex[:8]}",
         url="https://workspace-b.com",
     )
     db.add(workspace)
@@ -125,42 +193,23 @@ async def workspace_b(db: AsyncSession) -> WorkspaceModel:
     return workspace
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def content_in_workspace_b(db: AsyncSession, workspace_b: WorkspaceModel) -> Content:
     """Create content in workspace B"""
     content = Content(
         id=uuid4(),
         workspace_id=workspace_b.id,
         created_by_user_id=workspace_b.owner.id,
-        author_id=workspace_b.owner.id,
         title="Secret Content B",
         slug="secret-content-b",
         body_markdown="This is secret content in workspace B",
         status="published",
-        content_format="Markdown",
         content_language="English",
     )
     db.add(content)
     await db.flush()
     await db.refresh(content)
     return content
-
-
-@pytest.fixture
-async def text_knowledge_in_workspace_b(
-    db: AsyncSession, workspace_b: WorkspaceModel
-) -> TextKnowledge:
-    """Create text knowledge in workspace B"""
-    knowledge = TextKnowledge(
-        id=uuid4(),
-        workspace_id=workspace_b.id,
-        title="Secret Knowledge B",
-        content="This is secret knowledge in workspace B",
-    )
-    db.add(knowledge)
-    await db.flush()
-    await db.refresh(knowledge)
-    return knowledge
 
 
 # ============================================================================
@@ -250,12 +299,10 @@ class TestContentIsolation:
             id=uuid4(),
             workspace_id=workspace_b.id,
             created_by_user_id=workspace_b.owner.id,
-            author_id=workspace_b.owner.id,
             title="Draft Content B",
             slug="draft-content-b",
             body_markdown="Draft content",
             status="ready",  # Ready to publish
-            content_format="Markdown",
             content_language="English",
         )
         db.add(draft_content)
@@ -273,102 +320,6 @@ class TestContentIsolation:
         # Verify content status unchanged
         await db.refresh(draft_content)
         assert draft_content.status == "ready"  # NOT published
-
-
-# ============================================================================
-# Knowledge Isolation Tests
-# ============================================================================
-
-
-@pytest.mark.asyncio
-class TestKnowledgeIsolation:
-    """Test that knowledge bases are properly isolated between workspaces"""
-
-    async def test_cannot_get_text_knowledge_from_other_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """User from workspace A cannot access text knowledge from workspace B"""
-        service = KnowledgeService(db)
-
-        with pytest.raises(ResourceNotFoundException):
-            await service.get_text_knowledge(
-                workspace_id=workspace_a.id,  # Wrong workspace!
-                knowledge_id=text_knowledge_in_workspace_b.id,
-            )
-
-    async def test_cannot_update_text_knowledge_from_other_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """User from workspace A cannot update text knowledge in workspace B"""
-        service = KnowledgeService(db)
-
-        with pytest.raises(ResourceNotFoundException):
-            await service.update_text_knowledge(
-                knowledge_id=text_knowledge_in_workspace_b.id,
-                workspace_id=workspace_a.id,  # Wrong workspace!
-                title="Hacked Title",
-            )
-
-        # Verify knowledge was NOT modified
-        await db.refresh(text_knowledge_in_workspace_b)
-        assert text_knowledge_in_workspace_b.title == "Secret Knowledge B"
-
-    async def test_cannot_delete_text_knowledge_from_other_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """User from workspace A cannot delete text knowledge from workspace B"""
-        service = KnowledgeService(db)
-
-        with pytest.raises(ResourceNotFoundException):
-            await service.delete_text_knowledge(
-                knowledge_id=text_knowledge_in_workspace_b.id,
-                workspace_id=workspace_a.id,  # Wrong workspace!
-            )
-
-        # Verify knowledge still exists
-        from sqlalchemy import select
-
-        result = await db.execute(
-            select(TextKnowledge).where(TextKnowledge.id == text_knowledge_in_workspace_b.id)
-        )
-        assert result.scalar_one_or_none() is not None
-
-    async def test_list_text_knowledge_only_shows_own_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        workspace_b: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """Listing text knowledge only returns items from the specified workspace"""
-        # Create knowledge in workspace A
-        knowledge_a = TextKnowledge(
-            id=uuid4(),
-            workspace_id=workspace_a.id,
-            title="Knowledge A",
-            content="Content A",
-        )
-        db.add(knowledge_a)
-        await db.flush()
-
-        service = KnowledgeService(db)
-
-        # List knowledge for workspace A
-        knowledge_list = await service.list_text_knowledge(workspace_id=workspace_a.id)
-
-        # Should only contain workspace A's knowledge
-        knowledge_ids = [k["id"] for k in knowledge_list]
-        assert str(knowledge_a.id) in knowledge_ids
-        assert str(text_knowledge_in_workspace_b.id) not in knowledge_ids
 
 
 # ============================================================================
@@ -395,14 +346,8 @@ class TestMemberIsolation:
         service = MemberService(db)
 
         # Create a new user to add
-        new_user = Users(
-            id=uuid4(),
-            email="newuser@example.com",
-            username="newuser",
-            password_hash="hashed",
-            first_name="New",
-            last_name="User",
-        )
+        await _viewer_role(db)
+        new_user = _user("New User")
         db.add(new_user)
         await db.flush()
 
@@ -468,19 +413,18 @@ class TestWorkspaceSettingsIsolation:
     ):
         """User from workspace A cannot update workspace B's settings"""
         service = WorkspaceService(db)
-
         original_name = workspace_b.name
         original_url = workspace_b.url
 
-        # Try to update workspace B using workspace A's context
-        # This depends on route implementation - service layer should not allow this
-        # without proper verification
-
-        # The service's _ensure_membership() should prevent this
+        # User A updating workspace B: the membership check refuses it as not found.
         with pytest.raises(ResourceNotFoundException):
-            # Simulating what a malicious request might try
-            await service.get_workspace(workspace_b.id)
-            # Service should verify user is a member before allowing updates
+            await service.update_workspace_for_user(
+                workspace_id=workspace_b.id,
+                user_id=workspace_a.owner.id,
+                name="Hacked Name",
+                timezone=None,
+                url="https://hacked.example",
+            )
 
         # Verify workspace B settings unchanged
         await db.refresh(workspace_b)
@@ -495,20 +439,30 @@ class TestWorkspaceSettingsIsolation:
         content_in_workspace_b: Content,
     ):
         """Workspace analytics only show data for the specified workspace"""
-        # Create content in workspace A
+        # Two items in workspace A, one in workspace B: each count is its own.
         content_a = Content(
             id=uuid4(),
             workspace_id=workspace_a.id,
             created_by_user_id=workspace_a.owner.id,
-            author_id=workspace_a.owner.id,
             title="Content A",
             slug="content-a",
             body_markdown="Content for workspace A",
             status="published",
-            content_format="Markdown",
             content_language="English",
         )
         db.add(content_a)
+        db.add(
+            Content(
+                id=uuid4(),
+                workspace_id=workspace_a.id,
+                created_by_user_id=workspace_a.owner.id,
+                title="Content A2",
+                slug="content-a2",
+                body_markdown="Second item for workspace A",
+                status="published",
+                content_language="English",
+            )
+        )
         await db.flush()
 
         service = WorkspaceService(db)
@@ -516,8 +470,8 @@ class TestWorkspaceSettingsIsolation:
         # Get analytics for workspace A
         analytics_a = await service.get_workspace_analytics(workspace_id=workspace_a.id)
 
-        # Should show 1 content item (content_a)
-        assert analytics_a["content_count"] == 1
+        # Should show workspace A's two items only
+        assert analytics_a["content_count"] == 2
 
         # Get analytics for workspace B
         analytics_b = await service.get_workspace_analytics(workspace_id=workspace_b.id)
@@ -527,11 +481,6 @@ class TestWorkspaceSettingsIsolation:
 
         # Analytics should be independent
         assert analytics_a != analytics_b
-
-
-# ============================================================================
-# Topic Isolation Tests
-# ============================================================================
 
 
 # ============================================================================
@@ -606,12 +555,6 @@ Security Test Coverage Summary:
    - Cannot publish content from other workspace
    - Slug generation scoped to workspace
 
-✅ Knowledge Isolation (4 tests)
-   - Cannot get text knowledge from other workspace
-   - Cannot update text knowledge from other workspace
-   - Cannot delete text knowledge from other workspace
-   - List knowledge only shows own workspace data
-
 ✅ Member Isolation (2 tests)
    - Cannot add member to other workspace
    - Cannot remove member from other workspace
@@ -620,13 +563,10 @@ Security Test Coverage Summary:
    - Cannot update other workspace settings
    - Analytics only show own workspace data
 
-✅ Topic Isolation (1 test)
-   - Cannot update topics from other workspace
-
 ✅ Integration Tests (1 test)
    - Complete end-to-end workflow isolation
 
-Total: 15 comprehensive security tests
+Total: 10 comprehensive security tests
 
 Run these tests with:
     pytest tests/security/test_tenant_isolation.py -v

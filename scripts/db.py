@@ -4,7 +4,7 @@ Database management script for rext-backend
 
 Usage:
     python scripts/db.py reset    - Reset database (drops all data)
-    python scripts/db.py migrate  - Run all migrations + setup store
+    python scripts/db.py migrate  - Run all migrations + setup store + seed (every environment)
     python scripts/db.py seed     - Reset + migrate + setup store (fresh start)
     python scripts/db.py status   - Check migration status
     python scripts/db.py store    - Setup LangGraph store tables
@@ -26,31 +26,11 @@ env_path = project_root / ".env"
 load_dotenv(env_path)
 
 
-# Tables owned by the LangGraph Agent Server runtime. They are created and
-# migrated automatically by the rext-api server at STARTUP (there is no CLI
-# to create them) — per the docs, all access to them must go through the
-# Agent Server. Dropping them breaks crons/checkpoints/threads until the
-# backend container is restarted, so the reset must never touch them.
-LANGGRAPH_TABLES = {
-    "assistant",
-    "assistant_versions",
-    "checkpoints",
-    "checkpoint_blobs",
-    "checkpoint_writes",
-    "checkpoint_migrations",
-    "checkpoint_delete_queue",
-    "cron",
-    "run",
-    "thread",
-    "thread_ttl",
-    "store",
-    "store_migrations",
-    "store_vectors",
-    "vector_migrations",
-    "schema_migrations",
-    "resumable_streams",
-    "queue",
-}
+# Tables owned by the LangGraph runtime and store. They are created and
+# migrated by the rext-api server at STARTUP (there is no CLI to create them).
+# Dropping them breaks crons/checkpoints/threads until the backend container
+# is restarted, so the reset must never touch them.
+from src.api.database.langgraph_tables import LANGGRAPH_TABLES  # noqa: E402
 
 
 async def reset_database():
@@ -225,7 +205,7 @@ async def seed_database():
     print("\n✅ Database seeded successfully with subscription plan credits!")
     print("   Super admin credentials:")
     print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@rext.com')}")
-    print(f"   Password: {os.getenv('SUPER_ADMIN_PASSWORD', '[see .env]')}")
+    print("   Password: SUPER_ADMIN_PASSWORD in .env")
 
 
 def print_usage():
@@ -249,6 +229,10 @@ def main():
         success = run_migrations()
         if success:
             success = asyncio.run(setup_store())
+        if success:
+            from scripts.seeds.run_all import run_all_seeds
+
+            asyncio.run(run_all_seeds())
         sys.exit(0 if success else 1)
 
     elif command == "seed":

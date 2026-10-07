@@ -31,7 +31,7 @@ import functools
 from typing import Any, Callable, Optional
 
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logger import auto_logger
@@ -66,7 +66,7 @@ def db_transaction_handler(
 
     Args:
         operation_name: Human-readable operation name for logging and error messages
-                       Example: "create content", "delete topic", "update workspace"
+                       Example: "create content", "delete persona", "update workspace"
         success_message: Optional custom success message for the response
                         If not provided, defaults to "{operation_name} completed successfully"
         auto_commit: Whether to automatically commit the transaction on success (default: True)
@@ -150,9 +150,11 @@ def db_transaction_handler(
                     await db.commit()
                     logger.debug(f"Transaction committed: {operation_name}")
 
-                # Auto-format success response if raw data returned
-                # If handler returns JSONResponse, pass it through unchanged
-                if not isinstance(result, JSONResponse):
+                # Auto-format success response if raw data returned.
+                # A handler that builds its own response (JSON, a CSV or a file
+                # download) passes through unchanged: wrapping it would try to
+                # JSON-encode the Response object and fail with a 500.
+                if not isinstance(result, Response):
                     return success(
                         data=result,
                         request=request,
@@ -160,7 +162,7 @@ def db_transaction_handler(
                         or f"{operation_name.capitalize()} completed successfully",
                     )
 
-                # Return the JSONResponse as-is
+                # Return the handler's own response as-is
                 return result
 
             except HTTPException:
@@ -333,7 +335,7 @@ def require_permissions(
 
     Best Practices:
         - Apply AFTER @router decorator but BEFORE/AFTER @db_transaction_handler
-        - Use workspace_scoped=True for workspace-specific resources (content, topics, knowledge)
+        - Use workspace_scoped=True for workspace-specific resources (content, personas, brand voice)
         - Use workspace_scoped=False for global resources (users, system settings)
         - Order decorators logically: @router → @db_transaction_handler → @require_permissions
         - For destructive operations (delete, publish), always check permissions

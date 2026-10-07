@@ -4,8 +4,10 @@ from typing import Dict
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.config.hidden_secrets import HidesSecrets
 
-class CleanupConfig(BaseSettings):
+
+class CleanupConfig(HidesSecrets, BaseSettings):
     """Configuration for data cleanup and scheduled retention policies."""
 
     # Retention periods (days)
@@ -24,10 +26,10 @@ class CleanupConfig(BaseSettings):
     CLEANUP_ENABLED: bool = True
     BILLING_TASKS_ENABLED: bool = True
     TRIAL_TASKS_ENABLED: bool = True
-    DUNNING_TASKS_ENABLED: bool = True
-    GRACE_PERIOD_TASKS_ENABLED: bool = True
     DIGEST_TASKS_ENABLED: bool = True
     WEBHOOK_REPROCESS_TASKS_ENABLED: bool = True
+    # Nightly re-read of every unfinished subscription from Lemon Squeezy (F11).
+    SUBSCRIPTION_RECONCILE_ENABLED: bool = True
 
     # How often live API counters are copied into api_usage_hourly. Must stay
     # well below the Redis metric TTL so no bucket expires undrained.

@@ -19,9 +19,11 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy import (
     Enum as SQLEnum,
@@ -32,9 +34,12 @@ from sqlalchemy.orm import relationship
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
-# How long after purchase a customer may ask for a refund. Requests against
-# older orders are refused up front rather than reaching an admin.
+# The refund rule (rext-control DECISIONS.md, founder): within 14 days of a
+# payment, the whole payment back if fewer than 100 credits were used since it.
+# No partial or pro-rata refunds. Requests outside it are refused up front
+# rather than reaching an admin; the public plan catalogue serves both numbers.
 REFUND_REQUEST_WINDOW_DAYS = 14
+REFUND_CREDIT_LIMIT = 100
 
 
 class RefundRequestStatus(str, Enum):
@@ -49,6 +54,16 @@ class RefundRequest(Base, SerializableMixin):
     """A customer asking a super admin to refund one of their orders."""
 
     __tablename__ = "refund_requests"
+    __table_args__ = (
+        Index("ix_refund_requests_ls_order_id", "lemonsqueezy_order_id"),
+        # At most one open request per order.
+        Index(
+            "uq_refund_requests_one_open_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
 
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
@@ -71,7 +86,7 @@ class RefundRequest(Base, SerializableMixin):
 
     # Denormalised so the request survives as an audit record and can be acted
     # on without a join.
-    lemonsqueezy_order_id = Column(String(255), nullable=False, index=True)
+    lemonsqueezy_order_id = Column(String(255), nullable=False)
 
     # Cents. Full-order refunds only for now, so this mirrors the order total
     # and exists to keep partial requests possible later without a migration.

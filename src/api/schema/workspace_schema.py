@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
@@ -41,23 +41,6 @@ class AddWorkspaceMemberRequest(BaseModel):
     email: EmailStr = Field(..., description="Email address of the user to invite")
 
     model_config = ConfigDict(json_schema_extra={"example": {"email": "teammate@example.com"}})
-
-
-class WorkspaceMemberResponse(BaseModel):
-    """Schema for workspace member response"""
-
-    id: UUID = Field(..., description="Membership UUID")
-    workspace_id: UUID = Field(..., description="Workspace UUID")
-    user_id: UUID = Field(..., description="User UUID")
-    email: str = Field(..., description="User email")
-    full_name: Optional[str] = Field(None, description="User full name")
-    role_id: UUID = Field(..., description="Role UUID")
-    role_name: str = Field(..., description="Role name (slug)")
-    role_display_name: str = Field(..., description="Role display name")
-    status: str = Field(..., description="Membership status")
-    joined_at: datetime = Field(..., description="When user joined workspace")
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 # FIXED: Removed brand voice fields - only workspace core fields
@@ -125,23 +108,11 @@ class BrandVoiceResponseSchema(BrandVoiceSchema):
     model_config = ConfigDict(from_attributes=True)
 
 
-class WorkspaceKnowledgeStats(BaseModel):
-    """Knowledge item counts for a workspace."""
-
-    web_count: int = Field(0, description="Web knowledge items")
-    file_count: int = Field(0, description="File knowledge items")
-    text_count: int = Field(0, description="Text knowledge items")
-    total_count: int = Field(0, description="Total knowledge items")
-
-
 class WorkspaceAnalyticsSchema(BaseModel):
     """Comprehensive analytics for a workspace."""
 
-    knowledge_stats: WorkspaceKnowledgeStats
     members_count: int = 0
     content_count: int = 0
-    topics_count: int = 0
-    content_metrics: Optional[Dict[str, Any]] = None  # Detailed word counts etc.
 
 
 class WorkspaceResponseSchema(BaseModel):
@@ -153,27 +124,17 @@ class WorkspaceResponseSchema(BaseModel):
     slug: str = Field(..., description="URL slug")
     timezone: Optional[str] = Field(None, description="Timezone")
     url: Optional[str] = Field(None, description="Website URL")
+    favicon_url: Optional[str] = Field(
+        None, description="The site's favicon, fetched once and kept in the media store"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
     # Optional nested data
     owner: Optional[WorkspaceOwnerSummary] = Field(None, description="Owner summary")
-    knowledge_stats: Optional[WorkspaceKnowledgeStats] = Field(
-        None, description="Counts of knowledge items"
-    )
     members_count: Optional[int] = Field(0, description="Total members")
     brand_voice: Optional[BrandVoiceResponseSchema] = None
     analytics: Optional[WorkspaceAnalyticsSchema] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class SidebarWorkspaceSchema(BaseModel):
-    """Condensed schema for workspace sidebar selection."""
-
-    id: UUID = Field(..., description="Workspace UUID")
-    name: str = Field(..., description="Workspace title")
-    slug: str = Field(..., description="URL slug")
 
     model_config = ConfigDict(from_attributes=True)
 

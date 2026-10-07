@@ -47,9 +47,6 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "refund_approved": "billing_refund_approved",
     "refund_rejected": "billing_refund_rejected",
     "refund_issued": "billing_refund_approved",
-    # Knowledge base notifications
-    "kb_processing_completed": "kb_processing_completed",
-    "kb_processing_failed": "kb_processing_failed",
     # Marketing
     "marketing": "marketing_updates",
 }

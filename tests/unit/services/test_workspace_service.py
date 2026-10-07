@@ -148,7 +148,7 @@ class TestWorkspaceServiceAnalytics:
     """Test suite for get_workspace_analytics() method"""
 
     async def test_get_workspace_analytics_returns_counts(self, db_session, setup_factories):
-        """Test workspace analytics returns knowledge and member counts"""
+        """Test workspace analytics returns the member and content counts"""
         # Arrange
         workspace = await setup_factories["workspace"].create()
         service = WorkspaceService(db_session)
@@ -157,8 +157,7 @@ class TestWorkspaceServiceAnalytics:
         analytics = await service.get_workspace_analytics(workspace_id=workspace.id)
 
         # Assert
-        assert isinstance(analytics, dict)
-        assert "knowledge_stats" in analytics or "members_count" in analytics
+        assert analytics == {"members_count": 0, "content_count": 0}
 
 
 @pytest.mark.asyncio
@@ -182,7 +181,6 @@ class TestWorkspaceServiceNewFlows:
         service._ensure_workspace_admin_role = AsyncMock(return_value=AsyncMock(id=uuid4()))
         service._assign_permissions_to_role = AsyncMock()
         service._assign_role_to_user = AsyncMock()
-        service._populate_brand_voice_and_vectors = AsyncMock()
         service._serialize_workspace = Mock(return_value={"id": "workspace-id"})
         mock_db.refresh = AsyncMock()
 
@@ -206,7 +204,6 @@ class TestWorkspaceServiceNewFlows:
         UUID(result["operation_id"])
         service.create_workspace.assert_awaited_once()
         service.create_workspace_member.assert_awaited_once()
-        service._populate_brand_voice_and_vectors.assert_not_called()
         mock_create_task.assert_called_once()
         mock_task.add_done_callback.assert_called_once()
 
@@ -223,13 +220,11 @@ class TestWorkspaceServiceNewFlows:
 
         service._ensure_active_user = AsyncMock()
         service._ensure_membership = AsyncMock(return_value=workspace)
-        service._delete_vectors_safe = AsyncMock()
         service.delete_workspace = AsyncMock()
 
         await service.delete_workspace_for_user(workspace.id, uuid4())
 
         service._ensure_membership.assert_awaited_once()
-        service._delete_vectors_safe.assert_called_once()
         service.delete_workspace.assert_awaited_once_with(workspace.id)
 
     async def test_update_workspace_for_user_checks_name_uniqueness(self):

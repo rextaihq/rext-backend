@@ -61,18 +61,6 @@ class CreateAdminInvitationRequest(BaseModel):
     }
 
 
-class AcceptAdminInvitationRequest(BaseModel):
-    """
-    Schema for accepting an admin invitation.
-
-    Public endpoint - no auth required (token validates identity).
-    """
-
-    token: str = Field(..., description="Admin invitation token from email")
-
-    model_config = {"json_schema_extra": {"example": {"token": "abc123def456..."}}}
-
-
 class DeclineAdminInvitationRequest(BaseModel):
     """Schema for declining an admin invitation."""
 
@@ -243,36 +231,6 @@ class ValidateAdminInvitationResponse(BaseModel):
                 "expires_at": "2025-10-30T10:00:00Z",
                 "is_expired": False,
                 "status": "pending",
-            }
-        }
-    }
-
-
-class AdminInvitationStatsResponse(BaseModel):
-    """Schema for admin invitation statistics (super_admin dashboard)."""
-
-    total_invitations: int = Field(..., description="Total invitations sent")
-    pending_invitations: int = Field(..., description="Currently pending invitations")
-    accepted_invitations: int = Field(..., description="Accepted invitations")
-    declined_invitations: int = Field(..., description="Declined invitations")
-    revoked_invitations: int = Field(..., description="Revoked invitations")
-    expired_invitations: int = Field(..., description="Expired invitations")
-    acceptance_rate: float = Field(..., description="Percentage of invitations accepted")
-    average_acceptance_time_hours: Optional[float] = Field(
-        None, description="Average time to accept in hours"
-    )
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "total_invitations": 10,
-                "pending_invitations": 2,
-                "accepted_invitations": 6,
-                "declined_invitations": 1,
-                "revoked_invitations": 0,
-                "expired_invitations": 1,
-                "acceptance_rate": 75.0,
-                "average_acceptance_time_hours": 36.5,
             }
         }
     }

@@ -5,9 +5,6 @@ Templates for subscription and billing-related emails.
 """
 
 from .downgrade_scheduled import render_downgrade_scheduled_email
-from .payment_dunning_1_day import render_payment_dunning_1_day_email
-from .payment_dunning_3_days import render_payment_dunning_3_days_email
-from .payment_dunning_6_days import render_payment_dunning_6_days_email
 from .payment_failed import render_payment_failed_email
 from .payment_recovered import render_payment_recovered_email
 from .payment_succeeded import render_payment_succeeded_email
@@ -23,7 +20,7 @@ from .subscription_created import render_subscription_created_email
 from .subscription_downgraded import render_subscription_downgraded_email
 from .subscription_expiring_soon import render_subscription_expiring_soon_email
 from .subscription_renewed import render_subscription_renewed_email
-from .subscription_suspended import render_subscription_suspended_email
+from .subscription_unpaid import render_subscription_unpaid_email
 from .subscription_upgraded import render_subscription_upgraded_email
 from .trial_ending import render_trial_ending_email
 from .trial_expired import render_trial_expired_email
@@ -50,10 +47,7 @@ __all__ = [
     "render_downgrade_scheduled_email",
     "render_usage_limit_warning_email",
     "render_usage_limit_exceeded_email",
-    "render_payment_dunning_1_day_email",
-    "render_payment_dunning_3_days_email",
-    "render_payment_dunning_6_days_email",
-    "render_subscription_suspended_email",
+    "render_subscription_unpaid_email",
     "render_payment_recovered_email",
     "render_subscription_upgraded_email",
     "render_subscription_downgraded_email",

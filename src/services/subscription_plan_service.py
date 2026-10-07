@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -19,6 +19,9 @@ from src.api.middleware.exceptions import (
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.schema.subscription.plan_schemas import SubscriptionPlanCreate, SubscriptionPlanUpdate
+from src.config.payment_config import payment_settings
+from src.services.credit_grants import active_promotion
+from src.services.plan_catalog import CATALOG_VERSION, build_plan_catalog, offer_entry
 from src.utils.logger import logger
 
 
@@ -52,8 +55,6 @@ class SubscriptionPlanService:
             features=payload.features or {},
             max_workspaces=payload.max_workspaces,
             max_members_per_workspace=payload.max_members_per_workspace,
-            max_topics=payload.max_topics,
-            max_knowledge_items=payload.max_knowledge_items,
             max_api_calls_per_month=payload.max_api_calls_per_month,
             is_active=payload.is_active,
             is_public=payload.is_public,
@@ -68,6 +69,7 @@ class SubscriptionPlanService:
         await self.db.flush()
         await self.db.refresh(plan)
 
+        await invalidate_cache("subscription:plans:*")
         logger.info(
             "Subscription plan created", extra={"plan_id": str(plan.id), "plan_name": plan.name}
         )
@@ -109,6 +111,27 @@ class SubscriptionPlanService:
             "plans": [plan.to_dict() for plan in plans],
             "count": len(plans),
         }
+
+    async def get_catalog(self, now: Optional[datetime] = None) -> Dict[str, object]:
+        """The public plan catalogue (GET /api/v1/plans), with the promotion active at `now`."""
+        catalog = dict(await self._catalog_without_offer())
+        catalog["offer"] = offer_entry(await active_promotion(self.db, now))
+        return catalog
+
+    @cached(
+        key_prefix="subscription:plans",
+        ttl=900,
+        key_builder=lambda self: f"catalog:v{CATALOG_VERSION}",
+    )
+    async def _catalog_without_offer(self) -> Dict[str, object]:
+        # Cached under the same prefix as the plan lists, so a plan's update or
+        # deletion clears it too; the offer is added per request, as it ends on the minute.
+        result = await self.db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.is_active.is_(True))
+        )
+        return build_plan_catalog(
+            result.scalars().all(), currency=payment_settings.payment_currency
+        )
 
     async def get_plan(self, plan_id: UUID, is_admin: bool) -> Dict[str, object]:
         plan = await self._get_plan_or_404(plan_id)

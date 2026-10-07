@@ -344,6 +344,8 @@ class DeactivateAccountResponse(BaseModel):
     status: str
     deactivated_at: datetime
     scheduled_deletion_at: datetime
+    # When the cancelled plan's paid period ends (it doesn't renew); null without a plan.
+    plan_ends_at: Optional[datetime] = None
     message: str
 
 

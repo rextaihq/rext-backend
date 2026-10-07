@@ -20,6 +20,7 @@ from src.api.middleware.permissions import PermissionChecker
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.security.dependencies import get_current_user
 from src.api.server import app
+from src.services.content_activity import ACTION_CREATED, record_content_activity
 from src.services.role_service import RoleService
 
 
@@ -164,9 +165,9 @@ async def test_invitation_revoke_requires_member_invite(grant, monkeypatch):
 @pytest.mark.asyncio
 async def test_site_management_requires_integration_delete(grant, monkeypatch):
     monkeypatch.setattr(
-        "src.api.routes.content.modules.sites.resolve_and_verify_workspace", _stop_after_guard()
+        "src.api.routes.integrations.wordpress.resolve_and_verify_workspace", _stop_after_guard()
     )
-    url = f"/api/v1/content/sites/{uuid4()}?workspace_id={uuid4()}"
+    url = f"/api/v1/integrations/wordpress/{uuid4()}?workspace_id={uuid4()}"
 
     grant("content.read", "content.create", "content.update", "content.delete")
     assert await _status("DELETE", url) == 403
@@ -350,6 +351,12 @@ async def test_member_can_read_own_workspace_recent_activities(client, db_sessio
     content = await setup_factories["content"].create(
         workspace_id=workspace.id, created_by_user_id=member.id
     )
+    # The panel reads content events from the audit log, as the content service
+    # writes them; a row inserted directly has none.
+    await record_content_activity(
+        db_session, content, ACTION_CREATED, user_id=member.id, workspace_id=workspace.id
+    )
+    await db_session.flush()
     app.dependency_overrides[get_current_user] = lambda: {"identity": str(member.id)}
 
     response = await client.get(f"/api/v1/recent-activities/{workspace.id}")

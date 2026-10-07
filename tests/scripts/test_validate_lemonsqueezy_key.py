@@ -94,13 +94,14 @@ class TestValidateApiKey:
         assert "Unexpected status code" in message
 
     @pytest.mark.asyncio
-    @patch("validate_lemonsqueezy_key.httpx")
-    async def test_validate_connection_timeout(self, mock_httpx):
+    # Only the request is replaced: the script catches httpx's own exception classes.
+    @patch("validate_lemonsqueezy_key.httpx.get")
+    async def test_validate_connection_timeout(self, mock_get):
         """Test validation when connection times out"""
         # Mock connection timeout
         from httpx import ConnectTimeout
 
-        mock_httpx.get.side_effect = ConnectTimeout("Connection timeout")
+        mock_get.side_effect = ConnectTimeout("Connection timeout")
 
         # Validate key
         is_valid, message = validate_api_key("some_key_12345678901234567890")
@@ -110,13 +111,13 @@ class TestValidateApiKey:
         assert "Connection timeout" in message
 
     @pytest.mark.asyncio
-    @patch("validate_lemonsqueezy_key.httpx")
-    async def test_validate_http_error(self, mock_httpx):
+    @patch("validate_lemonsqueezy_key.httpx.get")
+    async def test_validate_http_error(self, mock_get):
         """Test validation when HTTP error occurs"""
         # Mock HTTP error
         from httpx import HTTPError
 
-        mock_httpx.get.side_effect = HTTPError("HTTP error occurred")
+        mock_get.side_effect = HTTPError("HTTP error occurred")
 
         # Validate key
         is_valid, message = validate_api_key("some_key_12345678901234567890")

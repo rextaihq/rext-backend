@@ -360,6 +360,9 @@ class CONTENT(TypedDict, total=False):
     final_content: FinalContentState
     generation_meta: GenerationMeta
     credits_deducted: bool
+    # The featured image's credit, charged once its image is delivered. Bookkeeping
+    # for generate_content only, like credits_deducted; no client reads it.
+    image_credit_deducted: bool
 
     # Workflow control
     status: Literal[

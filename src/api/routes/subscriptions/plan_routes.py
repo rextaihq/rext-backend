@@ -10,7 +10,12 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.schema.response.plan_responses import PlanDeleteResponse, PlanDetails, PlanListResponse
+from src.api.schema.response.plan_responses import (
+    PlanCatalogResponse,
+    PlanDeleteResponse,
+    PlanDetails,
+    PlanListResponse,
+)
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription import SubscriptionPlanCreate, SubscriptionPlanUpdate
 from src.api.security.dependencies import get_current_user
@@ -23,27 +28,28 @@ router = APIRouter(
     tags=["subscription-plans"],
 )
 
+# The public catalogue lives at /api/v1/plans, outside the admin prefix.
+catalog_router = APIRouter(prefix="/plans", tags=["plans"])
 
-@router.get("/public", response_model=SuccessResponse[PlanListResponse])
-@db_transaction_handler("list public plans", auto_commit=False)
-async def list_public_plans(
+
+@catalog_router.get("", response_model=SuccessResponse[PlanCatalogResponse])
+@db_transaction_handler("get plan catalogue", auto_commit=False)
+async def get_plan_catalog(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """List public subscription plans (no authentication required)."""
-    service = SubscriptionPlanService(db)
+    """
+    The plans, the trial, the credit costs and the active offer (no authentication required).
 
-    # Only return active, public plans
-    data = await service.list_plans(
-        include_inactive=False,
-        include_private=False,
-        is_admin=False,
-    )
+    Public by design: the pricing pages show it to visitors who have not
+    signed in. It holds only what those pages print.
+    """
+    data = await SubscriptionPlanService(db).get_catalog()
 
     return success(
         data=data,
         request=request,
-        message=f"Retrieved {data['count']} public subscription plan(s)",
+        message=f"Retrieved {len(data['plans'])} plan(s)",
     )
 
 

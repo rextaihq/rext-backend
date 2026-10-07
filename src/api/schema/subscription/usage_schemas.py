@@ -18,22 +18,14 @@ class UsageStatsResponse(BaseModel):
 
     # Current usage
     current_workspaces: int = Field(..., description="Current number of workspaces")
-    current_topics: int = Field(..., description="Current number of topics")
-    current_knowledge_items: int = Field(..., description="Current number of knowledge items")
     current_api_calls: int = Field(..., description="Current API calls this period")
 
     # Limits
     max_workspaces: int = Field(..., description="Maximum workspaces allowed")
-    max_topics: int = Field(..., description="Maximum topics allowed")
-    max_knowledge_items: int = Field(..., description="Maximum knowledge items allowed")
     max_api_calls_per_month: int = Field(..., description="Maximum API calls per month")
 
     # Usage percentages
     workspaces_usage_percent: float = Field(..., description="Workspaces usage percentage")
-    topics_usage_percent: float = Field(..., description="Topics usage percentage")
-    knowledge_items_usage_percent: float = Field(
-        ..., description="Knowledge items usage percentage"
-    )
     api_calls_usage_percent: float = Field(..., description="API calls usage percentage")
 
     # Reset date
@@ -46,16 +38,10 @@ class UsageStatsResponse(BaseModel):
                 "plan_name": "pro",
                 "billing_period": "monthly",
                 "current_workspaces": 3,
-                "current_topics": 245,
-                "current_knowledge_items": 1820,
                 "current_api_calls": 12500,
                 "max_workspaces": 5,
-                "max_topics": 500,
-                "max_knowledge_items": 5000,
                 "max_api_calls_per_month": 50000,
                 "workspaces_usage_percent": 60.0,
-                "topics_usage_percent": 49.0,
-                "knowledge_items_usage_percent": 36.4,
                 "api_calls_usage_percent": 25.0,
                 "usage_reset_date": "2025-11-01T00:00:00Z",
             }

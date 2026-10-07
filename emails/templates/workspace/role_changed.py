@@ -15,8 +15,8 @@ _ROLE_HIERARCHY = {"owner": 4, "admin": 3, "editor": 2, "member": 1, "viewer": 1
 
 
 def _role_badge(role_name: str, muted: bool = False) -> str:
-    bg = "#f2f4f7" if muted else "#eef0fe"
-    color = "#667085" if muted else "#3641f5"
+    bg = "#f5f5f5" if muted else "#111a17"
+    color = "#737373" if muted else "#cff88a"
     strike = "text-decoration:line-through;" if muted else ""
     return f"""<div style="display:inline-block; background-color:{bg}; color:{color};
                 font-size:13px; font-weight:600; padding:4px 12px; border-radius:9999px;
@@ -25,15 +25,15 @@ def _role_badge(role_name: str, muted: bool = False) -> str:
 
 def _role_change_card(old_role_name: str, new_role_name: str) -> str:
     return f"""
-    <div style="margin:24px 0; padding:24px; background-color:#f8f9ff;
-                border-radius:8px; border:1px solid #c7d0fd; text-align:center;">
-        <p style="color:#667085; font-size:12px; font-weight:500; margin:0 0 10px 0;
+    <div style="margin:24px 0; padding:24px; background-color:#fafafa;
+                border-radius:8px; border:1px solid #e5e5e5; text-align:center;">
+        <p style="color:#737373; font-size:12px; font-weight:500; margin:0 0 10px 0;
                   text-transform:uppercase; letter-spacing:0.05em; font-family:{_FONT};">
             Previous role
         </p>
         {_role_badge(old_role_name, muted=True)}
-        <p style="color:#3641f5; font-size:18px; margin:12px 0; font-family:{_FONT};">&#8595;</p>
-        <p style="color:#667085; font-size:12px; font-weight:500; margin:0 0 10px 0;
+        <p style="color:#171717; font-size:18px; margin:12px 0; font-family:{_FONT};">&#8595;</p>
+        <p style="color:#737373; font-size:12px; font-weight:500; margin:0 0 10px 0;
                   text-transform:uppercase; letter-spacing:0.05em; font-family:{_FONT};">
             New role
         </p>
@@ -65,35 +65,33 @@ def render_role_changed_email(
         [
             simple_header(workspace_name),
             f"""
-        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+        <h1 style="color:#171717; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
-            Your role in <span style="color:#3641f5;">{workspace_name}</span><br>has been {action_word}
+            Your role in <span style="color:#171717;">{workspace_name}</span><br>has been {action_word}
         </h1>
         """,
             f"""
-        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+        <p style="color:#525252; font-size:16px; line-height:26px; margin:0 0 4px 0;
                   font-family:{_FONT};">
-            Hi <strong style="color:#101828;">{member_name}</strong>,
+            Hi <strong style="color:#171717;">{member_name}</strong>,
         </p>
-        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+        <p style="color:#525252; font-size:16px; line-height:26px; margin:0 0 4px 0;
                   font-family:{_FONT};">
-            <strong style="color:#101828;">{changed_by_name}</strong> has updated your role
-            in <strong style="color:#101828;">{workspace_name}</strong>.
+            <strong style="color:#171717;">{changed_by_name}</strong> has updated your role
+            in <strong style="color:#171717;">{workspace_name}</strong>.
         </p>
         """,
             _role_change_card(old_role_name, new_role_name),
             f"""
-        <p style="color:#475467; font-size:15px; line-height:24px; margin:0 0 8px 0;
+        <p style="color:#525252; font-size:15px; line-height:24px; margin:0 0 8px 0;
                   font-family:{_FONT};">
             Visit your workspace to see your updated access:
         </p>
         """,
-            button(
-                ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")
-            ),
+            button(ButtonProps(text="Go to Workspace", url=workspace_url)),
             f"""
-        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
-            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e5e5e5;">
+            <p style="color:#737373; font-size:13px; line-height:20px; margin:0;
                       font-family:{_FONT};">
                 Questions about this change? Contact {changed_by_name} or your workspace administrator.
             </p>
@@ -130,9 +128,9 @@ def create_role_changed_email(
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
         <div style="margin-top:24px; text-align:center;">
-            <p style="margin:0; font-size:12px; color:#98a2b3; font-family:{_FONT};">
+            <p style="margin:0; font-size:12px; color:#737373; font-family:{_FONT};">
                 Don't want these emails?
-                <a href="{unsubscribe_url}" style="color:#98a2b3; text-decoration:underline;">Unsubscribe</a>
+                <a href="{unsubscribe_url}" style="color:#737373; text-decoration:underline;">Unsubscribe</a>
             </p>
         </div>
         """
@@ -141,35 +139,33 @@ def create_role_changed_email(
         [
             simple_header(workspace_name),
             f"""
-        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+        <h1 style="color:#171717; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
-            Your role in <span style="color:#3641f5;">{workspace_name}</span><br>has been {action_word}
+            Your role in <span style="color:#171717;">{workspace_name}</span><br>has been {action_word}
         </h1>
         """,
             f"""
-        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+        <p style="color:#525252; font-size:16px; line-height:26px; margin:0 0 4px 0;
                   font-family:{_FONT};">
-            Hi <strong style="color:#101828;">{member_name}</strong>,
+            Hi <strong style="color:#171717;">{member_name}</strong>,
         </p>
-        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+        <p style="color:#525252; font-size:16px; line-height:26px; margin:0 0 4px 0;
                   font-family:{_FONT};">
-            <strong style="color:#101828;">{changed_by_name}</strong> has updated your role
-            in <strong style="color:#101828;">{workspace_name}</strong>.
+            <strong style="color:#171717;">{changed_by_name}</strong> has updated your role
+            in <strong style="color:#171717;">{workspace_name}</strong>.
         </p>
         """,
             _role_change_card(old_role_name, new_role_name),
             f"""
-        <p style="color:#475467; font-size:15px; line-height:24px; margin:0 0 8px 0;
+        <p style="color:#525252; font-size:15px; line-height:24px; margin:0 0 8px 0;
                   font-family:{_FONT};">
             Visit your workspace to see your updated access:
         </p>
         """,
-            button(
-                ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")
-            ),
+            button(ButtonProps(text="Go to Workspace", url=workspace_url)),
             f"""
-        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
-            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e5e5e5;">
+            <p style="color:#737373; font-size:13px; line-height:20px; margin:0;
                       font-family:{_FONT};">
                 Questions about this change? Contact {changed_by_name} or your workspace administrator.
             </p>

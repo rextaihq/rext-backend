@@ -127,7 +127,7 @@ def parse_webhook_payload(payload: bytes) -> Dict[str, Any]:
         Dict containing parsed webhook data with:
             - event_type: Event name (subscription_created, order_created, etc.)
             - event_id: Unique webhook event ID for idempotency
-            - data: Event data (subscription, order, license, etc.)
+            - data: Event data (subscription, order, etc.)
             - custom_data: Custom metadata passed during checkout
             - timestamp: Event timestamp
 
@@ -209,11 +209,19 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "renews_at": attributes.get("renews_at"),
             "ends_at": attributes.get("ends_at"),
             "trial_ends_at": attributes.get("trial_ends_at"),
+            # When Lemon Squeezy last changed the object (for ordering events).
+            "updated_at": attributes.get("updated_at"),
             "cancelled": attributes.get("cancelled", False),
             "user_email": attributes.get("user_email", ""),
             "user_name": attributes.get("user_name", ""),
             "card_brand": attributes.get("card_brand"),
             "card_last_four": attributes.get("card_last_four") or attributes.get("card_last4"),
+            # When the subscription (or, on an invoice, the invoice) was created,
+            # and why an invoice was raised ("initial" for the first payment).
+            "created_at": attributes.get("created_at"),
+            "billing_reason": attributes.get("billing_reason"),
+            # The order that started a subscription (subscription payloads only).
+            "order_id": str(attributes["order_id"]) if attributes.get("order_id") else None,
         }
 
     except Exception as e:
@@ -274,48 +282,6 @@ def extract_order_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting order data: {str(e)}")
         raise WebhookParsingError(f"Invalid order data: {str(e)}") from e
-
-
-def extract_license_key_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Extract license key data from webhook payload (for LTDs).
-
-    Args:
-        webhook_data: Parsed webhook data from parse_webhook_payload()
-
-    Returns:
-        Dict containing license fields:
-            - license_id: LemonSqueezy license key ID
-            - license_key: The actual license key string
-            - order_id: Associated order ID
-            - product_id: Product ID
-            - status: License status
-            - activation_limit: Max activations allowed
-            - activation_usage: Current activation count
-            - expires_at: Expiration date (null for lifetime)
-
-    Raises:
-        WebhookParsingError: If data structure is invalid
-    """
-    try:
-        data = webhook_data.get("data", {})
-        attributes = data.get("attributes", {})
-
-        return {
-            "license_id": data.get("id"),
-            "license_key": attributes.get("key", ""),
-            "order_id": str(attributes.get("order_id", "")),
-            "product_id": str(attributes.get("product_id", "")),
-            "status": attributes.get("status", ""),
-            "activation_limit": attributes.get("activation_limit", -1),
-            "activation_usage": attributes.get("activation_usage", 0),
-            "expires_at": attributes.get("expires_at"),
-            "disabled": attributes.get("disabled", False),
-        }
-
-    except Exception as e:
-        logger.error(f"Error extracting license key data: {str(e)}")
-        raise WebhookParsingError(f"Invalid license key data: {str(e)}") from e
 
 
 def get_user_identifier(webhook_data: Dict[str, Any]) -> Optional[str]:

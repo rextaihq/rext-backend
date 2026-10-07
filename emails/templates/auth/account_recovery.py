@@ -15,12 +15,12 @@ from emails.utils.renderer import compose_email
 RECOVERY_LINK_VALID_MINUTES = 30
 
 _P = (
-    "color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; "
+    "color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; "
     "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
     "'Helvetica Neue', Arial, sans-serif;"
 )
 _MUTED = (
-    "color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; "
+    "color: #737373; font-size: 14px; line-height: 20px; margin: 0; "
     "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
     "'Helvetica Neue', Arial, sans-serif;"
 )
@@ -56,7 +56,7 @@ def render_account_recovery_email(
         [
             simple_header(),
             """
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Account Is Scheduled for Deletion
         </h1>
         """,
@@ -78,17 +78,17 @@ def render_account_recovery_email(
         </div>
         """,
             f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 24px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
             </p>
-            <p style="color: #3b82f6; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
+            <p style="color: #171717; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
                 {recovery_url}
             </p>
         </div>
         """,
             f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+        <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
             <p style="{_MUTED}">
                 If you meant to close this account, no action is needed — it will be deleted automatically.
                 If you didn't expect this, contact our support team right away.
@@ -133,10 +133,10 @@ def create_account_recovery_email(
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #fafafa; border-radius: 6px;">
+            <p style="margin: 0; font-size: 12px; color: #737373; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Don't want to receive these emails?
-                <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+                <a href="{unsubscribe_url}" style="color: #737373; text-decoration: underline;">Unsubscribe</a>
             </p>
         </div>
         """
@@ -155,6 +155,8 @@ def render_account_deactivated_email(
     login_url: str,
     retention_days: int = 14,
     unsubscribe_html: str = "",
+    plan_ends_on: Optional[str] = None,
+    log_back_in_by: Optional[str] = None,
 ) -> str:
     """
     Render the self-deactivation confirmation email.
@@ -169,21 +171,38 @@ def render_account_deactivated_email(
         login_url: URL of the login page
         retention_days: Days before the account is permanently deleted
         unsubscribe_html: Optional unsubscribe block appended before the footer
+        plan_ends_on: When the cancelled plan's current period ends, if there was a plan
+        log_back_in_by: The date to log back in by, when the account is deleted first
 
     Returns:
         Complete HTML email string
     """
+    if plan_ends_on and log_back_in_by:
+        plan_paragraph = (
+            f'<p style="{_P}">Your plan won\'t renew. If you log back in before '
+            f"<strong>{log_back_in_by}</strong>, it stays active until "
+            f"<strong>{plan_ends_on}</strong>, the end of its current period.</p>"
+        )
+    elif plan_ends_on:
+        plan_paragraph = (
+            f'<p style="{_P}">Your plan won\'t renew. It stays active until '
+            f"<strong>{plan_ends_on}</strong>, the end of its current period.</p>"
+        )
+    else:
+        plan_paragraph = ""
+
     return compose_email(
         [
             simple_header(),
             """
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Account Has Been Deactivated
         </h1>
         """,
             f'<p style="{_P}">Hi {user_name},</p>',
             f'<p style="{_P}">Your Rext AI account has been deactivated, as you requested. '
             f"You have been signed out on every device.</p>",
+            plan_paragraph,
             f'<p style="{_P}">Changed your mind? Start logging in and we will email you a link '
             f"to confirm it is you. Opening that link reactivates the account with nothing lost.</p>",
             primary_button("Reactivate My Account", login_url),
@@ -196,17 +215,17 @@ def render_account_deactivated_email(
         </div>
         """,
             f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 24px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
             </p>
-            <p style="color: #3b82f6; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
+            <p style="color: #171717; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
                 {login_url}
             </p>
         </div>
         """,
             f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+        <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
             <p style="{_MUTED}">
                 Didn't deactivate your account? Log in to reactivate it immediately and
                 contact our support team — someone else may have access to your password.
@@ -225,6 +244,8 @@ def create_account_deactivated_email(
     frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None,
     retention_days: int = 14,
+    plan_ends_on: Optional[str] = None,
+    log_back_in_by: Optional[str] = None,
 ) -> str:
     """
     Create the self-deactivation email.
@@ -234,6 +255,8 @@ def create_account_deactivated_email(
         frontend_url: Base frontend URL
         unsubscribe_token: Optional unsubscribe token for user preferences
         retention_days: Days before permanent deletion
+        plan_ends_on: When the cancelled plan's current period ends, if there was a plan
+        log_back_in_by: The date to log back in by, when the account is deleted first
 
     Returns:
         Complete HTML email string
@@ -242,10 +265,10 @@ def create_account_deactivated_email(
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #fafafa; border-radius: 6px;">
+            <p style="margin: 0; font-size: 12px; color: #737373; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Don't want to receive these emails?
-                <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+                <a href="{unsubscribe_url}" style="color: #737373; text-decoration: underline;">Unsubscribe</a>
             </p>
         </div>
         """
@@ -255,4 +278,6 @@ def create_account_deactivated_email(
         login_url=f"{frontend_url}/login",
         retention_days=retention_days,
         unsubscribe_html=unsubscribe_html,
+        plan_ends_on=plan_ends_on,
+        log_back_in_by=log_back_in_by,
     )

@@ -64,6 +64,12 @@ class LemonSqueezyTransientError(LemonSqueezyError):
         super().__init__(message)
 
 
+# A subscription's statuses in Lemon Squeezy's API.
+_SUBSCRIPTION_STATUSES = frozenset(
+    {"on_trial", "active", "paused", "past_due", "unpaid", "cancelled", "expired"}
+)
+
+
 class LemonSqueezyProvider(PaymentProvider):
     """LemonSqueezy payment provider implementation"""
 
@@ -533,6 +539,30 @@ class LemonSqueezyProvider(PaymentProvider):
             metadata=metadata or {},
         )
 
+    async def get_subscription_attributes(self, subscription_id: str) -> Dict[str, Any]:
+        """
+        Lemon Squeezy's own attributes for a subscription, as its webhooks carry them.
+
+        The reconciler applies these with the webhook handlers' rules, so it needs
+        the raw fields (status, ends_at, renews_at, updated_at, variant_id), not
+        the provider-neutral SubscriptionData.
+
+        Raises LemonSqueezyError when the answer lacks a known status or its time:
+        applied anyway, a missing status would read as active and give the plan back.
+        """
+        response = await self._make_request(
+            method="GET", endpoint=f"/subscriptions/{subscription_id}"
+        )
+        attributes = dict((response.get("data") or {}).get("attributes") or {})
+        if attributes.get("status") not in _SUBSCRIPTION_STATUSES or not attributes.get(
+            "updated_at"
+        ):
+            raise LemonSqueezyError(
+                f"Lemon Squeezy answered subscription {subscription_id} without a known "
+                f"status and its time (status {attributes.get('status')!r})"
+            )
+        return attributes
+
     async def get_subscription(self, subscription_id: str) -> SubscriptionData:
         """
         Get subscription details from LemonSqueezy.
@@ -784,6 +814,40 @@ class LemonSqueezyProvider(PaymentProvider):
 
         return await self.get_subscription(subscription_id)
 
+    async def uncancel_subscription(self, subscription_id: str) -> SubscriptionData:
+        """
+        Resume a cancelled subscription in LemonSqueezy before it ends.
+
+        A cancelled subscription keeps running until `ends_at`; setting
+        `cancelled` back to false makes it renew again. Lemon Squeezy refuses it
+        once the subscription has expired.
+
+        Args:
+            subscription_id: Subscription ID from LemonSqueezy
+
+        Returns:
+            SubscriptionData: Updated subscription information
+        """
+        logger.info(
+            "Resuming cancelled subscription",
+            operation="uncancel_subscription",
+            subscription_id=subscription_id,
+        )
+
+        await self._make_request(
+            method="PATCH",
+            endpoint=f"/subscriptions/{subscription_id}",
+            data={
+                "data": {
+                    "type": "subscriptions",
+                    "id": subscription_id,
+                    "attributes": {"cancelled": False},
+                }
+            },
+        )
+
+        return await self.get_subscription(subscription_id)
+
     async def resume_subscription(self, subscription_id: str) -> SubscriptionData:
         """
         Resume a paused subscription in LemonSqueezy.
@@ -912,135 +976,6 @@ class LemonSqueezyProvider(PaymentProvider):
             ),
         }
 
-    async def validate_license_key(
-        self, license_key: str, instance_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Validate a license key via LemonSqueezy License API.
-
-        Args:
-            license_key: License key to validate
-            instance_id: Optional instance identifier to check activation
-
-        Returns:
-            Dict containing validation result with:
-                - valid: bool - Whether license is valid
-                - license_key: Dict - License key details
-                - instance: Dict - Instance details if instance_id provided
-                - meta: Dict - Additional metadata
-
-        Raises:
-            LemonSqueezyAPIError: If validation fails
-        """
-        validate_data = {"license_key": license_key}
-
-        if instance_id:
-            validate_data["instance_id"] = instance_id
-
-        response = await self._make_request(
-            method="POST", endpoint="/licenses/validate", data=validate_data
-        )
-
-        logger.info(
-            f"LemonSqueezy: Validated license key {license_key[:8]}... "
-            f"(valid={response.get('valid', False)})"
-        )
-
-        return response
-
-    async def activate_license(self, license_key: str, instance_name: str) -> Dict[str, Any]:
-        """
-        Activate a license on a specific instance.
-
-        Args:
-            license_key: License key to activate
-            instance_name: Name/identifier for the instance
-
-        Returns:
-            Dict containing activation result with:
-                - activated: bool - Whether activation succeeded
-                - license_key: Dict - License key details
-                - instance: Dict - Instance details including instance_id
-                - meta: Dict - Additional metadata
-
-        Raises:
-            LemonSqueezyAPIError: If activation fails (e.g., limit reached)
-        """
-        activate_data = {"license_key": license_key, "instance_name": instance_name}
-
-        response = await self._make_request(
-            method="POST", endpoint="/licenses/activate", data=activate_data
-        )
-
-        instance_id = response.get("instance", {}).get("id", "")
-
-        logger.info(
-            f"LemonSqueezy: Activated license {license_key[:8]}... "
-            f"on instance '{instance_name}' (id={instance_id})"
-        )
-
-        return response
-
-    async def deactivate_license(self, license_key: str, instance_id: str) -> Dict[str, Any]:
-        """
-        Deactivate a license from a specific instance.
-
-        Args:
-            license_key: License key to deactivate
-            instance_id: Instance ID to deactivate (from activate_license response)
-
-        Returns:
-            Dict containing deactivation result with:
-                - deactivated: bool - Whether deactivation succeeded
-                - license_key: Dict - License key details
-                - meta: Dict - Additional metadata
-
-        Raises:
-            LemonSqueezyAPIError: If deactivation fails
-        """
-        deactivate_data = {"license_key": license_key, "instance_id": instance_id}
-
-        response = await self._make_request(
-            method="POST", endpoint="/licenses/deactivate", data=deactivate_data
-        )
-
-        logger.info(
-            f"LemonSqueezy: Deactivated license {license_key[:8]}... from instance {instance_id}"
-        )
-
-        return response
-
-    async def get_license(self, license_id: str) -> Dict[str, Any]:
-        """
-        Get license details by license ID.
-
-        Args:
-            license_id: License ID from LemonSqueezy
-
-        Returns:
-            Dict containing license details including:
-                - id: License ID
-                - status: License status
-                - key: License key
-                - activation_limit: Max activations allowed
-                - activation_usage: Current activations
-                - expires_at: Expiration date (if applicable)
-                - And other license metadata
-
-        Raises:
-            LemonSqueezyAPIError: If license not found
-        """
-        response = await self._make_request(method="GET", endpoint=f"/license-keys/{license_id}")
-
-        license_data = self._parse_jsonapi_data(response)
-
-        logger.info(
-            f"LemonSqueezy: Retrieved license {license_id} "
-            f"(status={license_data.get('status', 'unknown')})"
-        )
-
-        return license_data
-
     async def create_refund(
         self, order_id: str, amount: Optional[int] = None, reason: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -1131,6 +1066,56 @@ class LemonSqueezyProvider(PaymentProvider):
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except (ValueError, AttributeError):
             return None
+
+    async def latest_invoice(self, subscription_id: str) -> Optional[Dict[str, Any]]:
+        """
+        The newest invoice of a subscription, whatever its status, or None.
+
+        Not the newest paid one: a refund made already, or a partial one, shows as the
+        newest invoice's status, and an older invoice must never be refunded in its place.
+
+        Returns:
+            Dict with the invoice's ``id``, ``status`` (pending, paid, void, refunded,
+            partial_refund), ``total`` (cents) and ``refunded``
+        """
+        invoices = await self._paginate(
+            "/subscription-invoices", {"filter[subscription_id]": str(subscription_id)}, 1000
+        )
+        if not invoices:
+            return None
+        newest = max(invoices, key=lambda i: i.get("created_at") or "")
+        return {
+            "id": str(newest["id"]),
+            "status": newest.get("status"),
+            "total": int(newest.get("total") or 0),
+            "refunded": bool(newest.get("refunded")),
+        }
+
+    async def refund_subscription_invoice(self, invoice_id: str, amount: int) -> Dict[str, Any]:
+        """
+        Refund a subscription invoice (``POST /subscription-invoices/:id/refund``).
+
+        Args:
+            invoice_id: Subscription invoice ID from LemonSqueezy
+            amount: Amount to refund, in cents (the invoice's total for a full refund)
+        """
+        logger.info(
+            "Refunding subscription invoice",
+            operation="refund_subscription_invoice",
+            invoice_id=invoice_id,
+            amount=amount,
+        )
+        return await self._make_request(
+            "POST",
+            f"/subscription-invoices/{invoice_id}/refund",
+            data={
+                "data": {
+                    "type": "subscription-invoices",
+                    "id": str(invoice_id),
+                    "attributes": {"amount": amount},
+                }
+            },
+        )
 
     async def _paginate(self, endpoint: str, params: Dict[str, Any], limit: int) -> list:
         """

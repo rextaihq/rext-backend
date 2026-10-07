@@ -30,6 +30,8 @@ class DeactivateAccountResponseSchema(BaseModel):
     message: str
     user_id: UUID
     deactivated_at: Optional[datetime] = None
+    # When the cancelled plan's paid period ends (it doesn't renew); null without a plan.
+    plan_ends_at: Optional[datetime] = None
 
 
 class UserPermissionsResponse(BaseModel):

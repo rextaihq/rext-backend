@@ -1,47 +1,26 @@
 # Migration Conventions
 
-## Historical Non-Standard Revision IDs
+## The baseline
 
-The following migrations use non-standard revision IDs. These should NOT be changed
-as they exist in production databases' `alembic_version` tables.
+The first 204 migrations were squashed into one baseline on 2026-10-05: `versions/3c9e1e5d5028_baseline.py`. It keeps the old head's revision id, so every database that was already at that head (stage, live, every local copy) has nothing to run, and a new database gets exactly the schema the old chain built: `baseline/3c9e1e5d5028_schema.sql` is `pg_dump --schema-only` of a database built by the old chain. The old files, including their non-standard revision ids (`seed005`, `admin001`, `b2c3d4e5f6g7`, …), are in git history; no database refers to them any more, because `alembic_version` only ever holds the current head.
 
-### Custom Prefix Pattern
-These use semantic prefixes instead of random hex:
-- `seed005`-`seed009`: Seed data migrations
-- `admin001`: Admin features
-- `inv001`-`inv002`: Invitation features
-- `ls20251020`, `onb20251020`, `rem20251020`: Date-prefixed feature migrations
-- `pgv001`-`pgv003`: PgVector migrations
-- `20251111_bio_notif`: Bio and notifications expansion
+The baseline cannot be downgraded. To start over locally, drop the database (or `python scripts/db.py reset`) and run `alembic upgrade head` again.
 
-### Fake Hex Pattern
-These look like hex but contain invalid characters (g-m):
-- `b2c3d4e5f6g7`, `c3d4e5f6g7h8`, `d1e2f3g4h5i6`, `g1h2i3j4k5l6`, `h2i3j4k5l6m7`
-- `a1b2c3d4e5f6`, `a1f2e3d4c5b6`, `a8b9c0d1e2f3`, `f23456789abc`, `f9e8d7c6b5a4` (Additional ones found in `alembic/versions`)
+## Policy for new migrations
 
-## Policy for New Migrations
+1. **Let Alembic generate the id and the file.** `alembic revision --autogenerate -m "add trust score to content seo data"`; never `--rev-id`, never a hand-made id. The message says what the migration does.
+2. **Read the generated file before running it.** A `drop_table` or `drop_column` you did not intend means the models no longer declare something the database holds: stop and find out why.
+3. **The LangGraph tables are never in a migration.** The runtime's and the store's tables (`thread`, `run`, `checkpoints`, `store`, …: `src/api/database/langgraph_tables.py`) have no models; the server creates and migrates them itself. `alembic/env.py` leaves them out of autogenerate, so it no longer proposes to drop them. Add a name there when a LangGraph upgrade brings a new table.
+4. **Columns of a `TypeDecorator` type** (`EncryptedText`) are written as the type they store (`sa.String()`), so a migration never imports application code.
+5. **Seed data belongs in `scripts/seeds/`, not in migrations.** `python scripts/seed.py` inserts what is missing on every environment and never overwrites. A change to rows that already exist on stage and live (a renamed permission, a corrected plan) is a migration of its own, written for that change.
+6. **The models and the database agree.** `alembic check` against a database at head reports "No new upgrade operations detected"; when it does not, either the models drifted (fix the model) or a migration is missing (write it).
+7. **Schema work happens on a copy.** Locally, on a cloned database, with a dump and row counts before and after (the app rework's `rext-app-db-safety` skill has the steps).
 
-All new migrations MUST use Alembic-generated revision IDs:
+## Squashing again
 
-```bash
-# Correct - let Alembic generate the ID
-alembic revision --autogenerate -m "add_new_feature"
+When the chain grows long, the same recipe gives a new baseline with no change to any database:
 
-# Incorrect - do not use custom IDs
-alembic revision --rev-id "custom001" -m "add_new_feature"
-```
-
-The migration message should be descriptive enough to understand the change
-without relying on custom ID prefixes.
-
-## Migration ID Policy
-
-1. **Never hand-craft revision IDs.** Always use `alembic revision --autogenerate` or `alembic revision` without `--rev-id`.
-
-2. **Use descriptive migration messages.** The message should describe what the migration does:
-   - Good: `alembic revision -m "add_trust_score_column_to_content_seo_data"`
-   - Bad: `alembic revision --rev-id "seo001" -m "add column"`
-
-3. **Seed data belongs in scripts, not migrations.** Do not create `seed*` migrations. Use standalone seed scripts (see TASK-038).
-
-4. **Review migration IDs in PRs.** Check that new migrations have standard Alembic hex IDs.
+1. Build an empty database with the current chain: `alembic upgrade head`.
+2. `pg_dump --schema-only --no-owner --no-privileges <that database>`; drop pg_dump's `SET`, `SELECT pg_catalog.set_config` and `\restrict` lines and the `alembic_version` table, and save it as `baseline/<head id>_schema.sql`.
+3. Replace `versions/` with one file whose `revision` is the current head's id and whose `down_revision` is `None`, executing that SQL (copy `3c9e1e5d5028_baseline.py`).
+4. Prove it: an empty database built from the new baseline and one built from the old chain give the same `pg_dump --schema-only` (a CHECK constraint whose expression pg_dump prints differently is written as the original migration wrote it; see the two in the current baseline), and `alembic check` is clean on both.

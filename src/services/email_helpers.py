@@ -131,6 +131,8 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token,
                 retention_days=kwargs.get("retention_days", 14),
+                plan_ends_on=kwargs.get("plan_ends_on"),
+                log_back_in_by=kwargs.get("log_back_in_by"),
             )
             subject = "Your Rext AI Account Has Been Deactivated"
 

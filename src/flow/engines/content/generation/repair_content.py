@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from src.flow.engines.content.generation.brand_placement_policy import (
+    BrandPlacementPolicy,
     build_brand_structural_injection,
 )
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
@@ -54,6 +55,7 @@ _BRAND_RELATED_CHECKS = (
     "brand_presence",
     "brand_placement",
     "brand_placement_policy",
+    "brand_prominence",
     "brand_integration_depth",
     # A flagged claim is often inside the brand mention itself ("Nextly is the
     # best CMS"); the repair must know the brand to soften the claim without
@@ -170,6 +172,7 @@ def _build_brand_block(
     failed_checks: list[dict],
     brand_context: Optional[dict],
     content_type: str = "",
+    brand_policy: Optional[BrandPlacementPolicy] = None,
 ) -> str:
     brand_related = any(c.get("name") in _BRAND_RELATED_CHECKS for c in failed_checks)
     if not brand_related or not brand_context:
@@ -184,7 +187,7 @@ def _build_brand_block(
     # wrong-URL or bare-name-drop failure is a same-spot edit, not a move.
     structural = ""
     if content_type and any(c.get("name") == "brand_placement_policy" for c in failed_checks):
-        structural = build_brand_structural_injection(content_type, brand_name)
+        structural = build_brand_structural_injection(content_type, brand_name, brand_policy)
     # When claims are being corrected, the approved brand facts are the only
     # thing a brand claim may be restated with — keep the promotion, swap an
     # unsupported specific for one of these rather than for a new guess.
@@ -309,6 +312,7 @@ async def run_targeted_repair(
     article_stage: str = "pre-humanization (raw draft — tone not yet finalized)",
     protected: Optional[list[LinkRecord]] = None,
     previous_attempt: Optional[dict] = None,
+    brand_policy: Optional[BrandPlacementPolicy] = None,
 ) -> dict | None:
     """Core repair LLM call: fix exactly the listed issues, minimally.
 
@@ -346,7 +350,7 @@ async def run_targeted_repair(
             None,
             [
                 _build_sources_block(failed_checks, searched_results or []),
-                _build_brand_block(failed_checks, brand_context, content_type),
+                _build_brand_block(failed_checks, brand_context, content_type, brand_policy),
                 _build_keyword_block(failed_checks, focus_keyword),
             ],
         )
@@ -472,6 +476,7 @@ async def repair_content(state: REXT) -> dict:
                 article_stage="pre-humanization (raw draft — tone not yet finalized)",
                 protected=protected,
                 previous_attempt=repair_history[-1] if repair_history else None,
+                brand_policy=spec.get("brand_placement_policy"),
             )
             if repaired is not None:
                 candidate = repaired

@@ -11,6 +11,17 @@ from src.flow.states.rext import REXT, NormalizedOrganicResult
 logger = logging.getLogger(__name__)
 
 
+def has_organic_results(state: REXT) -> bool:
+    """Whether the normalised SERP holds any organic result.
+
+    Without one there is nothing to build an article from: the SERP subgraph
+    stops before the competitor analysis, the main graph ends the run at
+    no_serp_data before any credit is charged, and keyword_recommendation
+    opens no gate. One definition, so those three cannot disagree.
+    """
+    return bool((state.get("serp_normalized") or {}).get("normalize_results"))
+
+
 def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
     """
     Normalize raw SERP results into a structured format for further analysis.
@@ -94,6 +105,8 @@ def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
     # SERP Features
     features = {
         "people_also_ask": bool(people_ask),
+        # True when the SERP showed one; None when none was seen.
+        "ai_overview": serp_result.get("ai_overview"),
         # "sitelinks": any(r["has_sitelinks"] for r in normalized_results),
         # "wikipedia": any("wikipedia.org" in d for d in domains)
     }

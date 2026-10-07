@@ -32,7 +32,7 @@ async def test_list_subscriptions_returns_formatted_data():
     mock_db = AsyncMock()
     service = SubscriptionRetrievalService(mock_db)
 
-    user = Users(id=uuid4(), email="user@example.com", username="user")
+    user = Users(id=uuid4(), email="user@example.com", full_name="Test User")
     plan = SubscriptionPlan(id=uuid4(), name="pro", display_name="Pro Plan")
     subscription = UserSubscription(
         user_id=user.id,
@@ -56,6 +56,7 @@ async def test_list_subscriptions_returns_formatted_data():
 
     assert result["data"]["total"] == 1
     assert result["data"]["subscriptions"][0]["plan_name"] == "pro"
+    assert result["data"]["subscriptions"][0]["user_full_name"] == "Test User"
 
 
 @pytest.mark.asyncio
@@ -63,7 +64,7 @@ async def test_get_subscription_returns_details():
     mock_db = AsyncMock()
     service = SubscriptionRetrievalService(mock_db)
 
-    user = Users(id=uuid4(), email="user@example.com", username="user", status="active")
+    user = Users(id=uuid4(), email="user@example.com", full_name="Test User", status="active")
     plan = SubscriptionPlan(id=uuid4(), name="pro", display_name="Pro Plan")
     subscription = UserSubscription(
         user_id=user.id,

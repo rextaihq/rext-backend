@@ -9,8 +9,11 @@ Environment variables:
 - CLEANUP_ENABLED: Toggle data cleanup task (default: true)
 - BILLING_TASKS_ENABLED: Toggle subscription maintenance tasks (default: true)
 - TRIAL_TASKS_ENABLED: Toggle trial expiration tasks (default: true)
-- DUNNING_TASKS_ENABLED: Toggle payment dunning reminders (default: true)
-- GRACE_PERIOD_TASKS_ENABLED: Toggle grace period expiration (default: true)
+- DIGEST_TASKS_ENABLED: Toggle the email digest (default: true)
+- WEBHOOK_REPROCESS_TASKS_ENABLED: Toggle retrying failed LemonSqueezy webhooks (default: true)
+
+Local checkouts set SCHEDULER_ENABLED=false (see .env.example), so a development
+instance never runs billing, trial or publishing jobs against its database.
 """
 
 import asyncio
@@ -56,10 +59,10 @@ from src.api.schema.response_schemas import ErrorSeverity
 # TODO: src.api.tasks.webhook_reprocessing_task missing — disabled until committed
 # from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
-from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
-from src.api.tasks.payment_dunning_task import run_payment_dunning_task
+from src.api.tasks.subscription_reconcile_task import run_subscription_reconcile_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
+from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.config.cleanup_config import cleanup_config
 from src.services.data_cleanup_service import DataCleanupService
 from src.services.digest_service import run_digest_task
@@ -67,7 +70,7 @@ from src.services.email_helpers import send_content_publish_failed_email
 from src.services.notification_helper import notify_now
 from src.services.notifications_services import notification_service
 from src.utils.logger import logger
-from src.web.wordpress import WordPressPublisher
+from src.web.wordpress import BodyImageUploadError, WordPressPublisher
 
 _PUBLISH_CONCURRENCY = 5
 _PUBLISH_BATCH_LIMIT = 200
@@ -81,6 +84,10 @@ def _is_transient_publish_error(exc: Exception) -> bool:
     the exact same way on every attempt, so retrying them just burns the
     retry budget and delays the FAILED notification for no benefit.
     """
+    if isinstance(exc, BodyImageUploadError):
+        # A refused image (HTTP 401 or 413, not an image) is refused again, and each
+        # attempt would leave the images uploaded before it in the media library again.
+        return exc.transient
     if isinstance(exc, (ExternalServiceTimeoutException, RextExternalServiceException)):
         return True
     if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError)):
@@ -97,6 +104,8 @@ def _get_publish_failure_reason(exc: Exception) -> str:
     explicitly recognized, so every failure type still gets a sensible
     explanation.
     """
+    if isinstance(exc, BodyImageUploadError):
+        return exc.notice
     if isinstance(exc, (ExternalServiceTimeoutException, httpx.TimeoutException)):
         return "Your WordPress site took too long to respond (timed out)."
     if isinstance(exc, (httpx.ConnectError, httpx.NetworkError)):
@@ -566,7 +575,7 @@ class ScheduledTaskManager:
         if not APSCHEDULER_AVAILABLE:
             logger.warning(
                 "CRITICAL: APScheduler not installed — ALL billing automation is disabled! "
-                "Trial expiration, payment dunning, grace period enforcement, usage resets, "
+                "Trial expiration, usage resets, "
                 "and data cleanup will NOT run."
             )
             return
@@ -596,6 +605,24 @@ class ScheduledTaskManager:
         else:
             logger.info("Data cleanup task disabled (CLEANUP_ENABLED=false)")
 
+        # Subscription reconcile with Lemon Squeezy — daily at 2:30 AM. It is subscription
+        # maintenance, so BILLING_TASKS_ENABLED=false turns it off too.
+        if cleanup_config.BILLING_TASKS_ENABLED and cleanup_config.SUBSCRIPTION_RECONCILE_ENABLED:
+            self.scheduler.add_job(
+                run_subscription_reconcile_task,
+                trigger=CronTrigger(hour=2, minute=30),
+                id="subscription_reconcile",
+                name="Nightly subscription reconcile with Lemon Squeezy",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: subscription_reconcile")
+        else:
+            logger.info(
+                "Subscription reconcile task disabled "
+                "(BILLING_TASKS_ENABLED or SUBSCRIPTION_RECONCILE_ENABLED is false)"
+            )
+
         # Trial expiration check — daily at midnight
         if cleanup_config.TRIAL_TASKS_ENABLED:
             self.scheduler.add_job(
@@ -610,35 +637,8 @@ class ScheduledTaskManager:
         else:
             logger.info("Trial expiration task disabled (TRIAL_TASKS_ENABLED=false)")
 
-        # Payment dunning reminders — daily at 1 AM
-        if cleanup_config.DUNNING_TASKS_ENABLED:
-            self.scheduler.add_job(
-                run_payment_dunning_task,
-                trigger=CronTrigger(hour=1, minute=0),
-                id="payment_dunning",
-                name="Daily payment dunning",
-                replace_existing=True,
-                max_instances=1,
-            )
-            logger.info("Registered task: payment_dunning")
-        else:
-            logger.info("Payment dunning task disabled (DUNNING_TASKS_ENABLED=false)")
-
-        # Grace period expiration — daily at 1:30 AM
-        if cleanup_config.GRACE_PERIOD_TASKS_ENABLED:
-            self.scheduler.add_job(
-                run_grace_period_expiration_task,
-                trigger=CronTrigger(hour=1, minute=30),
-                id="grace_period_expiration",
-                name="Daily grace period expiration",
-                replace_existing=True,
-                max_instances=1,
-            )
-            logger.info("Registered task: grace_period_expiration")
-        else:
-            logger.info("Grace period expiration task disabled (GRACE_PERIOD_TASKS_ENABLED=false)")
-
-        # Scheduled content publish — every 5 minutes
+        # Scheduled content publish — every minute, so a post goes out within a
+        # minute of its scheduled time
         self.scheduler.add_job(
             run_scheduled_publish_task,
             trigger="interval",
@@ -664,10 +664,9 @@ class ScheduledTaskManager:
         logger.info("Registered task: api_usage_rollup")
 
         # Failed-webhook automatic reprocessing — every N minutes
-        # TODO: disabled — run_webhook_reprocessing_task module is missing from the repo
-        if False and cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
+        if cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
             self.scheduler.add_job(
-                None,
+                run_webhook_reprocessing_task,
                 trigger="interval",
                 minutes=cleanup_config.WEBHOOK_REPROCESS_INTERVAL_MINUTES,
                 id="webhook_reprocessing",
@@ -677,7 +676,9 @@ class ScheduledTaskManager:
             )
             logger.info("Registered task: webhook_reprocessing")
         else:
-            logger.info("Webhook reprocessing task disabled")
+            logger.info(
+                "Webhook reprocessing task disabled (WEBHOOK_REPROCESS_TASKS_ENABLED=false)"
+            )
 
         # Email digest — checked daily; each user gets one per their cadence
         if cleanup_config.DIGEST_TASKS_ENABLED:

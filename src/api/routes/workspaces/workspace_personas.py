@@ -13,6 +13,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
 from src.api.schema.response.persona_responses import PersonaListResponse, PersonaResponse
@@ -54,8 +55,27 @@ async def list_workspace_personas(
     )
     personas = result.scalars().all()
 
+    # How many of the workspace's articles each persona wrote (the trash left out, as
+    # the library leaves it out): the dashboard's persona table shows it.
+    counts = await db.execute(
+        select(Content.persona_id, func.count(Content.id))
+        .where(
+            Content.workspace_id == workspace.id,
+            Content.persona_id.is_not(None),
+            Content.deleted_at.is_(None),
+        )
+        .group_by(Content.persona_id)
+    )
+    article_counts = dict(counts.all())
+
+    payloads = []
+    for persona in personas:
+        payload = _persona_payload(persona)
+        payload["article_count"] = article_counts.get(persona.id, 0)
+        payloads.append(payload)
+
     return success(
-        data={"personas": [_persona_payload(p) for p in personas], "total_count": len(personas)},
+        data={"personas": payloads, "total_count": len(personas)},
         request=request,
         message="Workspace personas retrieved successfully",
     )
@@ -212,30 +232,30 @@ def _delete_after_commit(db, object_name: str) -> None:
     unrecoverable if the transaction rolls back, and the row then names a
     picture that no longer exists. A file deleted after is at worst a moment of
     duplication, and if the commit never happens it simply stays - which is why
-    the listener also detaches itself on rollback.
+    a rollback disarms the listener.
     """
     from sqlalchemy import event
 
     from src.utils.storage import storage_service
 
     session = db.sync_session if hasattr(db, "sync_session") else db
+    # The listeners disarm themselves instead of being removed: removing a listener while
+    # SQLAlchemy dispatches its event mutates the list being iterated ("deque mutated during
+    # iteration"), which failed the commit with a 500 after the change had already been
+    # committed (G64). They live as long as the request's session.
+    armed = {"on": True}
 
     def _on_commit(_session) -> None:
+        if not armed["on"]:
+            return
+        armed["on"] = False
         try:
             storage_service.delete_file(object_name)
         except Exception as exc:  # noqa: BLE001 - an orphan is not a failure
             logger.warning("could not delete previous persona avatar %s: %s", object_name, exc)
-        _detach()
 
     def _on_rollback(_session) -> None:
-        _detach()
-
-    def _detach() -> None:
-        for name, fn in (("after_commit", _on_commit), ("after_rollback", _on_rollback)):
-            try:
-                event.remove(session, name, fn)
-            except Exception:  # noqa: BLE001 - already gone
-                pass
+        armed["on"] = False
 
     event.listen(session, "after_commit", _on_commit)
     event.listen(session, "after_rollback", _on_rollback)

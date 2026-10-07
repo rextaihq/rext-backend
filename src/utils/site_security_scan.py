@@ -16,9 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-import httpx
-
 from src.api.lib.logger import auto_logger
+from src.utils.url_validator import public_client
 
 logger = auto_logger()
 
@@ -77,7 +76,9 @@ async def analyze_site_security(url: str, *, timeout: float = 15.0) -> Dict[str,
         "error": None,
     }
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+        # The workspace's site is customer-given and its redirects are followed: none
+        # may lead to a private or reserved network (a refusal is reported below).
+        async with public_client(follow_redirects=True, timeout=timeout) as client:
             response = await client.get(url, headers={"User-Agent": _DEFAULT_USER_AGENT})
 
         result["checked"] = True

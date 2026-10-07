@@ -202,7 +202,7 @@ class TestRoleServiceUpdateRole:
         with pytest.raises(RextValidationException) as exc_info:
             await service.update_role(role.id, display_name="Super Admin")
 
-        assert "cannot update system roles" in exc_info.value.message.lower()
+        assert "cannot update protected role" in exc_info.value.message.lower()
 
     async def test_update_role_not_found(self, db_session):
         """Should raise ResourceNotFoundException when role doesn't exist"""
@@ -230,7 +230,7 @@ class TestRoleServiceDeleteRole:
 
         # Assert - role should not exist
         with pytest.raises(ResourceNotFoundException):
-            await service._get_role_or_404(role.id)
+            await service.get_role_by_id(role.id)
 
     async def test_delete_role_system_role_protection(self, db_session):
         """Should prevent deleting system roles"""
@@ -245,7 +245,7 @@ class TestRoleServiceDeleteRole:
         with pytest.raises(RextValidationException) as exc_info:
             await service.delete_role(role.id)
 
-        assert "cannot delete system roles" in exc_info.value.message.lower()
+        assert "cannot delete protected role" in exc_info.value.message.lower()
 
     async def test_delete_role_in_use_without_reassignment(self, db_session, setup_factories):
         """Should raise RextValidationException when role assigned to users"""
@@ -283,7 +283,7 @@ class TestRoleServiceDeleteRole:
 
         # Assert - old role deleted
         with pytest.raises(ResourceNotFoundException):
-            await service._get_role_or_404(old_role.id)
+            await service.get_role_by_id(old_role.id)
 
         # User should have new role
         user_roles = await service.get_user_roles(user.id)
@@ -512,12 +512,12 @@ class TestRoleServiceGetRoleHierarchy:
             name=f"viewer_{unique_id}", display_name=f"Viewer {unique_id}", hierarchy_level=1
         )
 
-        # Act
-        roles = await service.get_role_hierarchy()
+        # Act: one page that holds every role (the seeded ones too)
+        hierarchy = await service.get_role_hierarchy(per_page=1000)
 
         # Assert - check that our roles are ordered correctly
         # (there might be other roles in the DB, so we filter to our test roles)
-        our_roles = [r for r in roles if unique_id in r.name]
+        our_roles = [r for r in hierarchy["roles"] if unique_id in r.name]
         assert len(our_roles) == 3
         assert our_roles[0].hierarchy_level == 10  # Admin first
         assert our_roles[1].hierarchy_level == 5  # Editor second

@@ -8,6 +8,7 @@ This is a security notification email.
 from typing import Optional
 
 from emails.components import primary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -47,10 +48,10 @@ def render_password_changed_email(
         if changed_at:
             details.append(f"""
                 <tr>
-                    <td style="color: #6b7280; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    <td style="color: #737373; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         Time
                     </td>
-                    <td style="color: #111827; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
+                    <td style="color: #171717; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
                         {changed_at}
                     </td>
                 </tr>
@@ -58,10 +59,10 @@ def render_password_changed_email(
         if ip_address:
             details.append(f"""
                 <tr>
-                    <td style="color: #6b7280; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    <td style="color: #737373; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         IP Address
                     </td>
-                    <td style="color: #111827; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
+                    <td style="color: #171717; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
                         {ip_address}
                     </td>
                 </tr>
@@ -69,18 +70,18 @@ def render_password_changed_email(
         if user_agent:
             details.append(f"""
                 <tr>
-                    <td style="color: #6b7280; font-size: 13px; padding: 6px 0; vertical-align: top; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    <td style="color: #737373; font-size: 13px; padding: 6px 0; vertical-align: top; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         Device
                     </td>
-                    <td style="color: #111827; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace; word-break: break-word;">
+                    <td style="color: #171717; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace; word-break: break-word;">
                         {user_agent[:80]}...
                     </td>
                 </tr>
             """)
 
         security_details = f"""
-        <div style="margin: 24px 0; padding: 20px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #111827; font-size: 14px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin: 24px 0; padding: 20px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #171717; font-size: 14px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Change Details:
             </p>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -90,26 +91,26 @@ def render_password_changed_email(
         """
 
     account_url = f"{frontend_url}/settings/security"
-    support_url = f"{frontend_url}/support"
+    support_url = SITE_CONTACT_URL
 
     email_html = compose_email(
         [
             simple_header(),
             """
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Password Changed Successfully
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             This is a confirmation that your password was successfully changed for your Rext AI account.
         </p>
         """,
             """
-        <div style="margin: 32px 0; padding: 20px; background-color: #ecfdf5; border-left: 4px solid #10b981; border-radius: 4px;">
+        <div style="margin: 32px 0; padding: 20px; background-color: #ecfdf5; border-left: 4px solid #111a17; border-radius: 4px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                     <td style="padding-right: 16px; vertical-align: top;">
@@ -151,15 +152,15 @@ def render_password_changed_email(
         </div>
         """,
             f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-            <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0 0 16px 0; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
+            <p style="color: #404040; font-size: 15px; line-height: 22px; margin: 0 0 16px 0; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Need Help?
             </p>
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 If you have any questions or concerns about your account security, please contact our support team immediately.
             </p>
             <p style="margin: 0;">
-                <a href="{support_url}" style="color: #3b82f6; text-decoration: none; font-size: 14px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <a href="{support_url}" style="color: #171717; text-decoration: underline; font-size: 14px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                     Contact Support →
                 </a>
             </p>
@@ -210,10 +211,10 @@ def create_password_changed_email(
         if changed_at:
             details.append(f"""
                 <tr>
-                    <td style="color: #6b7280; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    <td style="color: #737373; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         Time
                     </td>
-                    <td style="color: #111827; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
+                    <td style="color: #171717; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
                         {changed_at}
                     </td>
                 </tr>
@@ -221,10 +222,10 @@ def create_password_changed_email(
         if ip_address:
             details.append(f"""
                 <tr>
-                    <td style="color: #6b7280; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    <td style="color: #737373; font-size: 13px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         IP Address
                     </td>
-                    <td style="color: #111827; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
+                    <td style="color: #171717; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace;">
                         {ip_address}
                     </td>
                 </tr>
@@ -234,18 +235,18 @@ def create_password_changed_email(
             ua_display = user_agent[:80] + "..." if len(user_agent) > 80 else user_agent
             details.append(f"""
                 <tr>
-                    <td style="color: #6b7280; font-size: 13px; padding: 6px 0; vertical-align: top; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    <td style="color: #737373; font-size: 13px; padding: 6px 0; vertical-align: top; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                         Device
                     </td>
-                    <td style="color: #111827; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace; word-break: break-word;">
+                    <td style="color: #171717; font-size: 13px; padding: 6px 0; text-align: right; font-weight: 500; font-family: 'Courier New', monospace; word-break: break-word;">
                         {ua_display}
                     </td>
                 </tr>
             """)
 
         security_details = f"""
-        <div style="margin: 24px 0; padding: 20px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #111827; font-size: 14px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin: 24px 0; padding: 20px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #171717; font-size: 14px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Change Details:
             </p>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -255,15 +256,15 @@ def create_password_changed_email(
         """
 
     account_url = f"{frontend_url}/settings/security"
-    support_url = f"{frontend_url}/support"
+    support_url = SITE_CONTACT_URL
 
     # Build unsubscribe footer (Note: Security emails typically should NOT be unsubscribable)
     unsubscribe_html = ""
     if unsubscribe_token:
         _unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = """
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #fafafa; border-radius: 6px;">
+            <p style="margin: 0; font-size: 12px; color: #737373; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Note: This is a security notification and cannot be disabled.
             </p>
         </div>
@@ -273,20 +274,20 @@ def create_password_changed_email(
         [
             simple_header(),
             """
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Password Changed Successfully
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             This is a confirmation that your password was successfully changed for your Rext AI account.
         </p>
         """,
             """
-        <div style="margin: 32px 0; padding: 20px; background-color: #ecfdf5; border-left: 4px solid #10b981; border-radius: 4px;">
+        <div style="margin: 32px 0; padding: 20px; background-color: #ecfdf5; border-left: 4px solid #111a17; border-radius: 4px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                     <td style="padding-right: 16px; vertical-align: top;">
@@ -328,15 +329,15 @@ def create_password_changed_email(
         </div>
         """,
             f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-            <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0 0 16px 0; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
+            <p style="color: #404040; font-size: 15px; line-height: 22px; margin: 0 0 16px 0; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Need Help?
             </p>
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 If you have any questions or concerns about your account security, please contact our support team immediately.
             </p>
             <p style="margin: 0;">
-                <a href="{support_url}" style="color: #3b82f6; text-decoration: none; font-size: 14px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <a href="{support_url}" style="color: #171717; text-decoration: underline; font-size: 14px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                     Contact Support →
                 </a>
             </p>

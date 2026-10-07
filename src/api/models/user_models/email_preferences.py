@@ -48,10 +48,6 @@ class EmailPreferences(Base, SerializableMixin):
     usage_limit_warning = Column(Boolean, default=True, nullable=False)
     usage_limit_exceeded = Column(Boolean, default=True, nullable=False)
 
-    # Knowledge base preferences
-    kb_processing_completed = Column(Boolean, default=True, nullable=False)
-    kb_processing_failed = Column(Boolean, default=True, nullable=False)
-
     # Digest preferences
     digest_enabled = Column(Boolean, default=False, nullable=False)
     digest_frequency = Column(String(20), default="weekly", nullable=False)

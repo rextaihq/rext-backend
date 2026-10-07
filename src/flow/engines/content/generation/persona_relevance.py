@@ -174,6 +174,18 @@ _WEIGHTS = {
 # should be allowed to dilute below this.
 _PHRASE_MATCH_FLOOR = 85.0
 
+# How much of the article's subject a persona's stated expertise must cover before
+# the article may present them as someone with experience in it: an author bio,
+# "I'm <name>, a <title>", credentials (G56, rext-control #501). Measured as
+# `subject_fit`, the better of the topic and title against the persona's title
+# and areas of expertise only. The description and bio stay out: their generic
+# words ("practical ideas") are no expertise in bakeries, and neither intent nor
+# content type speaks to the subject. 30 is about a third of the subject's
+# meaningful words ("Marketing Consultant, email campaigns" scores 40 on "email
+# marketing ideas for local bakeries"); any speciality named whole in the topic
+# or title clears it at 85.
+TOPIC_FIT_THRESHOLD = 30.0
+
 
 @dataclass
 class PersonaRelevance:
@@ -184,12 +196,21 @@ class PersonaRelevance:
     score: float
     breakdown: dict[str, float] = field(default_factory=dict)
 
+    # The stated expertise against the article's subject (subject_fit), 0-100.
+    subject_fit: float = 0.0
+
+    @property
+    def fits_topic(self) -> bool:
+        """Whether the article may speak from this persona's experience."""
+        return self.subject_fit >= TOPIC_FIT_THRESHOLD
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "persona_id": self.persona_id,
             "name": self.name,
             "score": self.score,
             "breakdown": dict(self.breakdown),
+            "fits_topic": self.fits_topic,
         }
 
 
@@ -244,6 +265,20 @@ def _persona_tokens(persona: Any) -> set[str]:
     return tokens
 
 
+def _expertise_tokens(persona: Any) -> set[str]:
+    """What the persona states as expertise: its title and areas, not its narrative."""
+    tokens: set[str] = set()
+    for fieldname in ("professional_title", "areas_of_expertise"):
+        tokens |= _tokens(_attr(persona, fieldname))
+    return tokens
+
+
+def subject_fit(persona: Any, *, topic: Optional[str] = None, title: Optional[str] = None) -> float:
+    """The persona's stated expertise against the article's subject: the better of topic and title."""
+    tokens = _expertise_tokens(persona)
+    return max(_text_dimension(persona, tokens, topic), _text_dimension(persona, tokens, title))
+
+
 def _coverage(persona_tokens: set[str], context_tokens: set[str]) -> float:
     """Share of the article's vocabulary the persona speaks, 0-100."""
     if not persona_tokens or not context_tokens:
@@ -258,10 +293,16 @@ def _text_dimension(persona: Any, persona_tokens: set[str], text: Optional[str])
     score = _coverage(persona_tokens, _tokens(text))
     lowered = str(text).lower()
     for phrase in _expertise_phrases(persona):
-        if phrase and phrase in lowered:
+        if phrase and _names_phrase(lowered, phrase):
             score = max(score, _PHRASE_MATCH_FLOOR)
             break
     return round(score, 2)
+
+
+def _names_phrase(text: str, phrase: str) -> bool:
+    """Whether the text names the phrase as whole words: "AI" is not in "email", "SEO" is in
+    "technical seo audits"."""
+    return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text) is not None
 
 
 def _vocabulary_dimension(persona_tokens: set[str], vocabulary: set[str]) -> float:
@@ -323,6 +364,7 @@ def score_persona(
         name=str(_attr(persona, "full_name") or _attr(persona, "name") or ""),
         score=score,
         breakdown=breakdown,
+        subject_fit=subject_fit(persona, topic=topic, title=title),
     )
 
 
@@ -350,3 +392,20 @@ def rank_personas(
         for persona in personas
     ]
     return sorted(scored, key=lambda relevance: relevance.score, reverse=True)
+
+
+def recommend_persona(ranked: Iterable[PersonaRelevance]) -> Optional[str]:
+    """The persona an article defaults to: the best-ranked one whose stated expertise fits the subject.
+
+    None when no persona fits (E26, rext-control#559): an article on a subject the workspace's
+    people don't speak to is written by no persona unless the user picks one, rather than by
+    whichever of them ranked first.
+    """
+    return next((relevance.persona_id for relevance in ranked if relevance.fits_topic), None)
+
+
+def persona_fits_topic(
+    persona: Any, *, topic: Optional[str] = None, title: Optional[str] = None
+) -> bool:
+    """Whether an article on this topic and title may speak from the persona's experience."""
+    return subject_fit(persona, topic=topic, title=title) >= TOPIC_FIT_THRESHOLD

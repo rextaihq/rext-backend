@@ -20,6 +20,10 @@ if not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER:
         "Missing DATAFORSEO_BACKLINKS_URL or DATAFORSEO_AUTH_HEADER in environment"
     )
 
+# DataForSEO's task status for a search that ran and found nothing
+# (https://docs.dataforseo.com/v3/appendix/errors/).
+NO_SEARCH_RESULTS = 40102
+
 HEADERS = {
     "Authorization": f"Basic {AUTH_HEADER}",
     "Content-Type": "application/json",
@@ -123,7 +127,9 @@ async def get_dataforseo_data(
 ) -> Dict[str, Any]:
     """
     Calls DATAFORSEO_BACKLINKS_URL (keyword_overview/live).
-    Returns search_volume, keyword_difficulty, intent, avg backlinks, referring_domains.
+    Returns search_volume, keyword_difficulty, intent, avg backlinks, referring_domains
+    and a volume_status. When DataForSEO has no item for the keyword, or the call
+    fails, only the volume_status is returned ("no_data" or "lookup_failed").
     """
     payload = [
         {
@@ -140,20 +146,24 @@ async def get_dataforseo_data(
             data = response.json()
 
         task = data.get("tasks", [{}])[0]
-        if task.get("status_code") != 20000:
-            logger.warning(f"DataForSEO error: {task.get('status_message')}")
-            return {}
+        status_code = task.get("status_code")
+        if status_code == NO_SEARCH_RESULTS:
+            logger.info(f"DataForSEO has no data for: {keyword}")
+            return {"volume_status": "no_data"}
+        if status_code != 20000:
+            logger.warning(f"DataForSEO error {status_code}: {task.get('status_message')}")
+            return {"volume_status": "lookup_failed"}
 
         result = task.get("result") or []
         if not result:
             logger.warning(f"Empty result from DataForSEO for: {keyword}")
-            return {}
+            return {"volume_status": "no_data"}
 
         # keyword_overview: result[0]["items"] is the list of keyword objects
         items = result[0].get("items") or []
         if not items:
             logger.warning(f"No items in result for: {keyword}")
-            return {}
+            return {"volume_status": "no_data"}
 
         item = items[0]
 
@@ -169,9 +179,13 @@ async def get_dataforseo_data(
         if isinstance(foreign_intent, list):
             foreign_intent = ", ".join(foreign_intent)
 
+        # A null volume means DataForSEO has no figure; 0 is a real value.
+        search_volume = ki.get("search_volume")
+
         return {
             "keyword": item.get("keyword", keyword),
-            "search_volume": int(ki.get("search_volume") or 0),
+            "search_volume": None if search_volume is None else int(search_volume),
+            "volume_status": "no_data" if search_volume is None else "ok",
             "keyword_difficulty": int(kp.get("keyword_difficulty") or 0),
             "backlinks": int(bl.get("backlinks") or 0),
             "referring_domains": int(bl.get("referring_domains") or 0),
@@ -185,14 +199,46 @@ async def get_dataforseo_data(
 
     except Exception as e:
         logger.error(f"Error fetching DataForSEO data for '{keyword}': {e}")
-        return {}
+        return {"volume_status": "lookup_failed"}
+
+
+async def charge_serp_seo(user_id, workspace_id) -> bool:
+    """The SERP stage's charge (SERP and competitor analysis), taken before its paid calls.
+
+    The one place it is charged: the keyword analysis here, and a start from the
+    keyword Library (library_item.py). False, with the credits.exhausted event
+    emitted, when the balance can't cover it.
+    """
+    from src.utils.credit_manager import (
+        STAGE_CREDITS,
+        InsufficientCreditsError,
+        _emit_credit_event,
+        consume_stage_credits,
+    )
+
+    try:
+        await consume_stage_credits(
+            user_id, STAGE_CREDITS["serp_seo"], "serp_seo", workspace_id=workspace_id
+        )
+    except InsufficientCreditsError as e:
+        logger.warning(
+            "Insufficient credits for serp_seo: need %d, have %d (user=%s) — skipping the paid calls",
+            e.required,
+            e.available,
+            user_id,
+        )
+        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+        return False
+    return True
 
 
 async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
 
+    # Used whenever there is no keyword overview; the volume_status says why.
     default_backlinks: SERPBacklinks = {
         "keyword": "",
-        "search_volume": 0,
+        "search_volume": None,
+        "volume_status": "lookup_failed",
         "keyword_difficulty": 0,
         "backlinks": 0,
         "referring_domains": 0,
@@ -229,33 +275,19 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     location_name, language_code = resolve_country(country)
 
     # Deduct serp_seo credit BEFORE the API call — no spend if user can't afford it
-    from src.utils.credit_manager import (
-        STAGE_CREDITS,
-        InsufficientCreditsError,
-        _emit_credit_event,
-        consume_stage_credits,
-    )
-
-    try:
-        await consume_stage_credits(
-            user_id, STAGE_CREDITS["serp_seo"], "serp_seo", workspace_id=workspace_id
-        )
-    except InsufficientCreditsError as e:
-        logger.warning(
-            "Insufficient credits for serp_seo: need %d, have %d (user=%s) — skipping DataForSEO call",
-            e.required,
-            e.available,
-            user_id,
-        )
-        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+    if not await charge_serp_seo(user_id, workspace_id):
+        default_backlinks["volume_status"] = "insufficient_credits"
         return {"seo_result": {**seo_result, "serp_backlinks": default_backlinks}}
 
     logger.info(f"Fetching DataForSEO for '{query}' @ {location_name} ({language_code})")
 
     data = await get_dataforseo_data(query, location_name, language_code)
 
-    if not data:
-        logger.warning(f"No DataForSEO data for '{query}' — using defaults")
+    if "keyword" not in data:
+        logger.warning(
+            f"No DataForSEO data for '{query}' ({data['volume_status']}) — using defaults"
+        )
+        default_backlinks["volume_status"] = data["volume_status"]
         return {"seo_result": {**seo_result, "serp_backlinks": default_backlinks}}
 
     logger.info(

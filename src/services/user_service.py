@@ -609,7 +609,7 @@ class UserService:
         Permanently delete a soft-deleted user and their associated data.
 
         Irreversible. Hard-deletes every workspace the user owns (their content,
-        knowledge, personas and integrations cascade with it), prunes the
+        personas and integrations cascade with it), prunes the
         account's sessions, tokens and OAuth links, cancels any active
         subscription locally, then scrubs the account's PII and marks it
         ``anonymized``. The row itself is kept — audit logs, refunds and

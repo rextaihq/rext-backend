@@ -13,15 +13,13 @@ Database Schema (Existing):
 Permission Naming Convention:
     {resource}.{action}
 
-    Resources: workspace, content, topic, knowledge, member, role, permission, etc.
+    Resources: workspace, content, member, role, permission, etc.
     Actions: create, read, update, delete, publish, approve, invite, manage, etc.
 
     Examples:
     - workspace.delete (delete workspace)
     - content.publish (publish content)
-    - topic.approve (approve topics)
     - member.invite (invite members)
-    - knowledge.delete (delete knowledge)
 
 Usage:
     from src.utils.rbac_utils import check_permission, require_permission

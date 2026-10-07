@@ -1,8 +1,9 @@
-import traceback
+import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.api.schema.response_schemas import SuccessResponse
+from src.api.tool.limits import bounded, free_tool_size
 from src.api.tool.schema.schema import (
     BrokenLinkRequest,
     BrokenLinkResponse,
@@ -67,18 +68,43 @@ from src.api.tool.tools import (
     rewrite_paragraph,
     validate_meta_description,
 )
+from src.flow.model.provider_outage import BUSY_MESSAGE, RETRY_AFTER_SECONDS, provider_outage
 from src.utils.response_utils import success
 
-router = APIRouter(prefix="/tools", tags=["tools"])
+logger = logging.getLogger(__name__)
+
+FAILED_MESSAGE = "We couldn't complete this request right now. Please try again in a moment."
 
 
-@router.get("/")
-def get_tools():
-    return {"message": "tools"}
+def _failed(exc: Exception, what: str) -> HTTPException:
+    """A tool's failure: 503 with a Retry-After while the AI provider is unavailable (G75), else 500.
+    A route's own HTTPException (a 400 for an empty input) goes out as it is."""
+    if isinstance(exc, HTTPException):
+        return exc
+    outage = provider_outage(exc)
+    if outage is not None:
+        # The model's error hook alerts the team once an hour; every request needn't, so the 503 writes
+        # no Error Logs row and no Sentry event (suppress_error_log, as the free tools' 429s).
+        logger.warning("%s: %s is unavailable (%s)", what, outage.provider, outage.kind)
+        busy = HTTPException(
+            status_code=503,
+            detail=BUSY_MESSAGE,
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+        )
+        busy.suppress_error_log = True
+        return busy
+    logger.error(what, exc_info=True)
+    return HTTPException(status_code=500, detail=FAILED_MESSAGE)
+
+
+# Public by decision (the rext.ai site's tool pages call it from the browser), bounded per visitor
+# and per day: every route is @bounded, and a model tool's body is capped by free_tool_size.
+router = APIRouter(prefix="/tools", tags=["tools"], dependencies=[Depends(free_tool_size)])
 
 
 # Word Counter Endpoint
 @router.post("/count_metrics", response_model=SuccessResponse[TextMetricsOutput])
+@bounded
 async def get_metrics(input_data: TextInput, request: Request):
     """
     API endpoint to receive text via POST request and return metrics.
@@ -87,12 +113,13 @@ async def get_metrics(input_data: TextInput, request: Request):
     try:
         metrics = count_text_metrics(input_data.text)
         return success(data=metrics, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise _failed(exc, "Error in count metrics tool") from exc
 
 
 # Meta Description Generator Endpoint
 @router.post("/meta-description/generate", response_model=SuccessResponse[MetaDescriptionResponse])
+@bounded
 async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Request):
     """
     API endpoint to generate meta description.
@@ -107,14 +134,13 @@ async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Requ
             data=MetaDescriptionResponse(meta_description=meta_description, validation=validation),
             request=request,
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate meta description: {str(e)}"
-        )
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate meta description") from exc
 
 
 # Title Tag Generator Endpoint
 @router.post("/title-tags", response_model=SuccessResponse[TitleResponse])
+@bounded
 async def generate_title_tags_route(request_title: TitleRequest, request: Request):
     """
     API endpoint to generate title tags.
@@ -128,12 +154,13 @@ async def generate_title_tags_route(request_title: TitleRequest, request: Reques
             tone=request_title.tone,
         )
         return success(data=TitleResponse(titles=titles), request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate title tags") from exc
 
 
 # Schema Generator Endpoint
 @router.post("/schema-generator", response_model=SuccessResponse[dict])
+@bounded
 async def schema_generator(payload: SchemaRequest, request: Request):
     """
     Generate Schema.org JSON-LD.
@@ -141,14 +168,13 @@ async def schema_generator(payload: SchemaRequest, request: Request):
     """
     try:
         return success(data=build_schema(payload), request=request)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Internal error while generating schema: {str(e)}"
-        )
+    except Exception as exc:
+        raise _failed(exc, "Internal error while generating schema") from exc
 
 
 # Readability Checker Endpoint
 @router.post("/readability-checker", response_model=SuccessResponse[ReadabilityResponse])
+@bounded
 async def readability_checker(payload: ReadabilityRequest, request: Request):
     """
     Analyze text readability.
@@ -156,26 +182,30 @@ async def readability_checker(payload: ReadabilityRequest, request: Request):
     """
     try:
         return success(data=calculate_readability(payload.content), request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to calculate readability") from exc
 
 
 # Canonical Tag Generator Endpoint
 @router.post("/canonical-tag-generator", response_model=SuccessResponse[CanonicalTagResponse])
+@bounded
 async def canonical_tag_generator(request_tag: CanonicalTagRequest, request: Request):
     """
-    AI-powered Canonical Tag Generator.
+    Canonical Tag Generator.
     URL: POST /tools/canonical-tag-generator
     """
     try:
         data = await generate_canonical_tag(str(request_tag.url))
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate canonical tag: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate canonical tag") from exc
 
 
 # Question Generator Endpoint
 @router.post("/question-generator", response_model=SuccessResponse[QuestionResponse])
+@bounded
 async def generate_questions_route(request_q: QuestionRequest, request: Request):
     """
     AI-powered Question Generator.
@@ -188,12 +218,13 @@ async def generate_questions_route(request_q: QuestionRequest, request: Request)
         result = await generate_questions(request_q.text)
         return success(data={"questions": result}, request=request)
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate questions: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate questions") from exc
 
 
 # Link Checker Endpoint
 @router.post("/link-checker", response_model=SuccessResponse[BrokenLinkResponse])
+@bounded
 async def broken_link_checker_route(request_link: BrokenLinkRequest, request: Request):
     """
     Check if a link is broken.
@@ -202,12 +233,13 @@ async def broken_link_checker_route(request_link: BrokenLinkRequest, request: Re
     try:
         result = await broken_link_checker(str(request_link.url))
         return success(data=BrokenLinkResponse(working=result), request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to check link: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to check link") from exc
 
 
 # Content Idea Generator Endpoint
 @router.post("/content-idea-generator", response_model=SuccessResponse[IdeaGeneratorResponse])
+@bounded
 async def content_idea_generator(payload: IdeaGeneratorRequest, request: Request):
     """
     Generate curated content ideas for various platforms.
@@ -216,9 +248,8 @@ async def content_idea_generator(payload: IdeaGeneratorRequest, request: Request
     try:
         data = await generate_content_ideas(payload)
         return success(data=data, request=request)
-    except Exception:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Failed to generate content ideas")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate content ideas") from exc
 
 
 # Robots.txt Generator Endpoint
@@ -227,6 +258,7 @@ async def content_idea_generator(payload: IdeaGeneratorRequest, request: Request
     response_model=SuccessResponse[RobotsTxtResponse],
     summary="Robots.txt Generator",
 )
+@bounded
 async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: Request):
     """
     Robots.txt Generator: API endpoint to generate a robots.txt file.
@@ -240,8 +272,8 @@ async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: R
             sitemap_url=str(request_robots.sitemap_url) if request_robots.sitemap_url else None,
         )
         return success(data=RobotsTxtResponse(robots_txt=robots_txt), request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate robots.txt file: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate robots.txt file") from exc
 
 
 # Grammar Checker Endpoint
@@ -250,6 +282,7 @@ async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: R
     response_model=SuccessResponse[GrammarCheckerResponse],
     summary="Grammar Checker",
 )
+@bounded
 async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request: Request):
     """
     Grammar Checker: Detects grammar, spelling, and punctuation issues.
@@ -258,8 +291,8 @@ async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request:
     try:
         data = await grammar_checker(request_grammar.text)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Grammar calculation failed: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Grammar calculation failed") from exc
 
 
 # Hook Generater Endpoint
@@ -268,6 +301,7 @@ async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request:
     response_model=SuccessResponse[HookGeneratorResponse],
     summary="Hook Generater",
 )
+@bounded
 async def hook_generator_route(request_hook: HookGeneratorRequest, request: Request):
     """
     Hook Generater: Brainstorms attention grabbing hooks based on inputs.
@@ -276,8 +310,8 @@ async def hook_generator_route(request_hook: HookGeneratorRequest, request: Requ
     try:
         data = await generate_hooks(request_hook)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate hooks: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate hooks") from exc
 
 
 # Blog Topic Generater Endpoint
@@ -286,6 +320,7 @@ async def hook_generator_route(request_hook: HookGeneratorRequest, request: Requ
     response_model=SuccessResponse[SEOBlogTitleResponse],
     summary="Blog Topic Generater",
 )
+@bounded
 async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Request):
     """
     Blog Topic Generater: Generates SEO-friendly blog titles based on a keyword.
@@ -294,8 +329,8 @@ async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Reque
     try:
         data = await generate_seo_blog_titles(request_seo)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate SEO blog titles: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate SEO blog titles") from exc
 
 
 # Content Outline Generator Endpoint
@@ -304,6 +339,7 @@ async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Reque
     response_model=SuccessResponse[OutlineGeneratorResponse],
     summary="Content Outline Generator",
 )
+@bounded
 async def content_outline_generator_route(payload: OutlineGeneratorRequest, request: Request):
     """
     Content Outline Generator: Generates structured article outlines.
@@ -312,8 +348,8 @@ async def content_outline_generator_route(payload: OutlineGeneratorRequest, requ
     try:
         data = await generate_content_outline(payload)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate content outline: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate content outline") from exc
 
 
 # Headline Analyzer Endpoint
@@ -322,6 +358,7 @@ async def content_outline_generator_route(payload: OutlineGeneratorRequest, requ
     response_model=SuccessResponse[HeadlineAnalyzerResponse],
     summary="Headline Analyzer",
 )
+@bounded
 async def headline_analyzer_route(payload: HeadlineAnalyzerRequest, request: Request):
     """
     Headline Analyzer: Evaluates headline CTR, sentiment, and quality.
@@ -330,8 +367,8 @@ async def headline_analyzer_route(payload: HeadlineAnalyzerRequest, request: Req
     try:
         data = await analyze_headline(payload)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to analyze headline: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to analyze headline") from exc
 
 
 # Hreflang Tag Generator Endpoint
@@ -340,6 +377,7 @@ async def headline_analyzer_route(payload: HeadlineAnalyzerRequest, request: Req
     response_model=SuccessResponse[HreflangResponse],
     summary="Hreflang Tag Generator",
 )
+@bounded
 async def hreflang_generator_route(payload: HreflangRequest, request: Request):
     """
     Hreflang Tag Generator: Generates Google-compliant XML/HTML hreflang tags.
@@ -350,8 +388,8 @@ async def hreflang_generator_route(payload: HreflangRequest, request: Request):
         return success(data=HreflangResponse(**res), request=request)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate hreflang tags: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate hreflang tags") from exc
 
 
 # Keyword Density Checker Endpoint
@@ -360,6 +398,7 @@ async def hreflang_generator_route(payload: HreflangRequest, request: Request):
     response_model=SuccessResponse[KeywordDensityResponse],
     summary="Keyword Density Checker",
 )
+@bounded
 async def keyword_density_route(payload: KeywordDensityRequest, request: Request):
     """
     Keyword Density Checker: Analyzes text for n-gram frequencies and keyword density.
@@ -368,10 +407,8 @@ async def keyword_density_route(payload: KeywordDensityRequest, request: Request
     try:
         data = calculate_keyword_density(payload)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to calculate keyword density: {str(e)}"
-        )
+    except Exception as exc:
+        raise _failed(exc, "Failed to calculate keyword density") from exc
 
 
 # Paragraph Rewriter Endpoint
@@ -380,6 +417,7 @@ async def keyword_density_route(payload: KeywordDensityRequest, request: Request
     response_model=SuccessResponse[ParagraphRewriterResponse],
     summary="Paragraph Rewriter",
 )
+@bounded
 async def paragraph_rewriter_route(payload: ParagraphRewriterRequest, request: Request):
     """
     Paragraph Rewriter: Rewrites paragraphs based on goal and tone.
@@ -388,8 +426,8 @@ async def paragraph_rewriter_route(payload: ParagraphRewriterRequest, request: R
     try:
         data = await rewrite_paragraph(payload)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to rewrite paragraph: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to rewrite paragraph") from exc
 
 
 # SERP Preview Tool Endpoint
@@ -398,6 +436,7 @@ async def paragraph_rewriter_route(payload: ParagraphRewriterRequest, request: R
     response_model=SuccessResponse[SERPPreviewResponse],
     summary="SERP Preview Tool",
 )
+@bounded
 async def serp_preview_route(payload: SERPPreviewRequest, request: Request):
     """
     SERP Preview Tool: Calculates Google SERP snippet lengths and truncation warnings.
@@ -406,8 +445,8 @@ async def serp_preview_route(payload: SERPPreviewRequest, request: Request):
     try:
         data = generate_serp_preview(payload)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate SERP preview: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate SERP preview") from exc
 
 
 # Sitemap Generator Endpoint
@@ -416,6 +455,7 @@ async def serp_preview_route(payload: SERPPreviewRequest, request: Request):
     response_model=SuccessResponse[SitemapGeneratorResponse],
     summary="Sitemap Generator",
 )
+@bounded
 async def sitemap_generator_route(payload: SitemapGeneratorRequest, request: Request):
     """
     Sitemap Generator: Generates valid sitemap.xml strings from URL lists.
@@ -424,5 +464,5 @@ async def sitemap_generator_route(payload: SitemapGeneratorRequest, request: Req
     try:
         data = generate_xml_sitemap(payload)
         return success(data=data, request=request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate sitemap: {str(e)}")
+    except Exception as exc:
+        raise _failed(exc, "Failed to generate sitemap") from exc

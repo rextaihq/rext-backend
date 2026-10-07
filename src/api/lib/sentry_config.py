@@ -169,6 +169,12 @@ def before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[
     if "RateLimitExceededException" in str(event.get("exception", {})):
         return None
 
+    # An error its code reports in its own way (suppress_error_log, which keeps it out of the Error
+    # Logs too): a free tool's 503 while the AI provider is down is alerted once an hour, not per request.
+    exc_info = hint.get("exc_info") if isinstance(hint, dict) else None
+    if exc_info and getattr(exc_info[1], "suppress_error_log", False):
+        return None
+
     # Add custom fingerprinting for better grouping
     if "exception" in event:
         exc_values = event["exception"].get("values", [])
@@ -262,13 +268,6 @@ def traces_sampler(sampling_context: Dict[str, Any]) -> float:
     # Sample admin endpoints at higher rate
     if "/admin/" in path:
         return 0.5  # 50%
-
-    # Sample AI endpoints at higher rate (expensive operations)
-    if any(
-        segment in path
-        for segment in ["/content/generate", "/topics/generate", "/knowledge/process"]
-    ):
-        return 0.8  # 80%
 
     # Default sampling rate from settings
     from src.api.config import get_settings

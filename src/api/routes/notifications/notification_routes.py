@@ -53,7 +53,7 @@ async def get_notifications(
     Features:
     - Pagination support
     - Filter by read/unread status
-    - Filter by type (workspace, billing, content, knowledge, system)
+    - Filter by type (workspace, billing, content, system)
     - Filter by category (ws_invite_received, billing_payment_failed, etc.)
     - Filter by workspace
     - Excludes deleted and archived notifications by default

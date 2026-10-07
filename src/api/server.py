@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from src.api.build_info import BUILD_COMMIT
 from src.api.cache.redis_client import cache
 from src.api.config import settings
 
@@ -85,6 +86,18 @@ async def lifespan(app):
     except Exception as e:  # noqa: BLE001 - never block startup on logging
         logger.warning(f"Error log capture not installed: {e}")
 
+    # --- Apply the pending migrations before anything reads the database ---
+    # Every deploy migrates by itself (G32, revnix/rext-control#358); the image turns
+    # it on. A failure stops the start, so no code serves against an older schema.
+    if settings.MIGRATE_ON_START:
+        from src.api.database.migrate_on_start import apply_pending_migrations
+
+        try:
+            await apply_pending_migrations()
+        except Exception as e:
+            logger.critical(f"🚨 Database migration failed, the server won't start: {e}")
+            raise
+
     # --- Connect Redis cache ---
     # cache.connect() catches its own errors and never raises (it just leaves
     # _enabled False), so this log must check that flag directly — it used to
@@ -143,6 +156,17 @@ async def lifespan(app):
             logger.error("❌ Failed to connect to MinIO storage")
     except Exception as e:
         logger.error(f"❌ MinIO initialization error: {e}")
+
+    # --- Publish the emails' logo, so storage holds the one this build carries ---
+    try:
+        from emails.components.header import publish_logo
+
+        if await asyncio.to_thread(publish_logo):
+            logger.info("✅ Email logo published to storage")
+        else:
+            logger.warning("Email logo not published; emails show the name as text")
+    except Exception as e:
+        logger.warning(f"⚠️ Email logo publish failed (non-fatal): {e}")
 
     # --- Register main event loop for cross-thread coroutine dispatch ---
     from src.utils import loop_registry
@@ -224,7 +248,7 @@ if proxy_trust_is_spoofable(getattr(settings, "TRUSTED_PROXY_IPS", None)):
         "reverse proxy's exact address/subnet.",
         ",".join(_trusted_proxy_hosts),
     )
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
+# ProxyHeadersMiddleware itself is added just before CORS below.
 
 # Request tracking middleware
 app.add_middleware(
@@ -266,6 +290,13 @@ app.add_middleware(
     enable=settings.RATE_LIMITING_ENABLED,
 )
 
+# Proxy headers: added after every middleware that reads request.client.host,
+# so it runs before them and they see the visitor's address from
+# X-Forwarded-For. Added first, it ran innermost: the rate limiter and request
+# tracker saw Traefik's 10.0.1.2 for everyone and every visitor shared one
+# per-IP budget. It never ends a request early, so CORS stays outermost.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
+
 # CORS middleware (MUST be added last = outermost, so it handles preflight
 # OPTIONS requests before any other middleware can intercept them)
 app.add_middleware(
@@ -274,7 +305,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=settings.cors_allowed_headers_list,
-    expose_headers=["X-Request-ID", "Content-Type"],
+    expose_headers=["X-Request-ID", "Content-Type", "Retry-After"],
     max_age=3600,
 )
 
@@ -332,7 +363,9 @@ async def health_check(request: Request):
     Comprehensive health check endpoint for monitoring.
 
     Returns overall system health with detailed dependency checks.
-    Returns 200 if healthy, 503 if degraded.
+    Returns 503 when a critical dependency fails (the database, the disk and, in
+    production, media storage). Outside production, media storage is not
+    critical: without it the status is "degraded" and the answer stays 200.
     """
     import shutil
     from datetime import datetime, timezone
@@ -348,6 +381,7 @@ async def health_check(request: Request):
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {},
     }
+    critical_failure = False
 
     # Database check
     try:
@@ -359,19 +393,22 @@ async def health_check(request: Request):
     except Exception as e:
         status["checks"]["database"] = f"unhealthy: {str(e)}"
         status["status"] = "degraded"
+        critical_failure = True
 
-    # MinIO Storage check
+    # MinIO Storage check (critical in production only)
     try:
-        if storage_service.check_connection():
+        if await asyncio.to_thread(storage_service.check_connection):
             status["checks"]["storage"] = "healthy"
         else:
             status["checks"]["storage"] = (
                 f"unhealthy: {storage_service.last_error or 'unknown error'}"
             )
             status["status"] = "degraded"
+            critical_failure = critical_failure or settings.is_production
     except Exception as e:
         status["checks"]["storage"] = f"error: {str(e)}"
         status["status"] = "degraded"
+        critical_failure = critical_failure or settings.is_production
 
     # Redis check (optional - graceful degradation)
     try:
@@ -398,11 +435,11 @@ async def health_check(request: Request):
         }
         if disk_percent >= 95:
             status["status"] = "degraded"
+            critical_failure = True
     except Exception as e:
         status["checks"]["disk_space"] = f"error: {str(e)}"
 
-    # Return appropriate status code
-    status_code = 200 if status["status"] == "healthy" else 503
+    status_code = 503 if critical_failure else 200
     return JSONResponse(content=status, status_code=status_code)
 
 
@@ -414,12 +451,16 @@ async def liveness_check(request: Request):
     Returns 200 if the application is running (even if dependencies are unavailable).
     This endpoint should only fail if the application has crashed or is deadlocked.
     Kubernetes will restart the pod if this returns non-200.
+
+    "commit" is the SHA the image was built from ("unknown" outside a CI image): the deploy
+    jobs wait until it shows the commit they pushed.
     """
     from datetime import datetime, timezone
 
     return {
         "status": "alive",
         "service": "rext-api",
+        "commit": BUILD_COMMIT,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -430,7 +471,8 @@ async def readiness_check(request: Request):
     Kubernetes readiness probe endpoint.
 
     Returns 200 if the application can accept traffic (all critical dependencies available).
-    Returns 503 if dependencies are unavailable.
+    Returns 503 if dependencies are unavailable. Media storage is critical in production
+    only: elsewhere its failure is reported under "checks" without failing readiness.
     Kubernetes will remove pod from load balancer if this returns non-200.
     """
     from datetime import datetime, timezone
@@ -456,18 +498,20 @@ async def readiness_check(request: Request):
         status["checks"]["database"] = f"not_ready: {str(e)}"
         status["status"] = "not_ready"
 
-    # MinIO Storage check (critical for readiness)
+    # MinIO Storage check (critical for readiness in production only)
     try:
-        if storage_service.check_connection():
+        if await asyncio.to_thread(storage_service.check_connection):
             status["checks"]["storage"] = "ready"
         else:
             status["checks"]["storage"] = (
                 f"not_ready: {storage_service.last_error or 'unknown error'}"
             )
-            status["status"] = "not_ready"
+            if settings.is_production:
+                status["status"] = "not_ready"
     except Exception as e:
         status["checks"]["storage"] = f"not_ready: {str(e)}"
-        status["status"] = "not_ready"
+        if settings.is_production:
+            status["status"] = "not_ready"
 
     # Redis check (optional - not required for readiness)
     try:
@@ -499,7 +543,6 @@ def api_status(request: Request):
                 "authentication": "/api/v1/user",
                 "workspaces": "/api/v1/workspace",
                 "content": "/api/v1/content",
-                "knowledge": "/api/v1/knowledge",
             },
             "features": {
                 "consistent_responses": True,

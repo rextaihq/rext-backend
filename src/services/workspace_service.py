@@ -36,12 +36,7 @@ from src.api.middleware.exceptions import (
     RextValidationException,
 )
 from src.api.models.content_models.content import Content
-from src.api.models.knowledge_models.knowledge_model import (
-    BrandVoice,
-    KnowledgeFiles,
-    TextKnowledge,
-    Website,
-)
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
@@ -52,8 +47,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.sse_service import event_stream_manager
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
-from src.utils.storage import resolve_avatar_url
-from src.utils.vector_store import delete_vectors
+from src.utils.storage import resolve_avatar_url, resolve_media_url
 
 # Track background pipeline tasks to prevent garbage collection
 _background_tasks: set = set()
@@ -106,24 +100,6 @@ class WorkspaceService:
         """
         await self._ensure_active_user(user_id)
         with trace(name="Create Workspace Record"):
-            # TEMPORARY: Disable duplicate URL check for testing
-            # result = await self.db.execute(
-            #     select(Website)
-            #     .join(WorkspaceModel, WorkspaceModel.id == Website.workspace_id)
-            #     .where(
-            #         WorkspaceModel.user_id == user_id,
-            #         WorkspaceModel.deleted_at.is_(None),
-            #         Website.url == url,
-            #     )
-            # )
-            # if result.scalar_one_or_none():
-            #     raise DuplicateResourceException(
-            #         message="Workspace with this URL already exists",
-            #         resource_type="workspace",
-            #         conflicting_field="url",
-            #         conflicting_value=url,
-            #     )
-            # else:
             workspace = await self.create_workspace(
                 user_id=user_id, name=name, tz=timezone, url=url
             )
@@ -285,8 +261,7 @@ class WorkspaceService:
     async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)
-        workspace = await self._ensure_membership(workspace_id, user_id)
-        self._delete_vectors_safe(workspace.id)
+        await self._ensure_membership(workspace_id, user_id)
         await self.delete_workspace(workspace_id, user_id)
 
     async def update_workspace_for_user(
@@ -320,8 +295,7 @@ class WorkspaceService:
         """
         Get all workspaces for a user with counts.
 
-        Optimized query that fetches workspace data with knowledge and member counts
-        in a single query.
+        Optimized query that fetches workspace data with member counts in a single query.
 
         Args:
             user_id: User UUID
@@ -336,16 +310,10 @@ class WorkspaceService:
                 Users.display_name.label("owner_name"),
                 Users.email.label("owner_email"),
                 Users.avatar_url.label("owner_avatar_url"),
-                func.count(distinct(Website.id)).label("web_knowledge_count"),
-                func.count(distinct(KnowledgeFiles.id)).label("files_count"),
-                func.count(distinct(TextKnowledge.id)).label("text_knowledge_count"),
                 func.count(distinct(WorkspaceMembers.id)).label("members_count"),
             )
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
             .join(Users, Users.id == WorkspaceModel.user_id)
-            .outerjoin(Website, Website.workspace_id == WorkspaceModel.id)
-            .outerjoin(KnowledgeFiles, KnowledgeFiles.workspace_id == WorkspaceModel.id)
-            .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
             .where(
                 WorkspaceMembers.user_id == user_id,
                 WorkspaceModel.deleted_at.is_(None),  # Filter out soft-deleted workspaces
@@ -370,11 +338,7 @@ class WorkspaceService:
             owner_name = result_row[1]
             owner_email = result_row[2]
             owner_avatar_url = result_row[3]
-            web_count = result_row[4] or 0
-            files_count = result_row[5] or 0
-            text_count = result_row[6] or 0
-            members_count = result_row[7] or 0
-            total_knowledge = web_count + files_count + text_count
+            members_count = result_row[4] or 0
 
             workspace_data.append(
                 {
@@ -384,6 +348,7 @@ class WorkspaceService:
                     "slug": ws.slug,
                     "timezone": ws.timezone,
                     "url": ws.url,
+                    "favicon_url": resolve_media_url(ws.favicon_url),
                     "created_at": ws.created_at.isoformat() if ws.created_at else None,
                     "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
                     "owner": {
@@ -392,12 +357,6 @@ class WorkspaceService:
                         "name": owner_name,
                         "email": owner_email,
                         "avatar_url": resolve_avatar_url(owner_avatar_url),
-                    },
-                    "knowledge_stats": {
-                        "web_count": web_count,
-                        "file_count": files_count,
-                        "text_count": text_count,
-                        "total_count": total_knowledge,
                     },
                     "members_count": members_count,
                 }
@@ -410,42 +369,16 @@ class WorkspaceService:
 
         return workspace_data
 
-    async def get_workspace_analytics(
-        self, workspace_id: UUID, include_word_counts: bool = False
-    ) -> Dict[str, Any]:
+    async def get_workspace_analytics(self, workspace_id: UUID) -> Dict[str, Any]:
         """
-        Get comprehensive analytics for a workspace.
-
-        Uses optimized queries to fetch knowledge counts, content counts,
-        member counts, and optionally word counts.
+        Get the member and content counts of a workspace in one query.
 
         Args:
             workspace_id: Workspace UUID
-            include_word_counts: Whether to include detailed word count analytics
 
         Returns:
             Dict with analytics data
         """
-        # Get counts in separate queries (simplified version)
-        # Combine all counts into a single query using scalar subqueries
-        web_count_subq = (
-            select(func.count(Website.id))
-            .where(Website.workspace_id == workspace_id)
-            .correlate(None)
-            .scalar_subquery()
-        )
-        files_count_subq = (
-            select(func.count(KnowledgeFiles.id))
-            .where(KnowledgeFiles.workspace_id == workspace_id)
-            .correlate(None)
-            .scalar_subquery()
-        )
-        text_count_subq = (
-            select(func.count(TextKnowledge.id))
-            .where(TextKnowledge.workspace_id == workspace_id)
-            .correlate(None)
-            .scalar_subquery()
-        )
         members_count_subq = (
             select(func.count(WorkspaceMembers.id))
             .where(WorkspaceMembers.workspace_id == workspace_id)
@@ -463,91 +396,20 @@ class WorkspaceService:
         )
         result = await self.db.execute(
             select(
-                web_count_subq.label("web_count"),
-                files_count_subq.label("files_count"),
-                text_count_subq.label("text_count"),
                 members_count_subq.label("members_count"),
                 content_count_subq.label("content_count"),
             )
         )
         row = result.one()
-        web_count = row.web_count or 0
-        files_count = row.files_count or 0
-        text_count = row.text_count or 0
-        members_count = row.members_count or 0
-        content_count = row.content_count or 0
-        topics_count = 0
 
         analytics = {
-            "knowledge_stats": {
-                "web_count": web_count,
-                "file_count": files_count,
-                "text_count": text_count,
-                "total_count": web_count + files_count + text_count,
-            },
-            "members_count": members_count,
-            "content_count": content_count,
-            "topics_count": topics_count,
+            "members_count": row.members_count or 0,
+            "content_count": row.content_count or 0,
         }
-
-        # Add word count analytics if requested
-        if include_word_counts:
-            word_stats_query = select(
-                func.coalesce(
-                    select(func.sum(Website.word_count))
-                    .where(Website.workspace_id == workspace_id)
-                    .correlate(None)
-                    .scalar_subquery(),
-                    0,
-                ).label("total_web_words"),
-                func.coalesce(
-                    select(func.avg(Website.word_count))
-                    .where(Website.workspace_id == workspace_id)
-                    .correlate(None)
-                    .scalar_subquery(),
-                    0,
-                ).label("avg_web_words"),
-                func.coalesce(
-                    select(func.sum(KnowledgeFiles.word_count))
-                    .where(KnowledgeFiles.workspace_id == workspace_id)
-                    .correlate(None)
-                    .scalar_subquery(),
-                    0,
-                ).label("total_file_words"),
-                func.coalesce(
-                    select(func.avg(KnowledgeFiles.word_count))
-                    .where(KnowledgeFiles.workspace_id == workspace_id)
-                    .correlate(None)
-                    .scalar_subquery(),
-                    0,
-                ).label("avg_file_words"),
-            )
-            result = await self.db.execute(word_stats_query)
-            word_row = result.one()
-
-            total_web_words = int(word_row.total_web_words)
-            avg_web_words = int(word_row.avg_web_words)
-            total_file_words = int(word_row.total_file_words)
-            avg_file_words = int(word_row.avg_file_words)
-
-            total_words = total_web_words + total_file_words
-            estimated_reading_time = total_words // 200
-
-            analytics["content_metrics"] = {
-                "total_words": total_words,
-                "web_content_words": total_web_words,
-                "file_content_words": total_file_words,
-                "avg_web_article_words": avg_web_words,
-                "avg_file_words": avg_file_words,
-                "estimated_reading_time_minutes": estimated_reading_time,
-            }
 
         logger.info(
             "Retrieved analytics for workspace",
-            extra={
-                "workspace_id": str(workspace_id),
-                "total_knowledge": analytics["knowledge_stats"]["total_count"],
-            },
+            extra={"workspace_id": str(workspace_id)},
         )
 
         return analytics
@@ -585,6 +447,7 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
+            "favicon_url": resolve_media_url(workspace.favicon_url),
             "owner": {
                 "id": str(workspace.owner.id),
                 "full_name": workspace.owner.full_name,
@@ -1050,12 +913,11 @@ class WorkspaceService:
 
         Irreversible: the row and everything hanging off it are gone. All the
         child tables carry ON DELETE CASCADE on their workspace_id (content,
-        knowledge, personas, brand voices, media, notifications, integrations,
-        members, invitations, topics), so the single row delete takes them with
-        it, and audit_logs / email_log are deliberately ON DELETE SET NULL so
-        the trail outlives the workspace. Uploaded objects and FAISS vectors
-        are outside the database and are cleared separately, best-effort, by
-        _purge_workspace_storage().
+        personas, brand voices, media, notifications, integrations, members,
+        invitations), so the single row delete takes them with it, and
+        audit_logs / email_log are deliberately ON DELETE SET NULL so the trail
+        outlives the workspace. The favicon object is outside the database and
+        is cleared separately, best-effort, by _purge_workspace_storage().
 
         Business Rules:
         - Only the workspace owner can do it
@@ -1095,25 +957,15 @@ class WorkspaceService:
         # for a workspace today. Add the constraint if a second one appears.
         await self.db.execute(delete(UserRole).where(UserRole.workspace_id == workspace_id))
 
-        # Rows cascade, bytes don't. The uploaded objects and the FAISS vectors
-        # live outside Postgres, so read the keys off the rows while they still
-        # exist, then clear them once the delete has gone through.
-        knowledge_paths = (
-            (
-                await self.db.execute(
-                    select(KnowledgeFiles.file_path).where(
-                        KnowledgeFiles.workspace_id == workspace_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
+        # Rows cascade, bytes don't. The favicon is a media object
+        # (workspace_favicon.store_favicon), so read its key off the row while it
+        # still exists, then clear it once the delete has gone through.
+        favicon_object = workspace.favicon_url
 
         await self.db.delete(workspace)
         await self.db.flush()
 
-        await self._purge_workspace_storage(workspace_id, knowledge_paths)
+        await self._purge_workspace_storage(workspace_id, favicon_object)
 
         logger.info(
             "Workspace permanently deleted",
@@ -1129,41 +981,26 @@ class WorkspaceService:
     async def _purge_workspace_storage(
         self,
         workspace_id: UUID,
-        knowledge_paths: List[str],
+        favicon_object: Optional[str] = None,
     ) -> None:
         """
-        Delete a permanently-deleted workspace's objects and vectors.
+        Delete a permanently-deleted workspace's stored objects.
 
-        Best-effort by design: a storage or vector-store failure must not raise,
-        because that would roll back a delete the caller already committed to
-        and leave a workspace the owner cannot remove. A failure here leaves an
-        orphaned object that nothing references, which is the cheaper outcome.
+        Best-effort by design: a storage failure must not raise, because that
+        would roll back a delete the caller already committed to and leave a
+        workspace the owner cannot remove. A failure here leaves an orphaned
+        object that nothing references, which is the cheaper outcome.
 
-        Knowledge files are stored in MinIO.
+        The site's favicon is stored in MinIO.
 
         ponytail: deletes inside the request, before the outer commit. If the
         commit then fails, the objects are gone and the rows are back. Move this
         to a post-commit sweep if that window ever matters.
         """
-        from src.utils.file_upload_utils import delete_file as delete_minio_file
-        from src.utils.vector_store import delete_vectors
+        if favicon_object:
+            from src.services.workspace_favicon import delete_favicon
 
-        for key in (key for key in knowledge_paths if key):
-            try:
-                await delete_minio_file(key)
-            except Exception as e:
-                logger.warning(
-                    f"Orphaned storage object after workspace delete: {key} ({e})",
-                    extra={"workspace_id": str(workspace_id)},
-                )
-
-        try:
-            delete_vectors(workspace_id=str(workspace_id))
-        except Exception as e:
-            logger.warning(
-                f"Failed to delete vectors for workspace: {e}",
-                extra={"workspace_id": str(workspace_id)},
-            )
+            await delete_favicon(favicon_object)  # best-effort; never raises
 
     async def get_deleted_workspace(self, workspace_id: UUID) -> WorkspaceModel:
         """
@@ -1393,15 +1230,6 @@ class WorkspaceService:
         )
         self.db.add(user_role)
 
-    def _delete_vectors_safe(self, workspace_id: UUID) -> None:
-        try:
-            delete_vectors(vector_id=str(workspace_id))
-        except Exception as err:  # noqa: BLE001
-            logger.warning(
-                "Vector cleanup failed",
-                extra={"workspace_id": str(workspace_id), "error": str(err)},
-            )
-
     async def _ensure_unique_workspace_name(self, name: str, user_id: UUID) -> None:
         result = await self.db.execute(
             select(WorkspaceModel).where(
@@ -1425,6 +1253,7 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
+            "favicon_url": resolve_media_url(workspace.favicon_url),
             "created_at": (workspace.created_at.isoformat() if workspace.created_at else None),
             "updated_at": (workspace.updated_at.isoformat() if workspace.updated_at else None),
         }

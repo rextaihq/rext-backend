@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.config.hidden_secrets import HidesSecrets
+
 StorageBackendType = Literal["r2", "local"]
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -68,7 +70,7 @@ def get_mime_from_extension(ext: str) -> Optional[str]:
     return EXTENSION_TO_MIME.get(ext)
 
 
-class StorageSettings(BaseSettings):
+class StorageSettings(HidesSecrets, BaseSettings):
     """Storage configuration settings"""
 
     # Backend selection

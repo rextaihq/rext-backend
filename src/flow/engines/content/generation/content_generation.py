@@ -14,12 +14,14 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
+from src.api.config import settings
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
-    resolve_brand_placement_policy,
+    resolve_article_brand_policy,
     resolve_placement_instruction,
 )
+from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.engines.content.generation.entity_research import (
     format_official_facts_for_prompt,
     research_official_facts,
@@ -70,6 +72,7 @@ from src.utils.credit_manager import (
     STAGE_CREDITS,
     InsufficientCreditsError,
     _emit_credit_event,
+    can_afford_stage,
     consume_stage_credits,
 )
 from src.utils.image_placeholder import build_placeholder_marker
@@ -298,6 +301,27 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
                 lines.append(f"  A: {_short_text(faq['answer'], 400)}")
 
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
+
+
+async def _charge_delivered_image(content_state: dict, user_id, workspace_id) -> dict:
+    """Charge the featured image's credit once the image is in the article.
+
+    Once per run (image_credit_deducted), like the upfront stages. A run that can't
+    pay was told not to generate one; if the balance still fell short meanwhile, or
+    the charge failed, the image stays in the article and nobody is charged for it.
+    """
+    if content_state.get("image_credit_deducted"):
+        return content_state
+    stage = "featured_image"
+    try:
+        await consume_stage_credits(user_id, STAGE_CREDITS[stage], stage, workspace_id=workspace_id)
+    except InsufficientCreditsError:
+        logger.warning("generate_content: featured image delivered without its credit")
+        return content_state
+    except Exception:
+        logger.exception("generate_content: charging the featured image failed")
+        return content_state
+    return {**content_state, "image_credit_deducted": True}
 
 
 async def generate_content(state: REXT) -> dict:
@@ -576,8 +600,25 @@ async def generate_content(state: REXT) -> dict:
             # content types, and check_brand_placement_policy /
             # check_brand_factual_grounding (validation.py) for the
             # deterministic checks that verify this actually happened.
-            policy = resolve_brand_placement_policy(content_type)
+            # The content type's policy at the prominence the user chose for
+            # this article (brand_prominence on the approved outline).
+            policy = resolve_article_brand_policy(content_type, outline)
             multi_mention_ok = policy["intensity"] in ("high", "maximal")
+            # Who asks for several mentions: the format itself (a sales page,
+            # a comparison) or the user, who chose a prominent mention.
+            chosen_prominent = policy.get("prominence") == "prominent"
+            mention_basis = (
+                "The prominent mention the user chose"
+                if chosen_prominent
+                else "This content type's format"
+            )
+            central_line = (
+                f"- The user chose a PROMINENT mention: {brand_name} is central to this article "
+                f"(see PLACEMENT below) — it is not a single throwaway aside here.\n"
+                if chosen_prominent
+                else f"- This content type's format is BUILT around {brand_name} (see PLACEMENT "
+                f"below) — it is not a single throwaway aside here.\n"
+            )
 
             # Which of the two placement strings applies is a property of the
             # policy, resolved centrally so the prompt and the schema-level
@@ -602,7 +643,7 @@ async def generate_content(state: REXT) -> dict:
 
             if multi_mention_ok:
                 mention_count_instruction = (
-                    f"- This content type's format calls for {brand_name} to appear more than once, per the "
+                    f"- {mention_basis} calls for {brand_name} to appear more than once, per the "
                     f"PLACEMENT guidance above (e.g. hero + body, or throughout a comparison/review) — this is "
                     f"one of the few formats where that's appropriate; still every mention must be genuine and specific, never filler repetition.\n"
                 )
@@ -655,7 +696,7 @@ async def generate_content(state: REXT) -> dict:
                 + "\nINSTRUCTIONS:\n"
                 "- The user already reviewed and approved this promotion at the outline stage — this is a REQUIRED element of the article, not an optional flourish. Do not second-guess or omit it out of caution.\n"
                 + (
-                    f"- This content type's format is BUILT around {brand_name} (see PLACEMENT below) — it is not a single throwaway aside here.\n"
+                    central_line
                     if multi_mention_ok
                     else "- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need a search_tool citation or a source in the `facts` field, but any specific fact about the brand (pricing, features, release status) must match its About text or its VERIFIED CURRENT PRODUCT FACTS entries.\n"
                 )
@@ -806,11 +847,12 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
-        # Deduct all content stages before agent invoke (once, upfront). Guarded
+        # Deduct the content stages before agent invoke (once, upfront). Guarded
         # by credits_deducted so a checkpoint-driven resume of this node (e.g.
         # after a transient failure later in the function) doesn't deduct twice.
+        # The featured image is charged only once it is delivered (below).
         if not content_state.get("credits_deducted"):
-            for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
+            for _stage in ("content_drafting", "humanization", "deep_research"):
                 try:
                     await consume_stage_credits(
                         user_id, STAGE_CREDITS[_stage], _stage, workspace_id=workspace_id
@@ -838,6 +880,19 @@ async def generate_content(state: REXT) -> dict:
         # and to hand validate_content real citation ground truth via
         # generation_meta.searched_results.
         counters = {"search": [0], "image_task": None, "search_results": []}
+
+        # The image is charged on delivery, so check now that the run can pay for
+        # it: without the credit the writer gets the manual-upload placeholder
+        # instead of a paid image nobody is charged for.
+        if (
+            settings.AI_IMAGE_GENERATION_ENABLED
+            and not content_state.get("image_credit_deducted")
+            and not await can_afford_stage(user_id, "featured_image", workspace_id=workspace_id)
+        ):
+            counters["image_allowed"] = False
+            logger.info(
+                "generate_content: no credit left for the featured image; not generating it"
+            )
 
         # Current facts from the official sites of the brand and every product the
         # outline names, fetched before writing. The calls count against the SAME
@@ -1129,6 +1184,10 @@ async def generate_content(state: REXT) -> dict:
             content_dict = assemble_structured_payload(content_dict, structured_blocks)
             unplaced_links = content_dict.pop(UNPLACED_LINKS_KEY, None) or []
 
+        # The outline's CTA fields steer the text; a line that only prints one as a
+        # label ("**Primary CTA:** Explore Features") never stays in the article.
+        content_dict = strip_cta_labels(content_dict, outline, stage="generate_content")
+
         # Content-level on-page SEO invariants, applied deterministically:
         # the user-selected title is restored verbatim if the writer drifted,
         # and the exact focus keyphrase is guaranteed on the title, meta
@@ -1187,6 +1246,7 @@ async def generate_content(state: REXT) -> dict:
                 )
                 content_dict["images"] = images_list
                 logger.info("generate_content: image injected -> %s", image_url)
+                content_state = await _charge_delivered_image(content_state, user_id, workspace_id)
             else:
                 logger.info(
                     "generate_content: image task returned no valid URL; skipping injection."
@@ -1288,6 +1348,9 @@ async def generate_content(state: REXT) -> dict:
                     # Ground truth for first-person experience claims — see
                     # claim_integrity.build_claim_evidence.
                     "author_profile": counters.get("author_profile") or "",
+                    # The persona's tone and the brand's voice, kept by the
+                    # humanize pass (article_voice.py).
+                    "article_voice": counters.get("article_voice") or {},
                 },
                 "status": "content_generated",
             }
@@ -1298,6 +1361,6 @@ async def generate_content(state: REXT) -> dict:
         return {
             "content": {
                 **content_state,
-                "error": f"Generation failed: {str(e)}",
+                "error": "We couldn't generate the requested content right now. Please try again.",
             }
         }

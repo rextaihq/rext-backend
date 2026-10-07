@@ -15,6 +15,7 @@ from sqlalchemy.orm import joinedload
 
 from src.api.models.subscription_models.orders import Order, OrderStatus
 from src.api.models.subscription_models.refund_requests import (
+    REFUND_CREDIT_LIMIT,
     REFUND_REQUEST_WINDOW_DAYS,
     RefundRequest,
     RefundRequestStatus,
@@ -22,6 +23,7 @@ from src.api.models.subscription_models.refund_requests import (
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
+from src.services.credit_grants import grant_credits_used
 from src.services.order_service import refundable_amount
 from src.services.refund_service import RefundService
 from src.utils.logger import logger
@@ -30,6 +32,22 @@ from src.utils.rbac_utils import SUPER_ADMIN_HIERARCHY_THRESHOLD
 
 class RefundRequestError(Exception):
     """A refund request was refused. The message is safe to show the user."""
+
+
+def credit_rule_refusal(usage: Dict[str, Any]) -> Optional[str]:
+    """Why the refund rule refuses this payment's refund, or None.
+
+    The whole payment comes back if fewer than REFUND_CREDIT_LIMIT credits were
+    used since it; spent bonus credits count as used. A trial, or a plan with
+    no credits, has used none.
+    """
+    used = usage.get("used") or 0
+    if (usage.get("granted") or 0) > 0 and used >= REFUND_CREDIT_LIMIT:
+        return (
+            f"A refund is for a payment with fewer than {REFUND_CREDIT_LIMIT} credits "
+            f"used since it, and {used} have been used."
+        )
+    return None
 
 
 def _as_uuid(value) -> UUID:
@@ -75,26 +93,22 @@ class RefundRequestService:
 
         subscription = None
 
-        # First try the subscription the order is linked to.
+        # First try the subscription the order is linked to, but only while it
+        # still grants access (the app's one access rule: an access status, or
+        # cancelled and still paid through). When a user re-subscribes, the old
+        # subscription is cancelled (current_credits=0) while the new active one
+        # holds the real balance. Blindly trusting the link made a fresh
+        # subscriber look like they had used every credit.
         if order.subscription_id:
             result = await self.db.execute(
                 select(UserSubscription)
                 .options(joinedload(UserSubscription.plan))
-                .where(UserSubscription.id == order.subscription_id)
+                .where(
+                    UserSubscription.id == order.subscription_id,
+                    subscription_grants_access(),
+                )
             )
-            candidate = result.unique().scalar_one_or_none()
-
-            # Only use it if it still grants access. When a user re-subscribes,
-            # the old subscription is cancelled (current_credits=0) while the
-            # new active one holds the real balance. Blindly trusting the link
-            # made a fresh subscriber look like they had used every credit.
-            if candidate and candidate.status in ("ACTIVE", "TRIAL"):
-                subscription = candidate
-            elif (
-                candidate and candidate.end_date and candidate.end_date > datetime.now(timezone.utc)
-            ):
-                # Cancelled but still within the paid-through grace period.
-                subscription = candidate
+            subscription = result.unique().scalar_one_or_none()
 
         # Fall back to the user's currently-active subscription.
         if subscription is None:
@@ -153,8 +167,26 @@ class RefundRequestService:
         )
 
         balance = subscription.current_credits or 0
-        used = max(0, granted - balance - already_cut)
-        unused = max(0, balance)
+        # Credits spent from a grant (a promotion's bonus, spent before the monthly
+        # credits) are used credits too, so they count toward the refund rule, but
+        # only grants of this order's period. An unused grant is never refunded:
+        # `unused` is the paid monthly credits.
+        # The grants of the order's own subscription, made around the order (the
+        # bonus is granted with the first payment): never a later subscription's.
+        ordered_at = order.ordered_at or order.created_at
+        bonus_used = await grant_credits_used(
+            self.db,
+            order.subscription_id or subscription.id,
+            since=ordered_at,
+            until=ordered_at + timedelta(days=1) if ordered_at else None,
+            order_id=order.lemonsqueezy_order_id,
+        )
+        used = max(0, granted - balance - already_cut) + bonus_used
+        # Bonus credits spent are spent value too: they lower the refundable
+        # credits as monthly credits would, and credits already cut by earlier
+        # refunds of this order are gone, so neither a near-full nor a series of
+        # partial refunds gets round the rule. Without a bonus this is the balance.
+        unused = max(0, min(balance, granted - used - already_cut))
         max_partial_refund_cents = (unused * original_amount) // granted if granted > 0 else 0
 
         return {
@@ -182,7 +214,7 @@ class RefundRequestService:
         lemonsqueezy_order_id: str,
         reason: str,
         requested_amount: Optional[int] = None,
-        enforce_window: bool = True,
+        enforce_policy: bool = True,
     ) -> RefundRequest:
         """Raise a refund request against one of the user's own orders.
 
@@ -191,12 +223,15 @@ class RefundRequestService:
                 by a customer passes that customer's id, not their own.
             lemonsqueezy_order_id: The order being asked about.
             reason: Why the refund is wanted, in the customer's words.
-            requested_amount: Cents to ask for, for a partial refund. Defaults
-                to the order's whole remaining refundable balance.
-            enforce_window: Whether the refund window applies. An admin logging
-                a request that arrived by email passes False: the customer may
-                well have written inside the window even if it has since
-                lapsed, and the admin reviews the request either way.
+            requested_amount: Cents to ask for. The customer's own request is
+                always the whole remaining payment (the refund rule has no
+                partial refunds), so it may be left out or must equal it. An
+                admin logging a request may ask for part of it.
+            enforce_policy: Whether the refund rule applies: the window, the
+                credit limit and the whole payment. An admin logging a request
+                that arrived by email passes False: the customer may well have
+                written inside the window even if it has since lapsed, and the
+                admin reviews the request either way.
 
         Raises:
             RefundRequestError: If the order is not eligible. The message is
@@ -230,7 +265,7 @@ class RefundRequestService:
             )
 
         placed_at = order.ordered_at or order.created_at
-        if enforce_window and placed_at:
+        if enforce_policy and placed_at:
             if placed_at.tzinfo is None:
                 placed_at = placed_at.replace(tzinfo=timezone.utc)
             cutoff = datetime.now(timezone.utc) - timedelta(days=REFUND_REQUEST_WINDOW_DAYS)
@@ -245,39 +280,22 @@ class RefundRequestService:
         if remaining <= 0:
             raise RefundRequestError("This order has already been fully refunded.")
 
-        usage = await self._get_credit_usage_details(order)
-        used_credits = usage["used"]
-        granted_credits = usage["granted"]
-        max_partial = usage["max_partial_refund_cents"]
-
-        # Determine target refund amount
-        target_amount = requested_amount or remaining
-
-        if target_amount == remaining:
-            # Full refund request: allowed ONLY if 50 credits or fewer consumed
-            if granted_credits > 0 and used_credits > 50:
-                msg = (
-                    f"Full refunds are only available if 50 or fewer credits have been used "
-                    f"(you have used {used_credits} credits)."
-                )
-                if max_partial > 0:
-                    msg += f" You may request a partial refund up to {max_partial / 100:.2f} {order.currency or 'USD'}."
-                else:
-                    msg += " No partial refund is available for your remaining credits."
-                raise RefundRequestError(msg)
-        else:
-            # Partial refund request
+        if enforce_policy:
+            # The customer's own request follows the refund rule: the whole
+            # payment, and only with fewer than the limit's credits used.
+            if requested_amount is not None and requested_amount != remaining:
+                raise RefundRequestError("A refund is for the whole payment, not part of it.")
+            refusal = credit_rule_refusal(await self._get_credit_usage_details(order))
+            if refusal:
+                raise RefundRequestError(refusal)
+        elif requested_amount is not None:
+            # An admin logging a request may ask for part of what's left.
             if requested_amount <= 0:
                 raise RefundRequestError("The refund amount must be more than zero.")
             if requested_amount > remaining:
                 raise RefundRequestError(
                     f"Only {remaining / 100:.2f} {order.currency or 'USD'} is "
                     f"still refundable on this order."
-                )
-            if granted_credits > 0 and requested_amount > max_partial:
-                raise RefundRequestError(
-                    f"The maximum partial refund for your remaining {usage['unused']} unused credits "
-                    f"is {max_partial / 100:.2f} {order.currency or 'USD'}."
                 )
 
         # "Open" means the request still has somewhere to go: waiting to be

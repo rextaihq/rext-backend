@@ -29,10 +29,9 @@ Event Types:
     - subscription_payment_failed
     - subscription_payment_recovered
 
-    Order/License Events (3):
+    Order Events (2):
     - order_created
     - order_refunded
-    - license_key_created
 
 Examples:
     # Test all webhook types
@@ -353,7 +352,7 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "user_email": "mobeen@revnix.com",
                     "currency": "USD",
                     "currency_rate": "1.00000000",
-                    "subtotal": 29900,  # $299 for lifetime license
+                    "subtotal": 29900,
                     "discount_total": 0,
                     "tax": 0,
                     "total": 29900,
@@ -409,37 +408,6 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "refunded_at": timestamp,
                     "total": 29900,
                     "created_at": "2025-10-21T10:30:00.000000Z",
-                    "updated_at": timestamp,
-                    "test_mode": True,
-                },
-            },
-        },
-        "license_key_created": {
-            "meta": {
-                "event_name": "license_key_created",
-                "webhook_id": "test-webhook",
-                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
-            },
-            "data": {
-                "type": "license-keys",
-                "id": "test-license-123",
-                "attributes": {
-                    "store_id": 126929,
-                    "customer_id": int(kwargs.get("customer_id", TEST_CUSTOMER_ID)),
-                    "order_id": int(kwargs.get("order_id", 9999999)),
-                    "order_item_id": 123456,
-                    "product_id": int(kwargs.get("product_id", TEST_PRODUCT_ID)),
-                    "user_name": "Mobeen",
-                    "user_email": "mobeen@revnix.com",
-                    "key": "TEST-ABCD-1234-EFGH-5678",
-                    "key_short": "TEST-ABCD-12XX-XXXX-XX78",
-                    "activation_limit": 5,
-                    "instances_count": 0,
-                    "disabled": False,
-                    "status": "active",
-                    "status_formatted": "Active",
-                    "expires_at": None,
-                    "created_at": timestamp,
                     "updated_at": timestamp,
                     "test_mode": True,
                 },
@@ -557,10 +525,9 @@ def test_all_events(url: str, secret: str, verbose: bool = False) -> List[Dict[s
         "subscription_payment_success",
         "subscription_payment_failed",
         "subscription_payment_recovered",
-        # Order/License events
+        # Order events
         "order_created",
         "order_refunded",
-        "license_key_created",
     ]
 
     results = []

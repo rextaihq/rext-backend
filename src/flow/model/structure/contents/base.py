@@ -115,7 +115,10 @@ class ContentBlock(BaseModel):
     )
 
 
-def blocks_to_body_markdown(ordered_blocks: List[tuple[str, Optional["ContentBlock"]]]) -> str:
+def blocks_to_body_markdown(
+    ordered_blocks: List[tuple[str, Optional["ContentBlock"]]],
+    levels: Optional[dict[str, int]] = None,
+) -> str:
     """Assemble ordered (key, block) pairs into the `body_markdown` string.
 
     `body_markdown` stays the representation every downstream consumer already
@@ -124,17 +127,19 @@ def blocks_to_body_markdown(ordered_blocks: List[tuple[str, Optional["ContentBlo
     generation changes how the string is PRODUCED, not what receives it, which
     is what keeps this change backward-compatible.
 
-    Absent optional blocks are skipped rather than rendered empty.
+    Absent optional blocks are skipped rather than rendered empty. `levels` gives
+    a block's heading level (2 for ##, 3 for ###, 4 for ####) by key; a block not in it is an H2.
     """
     parts: List[str] = []
-    for _key, block in ordered_blocks:
+    for key, block in ordered_blocks:
         if block is None:
             continue
         body = (block.markdown or "").strip()
         if not body:
             continue
         heading = (block.heading or "").strip()
-        parts.append(f"## {heading}\n\n{body}" if heading else body)
+        marker = "#" * ((levels or {}).get(key) or 2)
+        parts.append(f"{marker} {heading}\n\n{body}" if heading else body)
     return "\n\n".join(parts)
 
 
@@ -143,7 +148,7 @@ class BaseGeneratedContent(BaseModel):
 
     title: str = Field(
         description=(
-            "The user-selected page title, copied VERBATIM from the prompt (it is already 50–59 characters and contains the focus keyphrase). "
+            "The user-selected page title, copied VERBATIM from the prompt (its length is already checked and it contains the focus keyphrase). "
             "Never reword, shorten, lengthen or re-case it."
         )
     )
@@ -154,8 +159,8 @@ class BaseGeneratedContent(BaseModel):
     meta_title: Optional[str] = Field(
         default=None,
         description=(
-            "SEO meta title: identical to `title` — the user-selected title, verbatim "
-            "(50–59 chars). Do not write a different one."
+            "SEO meta title: identical to `title` — the user-selected title, verbatim. "
+            "Do not write a different one."
         ),
     )
     meta_description: Optional[str] = Field(

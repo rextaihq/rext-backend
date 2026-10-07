@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -11,7 +11,6 @@ from src.api.middleware.exceptions import (
     RextExternalServiceException,
     RextValidationException,
 )
-from src.api.models.content_models import Content
 from src.api.models.content_models.publishing_result import (
     ContentPublishingResult,
     PublishingStatus,
@@ -21,6 +20,7 @@ from src.api.schema.content_schema import (
     ContentResponse,
     ContentUpdate,
     PublishToSiteRequest,
+    RescheduleRequest,
 )
 from src.api.schema.response.content_responses import (
     DeletedContentResponse,
@@ -31,6 +31,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
 from src.services.user_service import UserService
+from src.utils.datetime_utils import moved_to_day
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -38,6 +39,9 @@ from src.utils.wordpress_status import normalize_wordpress_post_status
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
 router = APIRouter()
+
+# How close to its time a scheduled publish stops taking moves (see reschedule_publish).
+RESCHEDULE_CUTOFF = timedelta(minutes=5)
 
 
 # -------------------------
@@ -462,21 +466,8 @@ async def update_content(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Check for duplicate title if title is being updated
-    if data.title:
-        title_query = select(Content).where(
-            Content.workspace_id == workspace.id,
-            Content.title == data.title,
-            Content.deleted_at.is_(None),
-            Content.id != content_id,
-        )
-        existing_result = await db.execute(title_query)
-        if existing_result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Content with title '{data.title}' already exists in this workspace.",
-            )
-
+    # The title rule is the service's: a new title only for an article written by hand, and only
+    # when the title changes (G55: generated articles may share one).
     service = ContentService(db)
     content = await service.update_content(
         content_id=content_id, workspace_id=workspace.id, user_id=UUID(user_id), data=data
@@ -519,4 +510,98 @@ async def delete_content(
         data={"deleted_id": str(content_id)},
         request=request,
         message="Content deleted successfully",
+    )
+
+
+# -------------------------
+# Move a Scheduled Publish to Another Day
+# -------------------------
+@router.patch("/{content_id}/schedule", response_model=SuccessResponse[dict])
+@db_transaction_handler("reschedule publish", "Schedule moved successfully")
+@require_permissions("content.publish", workspace_scoped=True)
+async def reschedule_publish(
+    content_id: UUID,
+    data: RescheduleRequest,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Move a pending scheduled publish to another day. Every site the content is
+    scheduled on moves to the new day at its own time of day, in the account's
+    timezone; nothing else about the content or its publishing records changes.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    service = ContentService(db)
+    content = await service._get_content_or_404(content_id, workspace.id)
+
+    # Locked so a cancel or another move of the same content waits for this one.
+    stmt = (
+        select(ContentPublishingResult)
+        .where(
+            ContentPublishingResult.content_id == content_id,
+            ContentPublishingResult.status == PublishingStatus.SCHEDULED,
+        )
+        .with_for_update()
+    )
+    scheduled_records = (await db.execute(stmt)).scalars().all()
+
+    # The pending records decide, not the content's status: a site published at once beside a
+    # scheduled one makes the content "published" while that schedule still waits.
+    if not scheduled_records:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content is not scheduled: no publish is pending. Current status: {content.status}",
+        )
+
+    now = datetime.now(timezone.utc)
+    # The scheduled publisher (every minute, src/tasks/scheduled_tasks.py) reads due records
+    # without a lock, so it could take a record this move is changing: a record that is due,
+    # or nearly, is left to it.
+    if any(
+        rec.scheduled_publish_at is None or rec.scheduled_publish_at <= now + RESCHEDULE_CUTOFF
+        for rec in scheduled_records
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Content publishes within the next few minutes, so its date can't change",
+        )
+
+    user_row = await UserService(db).get_user_by_id(UUID(user_id))
+    user_timezone = user_row.timezone or "UTC"
+
+    try:
+        moved = {
+            rec.id: moved_to_day(rec.scheduled_publish_at, data.day, user_timezone)
+            for rec in scheduled_records
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OverflowError as exc:
+        raise HTTPException(status_code=400, detail="That day is out of range") from exc
+    if min(moved.values()) <= now:
+        raise HTTPException(status_code=400, detail="The new publish time must be in the future")
+
+    for rec in scheduled_records:
+        rec.scheduled_publish_at = moved[rec.id]
+
+    # The calendar shows the content at its first site's time: the records', since a retry
+    # moves a record without the content.
+    content.wordpress_published_at = min(moved.values())
+    content.updated_at = now
+
+    await db.flush()
+
+    return success(
+        data={
+            "content_id": str(content_id),
+            "status": content.status,
+            "scheduled_at": content.wordpress_published_at.isoformat(),
+            "rescheduled_records": len(scheduled_records),
+        },
+        request=request,
+        message="Schedule moved successfully",
     )

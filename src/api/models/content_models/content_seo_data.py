@@ -42,3 +42,13 @@ class ContentSEOData(Base, SerializableMixin):
 
     # Relationships
     content = relationship("Content", back_populates="seo_data")
+
+    def to_dict(self, **kwargs):
+        """The row as the API returns it: the saved checks' details in the reader's words
+        (check_wording), never the repair step's instructions an older row kept."""
+        from src.services.check_wording import public_seo_details
+
+        data = super().to_dict(**kwargs)
+        if "seo_details" in data:
+            data["seo_details"] = public_seo_details(data["seo_details"])
+        return data

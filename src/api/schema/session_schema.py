@@ -6,7 +6,7 @@ Pydantic schemas for session-related API requests and responses.
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class SessionResponse(BaseModel):
@@ -32,15 +32,3 @@ class SessionListResponse(BaseModel):
     sessions: list[SessionResponse]
     total_count: int
     active_count: int
-
-
-class RevokeSessionRequest(BaseModel):
-    """Request schema for revoking a specific session."""
-
-    session_id: str = Field(..., description="ID of the session to revoke")
-
-
-class RevokeAllSessionsRequest(BaseModel):
-    """Request schema for revoking all sessions except current."""
-
-    exclude_current: bool = Field(default=True, description="Keep current session active")

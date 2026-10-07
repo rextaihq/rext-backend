@@ -8,14 +8,20 @@ from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
 from src.flow.engines.agent.tools.tools import SEARCH_HARD_CAP
+from src.flow.engines.content.generation.article_voice import (
+    article_voice,
+    fetch_brand_voice_profile,
+    format_voice_for_writer,
+)
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
-    resolve_brand_placement_policy,
+    resolve_article_brand_policy,
 )
 from src.flow.engines.content.generation.outline_structure import (
     format_structure_for_prompt,
     resolve_outline_structure,
 )
+from src.flow.engines.content.generation.persona_relevance import persona_fits_topic
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
@@ -39,6 +45,29 @@ def persona_profile_text(persona: Any) -> str:
     return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
 
 
+def persona_fits_outline(persona: Any, outline: Optional[dict]) -> bool:
+    """Whether the article may speak from the persona's experience (G56, rext-control #501).
+
+    The outline step's own answer for this persona when it recorded one, so the writer follows the
+    fit the person saw; else the same measure taken here, on the outline's keyphrase and title.
+    """
+    outline = outline or {}
+    persona_id = str(getattr(persona, "id", "") or "")
+    for recommendation in outline.get("persona_recommendations") or []:
+        if (
+            isinstance(recommendation, dict)
+            and persona_id
+            and str(recommendation.get("persona_id")) == persona_id
+            and isinstance(recommendation.get("fits_topic"), bool)
+        ):
+            return recommendation["fits_topic"]
+    return persona_fits_topic(
+        persona,
+        topic=outline.get("focus_keyphrase") or outline.get("title"),
+        title=outline.get("title"),
+    )
+
+
 class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Runs before the agent loop starts.
@@ -55,19 +84,62 @@ class PersonaInjectionMiddleware(AgentMiddleware):
         super().__init__()
         self.counters = counters
 
+    # The author bio the article carries when the persona's expertise fits its subject (G56,
+    # rext-control #501). For a persona that doesn't fit, NO_AUTHOR_BIO_RULES takes its place, so a
+    # software founder's bio never lands in a bakery article.
+    AUTHOR_BIO_RULES = """AUTHOR BIO — PLACEMENT & STRUCTURE:
+- Place the author bio section roughly in the MIDDLE of the article (after 40–60% of the content), not at the end
+- Heading: choose a natural, experience-focused heading that does NOT include the author's name — for example: "My Experience With This", "How I Got Here", "A Bit About My Background", "My Journey in [Field]", "What I've Learned Over the Years", or similar — pick whichever fits the article's tone
+- Content: 2–3 sentences — mention the author's full name naturally in the first sentence (e.g. "I'm [Name], a [title] with X years..."), then cover the background, credentials or outcomes the author profile actually states (years in field only if the profile gives them) — never invent a credential, figure or achievement; the name in the content builds credibility even though the heading stays generic
+- This section is a direct E-E-A-T trust signal — omitting it is an automatic failure
+- If a LinkedIn URL is available in the persona: place ONLY the LinkedIn link as the very last line of the article, after all other sections, as a standalone markdown link: [Connect with [Name] on LinkedIn]([linkedin_url]) — no heading, no extra text"""
+
+    # The rest of what makes the article speak from the persona's experience, with the variant for a
+    # persona outside the subject (G56): the opening stance, the identity rules and the background line.
+    AUTHOR_STANCE = """You are the specific human expert defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. Write as that person — their name, their background, their voice, their opinions — with the authority, imperfection, and character of a real professional writing from direct experience."""
+    OFF_TOPIC_STANCE = """You write in the voice of the person defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. This article's subject is outside that person's stated expertise, so write with their voice, opinions and character, never with their name, background or past work."""
+
+    IDENTITY_RULES = """========================
+PERSONA IDENTITY RULES — NON-NEGOTIABLE
+========================
+- The article MUST be written as the author persona defined at the top of this system prompt
+- **THE AUTHOR'S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
+- Place the author's name naturally in the first or second paragraph
+  Example: "I'm [Name], and after [X years] working in [field]..."
+- The author's name must appear at least once more later in the article
+- Weave the persona's expertise, failures, opinions, and perspective throughout every section
+- The reader must feel a specific human being wrote this — not a template"""
+    OFF_TOPIC_IDENTITY_RULES = """========================
+PERSONA VOICE RULES — NON-NEGOTIABLE
+========================
+- The article is written in the voice of the author persona defined at the top of this system prompt, whose stated expertise does not cover this subject
+- Do NOT write the author's name anywhere in the article, and do not introduce the author
+- Bring opinions and perspective as practitioner reasoning, never as the author's background, credentials or past work
+- These rules win over every other line of this prompt about experience: wherever it asks for experience, a background, anecdotes, "In my experience", mistakes you've made or work you have done, give practitioner reasoning instead, with no claim of having done it
+- The reader must feel a specific human being wrote this — not a template"""
+
+    BACKGROUND_RULE = """- Within the first 200 words, establish the author's background using ONLY what the author identity above states (title, expertise, background). If it states years in the field or specific credentials, use them; if it does not, do NOT invent a number of years, clients, projects or results
+  Good (profile says "content engineer, headless CMS migrations"): "I work on headless CMS migrations, so the trade-offs below are the ones I weigh with teams every week."
+  Bad (profile says nothing about it): "After more than a decade and dozens of migrations...\""""
+    OFF_TOPIC_BACKGROUND_RULE = """- Do NOT establish or mention the author's background anywhere: this subject is outside the author's stated expertise, so experience shows only as practitioner reasoning (below)"""
+
+    NO_AUTHOR_BIO_RULES = """AUTHOR BIO — NONE IN THIS ARTICLE:
+- This article's subject is outside the author's stated expertise, so it carries no author bio: no "My Experience…", "How I Got Here", "About Me" or background section, no "I'm [Name], a [title]" line, and no LinkedIn line
+- This is not an E-E-A-T failure: the article earns trust through practitioner reasoning and cited evidence, not through the author's credentials"""
+
     CONTENT_INSTRUCTIONS = """
-You are the specific human expert defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. Write as that person — their name, their background, their voice, their opinions — with the authority, imperfection, and character of a real professional writing from direct experience.
+{AUTHOR_STANCE}
 
-If an AI detector scanned this article, it must score as 99%+ human-written. Every single sentence must pass that test.
+A reader who knows the subject should believe a person who has done this work wrote every sentence: specific, opinionated where it matters, never generic.
 
 ========================
-WHY THIS KEEPS GETTING FLAGGED AS AI (READ THIS)
+WHY UNIFORM WRITING READS AS MACHINE-MADE (READ THIS)
 ========================
-AI detectors (GPTZero, ZeroGPT) don't look for "sounds human" — they measure statistical predictability:
-- PERPLEXITY: how predictable each word choice is given what came before. AI text picks the statistically likely next word almost every time. Real human writing takes unexpected turns in word choice.
-- BURSTINESS: how much sentence length and rhythm vary across the WHOLE document, not just within one paragraph. AI text stays in a narrow, comfortable band throughout. Human writing swings — a two-word sentence next to a rambling one, a terse paragraph next to a sprawling one, uneven and irregular.
+Readers notice two things long before they weigh your claims:
+- PREDICTABLE WORDING: the safest, most expected word every time. Real writers take the occasional unexpected turn in word choice.
+- EVEN RHYTHM: sentence and paragraph lengths that stay in one narrow band across the WHOLE article, not just within one paragraph. Human writing swings — a two-word sentence next to a rambling one, a terse paragraph next to a sprawling one, uneven and irregular.
 
-This means applying "rules" too evenly is ITSELF an AI signature, even when each individual sentence looks fine on its own. A fixed sentence-length rotation, every paragraph landing in the same word-count band, a transition word every N sentences like clockwork — that kind of uniform rule-following is exactly the low-perplexity, low-burstiness pattern these tools are built to catch.
+This means applying "rules" too evenly reads as mechanical, even when each individual sentence looks fine on its own. A fixed sentence-length rotation, every paragraph landing in the same word-count band, a transition word every N sentences like clockwork — that kind of uniform rule-following is what makes text feel produced rather than written.
 
 So: hit the structural targets below (paragraph length, subheadings, transitions, passive voice) as an ARTICLE-WIDE AVERAGE — never as a formula applied evenly section by section. Let some sections run long and loose, others short and clipped. Prefer a less-obvious word choice sometimes instead of always the safest synonym. A little structural unevenness is what reads as human.
 
@@ -77,7 +149,7 @@ HUMAN WRITING — CORE TECHNIQUES
 SENTENCE VARIETY (critical):
 - Alternate between very short sentences and longer, complex ones within every paragraph
 - Example mix: "Most teams get this wrong. They pick the tool with the longest feature list, then spend months working around an editing workflow nobody on the team actually likes."
-- Never write 2+ sentences in a row with the same structure, the same opening word type, or similar length — this uniformity is the single biggest tell AI detectors (GPTZero, ZeroGPT) key off of
+- Never write 2+ sentences in a row with the same structure, the same opening word type, or similar length — this uniformity is the single biggest reason prose reads as machine-made
 - HARD RULE (mechanically checked by Yoast): never start two consecutive sentences with the exact same word. If you notice you're about to start a third sentence in a row with a repeated opener ("The", "This", "It", "A", "You", "I"...), stop and rewrite it — Yoast flags 3 consecutive sentences sharing a starting word as an error
 - WATCH FOR THIS SPECIFIC TRAP: describing a parallel cadence or sequence in prose ("At 90 days, you review outcomes. At 60, you align on renewal. At 30, you confirm procurement.") is the single most common way this rule gets broken. Any time you're describing 3+ parallel time-based or step-based items, use a bulleted list instead of consecutive sentences
 
@@ -139,16 +211,7 @@ BANNED STRUCTURAL PATTERNS:
 - Conclusion that just repeats everything already said
 - Starting sentences with the same words
 
-========================
-PERSONA IDENTITY RULES — NON-NEGOTIABLE
-========================
-- The article MUST be written as the author persona defined at the top of this system prompt
-- **THE AUTHOR'S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
-- Place the author's name naturally in the first or second paragraph
-  Example: "I'm [Name], and after [X years] working in [field]..."
-- The author's name must appear at least once more later in the article
-- Weave the persona's expertise, failures, opinions, and perspective throughout every section
-- The reader must feel a specific human being wrote this — not a template
+{IDENTITY_RULES}
 
 ========================
 E-E-A-T AUTHORITY SIGNALS — MANDATORY
@@ -156,9 +219,7 @@ E-E-A-T AUTHORITY SIGNALS — MANDATORY
 These four signals directly affect how Google evaluates content quality. Every article must demonstrate all four.
 
 EXPERIENCE — show practitioner judgment, grounded in the author profile:
-- Within the first 200 words, establish the author's background using ONLY what the author identity above states (title, expertise, background). If it states years in the field or specific credentials, use them; if it does not, do NOT invent a number of years, clients, projects or results
-  Good (profile says "content engineer, headless CMS migrations"): "I work on headless CMS migrations, so the trade-offs below are the ones I weigh with teams every week."
-  Bad (profile says nothing about it): "After more than a decade and dozens of migrations..."
+{BACKGROUND_RULE}
 - Anchor recommendations in practitioner reasoning — the situation where the advice applies, what tends to go wrong, what you'd check first. Never invent a dated anecdote, a test you ran, a client, or a measured result
   Good: "If your editors live in a visual builder, a schema-only CMS will slow them down — that's the first thing I'd check."
   Bad: "When I migrated a client in 2023, load times dropped 60%."
@@ -185,12 +246,7 @@ TRUSTWORTHINESS — verifiable, transparent, honest:
 - Never overstate certainty. Use "In my experience..." for anecdotal claims. Reserve factual language for cited stats.
 - If you disagree with a cited source, say so and explain why
 
-AUTHOR BIO — PLACEMENT & STRUCTURE:
-- Place the author bio section roughly in the MIDDLE of the article (after 40–60% of the content), not at the end
-- Heading: choose a natural, experience-focused heading that does NOT include the author's name — for example: "My Experience With This", "How I Got Here", "A Bit About My Background", "My Journey in [Field]", "What I've Learned Over the Years", or similar — pick whichever fits the article's tone
-- Content: 2–3 sentences — mention the author's full name naturally in the first sentence (e.g. "I'm [Name], a [title] with X years..."), then cover the background, credentials or outcomes the author profile actually states (years in field only if the profile gives them) — never invent a credential, figure or achievement; the name in the content builds credibility even though the heading stays generic
-- This section is a direct E-E-A-T trust signal — omitting it is an automatic failure
-- If a LinkedIn URL is available in the persona: place ONLY the LinkedIn link as the very last line of the article, after all other sections, as a standalone markdown link: [Connect with [Name] on LinkedIn]([linkedin_url]) — no heading, no extra text
+{AUTHOR_BIO_BLOCK}
 
 ========================
 INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED
@@ -269,7 +325,7 @@ FACTS RULE:
 ========================
 CORE SEO REQUIREMENTS
 ========================
-- Use the user-selected page title VERBATIM (already 50–59 characters) — never rewrite it
+- Use the user-selected page title VERBATIM (its length already checked) — never rewrite it
 - Include the primary keyword naturally in:
   - Title
   - First 100 words (introduction)
@@ -411,6 +467,8 @@ CONTENT ACCEPTANCE CRITERIA
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
 {PERSONA_BLOCK}
 
+{BRAND_VOICE_BLOCK}
+
 ---
 
 {AUDIENCE_BLOCK}
@@ -525,6 +583,12 @@ Write the full article now. Every third-party claim must have an inline [text](u
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
         content_type = (state.get("content") or {}).get("content_type", "")
         personas = await self._fetch_best_persona(workspace_id, outline)
+        # The Brand Voice Profile steers the writing beside the persona, whose own
+        # tone wins where they disagree (rext-control #161, option 1).
+        voice = article_voice(
+            personas.tone_of_voice if personas else None,
+            await fetch_brand_voice_profile(workspace_id),
+        )
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
         internal_links = (outline or {}).get("internal_links") or []
@@ -535,20 +599,42 @@ Write the full article now. Every third-party claim must have an inline [text](u
             f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}"
         )
 
+        # Whether the article may speak from the persona's experience (G56, rext-control #501).
+        # Without a persona nothing changes.
+        fits_topic = persona_fits_outline(personas, outline) if personas else True
+        print(f"  persona fits the topic: {fits_topic}")
+
         full_prompt = self._build_full_content_prompt(
-            personas, outline, target_word_count, content_type
+            personas, outline, target_word_count, content_type, voice=voice, fits_topic=fits_topic
         )
 
         # The author profile is the only ground truth for first-person experience
         # claims (years in field, credentials). Recorded on the shared counters so
-        # generate_content can hand it to validation as claim evidence.
+        # generate_content can hand it to validation as claim evidence. A persona
+        # outside the subject gives none: an experience claim it slips in is then
+        # unsupported, as with no persona.
         if self.counters is not None:
-            self.counters["author_profile"] = persona_profile_text(personas) if personas else ""
+            self.counters["author_profile"] = (
+                persona_profile_text(personas) if personas and fits_topic else ""
+            )
+            # The same voice for the humanize pass (via generation_meta).
+            self.counters["article_voice"] = voice
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
         # more reliably than a long system prompt — so the persona name must appear there.
-        if personas:
+        if personas and not fits_topic:
+            persona_header = (
+                "╔══════════════════════════════════════════════╗\n"
+                "  AUTHOR VOICE — THIS SUBJECT IS OUTSIDE THE AUTHOR'S EXPERTISE\n"
+                "  RULES:\n"
+                "  1. Do NOT name the author or introduce yourself in the article\n"
+                "  2. Do NOT claim experience, credentials or a background in this subject, whatever\n"
+                "     else asks for experience, anecdotes or 'In my experience': reason instead\n"
+                "  3. NO author bio, no experience or background section, no LinkedIn line\n"
+                "╚══════════════════════════════════════════════╝\n\n"
+            )
+        elif personas:
             p_name = str(personas.full_name or personas.name)
             p_title = str(personas.professional_title or "expert")
             p_linkedin: str = (
@@ -605,8 +691,10 @@ Write the full article now. Every third-party claim must have an inline [text](u
         outline: Optional[OutlineState],
         target_word_count: int = 3000,
         content_type: str = "",
+        voice: Optional[dict] = None,
+        fits_topic: bool = True,
     ) -> str:
-        persona_block = self._build_persona_block(personas) if personas else ""
+        persona_block = self._build_persona_block(personas, fits_topic) if personas else ""
         outline_block = self._build_outline_block(outline, content_type) if outline else ""
         brand_placement_block = (
             self._build_brand_placement_block(outline, content_type) if outline else ""
@@ -652,11 +740,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         content_instructions = self.CONTENT_INSTRUCTIONS.format(
             LENGTH_ACCEPTANCE_BLOCK=length_acceptance_block,
+            AUTHOR_BIO_BLOCK=self.AUTHOR_BIO_RULES if fits_topic else self.NO_AUTHOR_BIO_RULES,
+            AUTHOR_STANCE=self.AUTHOR_STANCE if fits_topic else self.OFF_TOPIC_STANCE,
+            IDENTITY_RULES=self.IDENTITY_RULES if fits_topic else self.OFF_TOPIC_IDENTITY_RULES,
+            BACKGROUND_RULE=self.BACKGROUND_RULE if fits_topic else self.OFF_TOPIC_BACKGROUND_RULE,
         )
 
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
             CONTENT_INSTRUCTIONS=content_instructions,
             PERSONA_BLOCK=persona_block,
+            BRAND_VOICE_BLOCK=format_voice_for_writer(voice or {}),
             OUTLINE_BLOCK=outline_block,
             BRAND_PLACEMENT_BLOCK=brand_placement_block,
             AUDIENCE_BLOCK=audience_block,
@@ -726,12 +819,15 @@ Write the full article now. Every third-party claim must have an inline [text](u
     # ------------------------------------------------------------------
     # Message builders
     # ------------------------------------------------------------------
-    def _build_persona_block(self, persona: Persona) -> str:
-        return self._format_single_persona(persona)
+    def _build_persona_block(self, persona: Persona, fits_topic: bool = True) -> str:
+        return self._format_single_persona(persona, fits_topic)
 
-    def _format_single_persona(self, persona: Persona) -> str:
+    def _format_single_persona(self, persona: Persona, fits_topic: bool = True) -> str:
         name = persona.full_name or persona.name
         title = persona.professional_title or "expert"
+
+        if not fits_topic:
+            return self._format_off_topic_persona(persona)
 
         lines = [
             "## YOUR AUTHOR IDENTITY — EMBODY THIS FULLY",
@@ -793,6 +889,30 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 f"- **LinkedIn:** NONE — do NOT include any LinkedIn link anywhere for {name}. Do not use LinkedIn URLs from other personas.",
             ]
 
+        return "\n".join(lines)
+
+    def _format_off_topic_persona(self, persona: Persona) -> str:
+        """A persona outside the article's subject (G56, rext-control #501): its voice, none of
+        its background, credentials, name or links, so nothing in the prompt invites them."""
+        # No name either: what the prompt doesn't hold, the article can't repeat.
+        lines = [
+            "## YOUR AUTHOR VOICE",
+            "",
+            "You write in the voice described here. This article's subject is outside the author's "
+            "stated expertise: the voice is theirs, the experience is not.",
+        ]
+        if persona.tone_of_voice:
+            lines += ["", "### Your Voice & Tone", persona.tone_of_voice]
+        lines += [
+            "",
+            "### REQUIRED: This Subject Is Outside Your Expertise",
+            "- Do NOT introduce yourself or name the author in the article",
+            "- Do NOT claim experience, credentials, clients, results or a background in this subject",
+            "- Write NO author bio and no experience or background section",
+            '- First person is fine for reasoning and judgment ("I\'d start with...", "In my view..."), never for a history you would need to have lived',
+            "",
+            "- **LinkedIn:** NONE in this article — do NOT include any LinkedIn link.",
+        ]
         return "\n".join(lines)
 
     def _build_outline_block(self, outline: OutlineState, content_type: str = "") -> str:
@@ -898,7 +1018,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if not brand_name:
             return ""
 
-        policy = resolve_brand_placement_policy(content_type)
+        policy = resolve_article_brand_policy(content_type, outline)
         ranked_list_injection = build_brand_structural_injection(content_type, brand_name, policy)
 
         lines = [

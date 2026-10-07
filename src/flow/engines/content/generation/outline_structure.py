@@ -123,6 +123,7 @@ _NON_STRUCTURAL_KEYS = frozenset(
         "lead_magnet",
         "visual_direction",
         "promote_brand",
+        "brand_prominence",
         "brand_voice_promotion",
         "selected_persona_id",
         "persona_recommendations",
@@ -156,6 +157,13 @@ class OutlineBlock:
     required: bool  # the schema field is non-Optional
     data: Any  # the approved values, verbatim from the outline dict
     order: int  # position in the schema's declaration order
+    # Set only on a planned section expanded from a container block
+    # (expand_section_containers): the container's key, the section's heading
+    # level in the article, and its place among the container's sections.
+    parent: str | None = None
+    level: int = 2
+    position: int = 0
+    of: int = 0
 
 
 # Acronyms that .title() would mangle ("Cta", "Faq") — these end up as headings
@@ -178,6 +186,11 @@ _ACRONYMS = {
 
 def humanize_key(key: str) -> str:
     return " ".join(_ACRONYMS.get(word, word.title()) for word in key.split("_"))
+
+
+def is_cta_key(key: str) -> bool:
+    """A field naming a call to action: `cta`, `primary_cta`, `final_cta`, `repeated_ctas`, `cta_text`."""
+    return any(word in ("cta", "ctas") for word in str(key).lower().split("_"))
 
 
 def _guidance_fields_for(model: Any) -> frozenset[str]:
@@ -377,6 +390,107 @@ def unwrap_block(block: OutlineBlock) -> list[tuple[str, Any]]:
     return [(block.heading, block.data)]
 
 
+def item_heading_field(item: dict) -> str | None:
+    """The field that carries this item's own heading, as `_item_heading` reads it."""
+    for field in _ITEM_HEADING_FIELDS:
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return field
+    return None
+
+
+def section_containers(blocks: list[OutlineBlock]) -> list[tuple[str, list[dict]]]:
+    """The lists of sections in the approved structure, with their path in the outline dict.
+
+    These are the containers `unwrap_block` turns into one heading per item, so
+    the rows a reviewer reorders or renames are exactly the headings the article
+    is written and checked against. The path is "<field>" for a list and
+    "<field>.<key>" for a one-key wrapper (blog's `content_structure.sections`).
+    """
+    containers = []
+    for block in blocks:
+        if block.key in _NON_HEADING_BLOCKS:
+            continue
+        items = _container_items(block.data)
+        if not items or not any(item_heading_field(item) for item in items):
+            continue
+        path = block.key
+        if isinstance(block.data, dict):
+            path = f"{block.key}.{next(iter(block.data))}"
+        containers.append((path, items))
+    return containers
+
+
+# A guard on the writer's schema, far above any real outline: only lists of
+# sections expand (lists of entries never do), and a pillar page's can be long.
+MAX_EXPANDED_SECTIONS = 40
+
+
+def _item_level(item: dict) -> int:
+    """The section's heading level: 2, 3 or 4 ("H2"-"H4"; a pillar section may be an H4)."""
+    level = str(item.get("heading_level") or "").strip().upper().removeprefix("H")
+    return int(level) if level in {"2", "3", "4"} else 2
+
+
+def _planned_children(
+    block: OutlineBlock, reserved: frozenset[str] = frozenset()
+) -> list[OutlineBlock]:
+    """A container block's planned sections, one block each, in the approved order.
+
+    Only a list of sections: items with their own `heading` (blog's and
+    pillar-content's `structure.sections`). Lists of entries keyed by a name, a
+    term or a question (tools, products, glossary terms) are the content of one
+    section, and a container a typed field of the content model owns
+    (`reserved`: how-to-guide's `steps`) is written through that field.
+    """
+    if block.key in _NON_HEADING_BLOCKS or block.key in reserved:
+        return []
+    items = _container_items(block.data)
+    if not items:
+        return []
+    titled = [(item, "heading") for item in items if item_heading_field(item) == "heading"]
+    if not titled or len(titled) != len(items) or len(titled) > MAX_EXPANDED_SECTIONS:
+        return []
+    return [
+        OutlineBlock(
+            key=f"{block.key}_{position}",
+            heading=item[field].strip(),
+            required=block.required,
+            data=item,
+            order=block.order,
+            parent=block.key,
+            level=_item_level(item),
+            position=position,
+            of=len(titled),
+        )
+        for position, (item, field) in enumerate(titled, 1)
+    ]
+
+
+def expand_section_containers(
+    blocks: list[OutlineBlock], reserved: frozenset[str] = frozenset()
+) -> list[OutlineBlock]:
+    """The writer's sections: each container block replaced by its planned sections.
+
+    Blog's whole body is one block (`structure`, a list of sections). Given one
+    field for it, the writer wrote one heading with the planned sections folded
+    under it as H3s, so a four-section outline came back as two H2s
+    (rext-control#329). Expanded, every planned section is a field of its own,
+    in the approved order, so it can't be merged away or reordered.
+    """
+    expanded: list[OutlineBlock] = []
+    for block in blocks:
+        expanded.extend(_planned_children(block, reserved) or [block])
+    return expanded
+
+
+def planned_sections(
+    blocks: list[OutlineBlock], reserved: frozenset[str] = frozenset()
+) -> list[OutlineBlock]:
+    """Every section the approved outline plans inside a container, in order."""
+    return [child for block in blocks for child in _planned_children(block, reserved)]
+
+
 def resolve_expected_headings(blocks: list[OutlineBlock]) -> list[str]:
     """Headings the finished article should actually contain."""
     return [
@@ -425,12 +539,42 @@ _PROMPT_SUPPRESSED_FIELDS = frozenset(
 )
 
 
-def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> None:
+# A call to action is an instruction, never content to copy. Rendered like any other
+# field ("- Primary CTA: Explore Features") the writer printed it into the article
+# as a bold label line, so it is phrased as what to write instead: the CTA fields
+# themselves, and the lines a CTA block carries beside them (reassurance text, an
+# urgency message, a context line).
+_CTA_BLOCK_HEADING = "Call to action (a closing paragraph, not a heading of its own)"
+_CTA_GROUP_LINE = (
+    "Calls to action, each written as a sentence or a link (never as a labelled line):"
+)
+
+
+def _cta_line(key: str, text: Any) -> str:
+    if is_cta_key(key):
+        return f'Invite the reader to "{text}" here, in a sentence or a link (never as a labelled line)'
+    return (
+        f"With the call to action, work in its {humanize_key(key).lower()} in your own words: "
+        f'"{text}" (never as a labelled line)'
+    )
+
+
+def _cta_list_line(key: str) -> str:
+    return (
+        f"With the call to action, work in its {humanize_key(key).lower()} in your own words "
+        "(never under a label):"
+    )
+
+
+def _render_value(
+    value: Any, lines: list[str], indent: str, depth: int = 0, in_cta: bool = False
+) -> None:
     """Serialize approved values faithfully, by field name.
 
     Deliberately generic: it walks whatever the schema defines instead of
     consulting hand-maintained field-name tables, so a new schema field renders
-    correctly with no registry update.
+    correctly with no registry update. A call to action, and everything a CTA
+    block holds (`in_cta`), is rendered as an instruction instead of a field.
     """
     if depth > _MAX_DEPTH or _is_empty(value):
         return
@@ -445,9 +589,20 @@ def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> 
                 continue
             if _is_empty(sub):
                 continue
-            if isinstance(sub, (dict, list)):
-                lines.append(f"{indent}- {humanize_key(key)}:")
-                _render_value(sub, lines, indent + "  ", depth + 1)
+            cta = in_cta or is_cta_key(key)
+            if cta and not isinstance(sub, (dict, list)):
+                lines.append(f"{indent}- {_cta_line(key, sub)}")
+            elif cta and isinstance(sub, list) and all(isinstance(i, str) for i in sub):
+                if is_cta_key(key):
+                    lines.extend(f"{indent}- {_cta_line(key, item)}" for item in sub if item)
+                else:
+                    lines.append(f"{indent}- {_cta_list_line(key)}")
+                    lines.extend(f"{indent}  * {item}" for item in sub if item)
+            elif isinstance(sub, (dict, list)):
+                lines.append(
+                    f"{indent}- {_CTA_GROUP_LINE if is_cta_key(key) else humanize_key(key) + ':'}"
+                )
+                _render_value(sub, lines, indent + "  ", depth + 1, in_cta=cta)
             else:
                 lines.append(f"{indent}- {humanize_key(key)}: {sub}")
     elif isinstance(value, list):
@@ -455,11 +610,43 @@ def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> 
             if _is_empty(item):
                 continue
             if isinstance(item, dict):
-                _render_value(item, lines, indent, depth + 1)
+                _render_value(item, lines, indent, depth + 1, in_cta=in_cta)
             else:
                 lines.append(f"{indent}* {item}")
     else:
         lines.append(f"{indent}* {value}")
+
+
+def section_plan_text(data: Any) -> str:
+    """A planned section's own words (description, key points), for matching it in an article."""
+    words: list[str] = []
+
+    def collect(value: Any, depth: int = 0) -> None:
+        if depth > _MAX_DEPTH:
+            return
+        if isinstance(value, dict):
+            field = item_heading_field(value) if depth == 0 else None
+            for key, sub in value.items():
+                if key not in {field, "heading_level"} and key not in _PROMPT_SUPPRESSED_FIELDS:
+                    collect(sub, depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item, depth + 1)
+        elif isinstance(value, str):
+            words.append(value)
+
+    collect(data)
+    return " ".join(words)
+
+
+def render_section_plan(data: Any) -> str:
+    """A planned section's own plan (its description, key points, flags) as prompt lines."""
+    lines: list[str] = []
+    if isinstance(data, dict):
+        field = item_heading_field(data)
+        data = {k: v for k, v in data.items() if k not in {field, "heading_level"}}
+    _render_value(data, lines, "")
+    return "\n".join(lines)
 
 
 def format_structure_for_prompt(blocks: list[OutlineBlock], indent: str = "") -> str:
@@ -472,8 +659,13 @@ def format_structure_for_prompt(blocks: list[OutlineBlock], indent: str = "") ->
     lines: list[str] = []
     for block in blocks:
         for heading, data in unwrap_block(block):
+            if is_cta_key(block.key):
+                heading = _CTA_BLOCK_HEADING
             lines.append(f"{indent}## {heading}")
-            _render_value(data, lines, indent + "  ")
+            if is_cta_key(block.key) and not isinstance(data, (dict, list)):
+                lines.append(f"{indent}  - {_cta_line(block.key, data)}")
+                continue
+            _render_value(data, lines, indent + "  ", in_cta=is_cta_key(block.key))
     return "\n".join(lines)
 
 

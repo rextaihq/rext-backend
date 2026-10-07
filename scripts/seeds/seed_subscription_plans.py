@@ -1,35 +1,41 @@
-"""Seed default subscription plans and user credits."""
+"""Seed the subscription plans: insert the ones missing, never change an existing one.
+
+The values are the ones the migrations seeded before they were squashed into the
+baseline (2026-10-05), so a new database starts where stage and live started.
+Plans are changed in the admin or by a migration of their own, never here: this
+seed runs on every environment.
+"""
 
 import asyncio
-from datetime import timedelta
+import json
 from decimal import Decimal
-from sqlalchemy import text
 from uuid import uuid4
+
+from sqlalchemy import text
 
 from scripts.seeds.base import get_seed_session, utc_now
 
 PLANS = [
     {
         "name": "trial",
-        "display_name": "Trial Plan",
-        "description": "14-day free trial. Test the full pipeline before committing.",
+        "display_name": "Trial",
+        "description": "7-day free trial. Test the full pipeline before committing.",
         "price_monthly": Decimal("0.00"),
         "price_yearly": Decimal("0.00"),
-        "credits_per_month": 50,
+        "credits_per_month": 60,
         "is_trial_plan": True,
-        "features": {
-            "trial_duration_days": 14,
-            "collaboration": "Basic",
-            "support": "Community",
-            "api_access": "Limited",
-        },
+        "features": None,
         "max_workspaces": 1,
         "max_members_per_workspace": 3,
-        "max_topics": 10,
-        "max_knowledge_items": 20,
         "max_api_calls_per_month": 100,
         "is_active": True,
         "is_public": False,
+        "provider_price_id_monthly": None,
+        "provider_price_id_yearly": None,
+        "lemonsqueezy_store_id": None,
+        "lemonsqueezy_product_id": None,
+        "lemonsqueezy_variant_id_monthly": None,
+        "lemonsqueezy_variant_id_yearly": None,
     },
     {
         "name": "starter",
@@ -40,17 +46,24 @@ PLANS = [
         "credits_per_month": 400,
         "is_trial_plan": False,
         "features": {
+            "support": "Email Support",
+            "api_access": "Standard",
             "collaboration": "Basic",
-            "support": "Email",
-            "api_access": "Limited",
+            "custom_branding": False,
+            "priority_support": False,
+            "advanced_analytics": False,
         },
         "max_workspaces": 1,
         "max_members_per_workspace": 5,
-        "max_topics": 100,
-        "max_knowledge_items": 500,
         "max_api_calls_per_month": 5000,
         "is_active": True,
         "is_public": True,
+        "provider_price_id_monthly": "1049347",
+        "provider_price_id_yearly": "1045158",
+        "lemonsqueezy_store_id": "230544",
+        "lemonsqueezy_product_id": "941169",
+        "lemonsqueezy_variant_id_monthly": "1045158",
+        "lemonsqueezy_variant_id_yearly": "1049350",
     },
     {
         "name": "growth",
@@ -60,18 +73,18 @@ PLANS = [
         "price_yearly": Decimal("890.00"),
         "credits_per_month": 1000,
         "is_trial_plan": False,
-        "features": {
-            "collaboration": "Advanced",
-            "support": "Email & Chat",
-            "api_access": "Standard",
-        },
+        "features": None,
         "max_workspaces": 3,
         "max_members_per_workspace": 10,
-        "max_topics": 300,
-        "max_knowledge_items": 2000,
         "max_api_calls_per_month": 20000,
         "is_active": True,
         "is_public": True,
+        "provider_price_id_monthly": None,
+        "provider_price_id_yearly": None,
+        "lemonsqueezy_store_id": "230544",
+        "lemonsqueezy_product_id": "1227486",
+        "lemonsqueezy_variant_id_monthly": "1798598",
+        "lemonsqueezy_variant_id_yearly": "1798562",
     },
     {
         "name": "pro",
@@ -82,17 +95,24 @@ PLANS = [
         "credits_per_month": 2400,
         "is_trial_plan": False,
         "features": {
-            "collaboration": "Advanced",
-            "support": "Priority Email & Chat",
+            "support": "Email & Chat",
             "api_access": "Full",
+            "collaboration": "Advanced",
+            "custom_branding": True,
+            "priority_support": False,
+            "advanced_analytics": True,
         },
         "max_workspaces": 5,
         "max_members_per_workspace": 15,
-        "max_topics": 500,
-        "max_knowledge_items": 5000,
         "max_api_calls_per_month": 50000,
         "is_active": True,
         "is_public": True,
+        "provider_price_id_monthly": "1049346",
+        "provider_price_id_yearly": "1049351",
+        "lemonsqueezy_store_id": "230544",
+        "lemonsqueezy_product_id": "941200",
+        "lemonsqueezy_variant_id_monthly": "1049346",
+        "lemonsqueezy_variant_id_yearly": "1049352",
     },
     {
         "name": "agency",
@@ -102,18 +122,18 @@ PLANS = [
         "price_yearly": Decimal("3990.00"),
         "credits_per_month": 5500,
         "is_trial_plan": False,
-        "features": {
-            "collaboration": "Enterprise",
-            "support": "Dedicated Support",
-            "api_access": "Full",
-        },
+        "features": None,
         "max_workspaces": -1,
         "max_members_per_workspace": -1,
-        "max_topics": -1,
-        "max_knowledge_items": -1,
         "max_api_calls_per_month": -1,
         "is_active": True,
         "is_public": True,
+        "provider_price_id_monthly": None,
+        "provider_price_id_yearly": None,
+        "lemonsqueezy_store_id": "230544",
+        "lemonsqueezy_product_id": "1227456",
+        "lemonsqueezy_variant_id_monthly": "1798564",
+        "lemonsqueezy_variant_id_yearly": "1798605",
     },
     {
         "name": "enterprise",
@@ -124,200 +144,55 @@ PLANS = [
         "credits_per_month": None,
         "is_trial_plan": False,
         "features": {
-            "collaboration": "Enterprise",
             "support": "24/7 Priority",
             "api_access": "Unlimited",
-            "dedicated_account_manager": True,
-            "custom_integrations": True,
+            "collaboration": "Enterprise",
             "sla_guarantee": True,
+            "custom_branding": True,
+            "priority_support": True,
+            "advanced_analytics": True,
+            "custom_integrations": True,
+            "dedicated_account_manager": True,
         },
         "max_workspaces": -1,
         "max_members_per_workspace": -1,
-        "max_topics": -1,
-        "max_knowledge_items": -1,
         "max_api_calls_per_month": -1,
         "is_active": True,
         "is_public": False,
+        "provider_price_id_monthly": None,
+        "provider_price_id_yearly": None,
+        "lemonsqueezy_store_id": None,
+        "lemonsqueezy_product_id": None,
+        "lemonsqueezy_variant_id_monthly": None,
+        "lemonsqueezy_variant_id_yearly": None,
     },
 ]
 
+COLUMNS = list(PLANS[0])
+
 
 async def seed_subscription_plans():
-    """Seed & update default subscription plans and user credits (idempotent)."""
+    """Insert the plans that do not exist yet (by name)."""
     async with get_seed_session() as session:
         created = 0
-        updated = 0
-
         for plan in PLANS:
-            result = await session.execute(
-                text("SELECT id FROM subscription_plans WHERE name = :name"), {"name": plan["name"]}
+            exists = await session.scalar(
+                text("SELECT 1 FROM subscription_plans WHERE name = :name"), {"name": plan["name"]}
             )
-            row = result.fetchone()
-            if row:
-                await session.execute(
-                    text("""
-                        UPDATE subscription_plans SET
-                            display_name = :display_name,
-                            description = :description,
-                            price_monthly = :price_monthly,
-                            price_yearly = :price_yearly,
-                            credits_per_month = :credits_per_month,
-                            is_trial_plan = :is_trial_plan,
-                            features = :features,
-                            max_workspaces = :max_workspaces,
-                            max_members_per_workspace = :max_members_per_workspace,
-                            max_topics = :max_topics,
-                            max_knowledge_items = :max_knowledge_items,
-                            max_api_calls_per_month = :max_api_calls_per_month,
-                            is_active = :is_active,
-                            is_public = :is_public,
-                            updated_at = :updated_at
-                        WHERE name = :name
-                    """),
-                    {
-                        "name": plan["name"],
-                        "display_name": plan["display_name"],
-                        "description": plan["description"],
-                        "price_monthly": plan["price_monthly"],
-                        "price_yearly": plan["price_yearly"],
-                        "credits_per_month": plan["credits_per_month"],
-                        "is_trial_plan": plan["is_trial_plan"],
-                        "features": plan["features"],
-                        "max_workspaces": plan["max_workspaces"],
-                        "max_members_per_workspace": plan["max_members_per_workspace"],
-                        "max_topics": plan["max_topics"],
-                        "max_knowledge_items": plan["max_knowledge_items"],
-                        "max_api_calls_per_month": plan["max_api_calls_per_month"],
-                        "is_active": plan["is_active"],
-                        "is_public": plan["is_public"],
-                        "updated_at": utc_now(),
-                    },
-                )
-                updated += 1
-            else:
-                await session.execute(
-                    text("""
-                        INSERT INTO subscription_plans (
-                            id, name, display_name, description, price_monthly, price_yearly, 
-                            credits_per_month, is_trial_plan, features, max_workspaces, 
-                            max_members_per_workspace, max_topics, max_knowledge_items, 
-                            max_api_calls_per_month, is_active, is_public, created_at, updated_at
-                        ) VALUES (
-                            :id, :name, :display_name, :description, :price_monthly, :price_yearly, 
-                            :credits_per_month, :is_trial_plan, :features, :max_workspaces, 
-                            :max_members_per_workspace, :max_topics, :max_knowledge_items, 
-                            :max_api_calls_per_month, :is_active, :is_public, :created_at, :updated_at
-                        )
-                    """),
-                    {
-                        "id": uuid4(),
-                        "name": plan["name"],
-                        "display_name": plan["display_name"],
-                        "description": plan["description"],
-                        "price_monthly": plan["price_monthly"],
-                        "price_yearly": plan["price_yearly"],
-                        "credits_per_month": plan["credits_per_month"],
-                        "is_trial_plan": plan["is_trial_plan"],
-                        "features": plan["features"],
-                        "max_workspaces": plan["max_workspaces"],
-                        "max_members_per_workspace": plan["max_members_per_workspace"],
-                        "max_topics": plan["max_topics"],
-                        "max_knowledge_items": plan["max_knowledge_items"],
-                        "max_api_calls_per_month": plan["max_api_calls_per_month"],
-                        "is_active": plan["is_active"],
-                        "is_public": plan["is_public"],
-                        "created_at": utc_now(),
-                        "updated_at": utc_now(),
-                    },
-                )
-                created += 1
-
-        print(f"Subscription plans: {created} created, {updated} updated")
-
-        # Seed credits for existing users
-        await seed_user_credits(session)
-
-
-async def seed_user_credits(session):
-    """Assign active user_subscriptions with credits for users in the database."""
-    res = await session.execute(
-        text("SELECT id, credits_per_month FROM subscription_plans WHERE name = 'growth'")
-    )
-    growth_plan = res.fetchone()
-    if not growth_plan:
-        res = await session.execute(
-            text("SELECT id, credits_per_month FROM subscription_plans WHERE name = 'pro'")
-        )
-        growth_plan = res.fetchone()
-
-    if not growth_plan:
-        print("⚠️ No growth or pro plan found to seed user credits.")
-        return
-
-    plan_id, credits = growth_plan.id, growth_plan.credits_per_month or 1000
-
-    users_res = await session.execute(text("SELECT id, email FROM users"))
-    users = users_res.fetchall()
-
-    subs_created = 0
-    subs_updated = 0
-
-    now = utc_now()
-    reset_date = now + timedelta(days=30)
-
-    for user in users:
-        user_id = user.id
-        sub_res = await session.execute(
-            text(
-                "SELECT id, current_credits FROM user_subscriptions WHERE user_id = :user_id AND status IN ('active', 'trial')"
-            ),
-            {"user_id": user_id},
-        )
-        existing_sub = sub_res.fetchone()
-
-        if existing_sub:
-            if (existing_sub.current_credits or 0) <= 0:
-                await session.execute(
-                    text("""
-                        UPDATE user_subscriptions SET
-                            current_credits = :credits,
-                            credits_reset_date = :reset_date,
-                            updated_at = :now
-                        WHERE id = :sub_id
-                    """),
-                    {
-                        "credits": credits,
-                        "reset_date": reset_date,
-                        "now": now,
-                        "sub_id": existing_sub.id,
-                    },
-                )
-                subs_updated += 1
-        else:
+            if exists:
+                continue
+            features = plan["features"]
+            values = {**plan, "features": None if features is None else json.dumps(features)}
             await session.execute(
-                text("""
-                    INSERT INTO user_subscriptions (
-                        id, user_id, plan_id, status, billing_period, start_date,
-                        current_credits, credits_reset_date, created_at, updated_at
-                    ) VALUES (
-                        :id, :user_id, :plan_id, 'active', 'monthly', :now,
-                        :credits, :reset_date, :now, :now
-                    )
-                """),
-                {
-                    "id": uuid4(),
-                    "user_id": user_id,
-                    "plan_id": plan_id,
-                    "now": now,
-                    "credits": credits,
-                    "reset_date": reset_date,
-                },
+                text(
+                    f"INSERT INTO subscription_plans (id, {', '.join(COLUMNS)}, created_at, updated_at) "
+                    f"VALUES (:id, {', '.join(f'CAST(:{c} AS JSONB)' if c == 'features' else f':{c}' for c in COLUMNS)}, "
+                    ":created_at, :updated_at)"
+                ),
+                {**values, "id": uuid4(), "created_at": utc_now(), "updated_at": utc_now()},
             )
-            subs_created += 1
-
-    print(
-        f"User credits: {subs_created} subscriptions created, {subs_updated} updated with {credits} credits"
-    )
+            created += 1
+        print(f"Subscription plans: {created} created, {len(PLANS) - created} already existed")
 
 
 if __name__ == "__main__":

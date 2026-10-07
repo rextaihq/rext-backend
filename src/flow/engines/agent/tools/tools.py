@@ -281,7 +281,9 @@ def get_tools(counters=None, user_id=None):
         counters["image_prompt"] = final_prompt
         counters["image_planning"] = composed.model_dump(mode="json")
 
-        if not settings.AI_IMAGE_GENERATION_ENABLED:
+        # image_allowed is False when the run can't pay for the image, which is
+        # charged only once delivered (generate_content sets it).
+        if not settings.AI_IMAGE_GENERATION_ENABLED or not counters.get("image_allowed", True):
             # Image generation is temporarily disabled (cost control) — the
             # planning pipeline above still ran in full (art direction,
             # composition, alt text, placement); only the paid image-model

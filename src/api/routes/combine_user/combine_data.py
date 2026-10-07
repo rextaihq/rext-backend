@@ -31,7 +31,7 @@ async def get_dashboard_details(
     )
     ws_uuid = workspace.id
 
-    # 1. Get analytics from WorkspaceService (Knowledge items, members, content)
+    # 1. Get analytics from WorkspaceService (members, content)
     workspace_service = WorkspaceService(db)
     analytics = await workspace_service.get_workspace_analytics(ws_uuid)
 
@@ -42,30 +42,26 @@ async def get_dashboard_details(
     )
     formatted_logs = [format_audit_log(log, include_details=False) for log in logs]
 
-    # 3. Calculate content breakdown
+    # 3. Calculate content breakdown. Like the library (ContentService.list_content),
+    # the counts leave out what is in the trash, and they use the resolved id, so a
+    # slug in the path counts the same as the UUID.
     total_content = analytics["content_count"]
-    # For now we use counts from analytics if available,
-    # but published/draft might need specific counts
-    # (Checking content specific counts from previous logic)
+    in_library = (Content.workspace_id == ws_uuid, Content.deleted_at.is_(None))
     published_content = await db.scalar(
-        select(func.count())
-        .select_from(Content)
-        .where(Content.workspace_id == workspace_id, Content.status == "published")
+        select(func.count()).select_from(Content).where(*in_library, Content.status == "published")
     )
     draft_content = await db.scalar(
-        select(func.count())
-        .select_from(Content)
-        .where(Content.workspace_id == workspace_id, Content.status == "draft")
+        select(func.count()).select_from(Content).where(*in_library, Content.status == "draft")
     )
 
-    # 4. Total personas
+    # 4. Total personas (deleted personas are removed, not trashed)
     total_personas = await db.scalar(
-        select(func.count()).select_from(Persona).where(Persona.workspace_id == workspace_id)
+        select(func.count()).select_from(Persona).where(Persona.workspace_id == ws_uuid)
     )
 
     return success(
         data={
-            "workspace_id": workspace_id,
+            "workspace_id": str(ws_uuid),
             "members": analytics["members_count"],
             "content": {
                 "total": total_content,
@@ -73,7 +69,6 @@ async def get_dashboard_details(
                 "draft": draft_content,
             },
             "personas": total_personas,
-            "total_knowledge_items": analytics["knowledge_stats"]["total_count"],
             "recent_activities": formatted_logs,
         },
         request=request,

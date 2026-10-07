@@ -30,6 +30,7 @@ from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
 )
 from src.api.models.subscription_models.trial_conversions import TrialConversion
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.services.subscription_service import SubscriptionService
 
 
@@ -51,8 +52,6 @@ class TestSubscriptionServiceSubscribe:
             price_monthly=0,
             price_yearly=0,
             max_workspaces=1,
-            max_topics=5,
-            max_knowledge_items=10,
             is_active=True,
         )
         db_session.add(free_plan)
@@ -86,8 +85,6 @@ class TestSubscriptionServiceSubscribe:
             price_monthly=29.99,
             price_yearly=299.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(pro_plan)
@@ -106,9 +103,9 @@ class TestSubscriptionServiceSubscribe:
         assert subscription.status == SubscriptionStatus.TRIAL
         assert subscription.trial_end_date is not None
 
-        # Check trial is 14 days
+        # Check the trial is the trial's length (7 days)
         trial_days = (subscription.trial_end_date - subscription.start_date).days
-        assert trial_days == 14
+        assert trial_days == TRIAL_DURATION_DAYS == 7
 
     async def test_subscribe_duplicate_active_subscription(self, db_session, setup_factories):
         """Should raise DuplicateResourceException when user already has active subscription"""
@@ -122,8 +119,6 @@ class TestSubscriptionServiceSubscribe:
             display_name="Basic",
             price_monthly=9.99,
             max_workspaces=1,
-            max_topics=10,
-            max_knowledge_items=50,
             is_active=True,
         )
         plan2 = SubscriptionPlan(
@@ -132,8 +127,6 @@ class TestSubscriptionServiceSubscribe:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=5,
-            max_topics=50,
-            max_knowledge_items=200,
             is_active=True,
         )
         db_session.add(plan1)
@@ -175,8 +168,6 @@ class TestSubscriptionServiceSubscribe:
             display_name="Deprecated Plan",
             price_monthly=19.99,
             max_workspaces=3,
-            max_topics=30,
-            max_knowledge_items=100,
             is_active=False,  # Inactive
         )
         db_session.add(inactive_plan)
@@ -207,8 +198,6 @@ class TestSubscriptionServiceUpgrade:
             display_name="Basic",
             price_monthly=9.99,
             max_workspaces=1,
-            max_topics=10,
-            max_knowledge_items=50,
             is_active=True,
         )
         pro_plan = SubscriptionPlan(
@@ -217,8 +206,6 @@ class TestSubscriptionServiceUpgrade:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(basic_plan)
@@ -249,8 +236,6 @@ class TestSubscriptionServiceUpgrade:
             price_monthly=0,
             price_yearly=0,
             max_workspaces=1,
-            max_topics=5,
-            max_knowledge_items=10,
             is_active=True,
         )
         pro_plan = SubscriptionPlan(
@@ -260,8 +245,6 @@ class TestSubscriptionServiceUpgrade:
             price_monthly=29.99,
             price_yearly=299.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(trial_plan)
@@ -315,8 +298,6 @@ class TestSubscriptionServiceUpgrade:
             price_monthly=29.99,
             price_yearly=299.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(plan)
@@ -347,8 +328,6 @@ class TestSubscriptionServiceUpgrade:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(plan)
@@ -374,8 +353,6 @@ class TestSubscriptionServiceUpgrade:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(plan)
@@ -407,8 +384,6 @@ class TestSubscriptionServiceDowngrade:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         basic_plan = SubscriptionPlan(
@@ -417,8 +392,6 @@ class TestSubscriptionServiceDowngrade:
             display_name="Basic",
             price_monthly=9.99,
             max_workspaces=1,  # User already has 1 workspace
-            max_topics=10,
-            max_knowledge_items=50,
             is_active=True,
         )
         db_session.add(pro_plan)
@@ -450,8 +423,6 @@ class TestSubscriptionServiceDowngrade:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         basic_plan = SubscriptionPlan(
@@ -460,8 +431,6 @@ class TestSubscriptionServiceDowngrade:
             display_name="Basic",
             price_monthly=9.99,
             max_workspaces=1,  # User has 2 workspaces!
-            max_topics=10,
-            max_knowledge_items=50,
             is_active=True,
         )
         db_session.add(pro_plan)
@@ -494,8 +463,6 @@ class TestSubscriptionServiceCancel:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(plan)
@@ -525,8 +492,6 @@ class TestSubscriptionServiceCancel:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(plan)
@@ -574,10 +539,6 @@ class TestSubscriptionServiceCalculateUsage:
         # Assert
         assert usage["workspaces"] == 0
         assert usage["members"] == 0
-        assert usage["knowledge_files"] == 0
-        assert usage["knowledge_text"] == 0
-        assert usage["knowledge_web"] == 0
-        assert usage["knowledge_items"] == 0
 
     async def test_calculate_usage_with_resources(self, db_session, setup_factories):
         """Should count all resources correctly"""
@@ -592,7 +553,6 @@ class TestSubscriptionServiceCalculateUsage:
 
         # Assert
         assert usage["workspaces"] == 1
-        assert usage["knowledge_items"] == 0
 
 
 @pytest.mark.unit
@@ -611,8 +571,6 @@ class TestSubscriptionServiceCheckTrialStatus:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(plan)
@@ -658,8 +616,6 @@ class TestSubscriptionServiceCheckTrialStatus:
             display_name="Free",
             price_monthly=0,
             max_workspaces=1,
-            max_topics=5,
-            max_knowledge_items=10,
             is_active=True,
         )
         db_session.add(free_plan)
@@ -690,8 +646,6 @@ class TestSubscriptionServiceValidatePlanLimits:
             display_name="Basic",
             price_monthly=9.99,
             max_workspaces=5,
-            max_topics=50,
-            max_knowledge_items=100,
             is_active=True,
         )
         db_session.add(plan)
@@ -721,8 +675,6 @@ class TestSubscriptionServiceValidatePlanLimits:
             display_name="Basic",
             price_monthly=9.99,
             max_workspaces=2,  # Already at limit
-            max_topics=50,
-            max_knowledge_items=100,
             is_active=True,
         )
         db_session.add(plan)
@@ -752,8 +704,6 @@ class TestSubscriptionServiceValidatePlanLimits:
             display_name="Enterprise",
             price_monthly=99.99,
             max_workspaces=-1,  # Unlimited
-            max_topics=-1,
-            max_knowledge_items=-1,
             is_active=True,
         )
         db_session.add(plan)
@@ -779,8 +729,6 @@ class TestSubscriptionServiceValidatePlanLimits:
             display_name="Basic",
             price_monthly=9.99,
             max_workspaces=5,
-            max_topics=50,
-            max_knowledge_items=100,
             is_active=True,
         )
         db_session.add(plan)
@@ -811,8 +759,6 @@ class TestSubscriptionServiceGetSubscriptionByUser:
             display_name="Pro",
             price_monthly=29.99,
             max_workspaces=10,
-            max_topics=100,
-            max_knowledge_items=500,
             is_active=True,
         )
         db_session.add(plan)

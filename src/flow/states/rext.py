@@ -28,6 +28,14 @@ class SERPEngineState(TypedDict, total=False):
     # SERP analysis
     total_results: int
 
+    # "ok" (organic results found), "no_results" (the search engine has none)
+    # or "lookup_failed" (the call failed or could not be made)
+    serp_status: str
+
+    # True when Google shows an AI Overview, False when it shows none (the
+    # request loads asynchronous overviews too), None when the lookup failed
+    ai_overview: Optional[bool]
+
 
 class NormalizedOrganicResult(TypedDict):
     position: int

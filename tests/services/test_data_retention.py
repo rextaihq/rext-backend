@@ -10,12 +10,67 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from src.api.database.base import Base
+from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
+from src.api.models.user_models.users import Users
 from src.services.data_cleanup_service import DataCleanupService
+from tests.conftest import TEST_DATABASE_URL
 
 Subscription = UserSubscription
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    """The tables these tests need, inside a transaction that is rolled back.
+
+    The service and the tests commit: each commit only releases a savepoint, so
+    nothing is left behind, on an empty test database or a migrated one.
+    """
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        await connection.run_sync(
+            lambda sync: Base.metadata.create_all(
+                sync,
+                tables=[
+                    Users.__table__,
+                    SubscriptionPlan.__table__,
+                    UserSubscription.__table__,
+                    WebhookEvent.__table__,
+                ],
+                checkfirst=True,
+            )
+        )
+        async with AsyncSession(
+            bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
+        ) as db:
+            yield db
+        await transaction.rollback()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def test_user(db_session):
+    user = Users(email=f"{uuid4().hex[:12]}@example.com", full_name="Retention Test")
+    db_session.add(user)
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def plan(db_session):
+    plan = SubscriptionPlan(
+        name=f"pro-{uuid4().hex[:8]}", display_name="Pro", price_monthly=29.99, price_yearly=299.99
+    )
+    db_session.add(plan)
+    await db_session.flush()
+    return plan
 
 
 @pytest.mark.asyncio
@@ -154,16 +209,16 @@ class TestWebhookEventCleanup:
 class TestSubscriptionAnonymization:
     """Test cancelled subscription anonymization functionality."""
 
-    async def test_anonymize_old_cancelled_subscriptions(self, db_session, test_user):
+    async def test_anonymize_old_cancelled_subscriptions(self, db_session, test_user, plan):
         """Should anonymize user_id from old cancelled subscriptions."""
         # Create old cancelled subscription (100 days old)
         old_subscription = Subscription(
             id=uuid4(),
             user_id=test_user.id,
-            subscription_id="sub_old_cancelled_123",
-            customer_id="cus_123",
-            variant_id="var_123",
-            plan_id=uuid4(),
+            lemonsqueezy_subscription_id="sub_old_cancelled_123",
+            lemonsqueezy_customer_id="cus_123",
+            lemonsqueezy_variant_id="var_123",
+            plan_id=plan.id,
             status="cancelled",
             updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
@@ -173,10 +228,10 @@ class TestSubscriptionAnonymization:
         recent_subscription = Subscription(
             id=uuid4(),
             user_id=test_user.id,
-            subscription_id="sub_recent_cancelled_456",
-            customer_id="cus_456",
-            variant_id="var_456",
-            plan_id=uuid4(),
+            lemonsqueezy_subscription_id="sub_recent_cancelled_456",
+            lemonsqueezy_customer_id="cus_456",
+            lemonsqueezy_variant_id="var_456",
+            plan_id=plan.id,
             status="cancelled",
             updated_at=datetime.now(timezone.utc) - timedelta(days=30),
         )
@@ -196,22 +251,24 @@ class TestSubscriptionAnonymization:
         # Verify old subscription anonymized (user_id set to NULL)
         await db_session.refresh(old_subscription)
         assert old_subscription.user_id is None
-        assert old_subscription.subscription_id == "sub_old_cancelled_123"  # Other data kept
+        assert (
+            old_subscription.lemonsqueezy_subscription_id == "sub_old_cancelled_123"
+        )  # Other data kept
 
         # Verify recent subscription NOT anonymized
         await db_session.refresh(recent_subscription)
         assert recent_subscription.user_id == test_user.id
 
-    async def test_anonymize_old_expired_subscriptions(self, db_session, test_user):
+    async def test_anonymize_old_expired_subscriptions(self, db_session, test_user, plan):
         """Should anonymize expired subscriptions as well as cancelled."""
         # Create old expired subscription (100 days old)
         expired_subscription = Subscription(
             id=uuid4(),
             user_id=test_user.id,
-            subscription_id="sub_old_expired_789",
-            customer_id="cus_789",
-            variant_id="var_789",
-            plan_id=uuid4(),
+            lemonsqueezy_subscription_id="sub_old_expired_789",
+            lemonsqueezy_customer_id="cus_789",
+            lemonsqueezy_variant_id="var_789",
+            plan_id=plan.id,
             status="expired",
             updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
@@ -230,16 +287,16 @@ class TestSubscriptionAnonymization:
         await db_session.refresh(expired_subscription)
         assert expired_subscription.user_id is None
 
-    async def test_keep_active_subscriptions(self, db_session, test_user):
+    async def test_keep_active_subscriptions(self, db_session, test_user, plan):
         """Should NOT anonymize active subscriptions."""
         # Create old active subscription (100 days old)
         active_subscription = Subscription(
             id=uuid4(),
             user_id=test_user.id,
-            subscription_id="sub_old_active_999",
-            customer_id="cus_999",
-            variant_id="var_999",
-            plan_id=uuid4(),
+            lemonsqueezy_subscription_id="sub_old_active_999",
+            lemonsqueezy_customer_id="cus_999",
+            lemonsqueezy_variant_id="var_999",
+            plan_id=plan.id,
             status="active",
             updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
@@ -258,16 +315,16 @@ class TestSubscriptionAnonymization:
         await db_session.refresh(active_subscription)
         assert active_subscription.user_id == test_user.id  # User link kept
 
-    async def test_skip_already_anonymized_subscriptions(self, db_session):
+    async def test_skip_already_anonymized_subscriptions(self, db_session, plan):
         """Should skip subscriptions that are already anonymized."""
         # Create old cancelled subscription with user_id already NULL
         anonymized_subscription = Subscription(
             id=uuid4(),
             user_id=None,  # Already anonymized
-            subscription_id="sub_already_anonymized",
-            customer_id="cus_anon",
-            variant_id="var_anon",
-            plan_id=uuid4(),
+            lemonsqueezy_subscription_id="sub_already_anonymized",
+            lemonsqueezy_customer_id="cus_anon",
+            lemonsqueezy_variant_id="var_anon",
+            plan_id=plan.id,
             status="cancelled",
             updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
@@ -283,16 +340,16 @@ class TestSubscriptionAnonymization:
         # Should NOT count already-anonymized subscription
         assert anonymized_count == 0
 
-    async def test_dry_run_mode_anonymization(self, db_session, test_user):
+    async def test_dry_run_mode_anonymization(self, db_session, test_user, plan):
         """Should count but not anonymize in dry-run mode."""
         # Create old cancelled subscription
         old_subscription = Subscription(
             id=uuid4(),
             user_id=test_user.id,
-            subscription_id="sub_dryrun_anon",
-            customer_id="cus_dryrun",
-            variant_id="var_dryrun",
-            plan_id=uuid4(),
+            lemonsqueezy_subscription_id="sub_dryrun_anon",
+            lemonsqueezy_customer_id="cus_dryrun",
+            lemonsqueezy_variant_id="var_dryrun",
+            plan_id=plan.id,
             status="cancelled",
             updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
@@ -329,7 +386,7 @@ class TestSubscriptionAnonymization:
 class TestCleanupAll:
     """Test cleanup_all() method with new payment features."""
 
-    async def test_cleanup_all_includes_payment_data(self, db_session, test_user):
+    async def test_cleanup_all_includes_payment_data(self, db_session, test_user, plan):
         """Should run all cleanup tasks including new payment-related ones."""
         # Create old webhook event
         old_webhook = WebhookEvent(
@@ -346,10 +403,10 @@ class TestCleanupAll:
         old_subscription = Subscription(
             id=uuid4(),
             user_id=test_user.id,
-            subscription_id="sub_cleanup_all",
-            customer_id="cus_cleanup",
-            variant_id="var_cleanup",
-            plan_id=uuid4(),
+            lemonsqueezy_subscription_id="sub_cleanup_all",
+            lemonsqueezy_customer_id="cus_cleanup",
+            lemonsqueezy_variant_id="var_cleanup",
+            plan_id=plan.id,
             status="cancelled",
             updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )

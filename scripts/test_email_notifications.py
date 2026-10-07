@@ -118,10 +118,7 @@ class EmailTestRunner:
             render_trial_reminder_1_day_email,
             render_trial_reminder_expiring_today_email,
             render_trial_expired_email,
-            render_payment_dunning_1_day_email,
-            render_payment_dunning_3_days_email,
-            render_payment_dunning_6_days_email,
-            render_subscription_suspended_email,
+            render_subscription_unpaid_email,
             render_payment_recovered_email,
         )
 
@@ -166,7 +163,7 @@ class EmailTestRunner:
             user_name=user_name,
             plan_name=plan_name,
             amount=plan_price,
-            retry_date="December 24, 2025",
+            failed_on="December 24, 2025",
             update_payment_url="https://app.rext.com/billing",
             customer_portal_url="https://lemonsqueezy.com/portal",
         )
@@ -263,43 +260,13 @@ class EmailTestRunner:
             pricing_url="https://app.rext.com/pricing",
         )
 
-        # Test 12-14: Payment Dunning
+        # Test 12: Subscription Unpaid (Lemon Squeezy's retries ran out)
         await self.test_email_template_rendering(
-            "payment_dunning_1_day",
-            render_payment_dunning_1_day_email,
+            "subscription_unpaid",
+            render_subscription_unpaid_email,
             user_name=user_name,
             plan_name=plan_name,
-            amount=plan_price,
-            update_payment_url="https://lemonsqueezy.com/portal",
-        )
-
-        await self.test_email_template_rendering(
-            "payment_dunning_3_days",
-            render_payment_dunning_3_days_email,
-            user_name=user_name,
-            plan_name=plan_name,
-            amount=plan_price,
-            suspension_date="December 24, 2025",
-            update_payment_url="https://lemonsqueezy.com/portal",
-        )
-
-        await self.test_email_template_rendering(
-            "payment_dunning_6_days",
-            render_payment_dunning_6_days_email,
-            user_name=user_name,
-            plan_name=plan_name,
-            amount=plan_price,
-            suspension_date="December 24, 2025",
-            update_payment_url="https://lemonsqueezy.com/portal",
-        )
-
-        # Test 15: Subscription Suspended
-        await self.test_email_template_rendering(
-            "subscription_suspended",
-            render_subscription_suspended_email,
-            user_name=user_name,
-            plan_name=plan_name,
-            reactivate_url="https://app.rext.com/pricing",
+            update_payment_url="https://app.rext.com/settings/subscription",
         )
 
         # Test 16: Payment Recovered

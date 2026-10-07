@@ -112,8 +112,6 @@ class WorkspacePermissionService:
                         [
                             "workspace",
                             "content",
-                            "topic",
-                            "knowledge",
                             "member",
                             "subscription",
                             "billing",

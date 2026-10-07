@@ -105,13 +105,6 @@ NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
     "billing_refund_rejected": NotificationConfig(
         notification_type="billing", title="Refund Declined", status="warning"
     ),
-    # Knowledge Base
-    "kb_processing_completed": NotificationConfig(
-        notification_type="kb", title="Knowledge Base Processed", status="success"
-    ),
-    "kb_processing_failed": NotificationConfig(
-        notification_type="kb", title="Knowledge Base Failed", status="error"
-    ),
 }
 
 NOTIFICATION_CONFIG = NOTIFICATION_REGISTRY

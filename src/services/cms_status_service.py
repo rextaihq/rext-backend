@@ -19,6 +19,19 @@ from src.web.wordpress import WordPressPublisher
 _SYNC_CONCURRENCY = 10  # max parallel HTTP calls per site
 
 
+class StatusSyncError(Exception):
+    """A status check that learned nothing about the post.
+
+    The record keeps its last known status: a timeout, a 5xx, a refused address or a missing
+    post ID says nothing about whether the post is published. ``skipped`` marks a record whose
+    site can't be checked at all (Shopify's bridge mode), counted apart from the failures.
+    """
+
+    def __init__(self, message: str, *, skipped: bool = False):
+        super().__init__(message)
+        self.skipped = skipped
+
+
 class CMSStatusService:
     """Syncs per-site publishing state from external CMS platforms."""
 
@@ -57,10 +70,12 @@ class CMSStatusService:
             result.last_synced_at = datetime.now(timezone.utc)
             result.sync_error = None
 
+        except StatusSyncError as e:
+            logger.warning(f"Sync of PublishingResult {result.id} learned nothing: {e}")
+            result.sync_error = str(e)
         except Exception as e:
             logger.error(f"Sync failed for PublishingResult {result.id}: {e}")
             result.sync_error = str(e)
-            result.status = PublishingStatus.UNKNOWN
 
         await self.db.flush()
         return result
@@ -134,6 +149,8 @@ class CMSStatusService:
 
         # --- 4. Concurrent HTTP sync per site ---
         synced = failed = skipped = 0
+        # Records whose check failed this run keep a status nobody confirmed: kept out of step 5.
+        unconfirmed: set[uuid.UUID] = set()
         sem = asyncio.Semaphore(_SYNC_CONCURRENCY)
 
         async def _sync_one(rec: ContentPublishingResult, integration: WorkspaceIntegration):
@@ -150,10 +167,19 @@ class CMSStatusService:
                     rec.last_synced_at = now
                     rec.sync_error = None
                     synced += 1
+                except StatusSyncError as e:
+                    # The record keeps its last known status (see StatusSyncError).
+                    rec.sync_error = str(e)
+                    if e.skipped:
+                        skipped += 1
+                    else:
+                        logger.warning(f"[BulkSync] Failed {rec.id}: {e}")
+                        unconfirmed.add(rec.id)
+                        failed += 1
                 except Exception as e:
                     logger.error(f"[BulkSync] Failed {rec.id}: {e}")
                     rec.sync_error = str(e)
-                    rec.status = PublishingStatus.UNKNOWN
+                    unconfirmed.add(rec.id)
                     failed += 1
 
         tasks = []
@@ -171,7 +197,8 @@ class CMSStatusService:
         await asyncio.gather(*tasks)
 
         # --- 5. Propagate CMS status → content.status ---
-        await self._propagate_cms_status_to_content(rows)
+        # A failed check's kept status is stale, so it can't move its article either.
+        await self._propagate_cms_status_to_content([r for r in rows if r.id not in unconfirmed])
 
         # --- 6. Single batch flush ---
         await self.db.flush()
@@ -258,9 +285,7 @@ class CMSStatusService:
         self, result: ContentPublishingResult, integration: WorkspaceIntegration
     ) -> None:
         if not result.wp_post_id:
-            logger.warning(f"PublishingResult {result.id} has no wp_post_id — cannot sync.")
-            result.sync_error = "No WordPress post ID recorded; publish may have failed."
-            return
+            raise StatusSyncError("No WordPress post ID recorded; publish may have failed.")
 
         async with WordPressPublisher(
             site_url=integration.site_url,
@@ -270,6 +295,7 @@ class CMSStatusService:
             api_endpoint=integration.api_endpoint,
         ) as wp:
             data = await wp.get_post_status(result.wp_post_id)
+        _raise_unless_checked(data, "WordPress")
 
         raw_status = data.get("status")
         status_map = {
@@ -294,16 +320,12 @@ class CMSStatusService:
             str(config.get("connection_mode") or "").lower() == "app_bridge"
             or not integration.api_key
         ):
-            logger.info(
-                f"PublishingResult {result.id}: Shopify bridge mode — direct sync not supported."
+            raise StatusSyncError(
+                "Bridge-mode Shopify: direct status sync not available.", skipped=True
             )
-            result.sync_error = "Bridge-mode Shopify: direct status sync not available."
-            return
 
         if not result.shopify_article_id:
-            logger.warning(f"PublishingResult {result.id} has no shopify_article_id — cannot sync.")
-            result.sync_error = "No Shopify article ID recorded; publish may have failed."
-            return
+            raise StatusSyncError("No Shopify article ID recorded; publish may have failed.")
 
         async with ShopifyConnector(
             store_url=integration.site_url,
@@ -313,6 +335,7 @@ class CMSStatusService:
                 article_id=result.shopify_article_id,
                 blog_id=result.shopify_blog_id,
             )
+        _raise_unless_checked(data, "Shopify")
 
         raw_status = data.get("status")
         status_map = {
@@ -336,3 +359,11 @@ class CMSStatusService:
         )
         rows = (await self.db.execute(stmt)).scalars().all()
         return list(rows)
+
+
+def _raise_unless_checked(data: dict, cms: str) -> None:
+    """A status call reports a failure as ``success: False`` rather than raising."""
+    if data.get("success") is False:
+        raise StatusSyncError(
+            f"The {cms} status check failed: {data.get('error') or 'no reason given'}"
+        )

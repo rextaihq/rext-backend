@@ -39,9 +39,6 @@ DEFAULT_CATEGORY_PREFERENCES: dict[str, bool] = {
     "billing_refund_requested": True,
     "billing_refund_approved": True,
     "billing_refund_rejected": True,
-    # Knowledge Base
-    "kb_processing_completed": True,
-    "kb_processing_failed": True,
     # Extended email/in-app category toggles (previously individual columns)
     "email_team_activity": True,
     "in_app_team_activity": True,
@@ -198,10 +195,6 @@ class NotificationPreferences(Base, SerializableMixin):
                 "trial_ending": _get("billing_trial_ending"),
                 "usage_limit_warning": _get("billing_usage_limit_warning"),
                 "usage_limit_exceeded": _get("billing_usage_limit_exceeded"),
-            },
-            "knowledge_base": {
-                "processing_completed": _get("kb_processing_completed"),
-                "processing_failed": _get("kb_processing_failed"),
             },
             "marketing": {
                 "marketing_updates": self.marketing_updates,

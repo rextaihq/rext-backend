@@ -7,7 +7,7 @@ separated from core auth logic to avoid circular imports.
 
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, Query
+from fastapi import Depends, Header, HTTPException
 from langgraph_sdk import Auth
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -209,15 +209,13 @@ async def get_current_user_optional(
 
 async def get_current_user_sse(
     authorization: str = Header(None),
-    token: str = Query(None),
     db: AsyncSession = Depends(get_async_db),
 ) -> Auth.types.MinimalUserDict:
     """
-    Authentication dependency for SSE that supports both Header and Query param.
-    EventSource API does not support custom headers, so we allow passing token via query param.
+    Authentication dependency for the SSE streams: the Authorization header only.
 
-    DEPRECATED: Passing token via query parameter is deprecated for security reasons (token leakage in logs).
-    Please use the 'Authorization' header where possible (e.g., using a custom polyfill or library that supports headers).
+    The dashboard streams with fetch-event-source, which sends headers. The old
+    `?token=` query parameter is gone: a token in a URL ends up in access logs.
     """
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
@@ -233,30 +231,29 @@ async def get_current_user_sse(
         except ValueError:
             pass
 
-    if not auth_token and token:
-        logger.warning(
-            "Authentication via 'token' query parameter is deprecated and will be removed in a future version. "
-            "Please use the 'Authorization' header instead."
-        )
-        auth_token = token
-
     if not auth_token:
         raise RextAuthenticationException(
             message="Authentication required",
-            context={"expected_sources": ["Authorization header", "token query param"]},
+            context={"expected_sources": ["Authorization header"]},
         )
 
     try:
         # Verify the token
         payload = decode_and_verify_token(auth_token)
 
-        # Check if token is blacklisted
-        jti = payload.get("jti")
-        if jti and await is_token_blacklisted(jti, db):
-            raise RextAuthenticationException(
-                message="Token has been revoked", context={"reason": "Token blacklisted"}
-            )
-        await _ensure_active_user_session(payload, db)
+        # A stream keeps this request's session for its whole life: the two reads below must
+        # not leave their transaction open, or every live stream holds a database connection
+        # idle in transaction until it closes (G79, rext-control#643). Both are read-only.
+        try:
+            # Check if token is blacklisted
+            jti = payload.get("jti")
+            if jti and await is_token_blacklisted(jti, db):
+                raise RextAuthenticationException(
+                    message="Token has been revoked", context={"reason": "Token blacklisted"}
+                )
+            await _ensure_active_user_session(payload, db)
+        finally:
+            await db.rollback()
 
     except HTTPException as e:
         if "expired" in str(e.detail).lower():
