@@ -741,6 +741,13 @@ class SubscriptionService:
             # date would let the next spend refill the month this change has just worked out.
             now = datetime.now(timezone.utc)
             period_before = current_subscription.credits_reset_date
+            # A period that has ended is refilled lazily, by the next spend or the renewal's
+            # invoice. When neither has come yet, the balance is still last period's.
+            period_ended = (
+                period_before is not None
+                and as_utc(period_before) <= now
+                and current_subscription.status not in FAILED_PAYMENT_STATUSES
+            )
             current_subscription.credits_reset_date = next(
                 (
                     end
@@ -755,11 +762,16 @@ class SubscriptionService:
             # The change keeps what was used this period (F8a). A trial's credits come with
             # its first payment, so its balance stays as it is.
             if not on_trial:
+                if period_ended:
+                    # The change opens the new period, in which nothing was used: the month the
+                    # next spend would have refilled first (UsageTrackingService.consume_credits).
+                    # Without it, last period's spending would be taken off the new plan.
+                    current_subscription.current_credits = current_plan.credits_per_month or 0
                 change_plan_credits(
                     current_subscription,
                     current_plan.credits_per_month,
                     new_plan.credits_per_month,
-                    period_before=period_before,
+                    period_before=None if period_ended else period_before,
                 )
 
         current_subscription.updated_at = datetime.now(timezone.utc)
