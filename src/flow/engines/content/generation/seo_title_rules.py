@@ -226,6 +226,10 @@ _DANGLING_END_WORDS = frozenset(
     {
         "a", "an", "the", "and", "or", "but", "nor", "&", "via", "per", "than", "vs", "versus",
         "your", "our", "their", "its", "my",
+        # A modal whose verb, or a conjunction whose clause, was cut ("What Marketing Can",
+        # "Works Because"). Not "may", "will" or "though": a month, a noun, a clause's end.
+        "can", "could", "would", "should", "might", "must", "shall", "because", "although",
+        "unless", "whether", "if",
     }
 )  # fmt: skip
 

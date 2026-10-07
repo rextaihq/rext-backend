@@ -164,6 +164,16 @@ def test_a_preposition_whose_object_began_with_another_goes():
     )
 
 
+def test_a_modal_or_a_conjunction_whose_clause_was_cut_goes():
+    assert _trim_to_max(
+        "SEO Agencies: A Practical Look at What Better Marketing Can Achieve Today",
+        "seo agencies",
+    ) == ("SEO Agencies: A Practical Look at What Better Marketing")
+    assert _trim_to_max(
+        "SEO Agencies: Better Content Marketing Works Because Experts Plan Ahead", "seo agencies"
+    ) == ("SEO Agencies: Better Content Marketing Works")
+
+
 def test_a_verb_ending_in_o_keeps_its_preposition():
     title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
     assert _trim_to_max(title, "seo agencies") == (
