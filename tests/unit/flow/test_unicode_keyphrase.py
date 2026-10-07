@@ -80,6 +80,10 @@ def _nfd(text: str) -> str:
         ("生成AIツール比較", "生成AI・ツール", True),
         # Armenian: the ligature և is եւ, as its capital ԵՒ lowercases.
         ("ՍՈՒՐՃ ԵՒ ԹԵՅ ԳՆԵԼՈՒ ՈՒՂԵՑՈՒՅՑ", "սուրճ և թեյ", True),
+        # The iteration mark 々 is part of a Japanese word.
+        ("人々2026年ガイド", "人々", True),
+        # A letter and accent that lowercasing leaves apart are still the one letter.
+        ("J\u030c guide for beginners", "\u01f0", True),
         # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
         ("𠀀𠀁𠀂", "𠀁", True),
         ("2026年𠮷野家の店舗", "𠮷野家", True),
