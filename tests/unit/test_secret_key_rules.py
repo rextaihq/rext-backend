@@ -66,16 +66,33 @@ def test_one_secret_for_both_tokens_is_refused() -> None:
     same = secrets.token_hex(32)
     message = _refusal(SECRET_KEY=same, REFRESH_SECRET_KEY=same)
     assert "must differ" in message
+    # The check spans settings, and the error never quotes their input.
+    assert same not in message
+
+
+def test_an_error_never_shows_the_rejected_secret() -> None:
+    short = "a-random-but-short-key-0042"
+    message = _refusal(SECRET_KEY=short)
+    assert "at least 32 characters" in message
+    assert short not in message
+
+
+def test_a_commented_example_value_is_refused(tmp_path: Path, monkeypatch) -> None:
+    example = tmp_path / ".env.example"
+    example.write_text(
+        "# DATABASE_URL=postgresql://rext:rext@localhost:5432/rext_app\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(config, "_ENV_EXAMPLE", example)
+
+    message = _refusal(SECRET_KEY="postgresql://rext:rext@localhost:5432/rext_app")
+
+    assert "insecure placeholder value" in message
 
 
 def test_two_strong_different_secrets_are_accepted() -> None:
     settings = _settings()
     assert settings.SECRET_KEY == STRONG_ACCESS
     assert settings.REFRESH_SECRET_KEY == STRONG_REFRESH
-
-
-def test_a_short_secret_is_still_refused() -> None:
-    assert "at least 32 characters" in _refusal(SECRET_KEY="a-random-but-short-key")
 
 
 def test_the_example_file_holds_no_signing_secret() -> None:
