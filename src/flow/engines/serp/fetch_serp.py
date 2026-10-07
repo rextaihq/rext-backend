@@ -6,8 +6,10 @@ from typing import Any, Dict, Optional
 import httpx
 from dotenv import load_dotenv
 
+from src.flow.engines.serp import serp_cache
 from src.flow.states.countries import ISO_TO_COUNTRY, VALID_COUNTRY_CODES
 from src.flow.states.rext import REXT, SERPEngineState
+from src.utils.stage_timing import timed_stage
 
 load_dotenv()
 
@@ -293,6 +295,22 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
         logger.error("DATAFORSEO_SERP_URL not found in environment variables")
         return {"serp_result": _empty_serp_state()}
 
+    with timed_stage("serp") as timing:
+        cache_key = serp_cache.serp_key(query, country)
+        cached = await serp_cache.read(cache_key)
+        if cached:
+            timing["cache"] = "hit"
+            logger.info(f"SERP for '{query}' from the day's cache")
+            return {"serp_result": cached}
+        timing["cache"] = "miss"
+        result = await _fetch_live(query, country)
+        if result["serp_result"]["serp_status"] == "ok":
+            await serp_cache.write(cache_key, result["serp_result"])
+        return result
+
+
+async def _fetch_live(query: str, country: str | None) -> dict:
+    """The SERP from DataForSEO, with one retry for a passing failure."""
     for attempt in range(1, SERP_ATTEMPTS + 1):
         last_attempt = attempt == SERP_ATTEMPTS
         try:
