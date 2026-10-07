@@ -95,11 +95,14 @@ class OAuthService:
             token_expires_at: When the access token expires
 
         Returns:
-            Tuple of (User object, tokens dict with access_token, refresh_token, token_type)
+            Tuple of (User object, tokens dict with access_token, refresh_token, token_type, and
+            is_new_user: whether this call created the account, step 3, so the dashboard counts
+            a sign-up only then)
 
         Raises:
             RextAuthenticationException: If OAuth flow fails
         """
+        is_new_user = False
         # Check if this OAuth account already exists
         result = await self.db.execute(
             select(OAuthAccount)
@@ -202,6 +205,7 @@ class OAuthService:
                 )
                 self.db.add(user)
                 await self.db.flush()
+                is_new_user = True
 
                 # No global role assignment: accounts no longer receive the
                 # platform 'user' role. Workspace-scoped roles are granted when
@@ -319,6 +323,7 @@ class OAuthService:
             "expires_in": get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "permissions": permissions,  # Include permissions for route response
             "roles": role_names,  # Include roles for route response
+            "is_new_user": is_new_user,
         }
 
         return user, tokens
