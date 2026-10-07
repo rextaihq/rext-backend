@@ -99,158 +99,167 @@ async def test_a_competitor_site_that_answers_is_available(sent):
     assert sent == ["https://acme.com"]
 
 
-# -- The headless browser -----------------------------------------------------------
+# -- The headless browser: every connection goes through PublicOnlyProxy -------------
 
 
-class _Route:
-    def __init__(self) -> None:
-        self.outcome: str | None = None
-        self.fulfilled: dict = {}
+class _Hits(BaseHTTPRequestHandler):
+    """A local HTTP server that records every request it gets."""
 
-    async def continue_(self) -> None:
-        self.outcome = "continued"
+    hits: list[tuple[str, str]] = []
+    redirect_to: str | None = None
 
-    async def abort(self, reason: str = "failed") -> None:
-        self.outcome = f"aborted:{reason}"
+    def do_GET(self):  # noqa: N802 (the http.server name)
+        _Hits.hits.append((self.server.server_address[0], self.path))
+        if self.path.startswith("/redirect") and _Hits.redirect_to:
+            self.send_response(302)
+            self.send_header("Location", _Hits.redirect_to)
+            self.end_headers()
+            return
+        body = f"ok {self.path} connection={self.headers.get('Connection')}".encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
-    async def fulfill(self, **kwargs) -> None:
-        self.outcome = "fulfilled"
-        self.fulfilled = kwargs
-
-
-def _request(url: str, resource_type: str = "document") -> SimpleNamespace:
-    return SimpleNamespace(
-        url=url,
-        method="GET",
-        headers={"user-agent": "test", "host": "ignored", "accept-encoding": "br"},
-        post_data_buffer=None,
-        resource_type=resource_type,
-    )
+    def log_message(self, *args):
+        pass
 
 
-async def _route(url: str, resource_type: str = "document") -> _Route:
-    route = _Route()
-    async with url_validator.public_client(follow_redirects=True) as client:
-        await browser_guard._public_only_route(route, _request(url, resource_type), client)
-    return route
+def _serve(host: str) -> int:
+    """Start a recording server on ``host`` and return its port (skips where the host can't
+    be bound, e.g. 127.0.0.2 outside Linux)."""
+    try:
+        server = HTTPServer((host, 0), _Hits)
+    except OSError as exc:
+        pytest.skip(f"can't listen on {host}: {exc}")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server.server_address[1]
+
+
+@pytest.fixture
+def servers(monkeypatch):
+    """127.0.0.2 plays a public site (the check is told so); 127.0.0.1 is private."""
+    original = url_validator._check_ip_blocked
+
+    def check(ip):
+        if str(ip) != "127.0.0.2":
+            original(ip)
+
+    monkeypatch.setattr(url_validator, "_check_ip_blocked", check)
+    _Hits.hits.clear()
+    _Hits.redirect_to = None
+    return SimpleNamespace(public=_serve("127.0.0.2"), private=_serve("127.0.0.1"))
+
+
+def _private_hits() -> list[str]:
+    return [path for host, path in _Hits.hits if host == "127.0.0.1"]
+
+
+async def _through(proxy, url: str, **kwargs) -> httpx.Response:
+    async with httpx.AsyncClient(proxy=proxy.url, trust_env=False) as client:
+        return await client.get(url, **kwargs)
+
+
+async def test_the_proxy_forwards_a_request_to_a_public_address(servers):
+    async with browser_guard.PublicOnlyProxy() as proxy:
+        response = await _through(proxy, f"http://127.0.0.2:{servers.public}/page?q=1")
+
+    assert response.status_code == 200
+    # Forwarded in origin form, on a connection of its own.
+    assert response.text == "ok /page?q=1 connection=close"
 
 
 @pytest.mark.parametrize(
     "url",
     [
-        "http://127.0.0.1:2024/ok",
+        "http://127.0.0.1:{private}/",
         "http://169.254.169.254/latest/meta-data/",
         "http://10.0.0.5/",
-        "http://[::1]/",
     ],
 )
-async def test_the_browser_never_sends_a_request_to_a_private_address(sent, url):
-    route = await _route(url)
+async def test_the_proxy_refuses_a_private_address(servers, url):
+    async with browser_guard.PublicOnlyProxy() as proxy:
+        response = await _through(proxy, url.format(private=servers.private))
 
-    assert route.outcome == "aborted:blockedbyclient"
-    assert sent == []
-
-
-@pytest.mark.parametrize("private", PRIVATE_REDIRECTS)
-async def test_the_browser_never_follows_a_redirect_to_a_private_address(sent, private):
-    """A route sees only the first address of a redirect chain: the redirect is followed by
-    the public-only client, never by the browser."""
-    sent.redirect_to = private
-
-    route = await _route(f"http://{PUBLIC_IP}/page")
-
-    assert route.outcome == "aborted:blockedbyclient"
-    assert sent == [f"http://{PUBLIC_IP}/page"]
+    assert response.status_code == 403
+    assert _private_hits() == []
 
 
-async def test_a_public_page_is_fetched_by_the_public_client_and_handed_to_the_browser(sent):
-    route = await _route(f"http://{PUBLIC_IP}/page")
+async def test_the_proxy_refuses_a_name_that_resolves_privately(servers, monkeypatch):
+    monkeypatch.setattr(url_validator, "_resolve_hostname", lambda host: ["10.1.2.3"])
+    async with browser_guard.PublicOnlyProxy() as proxy:
+        response = await _through(proxy, "http://internal.example.com/")
 
-    assert route.outcome == "fulfilled"
-    assert route.fulfilled["status"] == 200
-    assert b"ok" in route.fulfilled["body"]
-    assert sent == [f"http://{PUBLIC_IP}/page"]
-
-
-@pytest.mark.parametrize("url", ["file:///etc/hosts", "ftp://example.com/x", "chrome://settings"])
-async def test_the_browser_aborts_a_scheme_that_is_not_http(sent, url):
-    assert (await _route(url)).outcome == "aborted:blockedbyclient"
-    assert sent == []
+    assert response.status_code == 403
 
 
-@pytest.mark.parametrize("url", ["data:image/png;base64,AAAA", "about:blank", "blob:abc"])
-async def test_in_page_schemes_are_left_alone(sent, url):
-    assert (await _route(url)).outcome == "continued"
-    assert sent == []
+async def test_each_hop_of_a_redirect_is_checked(servers):
+    """A redirect is a new request through the proxy: the private hop is refused there."""
+    _Hits.redirect_to = f"http://127.0.0.1:{servers.private}/secret"
+    async with browser_guard.PublicOnlyProxy() as proxy:
+        response = await _through(
+            proxy, f"http://127.0.0.2:{servers.public}/redirect", follow_redirects=True
+        )
+
+    assert response.status_code == 403
+    assert _private_hits() == []
 
 
-@pytest.mark.parametrize("resource_type", ["image", "media", "font"])
-async def test_what_a_scrape_does_not_read_is_not_fetched(sent, resource_type):
-    route = await _route(f"http://{PUBLIC_IP}/asset", resource_type)
+async def test_a_tunnel_opens_only_to_a_public_address(servers):
+    async with browser_guard.PublicOnlyProxy() as proxy:
+        port = int(proxy.url.rsplit(":", 1)[1])
+        answers = []
+        for target in (f"127.0.0.2:{servers.public}", f"127.0.0.1:{servers.private}"):
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            writer.write(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+            await writer.drain()
+            answers.append((await reader.readuntil(b"\r\n\r\n")).decode().split("\r\n")[0])
+            if answers[-1].startswith("HTTP/1.1 200"):
+                writer.write(b"GET /tunnelled HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                answers.append((await reader.read()).decode().split("\r\n")[0])
+            writer.close()
 
-    assert route.outcome == "aborted:blockedbyclient"
-    assert sent == []
-
-
-def test_the_handed_back_response_keeps_every_cookie_and_drops_the_framing():
-    response = httpx.Response(
-        200,
-        headers=[
-            ("set-cookie", "a=1"),
-            ("set-cookie", "b=2"),
-            ("content-encoding", "gzip"),
-            ("content-length", "10"),
-            ("content-type", "text/html"),
-        ],
-    )
-
-    headers = browser_guard._response_headers(response)
-
-    assert headers == {"set-cookie": "a=1\nb=2", "content-type": "text/html"}
+    assert answers == [
+        "HTTP/1.1 200 Connection Established",
+        "HTTP/1.0 200 OK",
+        "HTTP/1.1 403 Forbidden",
+    ]
+    assert _private_hits() == []
 
 
-class _Context:
-    def __init__(self) -> None:
-        self.routes: list[str] = []
-        self.socket_routes: list[str] = []
-        self.init_scripts: list[str] = []
-        self.listeners: list[str] = []
+async def test_the_proxy_refuses_an_ipv6_loopback_address(servers):
+    """As Chromium writes it: the address in brackets."""
+    async with browser_guard.PublicOnlyProxy() as proxy:
+        port = int(proxy.url.rsplit(":", 1)[1])
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(b"GET http://[::1]:8080/ HTTP/1.1\r\nHost: [::1]:8080\r\n\r\n")
+        await writer.drain()
+        status = (await reader.readline()).decode().strip()
+        writer.close()
 
-    async def route(self, pattern, handler) -> None:
-        self.routes.append(pattern)
-
-    async def route_web_socket(self, pattern, handler) -> None:
-        self.socket_routes.append(pattern)
-
-    async def add_init_script(self, script) -> None:
-        self.init_scripts.append(script)
-
-    def on(self, event, callback) -> None:
-        self.listeners.append(event)
+    assert status == "HTTP/1.1 403 Forbidden"
 
 
-async def test_the_guard_is_installed_once_per_context():
-    context = _Context()
-    page = SimpleNamespace(context=context)
+async def test_a_request_that_is_not_an_absolute_http_address_is_refused(servers):
+    async with browser_guard.PublicOnlyProxy() as proxy:
+        port = int(proxy.url.rsplit(":", 1)[1])
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(b"GET /relative HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        await writer.drain()
+        status = (await reader.readline()).decode().strip()
+        writer.close()
 
-    assert await browser_guard.refuse_private_requests(page, context=context) is page
-    await browser_guard.refuse_private_requests(page, context=context)
-
-    assert context.routes == ["**/*"]
-    assert context.socket_routes == ["**/*"]  # no WebSocket connects
-    assert len(context.init_scripts) == 1 and "serviceWorker" in context.init_scripts[0]
-    assert context.listeners == ["close"]  # the context's client closes with it
+    assert status == "HTTP/1.1 400 Bad Request"
 
 
 class _Crawler:
-    """AsyncWebCrawler's shape: the config it was built with and the hooks set on it."""
+    """AsyncWebCrawler's shape: the config it was built with."""
 
     made: list["_Crawler"] = []
 
     def __init__(self, config=None) -> None:
         self.config = config
-        self.hooks: dict[str, object] = {}
-        self.crawler_strategy = SimpleNamespace(set_hook=self.hooks.__setitem__)
         _Crawler.made.append(self)
 
     async def __aenter__(self):
@@ -260,7 +269,10 @@ class _Crawler:
         return False
 
     async def arun(self, url, config=None):
-        assert self.hooks.get("on_page_context_created") is browser_guard.refuse_private_requests
+        # The proxy is up while the browser runs.
+        port = int(self.config.proxy_config.server.rsplit(":", 1)[1])
+        _, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.close()
         return [
             SimpleNamespace(
                 url=url, success=False, html="", markdown="", status_code=None, error_message="x"
@@ -269,7 +281,9 @@ class _Crawler:
 
 
 @pytest.mark.parametrize("render", ["render_pages", "web_page_scraper"])
-async def test_both_browser_renders_install_the_guard_and_check_certificates(monkeypatch, render):
+async def test_both_browser_renders_go_through_the_proxy_and_check_certificates(
+    monkeypatch, render
+):
     _Crawler.made.clear()
     monkeypatch.setattr(helper, "AsyncWebCrawler", _Crawler)
     monkeypatch.setattr(url_validator, "_resolve_hostname", lambda host: [PUBLIC_IP])
@@ -280,52 +294,32 @@ async def test_both_browser_renders_install_the_guard_and_check_certificates(mon
         await helper.web_page_scraper(["https://example.com/"])
 
     (crawler,) = _Crawler.made
-    assert crawler.hooks["on_page_context_created"] is browser_guard.refuse_private_requests
+    assert crawler.config.proxy_config.server.startswith("http://127.0.0.1:")
+    assert "--proxy-bypass-list=<-loopback>" in crawler.config.extra_args
     assert crawler.config.ignore_https_errors is False
 
 
-# -- A real Chromium, when one is installed ----------------------------------------
-
-
-class _Hits(BaseHTTPRequestHandler):
-    hits: list[str] = []
-
-    def do_GET(self):  # noqa: N802 (the http.server name)
-        _Hits.hits.append(self.path)
-        self.send_response(200)
-        self.end_headers()
-
-    def log_message(self, *args):
-        pass
-
-
-async def test_chromium_never_sends_a_subrequest_to_a_private_address():
-    """A page that names a frame, a script and a fetch on 127.0.0.1: with the guard installed,
-    none of them reaches the local server."""
+async def test_chromium_reaches_no_private_address_through_the_proxy(servers):
+    """A page that names a frame, a script, an image and a fetch on 127.0.0.1, and a redirect
+    there: none of them reaches the private server. Skipped where no browser is installed."""
     playwright_api = pytest.importorskip("playwright.async_api")
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    server = HTTPServer(("127.0.0.1", port), _Hits)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    _Hits.hits.clear()
-    try:
-        async with playwright_api.async_playwright() as p:
-            try:
-                browser = await p.chromium.launch()
-            except Exception as exc:  # no browser installed where the tests run
-                pytest.skip(f"Chromium is not available: {type(exc).__name__}")
-            context = await browser.new_context()
-            page = await context.new_page()
-            await browser_guard.refuse_private_requests(page, context=context)
-            private = f"http://127.0.0.1:{port}"
-            await page.set_content(
-                f'<iframe src="{private}/frame"></iframe><script src="{private}/app.js"></script>'
-                f'<script>fetch("{private}/data").catch(() => {{}})</script>'
+    private = f"http://127.0.0.1:{servers.private}"
+    _Hits.redirect_to = f"{private}/secret"
+    async with browser_guard.PublicOnlyProxy() as proxy, playwright_api.async_playwright() as p:
+        try:
+            browser = await p.chromium.launch(
+                proxy={"server": proxy.url}, args=browser_guard.PROXY_BROWSER_ARGS
             )
-            await asyncio.sleep(1)
-            await browser.close()
-    finally:
-        server.shutdown()
+        except Exception as exc:
+            pytest.skip(f"Chromium is not available: {type(exc).__name__}")
+        page = await browser.new_page()
+        await page.goto(f"http://127.0.0.2:{servers.public}/redirect")
+        await page.set_content(
+            f'<iframe src="{private}/frame"></iframe><script src="{private}/app.js"></script>'
+            f'<img src="{private}/img.png"><script>fetch("{private}/data").catch(() => {{}})</script>'
+        )
+        await asyncio.sleep(1)
+        await browser.close()
 
-    assert _Hits.hits == []
+    assert _private_hits() == []
+    assert ("127.0.0.2", "/redirect") in _Hits.hits
