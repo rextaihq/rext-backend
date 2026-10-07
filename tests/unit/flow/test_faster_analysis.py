@@ -109,11 +109,7 @@ GROUPS = {"a.test": {"top_result": {"title": "A", "snippet": "about a"}, "top_po
 async def test_the_same_rows_reuse_the_intent_answer(monkeypatch, day_cache):
     answer = (
         "COMMERCIAL",
-        {
-            "a.test": SEOIntentResult(
-                domain="a.test", intent="COMMERCIAL", confidence="high", is_brand=True
-            )
-        },
+        {"a.test": SEOIntentResult(domain="a.test", intent="COMMERCIAL", is_brand=True)},
         ["running shoes for women"],
     )
     classify = AsyncMock(return_value=answer)
