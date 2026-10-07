@@ -152,6 +152,13 @@ def excluded_brand_of(outline: dict) -> Optional[dict]:
     brand_name = (promo.get("brand_name") or "").strip()
     if not brand_name:
         return None
+    # A title or keyphrase that names the brand ("Acme Tools login") must stay verbatim, and the
+    # SEO checks need the keyphrase in the title, meta and introduction: there "None" can't mean
+    # "never named", so it means no promotion only (the other brand checks skip, as before).
+    if brand_named_in(outline.get("title") or "", brand_name) or brand_named_in(
+        focus_keyword_from_outline(outline) or "", brand_name
+    ):
+        return None
     return {"brand_name": brand_name, "brand_url": (promo.get("brand_url") or "").strip()}
 
 

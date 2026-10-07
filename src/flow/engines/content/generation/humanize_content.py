@@ -251,8 +251,9 @@ def _build_prompt_data(
         # The user chose no mention (rext-control#700): a rewrite must not bring the brand in.
         brand_instruction = (
             f'BRAND EXCLUSION — the user chose NO mention of "{excluded_brand["brand_name"]}": do not '
-            "name it, or link to its site, anywhere in the title, the introduction, the body, a "
-            "heading or a call to action. If the draft names it, rewrite that sentence without it."
+            "name it, or link to its site (the article's internal links stay), anywhere in the title, "
+            "the introduction, the body, a heading or a call to action. If the draft names it, "
+            "rewrite that sentence without it."
         )
 
     return {

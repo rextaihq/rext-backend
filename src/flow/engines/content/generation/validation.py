@@ -1325,6 +1325,16 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
         )
 
     if prominence == "subtle":
+        cta = final_content.get("cta") if isinstance(final_content.get("cta"), dict) else {}
+        brand_host = _host(brand.get("brand_url") or "")
+        if brand_host and isinstance(cta.get("url"), str) and _host(cta["url"]) == brand_host:
+            return _fail(
+                "brand_prominence",
+                "blocking",
+                f"The user chose a SUBTLE mention: the call to action must not send readers to "
+                f"{brand_name}'s site ({cta['url']}). Point it at a next step in the article's own "
+                f"subject instead, without the brand.",
+            )
         if total > 1:
             return _fail(
                 "brand_prominence",
@@ -1351,9 +1361,36 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
     )
 
 
+def _host(url: str) -> str:
+    host = (urlparse(url or "").hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _excluded_mentions(text: str, brand_name: str) -> list:
+    """Mentions of a brand the user excluded. A one-word name that is also an ordinary word
+    ("Later", "Buffer") counts only in its own capitalisation and not at the start of a sentence,
+    so "save this for later" is prose, not the brand."""
+    text = text or ""
+    if " " in brand_name.strip():
+        return _brand_occurrences(text, brand_name)
+    pattern = re.compile(r"(?<![0-9A-Za-z])" + re.escape(brand_name.strip()) + r"(?![0-9A-Za-z])")
+    sentence_start = re.compile(r"(?:^\s*(?:[#>*-]+\s*)?|[.!?]\s+|\n\s*(?:[#>*-]+\s*)?)$")
+    return [m for m in pattern.finditer(text) if not sentence_start.search(text[: m.start()])]
+
+
+def _links_to_host(text: str, host: str, approved: set[str]) -> bool:
+    """Whether ``text`` links to ``host`` other than through an approved internal link."""
+    for url in _BARE_URL_RE.findall(text or ""):
+        url = url.rstrip(").,;:!?\"'")
+        if _host(url) == host and url.rstrip("/") not in approved:
+            return True
+    return False
+
+
 def check_brand_absent(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     """The user chose NO brand mention ("None" at the outline gate): the brand appears nowhere a
-    reader or a search result shows, nor does a link to its site (rext-control#700).
+    reader or a search result shows, nor does a link to its site other than the internal links
+    the user approved (rext-control#700).
 
     Nothing else holds this: with no approved mention every other brand check skips, and the
     outline (generated before the choice) may already name the brand in a product list or the
@@ -1365,23 +1402,31 @@ def check_brand_absent(final_content: dict, spec: RequirementsSpec) -> Validatio
             "brand_absent", "A mention was approved, or no brand is known; nothing to check."
         )
     brand_name = excluded["brand_name"]
-    cta = final_content.get("cta")
+    host = _host(excluded.get("brand_url") or "")
+    approved = {
+        (link.get("url") or "").rstrip("/")
+        for link in spec.get("approved_internal_links") or []
+        if isinstance(link, dict)
+    }
+    cta = final_content.get("cta") if isinstance(final_content.get("cta"), dict) else {}
     places = {
         "title": final_content.get("title"),
         "meta title": final_content.get("meta_title"),
         "meta description": final_content.get("meta_description"),
         "introduction": final_content.get("introduction"),
         "body": final_content.get("body_markdown"),
-        "call to action": cta.get("text") if isinstance(cta, dict) else None,
+        "call to action": cta.get("text"),
     }
-    host = urlparse(excluded.get("brand_url") or "").hostname or ""
-    host = host[4:] if host.startswith("www.") else host
     found = [
         place
         for place, text in places.items()
         if isinstance(text, str)
-        and (_brand_occurrences(text, brand_name) or (host and host in text.lower()))
+        and (
+            _excluded_mentions(text, brand_name) or (host and _links_to_host(text, host, approved))
+        )
     ]
+    if host and isinstance(cta.get("url"), str) and _links_to_host(cta["url"], host, set()):
+        found.append("call to action's link")
     if not found:
         return _pass("brand_absent", f"'{brand_name}' is not mentioned, as the user chose.")
     return _fail(
@@ -1389,7 +1434,7 @@ def check_brand_absent(final_content: dict, spec: RequirementsSpec) -> Validatio
         "blocking",
         f"The user chose NO brand mention, but '{brand_name}' appears in the {', '.join(found)}. "
         f"Rewrite those sentences without it (name another real product where a list needs one, "
-        f"or none), and remove any link to its site.",
+        f"or none), and remove any link to its site other than the approved internal links.",
     )
 
 
@@ -2095,6 +2140,9 @@ _FINAL_REPAIRABLE_CLAIM_CHECKS = ("unsupported_claims",)
 # Brand checks whose failure at the post-humanize stage is worth one targeted
 # repair pass. Previously only presence/URL were routed, so a placement or depth
 # regression introduced by humanization was logged and shipped.
+# A brand the user excluded, brought back by humanization: removed in the same targeted pass.
+_FINAL_REPAIRABLE_EXCLUSION_CHECKS = ("brand_absent",)
+
 _FINAL_REPAIRABLE_BRAND_CHECKS = (
     "brand_presence",
     "brand_url_accuracy",
@@ -2318,6 +2366,10 @@ async def final_validate_content(state: REXT) -> dict:
     ]
     if not spec.get("brand_context"):
         failed_brand_checks = []
+    # The exclusion has no brand context by definition ("None"), so it isn't gated on one.
+    failed_brand_checks += [
+        c for c in checks if c["name"] in _FINAL_REPAIRABLE_EXCLUSION_CHECKS and not c["passed"]
+    ]
     failed_keyword_checks = [
         c for c in checks if c["name"] in _FINAL_REPAIRABLE_KEYWORD_CHECKS and not c["passed"]
     ]

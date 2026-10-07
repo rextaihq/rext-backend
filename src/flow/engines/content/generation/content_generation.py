@@ -753,8 +753,9 @@ async def generate_content(state: REXT) -> dict:
                 f"BRAND EXCLUSION — REQUIRED\n"
                 f"========================\n"
                 f"The user chose NO mention of {excluded_name}. Do not name {excluded_name}, or link to "
-                f"its site, anywhere: not in the title, the introduction, the body, a heading, a list, "
-                f"the FAQs, the call to action, the meta title or the meta description. Where the "
+                f"its site (the internal links you were given above stay), anywhere: not in the title, "
+                f"the introduction, the body, a heading, a list, the FAQs, the call to action or its "
+                f"link, the meta title or the meta description. Where the "
                 f"outline names {excluded_name} (a product list, a comparison, the call to action), "
                 f"write that part without it: name another real product where a list needs one, or "
                 f"none. This overrides any instruction to follow the outline's wording exactly.\n"
@@ -783,6 +784,12 @@ async def generate_content(state: REXT) -> dict:
                 f"body_markdown or the introduction.\n"
             )
         elif outline_cta:
+            cta_link_rule = (
+                f"Its link must not point to {cta_brand}'s site: the user's choice keeps "
+                f"{cta_brand} out of the call to action.\n"
+                if cta_brand
+                else ""
+            )
             cta_str = (
                 f"\n========================\n"
                 f"CALL-TO-ACTION — REQUIRED\n"
@@ -791,6 +798,7 @@ async def generate_content(state: REXT) -> dict:
                 f"Populate the 'cta' output field ({{text, url, placement}}) using this exact CTA text "
                 f"(or a close natural variant preserving the same meaning), and make sure that same "
                 f"text also appears verbatim as an actual call-to-action inside body_markdown or the introduction.\n"
+                f"{cta_link_rule}"
             )
 
         # 7️⃣c Title + subject lock.
