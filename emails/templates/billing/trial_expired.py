@@ -5,6 +5,7 @@ Sent after the trial has expired.
 """
 
 from emails.components import primary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -12,7 +13,7 @@ def render_trial_expired_email(
     user_name: str,
     plan_name: str,
     upgrade_url: str = "https://app.rext.ai/pricing",
-    support_url: str = "https://app.rext.ai/support",
+    support_url: str = SITE_CONTACT_URL,
     frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
