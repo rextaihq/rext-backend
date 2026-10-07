@@ -1499,9 +1499,15 @@ def _excluded_mentions(text: str, brand_name: str) -> list:
     ]
 
 
+# An image embed: "![alt](address)". Its address is where the picture is stored, not a link a
+# reader follows, so it is no link to anyone's site (a generated image can be stored on a host
+# that shares the workspace's own domain).
+_IMAGE_EMBED_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
 def _links_to_host(text: str, host: str, approved: set[str]) -> bool:
     """Whether ``text`` links to ``host`` other than through an approved internal link."""
-    for url in _BARE_URL_RE.findall(text or ""):
+    for url in _BARE_URL_RE.findall(_IMAGE_EMBED_RE.sub(" ", text or "")):
         url = url.rstrip(").,;:!?\"'")
         if _is_brand_host(_host(url), host) and normalize_url(url) not in approved:
             return True
