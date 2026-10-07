@@ -394,12 +394,12 @@ Render a template as in the example above and open the saved HTML file in a brow
 Required in `.env`:
 
 ```env
-FRONTEND_URL=https://app.rext.com
+FRONTEND_URL=https://app.rext.ai
 
 # Email service (already configured in Phase 1)
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_xxxxxxxxxxxxx
-RESEND_FROM_EMAIL=noreply@rext.com
+RESEND_FROM_EMAIL=noreply@<a domain verified in Resend>
 RESEND_FROM_NAME=Rext AI
 ```
 

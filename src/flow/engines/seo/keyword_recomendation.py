@@ -299,10 +299,11 @@ async def keyword_recommendation(state: REXT) -> Any:
     # only after the answer that keeps the keyword. A keyword longer than any
     # title can be gets no titles (the topic step ends the run and says so),
     # so it is not charged for them.
+    titles_paid = True
     if not is_changed and not keyphrase_fits_a_title(primary_keyword):
         logger.info("Kept keyword is longer than a title can be: titles not charged")
     elif not is_changed:
-        await charge_title_generation(serp_payload or {})
+        titles_paid = await charge_title_generation(serp_payload or {})
 
     return {
         "seo_result": {
@@ -320,6 +321,9 @@ async def keyword_recommendation(state: REXT) -> Any:
                 "error": None,
                 "is_changed": is_changed,
                 "library_key": seo_result.get(KEYWORD_RESEARCH_KEY),
+                # This answer's own verdict: a refused title charge ends the run
+                # before the titles (keyword_router, rext-control#524).
+                "titles_unpaid": not titles_paid,
             },
         },
         "serp_payload": {

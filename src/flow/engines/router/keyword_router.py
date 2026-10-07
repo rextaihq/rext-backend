@@ -1,5 +1,6 @@
 import logging
 
+from src.flow.engines.router.credits import serp_unpaid
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,16 @@ def keyword_router(state: REXT) -> str:
     seo_result = state.get("seo_result", {})
     keyword_recs = seo_result.get("keyword_recommendations", {})
     is_changed = keyword_recs.get("is_changed", False)
+
+    # A refused SERP charge ends the run before its research is saved or the gate
+    # opens, so no article goes on without the serp_seo credit (rext-control#524).
+    if serp_unpaid(state):
+        logger.info("The SERP charge was refused, ending the run")
+        return "INSUFFICIENT"
+
+    if keyword_recs.get("titles_unpaid"):
+        logger.info("The title charge was refused, ending the run")
+        return "INSUFFICIENT"
 
     if keyword_recs.get("error"):
         logger.info("No SERP results for the keyword, ending the run")
