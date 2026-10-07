@@ -36,7 +36,18 @@ _OTHER = {
     "una", "y", "en", "al", "der", "und", "für", "mit", "ein", "eine", "einen", "zu", "im", "von",
     "bei", "auf", "zum", "zur", "les", "des", "du", "pour", "avec", "et", "une", "au", "aux",
     "sur", "dans", "à", "dos", "em", "uma", "um", "ao", "aos", "na", "nas", "nos", "às", "il",
-    "di", "della", "delle", "degli", "gli", "het", "een", "voor", "och",
+    "di", "della", "delle", "degli", "gli", "het", "een", "voor", "och", "dla", "jak", "oraz",
+    "się", "jest", "czy",
+}  # fmt: skip
+# Common English title words that other languages don't borrow ("SEO" and "marketing" they do):
+# two of them make a title English when it has none of the function words above.
+_ENGLISH_TITLE_WORDS = {
+    "content", "strategy", "plan", "planning", "template", "templates", "checklist", "tools",
+    "tool", "ideas", "examples", "business", "small", "teams", "team", "website", "growth",
+    "customer", "customers", "free", "build", "create", "write", "writing", "make", "start",
+    "choose", "improve", "rank", "search", "keyword", "keywords", "traffic", "page", "pages",
+    "framework", "blueprint", "playbook", "explained", "review", "reviews", "benefits",
+    "mistakes", "way", "effective", "simple", "easy", "new", "brief", "post", "posts",
 }  # fmt: skip
 # Words an article never comes before, so the "a" in front of them is a letter ("a to z").
 _NOT_AFTER_AN_ARTICLE = {
@@ -46,39 +57,25 @@ _NOT_AFTER_AN_ARTICLE = {
 }  # fmt: skip
 # Before these, a capital letter starts a clause, so a capital "A" there is an article.
 _CLAUSE_ENDS = (":", "?", "!", "-", "–", "—", "|")
-# Vowel letters with a consonant sound: "a unique", "a European", "a one-page".
-_YOU_SOUND = (
-    "uni",
-    "use",
-    "usa",
-    "usu",
-    "uti",
-    "ura",
-    "ure",
-    "uri",
-    "uro",
-    "ubiq",
-    "ukr",
-    "eu",
-    "ewe",
-)
-# "un-" before an i: "an unidentified", "an unimportant", "an uninstall" (but "a unimodal").
+# Vowel letters with a consonant sound: "a usage", "a European", "a one-page".
+_YOU_SOUND = ("use", "usa", "usu", "uti", "ura", "ure", "uri", "uro", "ubiq", "ukr", "eu", "ewe")
+# "uni" is "you-ni" in these ("a unique", "a unimodal") and "un-i" in the negations ("an
+# unindexed", "an uninstall"); any other "uni" word is unsure, and left.
+_UNI_YOU = (
+    "unique", "unit", "union", "univers", "unicorn", "uniform", "unif", "unilat", "unidirect",
+    "unimod", "unison", "unix", "unicode", "unicycl", "unisex",
+)  # fmt: skip
 _UN_I = (
-    "unident",
-    "unidea",
-    "unimp",
-    "unimag",
-    "unins",
-    "uninf",
-    "unint",
-    "unini",
-    "uninv",
-    "uninh",
-)
-# Silent h: "an hour", "an honest".
+    "unident", "unidea", "unimp", "unimag", "unindex", "unins", "uninf", "unint", "unini", "uninv",
+    "uninh", "unissu", "uniron", "unimm",
+)  # fmt: skip
+# Silent h: "an hour", "an honest". Said either way by dialect ("an herb" in America): left.
 _SILENT_H = ("hour", "honest", "honor", "honour", "heir")
-# Letters whose names start with a vowel sound though the letter is a consonant: an acronym
-# starting with one is "an" only when it's said letter by letter, which these are.
+_EITHER_H = ("herb", "homage", "historic", "humble")
+# Letters whose names start with a vowel sound: "an X-ray", "an F grade" (but "a U-turn").
+_VOWEL_SOUND_NAMES = set("AEFHILMNORSX")
+# An acronym starting with one of these consonants is "an" only when it's said letter by letter,
+# which these are.
 _SAID_AS_LETTERS = {
     "SEO", "SEM", "SMS", "SSL", "SSD", "SLA", "SMB", "SME", "SDK", "SUV", "SVG", "HR", "HTML",
     "HTTP", "HTTPS", "HVAC", "LLM", "LMS", "MBA", "MVP", "MRR", "NFT", "NPS", "RFP", "ROI", "RSS",
@@ -95,7 +92,9 @@ def _is_english(words: list[str]) -> bool:
     lowered = {word.strip(_LEADING + _TRAILING).lower() for word in words}
     if lowered & _OTHER:
         return False
-    return bool(lowered & _ENGLISH) or all(word.isascii() for word in words)
+    if lowered & _ENGLISH:
+        return True
+    return len(lowered & _ENGLISH_TITLE_WORDS) >= 2
 
 
 def _base_letter(char: str) -> str | None:
@@ -129,17 +128,21 @@ def _an_before(word: str) -> bool | None:
     head = re.split(r"[-–/]", word.lstrip(_LEADING), maxsplit=1)[0].rstrip(_TRAILING)
     if not head:
         return None
-    if head[0].isdigit():
-        return _number_takes_an(re.match(r"\d+", head.replace(",", "")).group(0))
+    if head[0] in "0123456789":
+        return _number_takes_an(re.match(r"[0-9]+", head.replace(",", "")).group(0))
     first = _base_letter(head[0])
     if first is None:
         return None
     letters = "".join(_base_letter(char) or "" for char in head)
-    if len(head) == 1 or (len(letters) >= 2 and letters.isupper()):
-        return _acronym_takes_an(letters.upper())
+    if len(head) == 1:
+        return first.upper() in _VOWEL_SOUND_NAMES
+    if len(letters) >= 2 and letters.isupper():
+        return _acronym_takes_an(letters)
     lower = letters.lower()
     if lower.startswith(_SILENT_H):
         return True
+    if lower.startswith(_EITHER_H):
+        return None
     if (
         lower == "one"
         or lower.startswith(("one-", "once"))
@@ -147,8 +150,10 @@ def _an_before(word: str) -> bool | None:
         and not lower.startswith("oner")
     ):
         return False
+    if lower.startswith("uni"):
+        return True if lower.startswith(_UN_I) else False if lower.startswith(_UNI_YOU) else None
     if lower.startswith(_YOU_SOUND):
-        return lower.startswith(_UN_I)
+        return False
     return first.lower() in "aeiou"
 
 
