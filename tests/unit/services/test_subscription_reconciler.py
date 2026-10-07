@@ -231,7 +231,77 @@ async def test_a_subscription_that_fails_to_read_goes_to_the_back(session):
     read = [call.args[0] for call in api.get_subscription_attributes.await_args_list]
     assert read == [broken.lemonsqueezy_subscription_id, waiting.lemonsqueezy_subscription_id]
     assert first["failed"] == 1 and second["checked"] == 1
+    await session.refresh(broken)
     assert "reconciled_at" in broken.subscription_metadata
+
+
+@pytest.mark.asyncio
+async def test_the_attempt_stamp_keeps_the_row_s_own_time_and_metadata(session):
+    """updated_at is the subscription's last change (retention goes by it); other keys stay."""
+    from sqlalchemy import select
+
+    row = await _subscription(
+        session, SubscriptionStatus.CANCELLED, metadata={"card_last_four": "4242"}
+    )
+    old = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    row.updated_at = old
+    await session.flush()
+
+    await module.reconcile_subscriptions(
+        session, _api({row.lemonsqueezy_subscription_id: RuntimeError("404")})
+    )
+
+    updated_at, metadata = (
+        await session.execute(
+            select(UserSubscription.updated_at, UserSubscription.subscription_metadata).where(
+                UserSubscription.id == row.id
+            )
+        )
+    ).one()
+    assert updated_at.replace(tzinfo=timezone.utc) == old
+    assert metadata["card_last_four"] == "4242"
+    assert "reconciled_at" in metadata
+
+
+@pytest.mark.asyncio
+async def test_a_revived_duplicate_gets_no_email_to_reactivate_it(session, monkeypatch):
+    """Reconciled into unpaid and then found to be the duplicate: no "update your card"."""
+    import src.services.duplicate_subscriptions as duplicates
+
+    monkeypatch.setattr(duplicates, "trigger_payment_alert", MagicMock())
+    monkeypatch.delenv("BILLING_AUTO_SETTLE_DUPLICATES", raising=False)
+    older = await _subscription(session, SubscriptionStatus.CANCELLED)
+    older.created_at = T1
+    older.end_date = T2 + timedelta(days=20)
+    newer = UserSubscription(
+        user_id=older.user_id,
+        plan_id=older.plan_id,
+        status=SubscriptionStatus.ACTIVE,
+        lemonsqueezy_subscription_id=f"ls-{uuid4().hex[:8]}",
+        provider_updated_at=T1,
+        created_at=T2,
+    )
+    session.add(newer)
+    await session.flush()
+
+    result = await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                older.lemonsqueezy_subscription_id: {
+                    "status": "unpaid",
+                    "updated_at": T2.isoformat(),
+                },
+                newer.lemonsqueezy_subscription_id: {
+                    "status": "active",
+                    "updated_at": T1.isoformat(),
+                },
+            }
+        ),
+    )
+
+    assert older.subscription_metadata["duplicate_found_of"] == str(newer.id)
+    assert result["emails"] == []
 
 
 @pytest.mark.asyncio

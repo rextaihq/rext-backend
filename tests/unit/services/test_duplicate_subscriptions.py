@@ -528,3 +528,39 @@ async def test_an_older_purchase_left_to_a_person_gets_no_bonus_audit_or_welcome
         select(AuditLog.id).where(AuditLog.resource_id == str(older.id))
     )
     assert created_audit.first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_late_recovery_on_a_duplicate_left_to_a_person_restores_nothing(
+    session, alerts, monkeypatch
+):
+    """Cancelled and refunded by hand, then paid again: it stays as it is, and a person is told."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    handler_alerts = MagicMock()
+    monkeypatch.setattr(handlers, "trigger_payment_alert", handler_alerts)
+    user, (older, newer) = await _customer_with(
+        session, SubscriptionStatus.CANCELLED, SubscriptionStatus.ACTIVE
+    )
+    older.subscription_metadata = {"duplicate_found_of": str(newer.id)}
+    await session.flush()
+
+    task = await handlers.handle_subscription_payment_recovered(
+        {
+            "data": {
+                "type": "subscription-invoices",
+                "id": "inv-again-manual",
+                "attributes": {
+                    "subscription_id": older.lemonsqueezy_subscription_id,
+                    "total": 8900,
+                },
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_payment_recovered"),
+        session,
+    )
+
+    await session.refresh(older)
+    assert task is None
+    assert older.status == SubscriptionStatus.CANCELLED
+    assert handler_alerts.call_args.kwargs["severity"] == "critical"
