@@ -54,6 +54,39 @@ _NEUTRAL_PREFIXES: tuple[str, ...] = (
     "A Practical Guide to ",
 )
 
+# The same for the scripts with a range of their own, in the title's own language (G69c): no
+# English is added to them. Lead-ins, then suffixes, tried as the English ones are.
+_LOCAL_PADDING: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "zh-Hans": (
+        ("", "了解", "一文读懂"),
+        ("：概述", "：基本概念", "：定义、用途与选择要点", "：基本概念、常见用途与选择方法"),
+    ),
+    "zh-Hant": (
+        ("", "了解", "一文讀懂"),
+        ("：概述", "：基本概念", "：定義、用途與選擇要點", "：基本概念、常見用途與選擇方法"),
+    ),
+    "ja": (
+        ("", "基礎から学ぶ"),
+        ("：概要", "：基本ガイド", "：入門ガイド", "の基本：意味・使い方・選び方"),
+    ),
+    "ko": (
+        ("", "한눈에 보는 "),
+        (" | 개요", " | 기본 가이드", " | 입문 가이드", " | 의미, 활용법, 선택 기준"),
+    ),
+    "th": (
+        ("", "ทำความรู้จัก"),
+        (" | ภาพรวม", " | ความรู้พื้นฐาน", " | คู่มือเบื้องต้น", " | ความหมาย การใช้งาน และวิธีเลือก"),
+    ),
+}
+# Characters written differently in Traditional and Simplified Chinese, to tell which a title is
+# in; a title with neither is taken as Simplified.
+_TRADITIONAL_ONLY = frozenset(
+    "們這個與為體學實點選擇導對開關時說讀義麼來會將當從還進電動應發現機係種類語"
+)
+_SIMPLIFIED_ONLY = frozenset(
+    "们这个与为体学实点选择导对开关时说读义么来会将当从还进电动应发现机系种类语"
+)
+
 _WHITESPACE_RE = re.compile(r"\s+")
 # Scripts written without spaces between words (Thai, Lao, Myanmar, Khmer, kana including the
 # halfwidth forms, CJK ideographs and the iteration marks 々 〆 〇, with the supplementary
@@ -162,34 +195,82 @@ def _at_boundary(edge: str, beside: str) -> bool:
     )
 
 
-def _matched_length(keyphrase: Any) -> int:
-    """The keyphrase's length as matching reads it (punctuation flattened), but with the
-    Armenian ligature և as the one character it takes in a title, not the two it is matched as."""
-    return len(_normalize_for_match(keyphrase).strip()) - _nfc(keyphrase).count("և")
+# A title is measured by how wide it is on a results page, not by its code points (G69c,
+# rext-control #610): a character of an East Asian wide script takes the room of two Latin
+# letters, and a combining mark (Thai's vowel and tone marks) or an invisible format character
+# none. For Latin text the width is the length, so the Latin rule is as it was.
+_THAI_RE = re.compile("[\u0e00-\u0e7f]")
+_KANA_RE = re.compile("[\u3040-\u30ff\uff66-\uff9f]")
+_HANGUL_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
+# Each script family's range, inclusive, in width: (minimum, maximum, the ceiling a long
+# keyphrase may take it to). About 600 pixels in search results hold 30 CJK characters, or 55
+# Thai ones, and SEO guidance for those languages agrees (the research on rext-control #610).
+_TITLE_RANGES: dict[str, tuple[int, int, int]] = {
+    "narrow": (TITLE_MIN_CHARS, TITLE_MAX_CHARS, TITLE_MAX_CHARS_CEILING),
+    "cjk": (40, 60, 64),
+    "thai": (38, 55, 60),
+}
+
+
+def _is_wide(char: str) -> bool:
+    return unicodedata.east_asian_width(char) in ("W", "F")
+
+
+def title_width(text: Any) -> int:
+    """How wide a title is, in Latin letters: 2 for a wide character, 0 for a mark or an
+    invisible format character, 1 for anything else."""
+    return sum(
+        0 if unicodedata.category(char) in ("Mn", "Me", "Cf") else 2 if _is_wide(char) else 1
+        for char in _nfc(text)
+    )
+
+
+def _title_family(text: Any) -> str:
+    """ "cjk" when wide characters take a third of the text's letter width, "thai" when Thai
+    letters are a third of its letters, else "narrow" (Latin, Cyrillic, Arabic and the like)."""
+    letters = [char for char in _nfc(text) if unicodedata.category(char)[0] in "LN"]
+    if not letters:
+        return "narrow"
+    wide = sum(2 for char in letters if _is_wide(char))
+    if wide * 3 >= wide + sum(1 for char in letters if not _is_wide(char)):
+        return "cjk"
+    if sum(1 for char in letters if _THAI_RE.match(char)) * 3 >= len(letters):
+        return "thai"
+    return "narrow"
+
+
+def title_range(title: Any = "", keyphrase: Any = "") -> tuple[int, int]:
+    """The widths a title may have, inclusive: its script family's range, with room beside a
+    long keyphrase up to the family's ceiling. Without a title, the keyphrase's family decides."""
+    low, high, ceiling = _TITLE_RANGES[_title_family(title or keyphrase)]
+    # Measured as keyphrase_fits_a_title measures it, so a keyword the gate lets through is
+    # never given a smaller limit than the gate assumed.
+    keyphrase_width = _matched_width(keyphrase) if keyphrase else 0
+    return low, min(ceiling, max(high, keyphrase_width + TITLE_ROOM_BESIDE_KEYPHRASE))
+
+
+def _matched_width(keyphrase: Any) -> int:
+    """The keyphrase's width as matching reads it (punctuation flattened), but with the Armenian
+    ligature և as the one character it takes in a title, not the two it is matched as."""
+    return title_width(_normalize_for_match(keyphrase).strip()) - _nfc(keyphrase).count("և")
 
 
 def title_max_chars(keyphrase: Any = "") -> int:
-    """The longest a title for this keyphrase may be.
-
-    TITLE_MAX_CHARS, or the keyphrase plus TITLE_ROOM_BESIDE_KEYPHRASE when that is more,
-    never over TITLE_MAX_CHARS_CEILING. A short keyphrase keeps 59.
-    """
-    # Measured as keyphrase_fits_a_title measures it, so a keyword the gate lets through is
-    # never given a smaller limit than the gate assumed.
-    length = _matched_length(keyphrase) if keyphrase else 0
-    return min(TITLE_MAX_CHARS_CEILING, max(TITLE_MAX_CHARS, length + TITLE_ROOM_BESIDE_KEYPHRASE))
+    """The widest a title for this keyphrase may be (TITLE_MAX_CHARS for a short Latin one)."""
+    return title_range("", keyphrase)[1]
 
 
 def keyphrase_fits_a_title(keyphrase: Any) -> bool:
-    """False when the keyphrase alone is longer than any title may be.
+    """False when the keyphrase alone is wider than any title may be.
 
-    Every title must contain the keyphrase and stay within TITLE_MAX_CHARS_CEILING,
-    so such a keyphrase can produce no title at all: the keyword gate does not
-    charge for titles then, and the topic step ends the run without a model call.
-    It is measured as contains_keyphrase matches it (case, quotes and other
-    punctuation flattened), so a keyword some title could hold is never refused.
+    Every title must contain the keyphrase and stay within its family's ceiling, so such a
+    keyphrase can produce no title at all: the keyword gate does not charge for titles then,
+    and the topic step ends the run without a model call. It is measured as contains_keyphrase
+    matches it (case, quotes and other punctuation flattened), so a keyword some title could
+    hold is never refused.
     """
-    return _matched_length(keyphrase) <= TITLE_MAX_CHARS_CEILING
+    ceiling = _TITLE_RANGES[_title_family(keyphrase)][2]
+    return _matched_width(keyphrase) <= ceiling
 
 
 def title_violations(title: Any, keyphrase: Any = "") -> list[str]:
@@ -200,11 +281,12 @@ def title_violations(title: Any, keyphrase: Any = "") -> list[str]:
     if not cleaned:
         return ["empty_title"]
 
-    length = len(cleaned)
-    if length < TITLE_MIN_CHARS:
-        reasons.append(f"too_short:{length}")
-    elif length > title_max_chars(keyphrase):
-        reasons.append(f"too_long:{length}")
+    width = title_width(cleaned)
+    low, high = title_range(cleaned, keyphrase)
+    if width < low:
+        reasons.append(f"too_short:{width}")
+    elif width > high:
+        reasons.append(f"too_long:{width}")
 
     if keyphrase and not contains_keyphrase(cleaned, keyphrase):
         reasons.append("missing_focus_keyphrase")
@@ -382,7 +464,7 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
     """Drop trailing words until the title fits, never cutting the keyphrase; with
     ``tidy_end``, never stop on a dangling word either."""
     words = title.split()
-    max_chars = title_max_chars(keyphrase)
+    max_width = title_range(title, keyphrase)[1]
 
     def first(count: int) -> str:
         return " ".join(words[:count]).rstrip(_TRAILING_PUNCTUATION)
@@ -392,7 +474,7 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
         return not keyphrase or contains_keyphrase(first(count), keyphrase)
 
     kept = len(words)
-    while kept > 1 and len(first(kept)) > max_chars and can_cut_to(kept - 1):
+    while kept > 1 and title_width(first(kept)) > max_width and can_cut_to(kept - 1):
         kept -= 1
     if tidy_end and kept < len(words):
         # A trim that stopped after "in", "for" or "the" drops it too; the minimum, if it is
@@ -402,18 +484,38 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
     return first(kept)
 
 
-def _pad_to_min(title: str, max_chars: int = TITLE_MAX_CHARS) -> str:
+def _local_language(title: str) -> Optional[str]:
+    """The language of a title in a script with a range of its own, for its qualifiers."""
+    family = _title_family(title)
+    if family == "thai":
+        return "th"
+    if family != "cjk":
+        return None
+    if _KANA_RE.search(title):
+        return "ja"
+    if _HANGUL_RE.search(title):
+        return "ko"
+    traditional = sum(char in _TRADITIONAL_ONLY for char in title)
+    return "zh-Hant" if traditional > sum(char in _SIMPLIFIED_ONLY for char in title) else "zh-Hans"
+
+
+def _pad_to_min(title: str, keyphrase: str = "") -> str:
     """Lift a too-short title into range with claim-free qualifiers.
 
     One suffix first; a very short title (~20 chars) cannot reach the minimum
-    with a single suffix, so a neutral lead-in is then combined with one.
+    with a single suffix, so a neutral lead-in is then combined with one. A
+    Chinese, Japanese, Korean or Thai title gets one qualifier in its own
+    language, or none.
     """
-    base = title.rstrip(" ,;:-–—")
-    for prefix in _NEUTRAL_PREFIXES:
-        for suffix in _NEUTRAL_SUFFIXES:
-            candidate = f"{prefix}{base}{suffix}"
-            if TITLE_MIN_CHARS <= len(candidate) <= max_chars:
-                return candidate
+    base = title.rstrip(" ,;:-–—：")
+    low, high = title_range(title, keyphrase)
+    language = _local_language(title)
+    prefixes, suffixes = (
+        _LOCAL_PADDING[language] if language else (_NEUTRAL_PREFIXES, _NEUTRAL_SUFFIXES)
+    )
+    for candidate in (f"{prefix}{base}{suffix}" for prefix in prefixes for suffix in suffixes):
+        if low <= title_width(candidate) <= high:
+            return candidate
     return title
 
 
@@ -436,12 +538,14 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
         # Capitalized for display only; matching is case-insensitive, so the
         # title still contains the user's exact phrase.
         lead = " ".join(_capitalized(word) for word in keyphrase.split())
-        cleaned = f"{lead}: {cleaned}" if cleaned else lead
+        separator = "：" if _title_family(f"{lead}{cleaned}") == "cjk" else ": "
+        cleaned = f"{lead}{separator}{cleaned}" if cleaned else lead
 
-    if len(cleaned) > title_max_chars(keyphrase):
+    low, high = title_range(cleaned, keyphrase)
+    if title_width(cleaned) > high:
         tidy = _trim_to_max(cleaned, keyphrase)
-        if len(tidy) < TITLE_MIN_CHARS:
-            tidy = _pad_to_min(tidy, title_max_chars(keyphrase))
+        if title_width(tidy) < low:
+            tidy = _pad_to_min(tidy, keyphrase)
         # The tidy ending, when it still makes a valid title; otherwise the plain trim, so a
         # title is never lost for the sake of its last word.
         cleaned = (
@@ -450,8 +554,8 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
             else _trim_to_max(cleaned, keyphrase, tidy_end=False)
         )
 
-    if len(cleaned) < TITLE_MIN_CHARS:
-        cleaned = _pad_to_min(cleaned, title_max_chars(keyphrase))
+    if title_width(cleaned) < title_range(cleaned, keyphrase)[0]:
+        cleaned = _pad_to_min(cleaned, keyphrase)
 
     return cleaned if title_is_valid(cleaned, keyphrase) else None
 

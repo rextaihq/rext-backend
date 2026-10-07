@@ -132,7 +132,7 @@ def test_a_keyphrase_is_measured_in_characters_however_it_was_typed():
 def test_a_keyword_in_another_script_fits_a_title():
     assert keyphrase_fits_a_title("项目管理软件")
     assert keyphrase_fits_a_title("برامج إدارة المشاريع")
-    assert title_max_chars("项目管理软件") == 59
+    assert title_max_chars("项目管理软件") == 60  # in width: 30 Chinese characters (G69c)
 
 
 def test_a_title_in_another_script_can_be_valid():
