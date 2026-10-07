@@ -380,3 +380,79 @@ def test_production_counts_a_newer_commit_that_contains_this_one() -> None:
     run = _wait_step("production.yaml")["run"]
     assert 'compare/$EXPECTED...$RUNNING" --jq .status' in run
     assert '= "ahead" ]' in run
+
+
+# --- one deploy per merge window (G97, revnix/rext-control#777) -------------------------
+
+# The start of a half hour (00:00:00 UTC on 2026-10-08): the windows are its first ten minutes.
+HALF_HOUR = 1_791_417_600
+
+
+def _window_step() -> dict:
+    (step,) = _jobs("production.yaml")["window"]["steps"]
+    return step
+
+
+def _waited(tmp_path: Path, now: int) -> list[str]:
+    """The window step run by bash at `now` (epoch seconds): the seconds it slept, if it did."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    slept = tmp_path / "slept"
+    for name, body in (("date", f"echo {now}"), ("sleep", f'echo "$1" >> "{slept}"')):
+        stub = bin_dir / name
+        stub.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        stub.chmod(0o755)
+    subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", _window_step()["run"]],
+        env={"PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        check=True,
+        capture_output=True,
+    )
+    return slept.read_text(encoding="utf-8").split() if slept.exists() else []
+
+
+def test_the_half_hour_the_window_tests_start_from_is_one() -> None:
+    assert HALF_HOUR % 1800 == 0
+
+
+@pytest.mark.parametrize(
+    ("into", "slept"),
+    [
+        # Inside a window (minutes 00-09 and 30-39): until its end, and 20 seconds more.
+        (0, ["620"]),
+        (61, ["559"]),
+        (599, ["21"]),
+        (1800, ["620"]),
+        (1800 + 8 * 60, ["140"]),
+        # Outside one: an urgent fix deploys at once.
+        (600, []),
+        (601, []),
+        (15 * 60, []),
+        (1799, []),
+        (1800 + 600, []),
+    ],
+)
+def test_a_run_started_inside_a_merge_window_waits_for_its_end(
+    tmp_path: Path, into: int, slept: list[str]
+) -> None:
+    assert _waited(tmp_path, HALF_HOUR + into) == slept
+
+
+def test_only_a_push_waits_for_the_window() -> None:
+    # A manual run is asked for now: it never waits.
+    assert _window_step()["if"] == "github.event_name == 'push'"
+
+
+@pytest.mark.parametrize("job", ["docker_job", "docker_shopify"])
+def test_the_stale_check_comes_after_the_window(job: str) -> None:
+    # The wait is a job of its own, so the stale check (each publisher's first step)
+    # reads main once the window has closed, and one run deploys all its merges.
+    jobs = _jobs("production.yaml")
+    assert set(jobs[job]["needs"]) == {"quality", "window"}
+    assert jobs[job]["steps"][0]["name"] == "Refuse a stale run"
+
+
+def test_the_quality_gate_runs_during_the_wait() -> None:
+    jobs = _jobs("production.yaml")
+    assert "needs" not in jobs["quality"]
+    assert "needs" not in jobs["window"]
