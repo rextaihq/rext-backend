@@ -540,6 +540,10 @@ class _FakeRedis:
     async def zadd(self, key, mapping):
         self.sets.setdefault(key, {}).update(mapping)
 
+    async def zrem(self, key, *members):
+        for member in members:
+            self.sets.get(key, {}).pop(member, None)
+
     async def expire(self, key, seconds):
         return True
 
@@ -564,3 +568,52 @@ async def test_with_redis_the_admissions_hold_across_processes(role, monkeypatch
     assert exc.value.status_code == 429
     assert set(redis.sets[f"run_admission:recent:{USER}"]) == {"t-a", "t-b"}
     assert f"run_admission:lock:{USER}" not in redis.values  # the lock is released
+
+
+def _with_redis(monkeypatch):
+    from src.api.security import run_admission
+
+    redis = _FakeRedis()
+    monkeypatch.setattr(run_admission.cache, "_enabled", True)
+    monkeypatch.setattr(run_admission.cache, "redis", redis)
+    return redis
+
+
+async def _start(thread_id):
+    try:
+        await langgraph_auth.runs_need_content_create(
+            _ctx("threads", "create_run"), _new_run(thread_id)
+        )
+        return "admitted"
+    except Auth.exceptions.HTTPException as exc:
+        return exc.status_code
+
+
+async def test_a_lock_held_by_another_start_refuses_rather_than_admitting_in_process(
+    role, monkeypatch
+):
+    from src.api.security import run_admission
+
+    redis = _with_redis(monkeypatch)
+    monkeypatch.setattr(run_admission, "_LOCK_WAIT_S", 0.1)
+    redis.values[f"run_admission:lock:{USER}"] = "another start"
+    _busy(monkeypatch, [])
+
+    assert await _start("t-a") == 429
+    assert run_admission._local_admitted == {}  # the in-process path never ran
+
+
+@pytest.mark.parametrize("redis", [False, True], ids=["in process", "redis"])
+async def test_runs_that_ended_stop_counting(role, monkeypatch, redis):
+    # Two runs are admitted, then seen in flight, then end: a new run is admitted at once,
+    # not only once the admission window has passed.
+    if redis:
+        _with_redis(monkeypatch)
+    _busy(monkeypatch, [])
+    assert [await _start("t-a"), await _start("t-b")] == ["admitted", "admitted"]
+
+    _busy(monkeypatch, ["t-a", "t-b"])
+    assert await _start("t-c") == 429
+
+    _busy(monkeypatch, [])
+    assert await _start("t-c") == "admitted"

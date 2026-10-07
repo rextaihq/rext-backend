@@ -194,3 +194,64 @@ def test_the_graphs_end_the_run_where_a_charge_is_refused():
     assert ("__start__", "begin_run") in rext_edges
     assert ("begin_run", "credit_check_failed") in rext_edges
     assert ("seo_engine", "insufficient_credits") in rext_edges
+
+
+def test_the_keyword_gate_ends_a_run_whose_serp_charge_was_refused():
+    # A re-analysis whose earlier pass was paid: this pass's refused SERP charge still ends it.
+    state = {
+        "seo_result": {
+            "serp_backlinks": {"volume_status": "insufficient_credits"},
+            "keyword_recommendations": {"is_changed": True, "titles_unpaid": False},
+        }
+    }
+    assert keyword_router(state) == "INSUFFICIENT"
+    paid = {"seo_result": {"serp_backlinks": {"volume_status": "ok"}}}
+    assert keyword_router(paid) == "END"
+
+
+def test_a_refused_serp_charge_saves_nothing_and_opens_no_gate():
+    from src.flow.engines.seo.seo_engine import create_seo_engine
+
+    edges = {(e.source, e.target) for e in create_seo_engine().get_graph().edges}
+    assert ("fetch_dataforseo_backlinks", "__end__") in edges
+    assert ("fetch_dataforseo_backlinks", "save_keyword_research") in edges
+
+
+@pytest.mark.parametrize(
+    ("state", "blocked_at"),
+    [
+        ({}, "library_router credit gate"),
+        (
+            {"seo_result": {"serp_backlinks": {"volume_status": "insufficient_credits"}}},
+            "serp_seo charge",
+        ),
+        (
+            {"seo_result": {"keyword_recommendations": {"titles_unpaid": True}}},
+            "title_generation charge",
+        ),
+        (
+            {
+                "serp_payload": {"is_library": True},
+                "content": {"error_code": "insufficient_credits"},
+            },
+            "library start charges",
+        ),
+    ],
+    ids=["start gate", "serp charge", "title charge", "library charges"],
+)
+async def test_the_out_of_credits_record_names_where_the_run_stopped(
+    monkeypatch, state, blocked_at
+):
+    from src.flow.engines.rext import _insufficient_credits
+    from src.services.monitoring_service import MonitoringService
+
+    recorded = []
+
+    async def persist_error_log(**kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(MonitoringService, "persist_error_log", persist_error_log)
+
+    await _insufficient_credits(state)
+
+    assert recorded[0]["metadata"]["blocked_at"] == blocked_at
