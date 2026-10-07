@@ -95,9 +95,14 @@ async def test_a_keyword_without_kept_results_is_removed(library, allow_permissi
 
 
 @pytest.mark.asyncio
-async def test_another_users_keyword_is_not_found_and_stays(library, allow_permissions):
+async def test_another_members_keyword_is_not_found_and_stays(library, allow_permissions):
+    # The caller and OTHER are both members of the workspace with content.read: the
+    # namespace is the token's user's own, so OTHER's item and its kept results stay.
     store, remove = library
-    theirs = {(("library", OTHER, WORKSPACE), KEY): {"value": {}}}
+    theirs = {
+        (("library", OTHER, WORKSPACE), KEY): {"value": {}},
+        (("library_research", OTHER, WORKSPACE), KEY): {"value": {"serp": []}},
+    }
     store.items = dict(theirs)
 
     response = await remove()

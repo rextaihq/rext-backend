@@ -4,7 +4,9 @@ The library lives in the LangGraph store under ``("library", <user id>, <workspa
 the graph writes it in-process, and the dashboard reads it through the store's HTTP route,
 which `own_keyword_library` (src/api/security/auth.py) keeps to reads of the caller's own
 namespace. Deleting is this route's: the namespace comes from the token and the workspace,
-never from the request, so a user can only remove their own items.
+never from the request, so a user can only remove their own items. That is why the right
+to read the workspace's content is enough here: if the library ever becomes shared per
+workspace, deleting needs the content delete permission instead.
 """
 
 from fastapi import APIRouter, Depends, Query, Request
