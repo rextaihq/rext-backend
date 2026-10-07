@@ -56,6 +56,45 @@ async def test_the_recorded_titles_write_the_keyphrase_in_their_case():
         assert title_is_valid(topic.title, KEYPHRASE)
 
 
+@pytest.mark.asyncio
+async def test_the_article_before_a_recased_keyphrase_follows_its_new_case():
+    """The model copies "seo" in lowercase and writes "a" or "an" before it: the keyphrase is
+    recased first, so the article is judged by "SEO" (G49 with G65)."""
+    model = AsyncMock()
+    model.ainvoke.return_value = SEOTopics(
+        topics=[
+            SEOTopic(title="How to Choose a seo agency for small business Today", recommended=True),
+            SEOTopic(title="Why Hiring an seo agency for small business Pays Off"),
+        ]
+    )
+
+    result = await tg._generate_and_validate_topics(
+        model=model, messages=[], query=KEYPHRASE, keyphrase=KEYPHRASE
+    )
+
+    assert [topic.title for topic in result.topics] == [
+        "How to Choose an SEO Agency for Small Business Today",
+        "Why Hiring an SEO Agency for Small Business Pays Off",
+    ]
+
+
+def test_the_last_article_pass_keeps_a_title_valid():
+    """After the last recasing the article is put right only where the title stays within its
+    limits: nothing checks the titles after that."""
+    at_the_limit = "Why Every Local Store Needs a SEO Agency for Small Business"
+    assert title_is_valid(at_the_limit, KEYPHRASE)
+    assert not title_is_valid(at_the_limit.replace(" a SEO", " an SEO"), KEYPHRASE)
+    roomy = "How to Hire a SEO Agency for Small Business in 2026"
+    topics = SEOTopics(topics=[SEOTopic(title=at_the_limit), SEOTopic(title=roomy)])
+
+    tg._fix_articles_keeping_valid(topics, KEYPHRASE)
+
+    assert [topic.title for topic in topics.topics] == [
+        at_the_limit,
+        "How to Hire an SEO Agency for Small Business in 2026",
+    ]
+
+
 def test_a_sentence_case_title_changes_only_acronyms_names_and_its_opening():
     assert recase_keyphrase("Why every seo agency for small business needs a plan", KEYPHRASE) == (
         "Why every SEO agency for small business needs a plan"
