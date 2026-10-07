@@ -40,7 +40,11 @@ from src.api.middleware.security import SecurityHeadersMiddleware
 from src.config.payment_config import payment_settings
 from src.config.storage_config import storage_settings
 from src.tasks.scheduled_tasks import shutdown_scheduled_tasks, start_scheduled_tasks
-from src.utils.ip_allowlist import proxy_trust_is_spoofable, resolve_trusted_proxy_hosts
+from src.utils.ip_allowlist import (
+    DirectPeerMiddleware,
+    proxy_trust_is_spoofable,
+    resolve_trusted_proxy_hosts,
+)
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.storage import storage_service
@@ -109,6 +113,12 @@ async def lifespan(app):
         logger.info("✅ Redis cache connected")
     else:
         logger.error("❌ Redis cache not connected — running with caching disabled")
+
+    # --- The free tools' bot check (G87) ---
+    if settings.TURNSTILE_SECRET_KEY:
+        logger.info("✅ Free tools: Cloudflare Turnstile tokens are verified")
+    else:
+        logger.info("Free tools: TURNSTILE_SECRET_KEY is unset, so their bot check is skipped")
 
     # --- Validate production configuration ---
     if settings.ENVIRONMENT == "production":
@@ -297,11 +307,16 @@ app.add_middleware(
 # per-IP budget. It never ends a request early, so CORS stays outermost.
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
 
+# Added after (so it runs before) ProxyHeadersMiddleware: it keeps the connection's
+# own peer, which the rate limiters key on under a catch-all TRUSTED_PROXY_IPS.
+app.add_middleware(DirectPeerMiddleware)
+
 # CORS middleware (MUST be added last = outermost, so it handles preflight
 # OPTIONS requests before any other middleware can intercept them)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
+    allow_origin_regex=settings.allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=settings.cors_allowed_headers_list,

@@ -65,20 +65,6 @@ tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_skip_
 tests/services/test_data_retention.py::TestWebhookEventCleanup::test_cleanup_old_processed_webhook_events  # G44.13 #504: the data cleanup's own bug
 tests/services/test_data_retention.py::test_anonymize_subscriptions_uses_config_default  # G44.13 #504: the data cleanup's own bug
 tests/services/test_data_retention.py::test_cleanup_webhook_events_uses_config_default  # G44.13 #504: the data cleanup's own bug
-tests/unit/api/tool/test_new_tools.py::test_content_outline_generator
-tests/unit/api/tool/test_new_tools.py::test_headline_analyzer
-tests/unit/api/tool/test_new_tools.py::test_hreflang_duplicate_warning
-tests/unit/api/tool/test_new_tools.py::test_hreflang_generator
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[expand]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[improve clarity]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[make professional]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[more engaging]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[shorten]
-tests/unit/api/tool/test_new_tools.py::test_paragraph_rewriter_all_goals[simplify]
-tests/unit/api/tool/test_tool_routes.py::test_content_idea_generator_route
-tests/unit/api/tool/test_tool_routes.py::test_hook_generator_route
-tests/unit/api/tool/test_tool_routes.py::test_question_generator_route
-tests/unit/api/tool/test_tool_routes.py::test_seo_blog_titles_route
 tests/unit/flow/test_subheading_and_meta_seo.py::test_long_meta_description_drops_a_whole_sentence_and_keeps_the_cta
 tests/unit/flow/test_subheading_and_meta_seo.py::test_meta_description_within_limit_passes_and_is_untouched[155]
 tests/unit/flow/test_subheading_and_meta_seo.py::test_schema_and_system_prompt_state_the_156_limit
@@ -121,9 +107,6 @@ tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_wor
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_email_preferences_allow
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_email_with_preferences_check
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_invitation_success
-tests/unit/services/test_email_preferences_service.py::TestCheckCanSend::test_cannot_send_when_a_category_is_turned_off  # G61 #523: the service ignores the category (JSONB) keys
-tests/unit/services/test_email_preferences_service.py::TestUnsubscribe::test_unsubscribe_from_specific_types  # G61 #523: the service ignores the category (JSONB) keys
-tests/unit/services/test_email_preferences_service.py::TestUpdatePreferences::test_update_multiple_preferences  # G61 #523: the service ignores the category (JSONB) keys
 tests/unit/services/test_email_service.py::TestEmailServiceRetryFailedEmail::test_retry_failed_email_success
 tests/unit/services/test_email_service.py::TestEmailServiceSendEmail::test_send_email_provider_failure_with_fallback
 tests/unit/services/test_email_service.py::TestEmailServiceSendEmail::test_send_email_success

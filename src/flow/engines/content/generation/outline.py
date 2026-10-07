@@ -8,12 +8,13 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.model.llm_manager import load_model
+from src.flow.model.provider_outage import provider_outage
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
     normalize_content_type,
 )
-from src.flow.prompts.human.outline import get_outline_prompt
+from src.flow.prompts.human.outline import get_outline_prompt, outline_subsection_rule
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import (
     build_cluster_heading_map,
@@ -295,6 +296,106 @@ async def _fetch_known_entities(workspace_id) -> tuple[str, list]:
         return "", []
 
 
+# The workspace's reader and offer, as the outline prompt shows them (FB2.17,
+# revnix/rext-control#698): enough to steer the plan, never the whole profile.
+_PROFILE_TEXT_CHARS = 500
+_PROFILE_ITEM_CHARS = 120
+_PROFILE_LIST_ITEMS = 6
+
+
+def _profile_text(value, limit: int = _PROFILE_TEXT_CHARS) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _profile_list(value) -> list[str]:
+    """A profile list (strings, or objects such as {"name": …, "description": …}) as short lines."""
+    items: list[str] = []
+    for item in value if isinstance(value, list) else []:
+        if isinstance(item, dict):
+            item = " — ".join(str(v) for v in item.values() if isinstance(v, str) and v.strip())
+        text = _profile_text(item, _PROFILE_ITEM_CHARS)
+        if text:
+            items.append(text)
+    return items[:_PROFILE_LIST_ITEMS]
+
+
+async def _fetch_workspace_profile(workspace_id) -> dict:
+    """Who this workspace writes for and what it offers, from its brand voice profile: the
+    customer profile, target audience, about, selling position and content pillars.
+
+    The outline used only the brand name and the competitors from it, so plans were written for
+    a generic reader. Non-fatal: an empty profile leaves the outline as it was.
+    """
+    if not workspace_id:
+        return {}
+    try:
+        from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.knowledge_models.knowledge_model import BrandVoice
+        from src.utils.loop_bridge import run_on_main_loop
+
+        async def _fetch_row():
+            async with get_pooled_langgraph_db_context() as db:
+                result = await db.execute(
+                    sa_select(
+                        BrandVoice.customer_profile,
+                        BrandVoice.target_audience,
+                        BrandVoice.about,
+                        BrandVoice.selling_position,
+                        BrandVoice.content_pillar,
+                    ).where(BrandVoice.workspace_id == UUID(str(workspace_id)))
+                )
+                return result.first()
+
+        row = await run_on_main_loop(_fetch_row())
+        if row is None:
+            return {}
+        customer_profile, target_audience, about, selling_position, content_pillar = row
+        return {
+            "customer_profile": _profile_text(customer_profile),
+            "target_audience": _profile_list(target_audience),
+            "about": _profile_text(about),
+            "selling_position": _profile_text(selling_position),
+            "content_pillars": _profile_list(content_pillar),
+        }
+    except Exception as e:
+        logger.warning(f"[WorkspaceProfile] Fetch failed (non-fatal): {e}")
+        return {}
+
+
+def _format_reader_and_offer(profile: dict) -> str:
+    """The workspace's reader and offer, as the outline prompt reads them."""
+    profile = profile or {}
+    reader = [
+        f"- Customer profile: {profile['customer_profile']}"
+        if profile.get("customer_profile")
+        else "",
+        f"- Audiences: {'; '.join(profile['target_audience'])}"
+        if profile.get("target_audience")
+        else "",
+    ]
+    offer = [
+        f"- About: {profile['about']}" if profile.get("about") else "",
+        f"- What it offers: {profile['selling_position']}"
+        if profile.get("selling_position")
+        else "",
+        f"- Content pillars: {'; '.join(profile['content_pillars'])}"
+        if profile.get("content_pillars")
+        else "",
+    ]
+    reader, offer = [line for line in reader if line], [line for line in offer if line]
+    if not reader and not offer:
+        return "None available."
+    blocks = []
+    if reader:
+        blocks.append("WHO THIS IS FOR:\n" + "\n".join(reader))
+    if offer:
+        blocks.append("WHAT THE BRAND OFFERS:\n" + "\n".join(offer))
+    return "\n".join(blocks)
+
+
 async def _fetch_internal_links(outline: dict, workspace_id) -> list:
     """Return semantically related published content links for this outline."""
     if not workspace_id or not outline:
@@ -524,8 +625,11 @@ async def generate_outline(state: REXT) -> dict:
 
         # Real named entities, resolved BEFORE generation so comparison-style
         # outlines name actual products instead of inventing stand-ins.
-        known_brand_name, known_competitor_domains = await _fetch_known_entities(workspace_id)
+        (known_brand_name, known_competitor_domains), workspace_profile = await asyncio.gather(
+            _fetch_known_entities(workspace_id), _fetch_workspace_profile(workspace_id)
+        )
         known_entities = _format_known_entities(known_brand_name, known_competitor_domains)
+        reader_and_offer = _format_reader_and_offer(workspace_profile)
         logger.info(
             "[KnownEntities] brand=%r competitors=%d for content_type=%s",
             known_brand_name,
@@ -540,9 +644,13 @@ async def generate_outline(state: REXT) -> dict:
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
             known_entities=known_entities,
+            reader_and_offer=reader_and_offer,
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
             cluster_heading_map=cluster_heading_map_context,
+            subsection_rule=outline_subsection_rule(
+                content_type, content_type_raw, outline_rejected_reason
+            ),
             rejected_reason=outline_rejected_reason,
             previous_outline=outline_state,
         )
@@ -627,7 +735,10 @@ async def generate_outline(state: REXT) -> dict:
             }
         }
 
-    except Exception:
+    except Exception as e:
+        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1).
+        if provider_outage(e) is not None:
+            raise
         logger.exception("Error generating outline")
         return {
             "content": {
