@@ -209,6 +209,20 @@ class TestUpdatePreferences:
         assert "invalid_field" not in (sample_preferences.category_preferences or {})
         mock_db.flush.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_update_ignores_a_null(self, mock_db, sample_user_id, sample_preferences):
+        """A null is no change: stored in the JSONB it would read as an opt-out."""
+        _returns(mock_db, sample_preferences)
+
+        service = EmailPreferencesService(mock_db)
+        await service.update_preferences(
+            sample_user_id, {"payment_succeeded": None, "marketing": None}
+        )
+
+        assert None not in (sample_preferences.category_preferences or {}).values()
+        assert await service.check_can_send(sample_user_id, "payment_succeeded") is True
+        assert sample_preferences.marketing_updates is False
+
 
 class TestUnsubscribe:
     """Tests for unsubscribe method."""
