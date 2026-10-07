@@ -392,6 +392,45 @@ def admin_credit_summary(grants: Sequence[CreditGrant]) -> Optional[Dict[str, An
     }
 
 
+# --- an admin's changes to the period's monthly credits ----------------------
+#
+# "Credits used this period" is never stored: it is read as granted - balance -
+# (credits a refund cut). An admin who deducts from or resets the monthly
+# credits changes the balance without any credit being used, so the sum of
+# those changes is kept on the subscription for the period it was made in, and
+# the readings add it back (refund_request_service, reconcile_partial_refund_credits).
+
+ADMIN_CREDIT_ADJUSTMENT = "admin_credit_adjustment"
+
+
+def _period_key(subscription: Any) -> Optional[str]:
+    reset_date = subscription.credits_reset_date
+    return as_utc(reset_date).isoformat() if reset_date is not None else None
+
+
+def period_admin_adjustment(subscription: Any) -> int:
+    """What admins changed the period's monthly credits by (negative for a deduction),
+    or 0 when the recorded change belongs to an earlier period."""
+    recorded = (subscription.subscription_metadata or {}).get(ADMIN_CREDIT_ADJUSTMENT)
+    if not recorded or recorded.get("period") != _period_key(subscription):
+        return 0
+    return int(recorded.get("delta") or 0)
+
+
+def record_period_admin_adjustment(subscription: Any, delta: int) -> None:
+    """Add ``delta`` to the period's admin adjustment; a new period starts from 0.
+
+    The metadata is reassigned rather than mutated: SQLAlchemy does not track
+    in-place changes to a plain JSONB column.
+    """
+    meta = {**(subscription.subscription_metadata or {})}
+    meta[ADMIN_CREDIT_ADJUSTMENT] = {
+        "period": _period_key(subscription),
+        "delta": period_admin_adjustment(subscription) + delta,
+    }
+    subscription.subscription_metadata = meta
+
+
 async def active_promotion(db: AsyncSession, now: Optional[datetime] = None) -> Optional[Promotion]:
     """The promotion a subscription started now would receive (for GET /api/v1/plans):
     one for every plan and period, inside its window, with redemptions left."""

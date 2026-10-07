@@ -33,6 +33,12 @@ from sqlalchemy.sql import func
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
+# What a super admin may add or deduct at once, and the reason's length; the
+# reason is shown to the customer (src/services/admin_credits.py).
+ADMIN_CREDIT_MAX_AMOUNT = 100_000
+ADMIN_CREDIT_REASON_MIN_LENGTH = 3
+ADMIN_CREDIT_REASON_MAX_LENGTH = 500
+
 
 class CreditGrant(Base, SerializableMixin):
     __tablename__ = "credit_grants"
