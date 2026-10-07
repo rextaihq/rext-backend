@@ -22,6 +22,34 @@ from src.providers.email.mock_provider import MockEmailProvider
 from src.services.email_service import EmailService
 
 
+def _configure(mock_config, *, retry=True):
+    """Email on, with retries that don't wait."""
+    mock_config.email_enabled = True
+    mock_config.resend_from_email = "noreply@rext.com"
+    mock_config.resend_from_name = "Rext AI"
+    mock_config.email_retry_enabled = retry
+    mock_config.email_retry_max_attempts = 2
+    mock_config.email_retry_delay_seconds = 0
+
+
+def _db():
+    """A session stand-in. A log it's given gets the column's retry_count default, as the flush
+    that follows does on a real session."""
+    db = AsyncMock()
+    db.add = MagicMock(side_effect=lambda row: setattr(row, "retry_count", row.retry_count or 0))
+    return db
+
+
+@pytest.fixture(autouse=True)
+def no_outage_report():
+    """A provider outage is reported to the admin dashboard's store; not from these tests."""
+    with patch(
+        "src.services.monitoring_service.MonitoringService.report_third_party_failure",
+        AsyncMock(),
+    ) as report:
+        yield report
+
+
 class TestEmailServiceInitialization:
     """Test EmailService initialization"""
 
@@ -30,7 +58,7 @@ class TestEmailServiceInitialization:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_initialization(self, mock_get_fallback, mock_get_provider):
         """Should initialize with primary and fallback providers"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_primary = MockEmailProvider()
         mock_fallback = MockEmailProvider()
 
@@ -48,7 +76,7 @@ class TestEmailServiceInitialization:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_initialization_no_fallback(self, mock_get_fallback, mock_get_provider):
         """Should initialize without fallback provider"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_primary = MockEmailProvider()
 
         mock_get_provider.return_value = mock_primary
@@ -70,14 +98,12 @@ class TestEmailServiceSendEmail:
     async def test_send_email_success(self, mock_get_fallback, mock_get_provider, mock_config):
         """Should send email successfully and log to database"""
         # Setup
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
 
-        mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "Rext AI"
+        _configure(mock_config)
 
         service = EmailService(mock_db)
 
@@ -99,11 +125,10 @@ class TestEmailServiceSendEmail:
         assert email_log.provider == "mock"
         assert email_log.provider_message_id is not None
 
-        # Verify database operations
+        # The log is added once and flushed; committing is the caller's (Task 074)
         mock_db.add.assert_called_once()
-        mock_db.flush.assert_called_once()
-        mock_db.commit.assert_called_once()
-        # Note: refresh() removed to fix transaction issues in integration tests
+        mock_db.flush.assert_awaited()
+        mock_db.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("src.services.email_service.email_config")
@@ -111,14 +136,12 @@ class TestEmailServiceSendEmail:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_with_cc_bcc(self, mock_get_fallback, mock_get_provider, mock_config):
         """Should handle CC and BCC recipients"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
 
-        mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "Rext AI"
+        _configure(mock_config)
 
         service = EmailService(mock_db)
 
@@ -143,7 +166,7 @@ class TestEmailServiceSendEmail:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_disabled(self, mock_get_fallback, mock_get_provider, mock_config):
         """Should raise exception when email sending is disabled"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
@@ -163,7 +186,7 @@ class TestEmailServiceSendEmail:
         self, mock_get_fallback, mock_get_provider, mock_config
     ):
         """Should use fallback provider when primary fails"""
-        mock_db = AsyncMock()
+        mock_db = _db()
 
         # Primary provider that fails
         mock_primary = MockEmailProvider(simulate_failures=True, failure_rate=1.0)
@@ -174,9 +197,7 @@ class TestEmailServiceSendEmail:
         mock_get_provider.return_value = mock_primary
         mock_get_fallback.return_value = mock_fallback
 
-        mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "Rext AI"
+        _configure(mock_config)
 
         service = EmailService(mock_db)
 
@@ -200,7 +221,7 @@ class TestEmailServiceSendEmail:
         self, mock_get_fallback, mock_get_provider, mock_config
     ):
         """Should not retry when retry_on_failure=False"""
-        mock_db = AsyncMock()
+        mock_db = _db()
 
         # Primary provider that fails
         mock_primary = MockEmailProvider(simulate_failures=True, failure_rate=1.0)
@@ -209,9 +230,7 @@ class TestEmailServiceSendEmail:
         mock_get_provider.return_value = mock_primary
         mock_get_fallback.return_value = mock_fallback
 
-        mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "Rext AI"
+        _configure(mock_config)
 
         service = EmailService(mock_db)
 
@@ -237,7 +256,7 @@ class TestEmailServiceSendEmail:
         self, mock_get_fallback, mock_get_provider, mock_config
     ):
         """Should log failure when both providers fail"""
-        mock_db = AsyncMock()
+        mock_db = _db()
 
         # Both providers fail
         mock_primary = MockEmailProvider(simulate_failures=True, failure_rate=1.0)
@@ -246,9 +265,7 @@ class TestEmailServiceSendEmail:
         mock_get_provider.return_value = mock_primary
         mock_get_fallback.return_value = mock_fallback
 
-        mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "Rext AI"
+        _configure(mock_config)
 
         service = EmailService(mock_db)
 
@@ -271,7 +288,7 @@ class TestEmailServiceQueryMethods:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_email_log(self, mock_get_fallback, mock_get_provider):
         """Should retrieve email log by ID"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
@@ -302,7 +319,7 @@ class TestEmailServiceQueryMethods:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_email_log_not_found(self, mock_get_fallback, mock_get_provider):
         """Should return None when email log not found"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
@@ -321,7 +338,7 @@ class TestEmailServiceQueryMethods:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_emails_for_user(self, mock_get_fallback, mock_get_provider):
         """Should retrieve emails for specific user"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
@@ -363,7 +380,7 @@ class TestEmailServiceQueryMethods:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_emails_for_workspace(self, mock_get_fallback, mock_get_provider):
         """Should retrieve emails for specific workspace"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
@@ -405,7 +422,7 @@ class TestEmailServiceQueryMethods:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_recent_failures(self, mock_get_fallback, mock_get_provider):
         """Should retrieve recent failed emails"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
@@ -453,14 +470,12 @@ class TestEmailServiceRetryFailedEmail:
         self, mock_get_fallback, mock_get_provider, mock_config
     ):
         """Should retry failed email successfully"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
 
-        mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "Rext AI"
+        _configure(mock_config)
 
         # Create a failed email log
         email_log_id = uuid4()
@@ -471,8 +486,10 @@ class TestEmailServiceRetryFailedEmail:
             status="failed",
             provider="mock",
             from_email="noreply@rext.com",
+            html_content="<p>Test</p>",  # stored at the first send, so it can be retried
             error_message="Previous failure",
             failed_at=datetime.now(timezone.utc),
+            retry_count=2,
         )
 
         # Mock get_email_log to return the failed log
@@ -497,7 +514,7 @@ class TestEmailServiceRetryFailedEmail:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_retry_failed_email_not_found(self, mock_get_fallback, mock_get_provider):
         """Should raise ValueError when email log not found"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None
@@ -513,7 +530,7 @@ class TestEmailServiceRetryFailedEmail:
     @patch("src.services.email_service.get_fallback_email_provider")
     async def test_retry_failed_email_wrong_status(self, mock_get_fallback, mock_get_provider):
         """Should raise ValueError when email log is not in failed status"""
-        mock_db = AsyncMock()
+        mock_db = _db()
         mock_provider = MockEmailProvider()
         mock_get_provider.return_value = mock_provider
         mock_get_fallback.return_value = None

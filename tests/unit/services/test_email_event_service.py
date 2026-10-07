@@ -460,11 +460,14 @@ class TestEmailEventServiceErrorHandling:
         mock_event_result = Mock()
         mock_event_result.scalar_one_or_none.return_value = None
 
-        # No email log found
+        # No email log found, by the provider's message id nor by the recipient's address
+        # (the lookup falls back to the address when the id finds nothing)
         mock_log_result = Mock()
         mock_log_result.scalar_one_or_none.return_value = None
+        mock_by_recipient = Mock()
+        mock_by_recipient.scalar_one_or_none.return_value = None
 
-        mock_db.execute.side_effect = [mock_event_result, mock_log_result]
+        mock_db.execute.side_effect = [mock_event_result, mock_log_result, mock_by_recipient]
 
         service = EmailEventService(mock_db)
 
