@@ -5,9 +5,10 @@ threads, each with its own connection, as two servers would. The migration itsel
 a stand-in there: a real upgrade would leave the schema in the test database.
 """
 
+import asyncio
 import threading
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -126,16 +127,21 @@ def test_a_database_short_of_the_head_after_migrating_stops_the_start():
 
 def test_an_older_image_starts_on_a_newer_database():
     # A rollback: the database is at a revision the image's scripts don't have.
-    assert (
-        migrate(URL, upgrade=lambda _c: Outcome("newer", "newer", "older", ahead=True)) == "newer"
-    )
+    outcome = migrate(URL, upgrade=lambda _c: Outcome("newer", "newer", "older", ahead=True))
+    assert outcome.ahead and outcome.before == "newer"
 
 
 @pytest.mark.asyncio
 async def test_the_start_migrates_off_the_event_loop():
     threads = []
-    with patch.object(
-        migrate_on_start, "migrate", side_effect=lambda: threads.append(threading.current_thread())
+
+    def migrate_here():
+        threads.append(threading.current_thread())
+        return Outcome("a", "b", "b")
+
+    with (
+        patch.object(migrate_on_start, "migrate", side_effect=migrate_here),
+        patch.object(migrate_on_start, "seed_a_new_database", AsyncMock()),
     ):
         await apply_pending_migrations()
 
@@ -272,8 +278,6 @@ def test_the_retired_revisions_are_none_of_the_live_ones():
 
 @pytest.mark.asyncio
 async def test_a_database_with_no_plan_is_seeded(monkeypatch):
-    from unittest.mock import AsyncMock
-
     from scripts.seeds import run_all
 
     seeds = AsyncMock()
@@ -286,8 +290,6 @@ async def test_a_database_with_no_plan_is_seeded(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_database_with_plans_is_never_seeded(monkeypatch):
-    from unittest.mock import AsyncMock
-
     from scripts.seeds import run_all
 
     seeds = AsyncMock()
@@ -300,23 +302,23 @@ async def test_a_database_with_plans_is_never_seeded(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_seed_that_fails_stops_the_start(monkeypatch):
-    from unittest.mock import AsyncMock
-
     from scripts.seeds import run_all
 
     monkeypatch.setattr(run_all, "run_all_seeds", AsyncMock(side_effect=RuntimeError("boom")))
     monkeypatch.setattr(migrate_on_start, "_has_no_plans", AsyncMock(return_value=True))
 
-    with pytest.raises(MigrationFailed, match="could not be seeded"):
+    with pytest.raises(MigrationFailed, match="seeds could not be applied: RuntimeError"):
         await migrate_on_start.seed_a_new_database()
 
 
 @pytest.mark.asyncio
 async def test_the_start_seeds_after_migrating(monkeypatch):
-    from unittest.mock import AsyncMock
-
     order = []
-    monkeypatch.setattr(migrate_on_start, "migrate", lambda: order.append("migrate") or "head")
+    monkeypatch.setattr(
+        migrate_on_start,
+        "migrate",
+        lambda: order.append("migrate") or Outcome("old", "head", "head"),
+    )
     monkeypatch.setattr(
         migrate_on_start,
         "seed_a_new_database",
@@ -325,3 +327,92 @@ async def test_the_start_seeds_after_migrating(monkeypatch):
 
     assert await apply_pending_migrations() == "head"
     assert order == ["migrate", "seed"]
+
+
+@pytest.mark.asyncio
+async def test_a_database_newer_than_the_image_is_never_seeded(monkeypatch):
+    seed = AsyncMock()
+    monkeypatch.setattr(migrate_on_start, "seed_a_new_database", seed)
+    monkeypatch.setattr(
+        migrate_on_start, "migrate", lambda: Outcome("newer", "newer", "head", ahead=True)
+    )
+
+    assert await apply_pending_migrations() == "newer"
+    seed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_seed_that_fails_keeps_what_the_earlier_seeds_wrote_nowhere(monkeypatch):
+    from scripts.seeds import base, run_all
+
+    async def seeds():
+        async with base.get_seed_session() as session:
+            await session.execute(text("CREATE TABLE g85_probe (x int)"))  # the plans' seed
+        async with base.get_seed_session():
+            raise RuntimeError("the super admin's seed")
+
+    monkeypatch.setattr(run_all, "run_all_seeds", seeds)
+    monkeypatch.setattr(migrate_on_start, "_has_no_plans", AsyncMock(return_value=True))
+
+    with pytest.raises(MigrationFailed, match="RuntimeError"):
+        await migrate_on_start.seed_a_new_database()
+
+    assert not _table_exists("g85_probe")  # so the next start finds no plan and seeds it all
+
+
+@pytest.mark.asyncio
+async def test_two_starts_seed_a_new_database_once(monkeypatch):
+    from scripts.seeds import run_all
+
+    seeded = []
+
+    async def seeds():
+        await asyncio.sleep(0.3)
+        seeded.append(True)
+
+    monkeypatch.setattr(run_all, "run_all_seeds", seeds)
+    monkeypatch.setattr(
+        migrate_on_start, "_has_no_plans", AsyncMock(side_effect=lambda _connection: not seeded)
+    )
+
+    results = await asyncio.gather(
+        migrate_on_start.seed_a_new_database(), migrate_on_start.seed_a_new_database()
+    )
+
+    assert sorted(results) == [False, True] and seeded == [True]
+
+
+@pytest.mark.asyncio
+async def test_the_start_seeds_on_the_apps_own_engine(monkeypatch):
+    from scripts.seeds import base, run_all
+    from src.api.database.async_database import async_engine
+
+    engines = []
+
+    async def seeds():
+        async with base.get_seed_session() as session:
+            engines.append((await session.connection()).engine.sync_engine)
+
+    monkeypatch.setattr(run_all, "run_all_seeds", seeds)
+    monkeypatch.setattr(migrate_on_start, "_has_no_plans", AsyncMock(return_value=True))
+
+    await migrate_on_start.seed_a_new_database()
+
+    # The app's engine: no statement cache, as PgBouncer's transaction mode needs.
+    assert engines == [async_engine.sync_engine]
+
+
+@pytest.mark.asyncio
+async def test_a_seed_run_by_hand_keeps_no_statement_cache(monkeypatch):
+    from scripts.seeds import base
+
+    made = []
+    real = base.create_async_engine
+    monkeypatch.setattr(
+        base, "create_async_engine", lambda url, **kw: made.append(kw) or real(url, **kw)
+    )
+
+    async with base.get_seed_session() as session:
+        assert (await session.execute(text("SELECT 1"))).scalar() == 1
+
+    assert made and made[0]["connect_args"] == {"statement_cache_size": 0}
