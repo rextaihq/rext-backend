@@ -142,6 +142,12 @@ def test_the_article_follows_the_next_words_sound(written, fixed):
         # An x word it doesn't know, and y before a consonant: the sound isn't clear.
         "A Xylophone Buying Guide for Parents and Music Teachers",
         "A Xhosa Language Guide for South African Travelers",
+        # "Unit" is "you-nit" only in its own words; "u" and a vowel or y may say "w".
+        "An Unitalicized Text Guide for Accessible Content Teams",
+        "A Uyghur Culture Guide for Global Content Creators Today",
+        "A Uighur Culture Guide for Global Content Creators Today",
+        # A leading zero is "oh" or "zero".
+        "An '08 Model Buying Guide for Used Car Shoppers Today",
         "An Yves Saint Laurent Bag Guide for First-Time Buyers",
         # A small letter, then a capital: said by the letter's name.
         "An mRNA Vaccine Guide for Curious Readers and Students",
@@ -202,6 +208,7 @@ def test_what_is_right_or_unsure_is_left_alone(title):
         "Strategie a Impatto nel Marketing Digitale in Italia",
         "Strategie a Impatto: Marketing Digitale in Italia",
         "Guide a Impatto: Marketing Digitale SEO Avanzato",
+        "Strategie a Impatto in Italia: Best Marketing Digitale",
     ],
 )
 def test_a_title_in_another_language_is_left_alone(title):
