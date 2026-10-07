@@ -233,6 +233,7 @@ async def test_an_unknown_user_is_not_found(session, call):
         {"action": "add", "reason": REASON},
         {"action": "add", "amount": 10, "reason": "  "},
         {"action": "add", "amount": 10, "reason": REASON, "expires_at": "2020-01-01T00:00:00Z"},
+        {"action": "add", "amount": True, "reason": REASON},  # not read as 1 credit
     ],
 )
 async def test_a_body_the_action_does_not_take_is_refused(session, call, body):

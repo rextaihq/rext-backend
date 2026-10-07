@@ -4,7 +4,9 @@ Credits a super admin adds to, deducts from or resets on a user's account
 
 Support's tool for compensation and corrections, outside what a plan or a
 payment gives. Every change is made on the user's current subscription, under
-the same row lock ``consume_credits`` takes:
+the same row lock ``consume_credits`` takes. What is added follows the user:
+when a later subscription replaces this one (a trial that subscribes), the
+credits are spent from the new one (``credit_grants._spendable_by``).
 
 - add: a grant of its own (``source = 'admin'``) with the admin's reason and,
   optionally, an expiry. Without one it lasts and is spent after the monthly
@@ -174,7 +176,7 @@ async def adjust_credits(
     # would at the next spend, so the change lands on the period it is meant for.
     replenish_if_due(subscription)
 
-    grants = await live_grants(db, subscription.id, now)
+    grants = await live_grants(db, subscription.id, now, lock=True)
     monthly_before = subscription.current_credits or 0
     balance_before = monthly_before + sum(g.remaining for g in grants)
     grant: Optional[CreditGrant] = None

@@ -126,6 +126,7 @@ class AuditLogger:
         status: str = "success",
         error_message: Optional[str] = None,
         db: Optional[AsyncSession] = None,
+        private_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Any]:
         """
         Log an audit event with structured data and optional DB persistence.
@@ -143,6 +144,8 @@ class AuditLogger:
             status: Status of the action (success, failed, partial)
             error_message: Error message if failed
             db: Optional async database session for persistence to audit_logs
+            private_metadata: Metadata kept in the audit_logs row only, never in the
+                application log: free text a person typed, which may name a customer
         """
         audit_data = {
             "event_type": event_type.value,
@@ -200,7 +203,7 @@ class AuditLogger:
                 # Record customer user_id so user self-service can see their activity logs
                 log_user_id = user_id or admin_id
 
-                meta_copy = {**(metadata or {})}
+                meta_copy = {**(metadata or {}), **(private_metadata or {})}
                 if admin_id and user_id and admin_id != user_id:
                     meta_copy["admin_id"] = str(admin_id)
 
@@ -952,8 +955,10 @@ class AuditLogger:
     ) -> Optional[Any]:
         """Log a super admin adding, deducting or resetting a user's credits.
 
-        Recorded against the affected user, the admin in the metadata. Returns the
-        audit row when it was written to ``db``.
+        Recorded against the affected user, the admin in the metadata. The reason
+        is free text and may name the customer or an incident, so it goes to the
+        audit row only, not to the application log. Returns the audit row when it
+        was written to ``db``.
         """
         return await self._log_event(
             event_type=AuditEventType.ADMIN_CREDITS_ADJUSTED,
@@ -971,11 +976,11 @@ class AuditLogger:
                 "amount": amount,
                 "balance_before": balance_before,
                 "balance_after": balance_after,
-                "reason": reason,
                 "grant_id": str(grant_id) if grant_id else None,
                 "expires_at": expires_at.isoformat() if expires_at else None,
                 **(metadata or {}),
             },
+            private_metadata={"reason": reason},
             db=db,
         )
 

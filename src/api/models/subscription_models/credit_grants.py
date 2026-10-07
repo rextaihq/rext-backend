@@ -11,7 +11,9 @@ A grant comes from one of two sources. A promotion's bonus (``source =
 'promotion'``) points at its promotion; one grant per subscription and
 promotion, so a webhook delivered twice grants once. Credits a super admin adds
 (``source = 'admin'``, src/services/admin_credits.py) point at no promotion and
-carry the admin's reason and who added them.
+carry the admin's reason and who added them. They are the user's: when a later
+subscription replaces the row they were added on, they are spent from that one
+(src/services/credit_grants.py, ``_spendable_by``).
 """
 
 import uuid
