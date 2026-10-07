@@ -16,13 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 import src.services.lemonsqueezy_webhook_service as service_module
-from src.api.database.base import Base
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.services.lemonsqueezy_webhook_service import (
     LemonSqueezyWebhookService,
     WebhookProcessingError,
 )
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 
 @pytest_asyncio.fixture
@@ -30,11 +30,7 @@ async def connection():
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.connect() as conn:
         transaction = await conn.begin()
-        await conn.run_sync(
-            lambda sync: Base.metadata.create_all(
-                sync, tables=[WebhookEvent.__table__], checkfirst=True
-            )
-        )
+        await conn.run_sync(lambda sync: create_tables_unless_migrated(sync, [WebhookEvent]))
         yield conn
         await transaction.rollback()
     await engine.dispose()

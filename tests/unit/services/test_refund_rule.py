@@ -18,7 +18,6 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from src.api.database.base import Base
 from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.orders import Order, OrderStatus
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -40,6 +39,7 @@ from src.services.refund_request_service import (
     credit_rule_refusal,
 )
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 NOW = datetime.now(timezone.utc)
 GRANTED = 1000
@@ -68,19 +68,18 @@ async def session():
     async with engine.connect() as connection:
         transaction = await connection.begin()
         await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
+            lambda sync: create_tables_unless_migrated(
                 sync,
-                tables=[
-                    Users.__table__,
-                    SubscriptionPlan.__table__,
-                    UserSubscription.__table__,
-                    Promotion.__table__,
-                    CreditGrant.__table__,
-                    Order.__table__,
-                    Refund.__table__,
-                    RefundRequest.__table__,
+                [
+                    Users,
+                    SubscriptionPlan,
+                    UserSubscription,
+                    Promotion,
+                    CreditGrant,
+                    Order,
+                    Refund,
+                    RefundRequest,
                 ],
-                checkfirst=True,
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:

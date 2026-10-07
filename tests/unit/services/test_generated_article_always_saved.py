@@ -31,7 +31,6 @@ import src.services.content_service as service_module
 import src.services.notification_helper as notification_module
 import src.utils.loop_bridge as loop_module
 from src.api.database.async_database import get_async_db
-from src.api.database.base import Base
 from src.api.middleware.exceptions import DuplicateResourceException
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
@@ -43,19 +42,9 @@ from src.api.schema.content_schema import ContentCreate, ContentUpdate
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 TITLE = "Understanding content marketing roi for small business"
-
-
-def _with_their_references(models):
-    """The tables and every table their foreign keys point at."""
-    tables, stack = set(), [model.__table__ for model in models]
-    while stack:
-        table = stack.pop()
-        if table not in tables:
-            tables.add(table)
-            stack.extend(fk.column.table for fk in table.foreign_keys)
-    return list(tables)
 
 
 @pytest_asyncio.fixture
@@ -64,13 +53,10 @@ async def session():
     async with engine.connect() as connection:
         transaction = await connection.begin()
         await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
+            lambda sync: create_tables_unless_migrated(
                 sync,
                 # UserRole and the members: the routes' workspace check (PATCH below).
-                tables=_with_their_references(
-                    [Content, ContentSEOData, WorkspaceMembers, UserRole]
-                ),
-                checkfirst=True,
+                [Content, ContentSEOData, WorkspaceMembers, UserRole],
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:

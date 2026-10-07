@@ -20,7 +20,6 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from src.api.database.base import Base
 from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.promotions import Promotion
@@ -31,6 +30,7 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.user_models.users import Users
 from src.services.refund_request_service import RefundRequestService
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 NOW = datetime.now(timezone.utc)
 
@@ -41,16 +41,15 @@ async def session():
     async with engine.connect() as connection:
         transaction = await connection.begin()
         await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
+            lambda sync: create_tables_unless_migrated(
                 sync,
-                tables=[
-                    Users.__table__,
-                    SubscriptionPlan.__table__,
-                    UserSubscription.__table__,
-                    Promotion.__table__,  # the refund figures count spent bonus credits
-                    CreditGrant.__table__,
+                [
+                    Users,
+                    SubscriptionPlan,
+                    UserSubscription,
+                    Promotion,  # the refund figures count spent bonus credits
+                    CreditGrant,
                 ],
-                checkfirst=True,
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:

@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from src.api.database.async_database import get_async_db
-from src.api.database.base import Base
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.persona_model import Persona
@@ -24,6 +23,7 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.dependencies import get_current_user
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 READ_TABLES = [
     WorkspaceModel,
@@ -34,27 +34,12 @@ READ_TABLES = [
 ]
 
 
-def _with_their_references(models):
-    """The route's tables and every table their foreign keys point at."""
-    tables, stack = set(), [model.__table__ for model in models]
-    while stack:
-        table = stack.pop()
-        if table not in tables:
-            tables.add(table)
-            stack.extend(fk.column.table for fk in table.foreign_keys)
-    return list(tables)
-
-
 @pytest_asyncio.fixture
 async def session():
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.connect() as connection:
         transaction = await connection.begin()
-        await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
-                sync, tables=_with_their_references(READ_TABLES), checkfirst=True
-            )
-        )
+        await connection.run_sync(lambda sync: create_tables_unless_migrated(sync, READ_TABLES))
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:
             yield db
         await transaction.rollback()

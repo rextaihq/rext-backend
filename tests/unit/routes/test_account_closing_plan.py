@@ -20,7 +20,6 @@ from sqlalchemy.pool import NullPool
 
 import src.services.subscription_service as service_module
 from src.api.database.async_database import get_async_db
-from src.api.database.base import Base
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
@@ -31,20 +30,10 @@ from src.api.models.user_models.users import Users
 from src.api.security.dependencies import get_current_user
 from src.api.security.token_utils import hash_password
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 PAID_UNTIL = (datetime.now(timezone.utc) + timedelta(days=17)).replace(microsecond=0)
 PASSWORD = "a-test-password-1"
-
-
-def _with_their_references(models):
-    """The tables and every table their foreign keys point at."""
-    tables, stack = set(), [model.__table__ for model in models]
-    while stack:
-        table = stack.pop()
-        if table not in tables:
-            tables.add(table)
-            stack.extend(fk.column.table for fk in table.foreign_keys)
-    return list(tables)
 
 
 @pytest_asyncio.fixture
@@ -53,13 +42,10 @@ async def session():
     async with engine.connect() as connection:
         transaction = await connection.begin()
         await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
+            lambda sync: create_tables_unless_migrated(
                 sync,
                 # Closing an account also reads roles and ends sessions.
-                tables=_with_their_references(
-                    [UserSubscription, AuditLog, UserRole, UserSession, TokenBlacklist]
-                ),
-                checkfirst=True,
+                [UserSubscription, AuditLog, UserRole, UserSession, TokenBlacklist],
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:

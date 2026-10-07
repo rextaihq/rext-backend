@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from src.api.database.async_database import get_async_db
-from src.api.database.base import Base
 from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.promotions import Promotion
@@ -21,6 +20,7 @@ from src.api.models.subscription_models.subscriptions import SubscriptionStatus,
 from src.api.models.user_models.users import Users
 from src.api.security.dependencies import get_current_user
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 
 @pytest_asyncio.fixture
@@ -29,16 +29,15 @@ async def session():
     async with engine.connect() as connection:
         transaction = await connection.begin()
         await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
+            lambda sync: create_tables_unless_migrated(
                 sync,
-                tables=[
-                    Users.__table__,
-                    SubscriptionPlan.__table__,
-                    UserSubscription.__table__,
-                    Promotion.__table__,  # the balance counts credit grants
-                    CreditGrant.__table__,
+                [
+                    Users,
+                    SubscriptionPlan,
+                    UserSubscription,
+                    Promotion,  # the balance counts credit grants
+                    CreditGrant,
                 ],
-                checkfirst=True,
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:

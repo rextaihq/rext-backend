@@ -15,22 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from src.api.database.async_database import get_async_db
-from src.api.database.base import Base
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.security.dependencies import get_current_user
 from tests.conftest import TEST_DATABASE_URL
-
-
-def _with_their_references(models):
-    """The tables and every table their foreign keys point at."""
-    tables, stack = set(), [model.__table__ for model in models]
-    while stack:
-        table = stack.pop()
-        if table not in tables:
-            tables.add(table)
-            stack.extend(fk.column.table for fk in table.foreign_keys)
-    return list(tables)
+from tests.db_tables import create_tables_unless_migrated
 
 
 @pytest_asyncio.fixture
@@ -40,9 +29,7 @@ async def session():
         transaction = await connection.begin()
         await connection.run_sync(
             # UserRole: the user's lookup loads their roles.
-            lambda sync: Base.metadata.create_all(
-                sync, tables=_with_their_references([Users, UserRole]), checkfirst=True
-            )
+            lambda sync: create_tables_unless_migrated(sync, [Users, UserRole])
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:
             yield db

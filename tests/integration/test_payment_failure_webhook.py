@@ -19,7 +19,6 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from src.api.database.base import Base
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -32,6 +31,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.webhook_handlers.subscription_handlers import handle_subscription_payment_failed
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 
 @pytest_asyncio.fixture
@@ -40,17 +40,16 @@ async def db_session():
     async with engine.connect() as connection:
         transaction = await connection.begin()
         await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
+            lambda sync: create_tables_unless_migrated(
                 sync,
-                tables=[
-                    Users.__table__,
-                    SubscriptionPlan.__table__,
-                    UserSubscription.__table__,
-                    WebhookEvent.__table__,
-                    WorkspaceModel.__table__,  # audit_logs refers to it
-                    AuditLog.__table__,  # the handler records the failed payment
+                [
+                    Users,
+                    SubscriptionPlan,
+                    UserSubscription,
+                    WebhookEvent,
+                    WorkspaceModel,  # audit_logs refers to it
+                    AuditLog,  # the handler records the failed payment
                 ],
-                checkfirst=True,
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:

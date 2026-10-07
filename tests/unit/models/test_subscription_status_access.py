@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from src.api.database.async_database import get_async_db
-from src.api.database.base import Base
 from src.api.middleware.exceptions import DuplicateResourceException
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.credit_grants import CreditGrant
@@ -40,6 +39,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.dependencies import get_current_user
 from src.services.subscription_service import SubscriptionService
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 NOW = datetime.now(timezone.utc)
 LATER, EARLIER = NOW + timedelta(days=3), NOW - timedelta(days=1)
@@ -51,19 +51,18 @@ async def session():
     async with engine.connect() as connection:
         transaction = await connection.begin()
         await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
+            lambda sync: create_tables_unless_migrated(
                 sync,
-                tables=[
-                    Users.__table__,
-                    SubscriptionPlan.__table__,
-                    UserSubscription.__table__,
-                    Promotion.__table__,  # the balance counts credit grants
-                    CreditGrant.__table__,
-                    WorkspaceModel.__table__,  # audit_logs refers to it
-                    AuditLog.__table__,  # cancel() and the handlers record themselves
-                    TrialConversion.__table__,  # a checkout replacing a trial records the conversion
+                [
+                    Users,
+                    SubscriptionPlan,
+                    UserSubscription,
+                    Promotion,  # the balance counts credit grants
+                    CreditGrant,
+                    WorkspaceModel,  # audit_logs refers to it
+                    AuditLog,  # cancel() and the handlers record themselves
+                    TrialConversion,  # a checkout replacing a trial records the conversion
                 ],
-                checkfirst=True,
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:

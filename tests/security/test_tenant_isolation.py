@@ -23,11 +23,10 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from src.api.database.base import Base
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.content_models.content import Content
@@ -42,35 +41,11 @@ from src.services.content_service import ContentService
 from src.services.member_service import MemberService
 from src.services.workspace_service import WorkspaceService
 from tests.conftest import TEST_DATABASE_URL
+from tests.db_tables import create_tables_unless_migrated
 
 # ============================================================================
 # Fixtures
 # ============================================================================
-
-
-def _with_parents(*tables):
-    """The tables, and every table their foreign keys reach."""
-    found = []
-
-    def visit(table):
-        if table in found:
-            return
-        found.append(table)
-        for key in table.foreign_keys:
-            visit(key.column.table)
-
-    for table in tables:
-        visit(table)
-    return found
-
-
-def _tables_for_an_unmigrated_database(sync, tables) -> None:
-    """Make the tables on an empty test database only. A migrated one (CI's) is tested as
-    its migrations built it, so a table a migration lacks fails here instead of being made
-    from the models."""
-    if inspect(sync).has_table("alembic_version"):
-        return
-    Base.metadata.create_all(sync, tables=tables, checkfirst=True)
 
 
 @pytest.fixture(autouse=True)
@@ -87,20 +62,20 @@ async def db():
     The services commit in places: each commit only releases a savepoint, so nothing
     is left behind.
     """
-    tables = _with_parents(
-        Users.__table__,
-        WorkspaceModel.__table__,
-        WorkspaceMembers.__table__,
-        Content.__table__,
-        ContentSEOData.__table__,  # creating content writes its SEO row
-        Role.__table__,  # a new member gets the viewer role
-        UserRole.__table__,
-        AuditLog.__table__,
-    )
+    tables = [
+        Users,
+        WorkspaceModel,
+        WorkspaceMembers,
+        Content,
+        ContentSEOData,  # creating content writes its SEO row
+        Role,  # a new member gets the viewer role
+        UserRole,
+        AuditLog,
+    ]
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.connect() as connection:
         transaction = await connection.begin()
-        await connection.run_sync(lambda sync: _tables_for_an_unmigrated_database(sync, tables))
+        await connection.run_sync(lambda sync: create_tables_unless_migrated(sync, tables))
         async with AsyncSession(
             bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
         ) as session:
