@@ -120,6 +120,22 @@ def get_outline_model(content_type: str):
     return CONTENT_TYPE_TO_MODEL.get(normalized, BlogOutline)
 
 
+# The length the gate accepts for a content type whose model doesn't bound its own.
+_DEFAULT_WORD_COUNT_RANGE = (100, 15000)
+
+
+def target_word_count_range(content_type: str) -> tuple[int, int]:
+    """The article length a content type accepts: the bounds its outline model declares on
+    `target_word_count`. The dashboard offers the same range per type, so a length the screen
+    allowed (a 300-word pricing page, a 12,000-word white paper) is one the gate keeps."""
+    low, high = _DEFAULT_WORD_COUNT_RANGE
+    field = get_outline_model(content_type).model_fields.get("target_word_count")
+    for constraint in getattr(field, "metadata", None) or []:
+        low = getattr(constraint, "ge", None) or low
+        high = getattr(constraint, "le", None) or high
+    return low, high
+
+
 def get_outline_display_name(content_type: str) -> str:
     """Convert a content type key to a human-readable display name.
 
@@ -131,6 +147,7 @@ def get_outline_display_name(content_type: str) -> str:
 
 __all__ = [
     "get_outline_model",
+    "target_word_count_range",
     "normalize_content_type",
     "CONTENT_TYPE_TO_MODEL",
     # Informational

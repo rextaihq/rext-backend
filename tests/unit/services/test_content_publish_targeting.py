@@ -45,6 +45,7 @@ def _site(site_url, integration_type="wordpress"):
 def _content(**kwargs):
     defaults = {
         "id": uuid4(),
+        "workspace_id": uuid4(),
         "persona_id": None,
         "wordpress_post_id": None,
         "wordpress_url": None,

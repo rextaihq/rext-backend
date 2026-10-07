@@ -13,6 +13,7 @@ from src.flow.engines.content.review.outline_edits import (
     editable_sections,
 )
 from src.flow.engines.serp.serp_evidence import build_serp_titles
+from src.flow.model.structure.outlines import target_word_count_range
 from src.flow.model.structure.outlines.render import normalize_outline
 from src.flow.states.rext import REXT
 
@@ -153,8 +154,15 @@ def review_outline(state: REXT):
                 logger.warning(f"Ignoring invalid target_word_count: {updated_word_count}")
                 updated_word_count = None
             else:
-                if not (500 <= updated_word_count <= 5000):
-                    logger.warning(f"Ignoring out-of-range target_word_count: {updated_word_count}")
+                shortest, longest = target_word_count_range(content_type)
+                if not (shortest <= updated_word_count <= longest):
+                    logger.warning(
+                        "Ignoring target_word_count %s: %s takes %s to %s",
+                        updated_word_count,
+                        content_type or "this content type",
+                        shortest,
+                        longest,
+                    )
                     updated_word_count = None
 
         # Use user-selected internal links if provided, else keep all
