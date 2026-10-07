@@ -52,6 +52,7 @@ from src.config.payment_config import payment_settings
 from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
+from src.services.credit_grants import change_plan_credits
 from src.services.duplicate_subscriptions import is_known_duplicate
 from src.services.notification_helper import schedule_if_allowed
 from src.services.refund_cancellation import is_ended_by_refund
@@ -692,6 +693,7 @@ class SubscriptionService:
 
         # Update local subscription
         old_billing_period = current_subscription.billing_period
+        on_trial = current_subscription.status == SubscriptionStatus.TRIAL
 
         # Check if upgrading from a trial
         was_trial = (
@@ -743,7 +745,6 @@ class SubscriptionService:
             current_subscription.trial_end_date = None
 
         if new_plan.credits_per_month is not None:
-            current_subscription.current_credits = new_plan.credits_per_month
             # Keep the credit reset aligned to the existing billing-period end
             # (provider `renews_at`); the subscription_updated webhook reconciles
             # this afterwards. Only fall back to a calendar month if we have no
@@ -753,6 +754,14 @@ class SubscriptionService:
                 or current_subscription.credits_reset_date
                 or add_months(datetime.now(timezone.utc), 1)
             )
+            # The change keeps what was used this period (F8a). A trial's credits come with
+            # its first payment, so its balance stays as it is.
+            if not on_trial:
+                change_plan_credits(
+                    current_subscription,
+                    current_plan.credits_per_month,
+                    new_plan.credits_per_month,
+                )
 
         current_subscription.updated_at = datetime.now(timezone.utc)
 
