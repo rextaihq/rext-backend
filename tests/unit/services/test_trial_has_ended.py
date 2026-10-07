@@ -83,3 +83,22 @@ def test_a_paid_subscription_without_a_trial_is_never_an_ended_trial(status):
 
 def test_no_subscription_at_all_is_not_an_ended_trial():
     assert trial_has_ended(None, None, NOW) is False
+
+
+def test_a_trial_cancelled_before_its_end_has_ended_after_it():
+    """Codex on #845: a cancelled unpaid trial loses access at its end, and is reported so."""
+    cancelled = _subscription(SubscriptionStatus.CANCELLED)
+
+    assert trial_has_ended(cancelled, None, NOW) is True
+
+
+def test_a_cancelled_trial_still_running_has_not_ended():
+    cancelled = _subscription(SubscriptionStatus.CANCELLED, trial_end_date=NOW + timedelta(days=2))
+
+    assert trial_has_ended(cancelled, cancelled, NOW) is False
+
+
+def test_a_cancelled_lemon_squeezy_subscription_is_no_ended_trial():
+    cancelled = _subscription(SubscriptionStatus.CANCELLED, lemonsqueezy_id="ls-1")
+
+    assert trial_has_ended(cancelled, None, NOW) is False
