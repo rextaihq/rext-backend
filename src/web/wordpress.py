@@ -76,6 +76,29 @@ def _redact_urls(text: str, *addresses: object) -> str:
     return _ADDRESS_IN_TEXT.sub(lambda match: _loggable_url(match.group(0)), text)
 
 
+# What a remote server's error body may echo of a signed request, besides whole addresses: a
+# query on a bare path ("/images/x.png?X-Amz-Signature=…", as Google's and nginx's 404 pages
+# write it) and an S3 or MinIO error's request details.
+_QUERY_IN_TEXT = re.compile(r"\?[^\s'\"<>]+")
+_S3_REQUEST_DETAILS = re.compile(
+    r"<(SignatureProvided|StringToSign|StringToSignBytes|CanonicalRequest|CanonicalRequestBytes"
+    r"|AWSAccessKeyId|HostId|RequestId)>.*?</\1>",
+    re.DOTALL,
+)
+_LOGGED_BODY_CHARS = 500
+
+
+def _loggable_body(text: str, *addresses: object) -> str:
+    """A remote server's response body as a log line may show it: shortened, with every address,
+    any query and an S3 error's request details taken out. Never for a person to read: a reason
+    they see names the status only (G59b, revnix/rext-control#632)."""
+    text = _redact_urls(text or "", *addresses)
+    text = _S3_REQUEST_DETAILS.sub(lambda match: f"<{match.group(1)}>…</{match.group(1)}>", text)
+    text = _QUERY_IN_TEXT.sub("?…", text)
+    text = " ".join(text.split())
+    return text[:_LOGGED_BODY_CHARS] + ("…" if len(text) > _LOGGED_BODY_CHARS else "")
+
+
 class BodyImageUploadError(RextExternalServiceException):
     """A publish stopped on an image in the post's body that couldn't be copied to the site's
     media library. Published anyway, the image would keep its original address, often a signed
@@ -1170,12 +1193,13 @@ class WordPressPublisher:
             if media_response.status_code != 201:
                 reason = (
                     f"WordPress media API returned HTTP {media_response.status_code}; "
-                    f"expected HTTP 201; body={media_response.text[:4000]}"
+                    "expected HTTP 201"
                 )
                 logger.error(
-                    "[WordPress Media Upload] failed status=%s reason=%s",
+                    "[WordPress Media Upload] failed status=%s reason=%s body=%s",
                     media_response.status_code,
                     reason,
+                    _loggable_body(media_response.text, image_url),
                 )
                 raise RextExternalServiceException(
                     message=reason,
@@ -1186,8 +1210,12 @@ class WordPressPublisher:
             try:
                 raw = media_response.json()
             except ValueError as exc:
-                reason = f"WordPress media API returned invalid JSON: {media_response.text[:4000]}"
-                logger.error("[WordPress Media Upload] failed reason=%s", reason)
+                reason = "WordPress media API returned invalid JSON"
+                logger.error(
+                    "[WordPress Media Upload] failed reason=%s body=%s",
+                    reason,
+                    _loggable_body(media_response.text, image_url),
+                )
                 raise RextExternalServiceException(
                     message=reason, service_name="WordPress"
                 ) from exc
@@ -1259,17 +1287,26 @@ class WordPressPublisher:
                 context={"transient": True},
             ) from None
         except httpx.HTTPStatusError as e:
-            body = e.response.text[:4000] if e.response is not None else ""
-            reason = _redact_urls(
-                f"Image request failed: {e}; body={body}",
-                image_url,
-                e.request.url if e.request is not None else None,
-                e.response.url if e.response is not None else None,
+            # The reason says the status only: it reaches the person's notice and the publish
+            # error, and a remote's error page (HTML, or S3's XML) can echo the signed request.
+            # The body goes to the log, shortened and redacted (G59b, revnix/rext-control#632).
+            status = e.response.status_code if e.response is not None else None
+            phrase = e.response.reason_phrase if e.response is not None else ""
+            reason = (
+                f"the image's address answered HTTP {status} {phrase}".rstrip()
+                if status
+                else "the image couldn't be downloaded"
             )
             logger.error(
-                "[WordPress Media Upload] failed image=%s reason=%s",
+                "[WordPress Media Upload] failed image=%s reason=%s body=%s",
                 _loggable_url(image_url),
                 reason,
+                _loggable_body(
+                    e.response.text if e.response is not None else "",
+                    image_url,
+                    e.request.url if e.request is not None else None,
+                    e.response.url if e.response is not None else None,
+                ),
             )
             raise RextExternalServiceException(
                 message=reason,

@@ -905,3 +905,105 @@ async def test_creates_missing_wordpress_category_and_assigns_its_id():
     assert create_call.args[0] == "https://example.com/wp-json/wp/v2/categories"
     assert create_call.kwargs["json"] == {"name": "WordPress"}
     assert publish_call.kwargs["json"]["categories"] == [12]
+
+
+# --- G59b (revnix/rext-control#632): a stopped publish names the status, never the body ---
+
+_SIGNED = "https://cdn.rext.test/images/gone.png?X-Amz-Signature=secret-token&X-Amz-Expires=600"
+
+
+def _publisher_downloading(response: httpx.Response) -> WordPressPublisher:
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(return_value=response)
+    publisher.client.send = AsyncMock()
+    publisher.client.post = AsyncMock()
+    return publisher
+
+
+async def _stopped_message(publisher: WordPressPublisher) -> str:
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Gone image", body_markdown=f"Text.\n\n![Gone]({_SIGNED})\n")
+        )
+    publisher.client.post.assert_not_awaited()
+    return raised.value.message
+
+
+@pytest.mark.asyncio
+async def test_a_404_page_echoing_the_signed_address_stays_out_of_the_message(caplog):
+    """Google's 404 page wrote the requested path and its signed query back into the reason."""
+    page = (
+        "<!DOCTYPE html><html><title>Error 404 (Not Found)!!1</title><p>The requested URL "
+        "<code>/images/gone.png?X-Amz-Signature=secret-token&amp;X-Amz-Expires=600</code> "
+        "was not found on this server." + " padding" * 300 + "</html>"
+    )
+    publisher = _publisher_downloading(
+        httpx.Response(404, text=page, request=httpx.Request("GET", _SIGNED))
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "HTTP 404" in message
+    assert "X-Amz-" not in message and "secret-token" not in message
+    assert "body=" not in message and "<" not in message
+    assert len(message) < 300
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "secret-token" not in logged
+
+
+@pytest.mark.asyncio
+async def test_an_s3_error_body_never_shows_its_signature_even_in_the_log(caplog):
+    xml = (
+        "<?xml version='1.0' encoding='UTF-8'?><Error><Code>SignatureDoesNotMatch</Code>"
+        "<AWSAccessKeyId>AKIAEXAMPLEKEY</AWSAccessKeyId><SignatureProvided>secret-token"
+        "</SignatureProvided><StringToSign>AWS4-HMAC-SHA256\n20261007T000000Z\nsecret-scope"
+        "</StringToSign><CanonicalRequest>GET\n/images/gone.png\nX-Amz-Signature=secret-token"
+        "</CanonicalRequest></Error>"
+    )
+    publisher = _publisher_downloading(
+        httpx.Response(403, text=xml, request=httpx.Request("GET", _SIGNED))
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "HTTP 403" in message and "SignatureDoesNotMatch" not in message
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "SignatureDoesNotMatch" in logged  # the log keeps what went wrong…
+    for secret in ("secret-token", "AKIAEXAMPLEKEY", "secret-scope"):
+        assert secret not in logged  # …and never the request's credentials
+
+
+@pytest.mark.asyncio
+async def test_a_wordpress_refusal_names_its_status_without_its_body():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\n" + b"0" * 64,
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.rext.test/fine.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(
+            413,
+            json={"code": "rest_upload_too_large", "message": "x" * 2000},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Too big", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    assert "HTTP 413" in raised.value.message
+    assert (
+        "body=" not in raised.value.message and "rest_upload_too_large" not in raised.value.message
+    )
+    assert len(raised.value.message) < 300
