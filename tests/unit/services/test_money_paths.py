@@ -26,6 +26,7 @@ from sqlalchemy.pool import NullPool
 import src.api.models.subscription_models.subscriptions as subscriptions_module
 import src.services.credit_grants as credit_grants_module
 import src.services.lemonsqueezy_webhook_service as webhook_service_module
+import src.services.refund_request_service as refund_request_module
 import src.services.usage_tracking_service as usage_module
 import src.services.webhook_handlers.subscription_handlers as subscription_handlers_module
 from scripts.seeds.seed_promotions import LAUNCH_PROMOTION
@@ -129,6 +130,7 @@ def clock(monkeypatch):
         credit_grants_module,
         usage_module,
         subscriptions_module,
+        refund_request_module,
     ):
         monkeypatch.setattr(module, "datetime", Clock)
 
@@ -435,9 +437,9 @@ async def test_the_signup_trial_plan_gets_no_launch_bonus(db):
 # --- 2. the refund rule: within 14 days, under 100 credits used, the whole payment -----------
 
 
-async def _paid_growth(db, *, ordered_days_ago=3):
-    """A Growth subscriber whose first payment was some days ago (before the launch window,
-    so no bonus muddies the counts)."""
+async def _paid_growth(db, *, ordered_days_ago=3, paid_at=None):
+    """A Growth subscriber whose first payment was some days ago, or at `paid_at` (before the
+    launch window, so no bonus muddies the counts)."""
     growth = await _plan(db, "growth", price=89, credits=1000)
     user = await _customer(db)
     ls_id = uuid4().int % 10**9
@@ -446,7 +448,7 @@ async def _paid_growth(db, *, ordered_days_ago=3):
     await handle_subscription_created(
         _subscription_event(user, ls_id, variant, at=BEFORE_LAUNCH, order_id=order_id), None, db
     )
-    paid_at = datetime.now(timezone.utc) - timedelta(days=ordered_days_ago)
+    paid_at = paid_at or datetime.now(timezone.utc) - timedelta(days=ordered_days_ago)
     await handle_order_created(_order_event(user, order_id, variant, at=paid_at), None, db)
     await db.flush()
     return user, order_id
@@ -471,13 +473,30 @@ async def test_a_refund_needs_fewer_than_100_credits_used(db, spent, refundable)
             )
 
 
-async def test_a_refund_is_refused_after_14_days(db):
-    user, order_id = await _paid_growth(db, ordered_days_ago=15)
+@pytest.mark.parametrize(
+    ("age", "refundable"),
+    [
+        (timedelta(days=14), True),  # the window's last instant
+        (timedelta(days=14, microseconds=1), False),  # the first instant past it
+    ],
+)
+async def test_a_refund_is_open_for_exactly_14_days(db, clock, age, refundable):
+    # A whole second, so the order's stored time is exact whatever precision it keeps.
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    clock(now)
+    user, order_id = await _paid_growth(db, paid_at=now - age)
 
-    with pytest.raises(RefundRequestError, match="within 14 days"):
-        await RefundRequestService(db).create_request(
-            user_id=user.id, lemonsqueezy_order_id=order_id, reason="Too late"
+    service = RefundRequestService(db)
+    if refundable:
+        request = await service.create_request(
+            user_id=user.id, lemonsqueezy_order_id=order_id, reason="Just in time"
         )
+        assert request.requested_amount == 8900
+    else:
+        with pytest.raises(RefundRequestError, match="within 14 days"):
+            await service.create_request(
+                user_id=user.id, lemonsqueezy_order_id=order_id, reason="Too late"
+            )
 
 
 async def test_a_customers_refund_is_the_whole_payment_never_part(db):
@@ -748,15 +767,17 @@ async def test_switching_plans_down_and_up_does_not_refill_spent_credits(db):
     assert await usage.get_credit_balance(user.id) <= 100
 
 
-async def test_a_cancelled_plan_keeps_access_until_its_end_then_expires(db):
+async def test_a_cancelled_plan_keeps_access_until_its_end_then_expires(db, clock):
     from src.services.webhook_handlers.subscription_handlers import (
         handle_subscription_cancelled,
         handle_subscription_expired,
     )
 
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    ends = now + timedelta(days=5)
+    clock(now)
     user, ls_id, growth = await _active_growth(db)
     usage = UsageTrackingService(db)
-    now = datetime.now(timezone.utc)
     cancelled = _subscription_event(
         user,
         ls_id,
@@ -766,17 +787,24 @@ async def test_a_cancelled_plan_keeps_access_until_its_end_then_expires(db):
         name="subscription_cancelled",
     )
     cancelled["data"]["attributes"]["cancelled"] = True
-    cancelled["data"]["attributes"]["ends_at"] = _iso(now + timedelta(days=5))
+    cancelled["data"]["attributes"]["ends_at"] = _iso(ends)
 
     await handle_subscription_cancelled(cancelled, None, db)
     assert (await _subscription_of(db, ls_id)).status.value == "cancelled"
     assert await usage.consume_credits(user.id, 15)  # paid through: still writing
+    clock(ends - timedelta(seconds=1))
+    assert await usage.consume_credits(user.id, 15)  # the last second paid for
+
+    # The paid-through date ends access by itself, before Lemon Squeezy's expiry event.
+    clock(ends)
+    assert await usage.get_credit_balance(user.id) == 0
+    assert await usage.consume_credits(user.id, 15) is False
 
     expired = _subscription_event(
         user,
         ls_id,
         growth.lemonsqueezy_variant_id_monthly,
-        at=now,
+        at=ends,
         status="expired",
         name="subscription_expired",
     )
@@ -795,15 +823,23 @@ def _refund_event(user, order_id, variant, *, total=8900):
 
 
 @pytest.fixture
-def no_refund_mail(monkeypatch):
-    from unittest.mock import AsyncMock
+def refund_fakes(monkeypatch):
+    """No email and no Lemon Squeezy for a refund: the fake provider it returns takes the
+    cancel that every full refund makes there (F8c)."""
+    from unittest.mock import AsyncMock, MagicMock
 
+    import src.providers.payment.provider_factory as provider_factory
     import src.services.webhook_handlers.order_handlers as order_handlers
 
+    provider = MagicMock()
+    provider.cancel_subscription = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(provider_factory, "get_payment_provider", lambda: provider)
+    monkeypatch.setattr(order_handlers, "get_payment_provider", lambda: provider)
     monkeypatch.setattr(order_handlers, "send_billing_email_in_background", AsyncMock())
+    return provider
 
 
-async def test_a_full_refund_of_the_first_payment_ends_access(db, no_refund_mail):
+async def test_a_full_refund_of_the_first_payment_ends_access(db, refund_fakes):
     from src.services.webhook_handlers.order_handlers import handle_order_refunded
 
     user, order_id = await _paid_growth(db)
@@ -819,7 +855,7 @@ async def test_a_full_refund_of_the_first_payment_ends_access(db, no_refund_mail
 
 
 @pytest.mark.xfail(strict=True, reason="F8b rext-control#537: a renewal order is not linked")
-async def test_a_full_refund_of_a_renewal_ends_that_months_credits(db, no_refund_mail):
+async def test_a_full_refund_of_a_renewal_ends_that_months_credits(db, refund_fakes):
     """The refund rule covers any payment: refunding a renewal takes back that month."""
     from src.services.webhook_handlers.order_handlers import handle_order_refunded
 
@@ -843,23 +879,12 @@ async def test_a_full_refund_of_a_renewal_ends_that_months_credits(db, no_refund
     assert await usage.consume_credits(user.id, 15) is False
 
 
-@pytest.mark.xfail(strict=True, reason="F8c rext-control#538: not cancelled at Lemon Squeezy")
-async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(
-    db, no_refund_mail, monkeypatch
-):
+async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(db, refund_fakes):
     """A full refund cancels the subscription at Lemon Squeezy, and an "active" update without a
     new payment doesn't bring access back."""
-    from unittest.mock import AsyncMock, MagicMock
-
-    import src.providers.payment.provider_factory as provider_factory
-    import src.services.webhook_handlers.order_handlers as order_handlers
     from src.services.webhook_handlers.order_handlers import handle_order_refunded
 
-    provider = MagicMock()
-    provider.cancel_subscription = AsyncMock(return_value={"success": True})
-    monkeypatch.setattr(provider_factory, "get_payment_provider", lambda: provider)
-    monkeypatch.setattr(order_handlers, "get_payment_provider", lambda: provider)
-
+    provider = refund_fakes
     user, order_id = await _paid_growth(db)
     plan = (await db.execute(select(SubscriptionPlan))).scalars().first()
     variant = plan.lemonsqueezy_variant_id_monthly
