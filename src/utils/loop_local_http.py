@@ -25,6 +25,10 @@ import httpx2
 from openai import DefaultAsyncHttpxClient
 from openai._constants import DEFAULT_CONNECTION_LIMITS
 
+# Built once, here: a TLS context reads the CA bundle from disk, which must not happen inside a
+# request on an event loop. Every per-loop pool shares it.
+_SSL_CONTEXT = httpx2.create_ssl_context()
+
 
 class _PerLoopTransport(httpx2.AsyncBaseTransport):
     """Hands each request to a connection pool of the event loop it runs on."""
@@ -64,7 +68,8 @@ class _PerLoopTransport(httpx2.AsyncBaseTransport):
 def loop_local_async_client(**client_kwargs: Any) -> DefaultAsyncHttpxClient:
     """The OpenAI SDK's default async client, safe to share between runs on different loops."""
     return DefaultAsyncHttpxClient(
-        transport=_PerLoopTransport(limits=DEFAULT_CONNECTION_LIMITS), **client_kwargs
+        transport=_PerLoopTransport(limits=DEFAULT_CONNECTION_LIMITS, verify=_SSL_CONTEXT),
+        **client_kwargs,
     )
 
 

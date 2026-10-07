@@ -104,7 +104,17 @@ def test_every_chat_model_and_the_competitors_client_use_the_shared_client(monke
         model = build()
         # The client langchain actually wired into the OpenAI SDK, not only the attribute.
         assert model.root_async_client._client is SHARED_ASYNC_CLIENT, build.__name__
+        # langchain turns its token-usage chunk off for a custom client; it stays on.
+        assert model.stream_usage is True, build.__name__
 
     from src.flow.engines.competitors import llm_client
 
     assert llm_client._client._client is SHARED_ASYNC_CLIENT
+
+
+def test_the_per_loop_pools_share_one_tls_context_built_outside_any_loop():
+    """Building a TLS context reads the CA bundle from disk: never inside a request."""
+    from src.utils import loop_local_http
+
+    transport = loop_local_async_client()._transport
+    assert transport._transport_kwargs["verify"] is loop_local_http._SSL_CONTEXT
