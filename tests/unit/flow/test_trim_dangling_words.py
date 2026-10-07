@@ -69,6 +69,16 @@ def test_a_preposition_with_no_object_of_its_own_stays():
     assert repaired == "SEO Tools: The Platforms Small Agencies Fall Back On"
 
 
+def test_a_preposition_before_an_adverb_of_time_had_no_object_to_lose():
+    """The trim cut "Today", not the preposition's object, whatever the verb ("lean" is unlisted)."""
+    assert repair_title(
+        "SEO Agencies: The Experts Every Small Business Turns To Today", "seo agencies"
+    ) == ("SEO Agencies: The Experts Every Small Business Turns To")
+    assert repair_title(
+        "SEO Agencies: The Experts Every Small Business Leans On Today", "seo agencies"
+    ) == ("SEO Agencies: The Experts Every Small Business Leans On")
+
+
 def test_a_verb_that_doubles_its_last_consonant_keeps_its_preposition():
     title = "SEO Agencies: A Strategy Your Whole Team Is Committed To Today"  # 62
     repaired = repair_title(title, "seo agencies")

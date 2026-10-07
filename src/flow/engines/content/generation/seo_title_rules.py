@@ -219,7 +219,7 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
         "with": ("deal", "dealt", "agree", "cope"),
         "in": ("believe", "invest", "specialize", "specialise", "sign", "log", "opt"),
         "of": ("make", "made", "consist", "approve"),
-        "to": ("listen", "switch", "migrate", "stick", "commit", "subscribe"),
+        "to": ("listen", "switch", "migrate", "stick", "commit", "subscribe", "turn", "talk", "reach", "go", "relate", "respond"),
         "at": ("look", "aim"),
         "as": ("know", "known", "serve"),
         "from": ("benefit", "choose"),
@@ -229,6 +229,12 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
         "onto": ("hold", "held", "latch"),
     }.items()
 }  # fmt: skip
+
+
+# Words that follow a preposition without being its object ("Turns To Today", "Sign Up Now").
+_TIME_ADVERBS = frozenset(
+    {"today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon", "anyway"}
+)
 
 
 def _bare(word: str) -> str:
@@ -243,14 +249,16 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
         return True
     if last not in _PREPOSITION_AFTER_VERB:
         return False
-    # A preposition that ended a clause, or stood before another one, had no object for the trim
-    # to cut ("Rely On: A Guide", "Fall Back On in 2026"). One before a conjunction may share the
-    # object that follows it ("for and by Industry Experts"), so a conjunction proves nothing.
+    # A preposition that ended a clause, or stood before another one or an adverb of time, had
+    # no object for the trim to cut ("Rely On: A Guide", "Fall Back On in 2026", "Turns To
+    # Today"). One before a conjunction may share the object that follows it ("for and by
+    # Industry Experts"), so a conjunction proves nothing.
     following = _bare(words[kept]) if kept < len(words) else ""
     if (
         words[kept - 1][-1] in _TRAILING_PUNCTUATION
         or not following
         or following in _PREPOSITION_AFTER_VERB
+        or following in _TIME_ADVERBS
     ):
         return False
     verb = _bare(words[kept - 2]) if kept > 1 else ""
