@@ -128,7 +128,27 @@ async def test_a_redirect_is_followed_and_the_ranking_order_kept(ssrf):
     assert [page["title"] for page in pages] == ["Guide", "Templates"]
 
 
-async def test_the_node_reads_the_pages_once_per_run(monkeypatch):
+@pytest.fixture
+def enabled(monkeypatch):
+    monkeypatch.setenv("OUTLINE_COMPETITOR_HEADINGS", "true")
+
+
+async def test_off_by_default_the_run_reads_no_pages(monkeypatch):
+    monkeypatch.delenv("OUTLINE_COMPETITOR_HEADINGS", raising=False)
+    calls = []
+
+    async def fetch(results, **kwargs):
+        calls.append(results)
+        return []
+
+    monkeypatch.setattr(headings_module, "fetch_competitor_headings", fetch)
+    state = {"serp_normalized": {"normalize_results": [{"url": "https://a.example"}]}}
+
+    assert await read_competitor_headings(state) == {"content": {"competitor_headings": []}}
+    assert calls == []
+
+
+async def test_the_node_reads_the_pages_once_per_run(monkeypatch, enabled):
     calls = []
 
     async def fetch(results, **kwargs):
@@ -149,7 +169,9 @@ async def test_the_node_reads_the_pages_once_per_run(monkeypatch):
     assert len(calls) == 1
 
 
-async def test_a_failure_leaves_the_sources_without_headings_and_the_run_going(monkeypatch):
+async def test_a_failure_leaves_the_sources_without_headings_and_the_run_going(
+    monkeypatch, enabled
+):
     async def fetch(results, **kwargs):
         raise RuntimeError("network down")
 

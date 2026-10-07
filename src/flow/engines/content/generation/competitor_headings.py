@@ -9,9 +9,14 @@ The pages are third-party addresses from the search results, so every request, r
 included, passes the same SSRF check as the site scraper. Each body is capped, each page has a
 short timeout, and the pages are read side by side. A page that times out, blocks, redirects
 too often or isn't HTML is left out; nothing here can fail the run.
+
+It is off unless OUTLINE_COMPETITOR_HEADINGS=true: reading the pages adds up to PAGE_TIMEOUT
+seconds (6) to every run before its outline, usually one to three, since the five pages are
+read at once. With it off, the gate's Sources show no headings.
 """
 
 import asyncio
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +33,11 @@ MAX_REDIRECTS = 3
 MAX_HEADINGS_PER_PAGE = 40
 MAX_HEADING_CHARS = 200
 USER_AGENT = "Mozilla/5.0 (compatible; RextAI-Research/1.0; +https://rext.ai)"
+
+
+def competitor_headings_enabled() -> bool:
+    """Whether a run reads the ranking pages' headings before its outline (off by default)."""
+    return os.getenv("OUTLINE_COMPETITOR_HEADINGS", "false").strip().lower() == "true"
 
 
 def extract_headings(html: str) -> List[Dict[str, Any]]:
@@ -128,6 +138,8 @@ async def read_competitor_headings(state) -> Dict[str, Any]:
     content = state.get("content") or {}
     if content.get("competitor_headings") is not None:
         return {}
+    if not competitor_headings_enabled():
+        return {"content": {"competitor_headings": []}}
     normalized = state.get("serp_normalized")
     results = (normalized or {}).get("normalize_results") if isinstance(normalized, dict) else []
     try:
