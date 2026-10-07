@@ -554,6 +554,53 @@ def test_a_scheduled_publish_tells_the_person_which_image_and_what_to_do():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("media_status", "retried"), [(413, False), (401, False), (429, True), (503, True)]
+)
+async def test_a_scheduled_publish_retries_only_an_image_failure_that_may_pass(
+    monkeypatch, media_status, retried
+):
+    from src.tasks.scheduled_tasks import _is_transient_publish_error
+
+    # The upload's own retries on HTTP 429 wait between attempts.
+    monkeypatch.setattr("src.web.wordpress.asyncio.sleep", AsyncMock())
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.rext.test/image.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(return_value=httpx.Response(media_status, json={}))
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException) as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Retry", body_html='<img src="https://cdn.rext.test/image.png">')
+        )
+
+    assert _is_transient_publish_error(raised.value) is retried
+
+
+def test_an_image_that_isnt_one_is_not_retried():
+    from src.tasks.scheduled_tasks import _is_transient_publish_error
+    from src.web.wordpress import _body_image_refusal
+
+    refusal = _body_image_refusal(
+        RextExternalServiceException(
+            message="Downloaded resource is not a valid image", service_name="WordPress"
+        ),
+        "https://cdn.rext.test/expired.png",
+    )
+
+    assert _is_transient_publish_error(refusal) is False
+
+
+@pytest.mark.asyncio
 async def test_a_featured_image_outside_the_body_that_fails_is_left_out():
     publisher = WordPressPublisher(
         site_url="https://example.com", username="user", app_password="pass"

@@ -84,6 +84,10 @@ def _is_transient_publish_error(exc: Exception) -> bool:
     the exact same way on every attempt, so retrying them just burns the
     retry budget and delays the FAILED notification for no benefit.
     """
+    if isinstance(exc, BodyImageUploadError):
+        # A refused image (HTTP 401 or 413, not an image) is refused again, and each
+        # attempt would leave the images uploaded before it in the media library again.
+        return exc.transient
     if isinstance(exc, (ExternalServiceTimeoutException, RextExternalServiceException)):
         return True
     if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError)):
