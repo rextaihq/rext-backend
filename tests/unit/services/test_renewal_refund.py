@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -31,6 +31,7 @@ from src.services.refund_service import RefundService
 from src.services.webhook_handlers import register_default_handlers
 from src.services.webhook_handlers.subscription_handlers import (
     PAID_INVOICE_ID,
+    _last_paid_invoice_at,
     _record_paid_invoice,
 )
 from tests.conftest import TEST_DATABASE_URL
@@ -359,16 +360,80 @@ async def test_a_partial_refund_cuts_the_refunded_subscriptions_credits_not_a_ne
 
 
 @pytest.mark.asyncio
-async def test_an_invoice_of_no_known_subscription_alerts_and_changes_nothing(session, outside):
+async def test_a_refund_before_its_subscription_exists_alerts_and_is_retried(session, outside):
+    # subscription_created delayed, or failed and waiting for its retry: marked
+    # processed, the refund would be lost and the plan granted in full afterwards.
     row = await _renewed_subscription(session)
     event = _refund_event(row)
     event["data"]["attributes"]["subscription_id"] = "ls-unknown"
+
+    with pytest.raises(ValueError, match="retried once it has been created"):
+        await module.handle_subscription_payment_refunded(event, None, session)
+
+    assert await _refunds(session, "inv-renewal") == []
+    assert row.status == SubscriptionStatus.ACTIVE
+    outside.alert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_an_invoice_that_names_no_subscription_alerts_and_is_not_retried(session, outside):
+    # Nothing to wait for: no later event can match it.
+    row = await _renewed_subscription(session)
+    event = _refund_event(row)
+    del event["data"]["attributes"]["subscription_id"]
 
     await module.handle_subscription_payment_refunded(event, None, session)
 
     assert await _refunds(session, "inv-renewal") == []
     assert row.status == SubscriptionStatus.ACTIVE
     outside.alert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_a_plan_changes_payment_does_not_become_the_periods_invoice(
+    session, outside, monkeypatch
+):
+    # The renewal paid for the period; an upgrade's prorated invoice was paid after it.
+    # A refund of the renewal is still a refund of the current period's payment.
+    row = await _renewed_subscription(session)
+    monkeypatch.setattr(subscription_handlers, "_stamp_card_details", lambda *a: None)
+    change = _payment_event(row, "inv-plan-change", NOW - timedelta(hours=2))
+    change["data"]["attributes"]["billing_reason"] = "updated"
+
+    await subscription_handlers.handle_subscription_payment_success(change, None, session)
+
+    assert row.subscription_metadata[PAID_INVOICE_ID] == "inv-renewal"
+    # Its time still orders the payments: an older one delivered late is ignored.
+    assert _last_paid_invoice_at(row) == NOW
+
+    await module.handle_subscription_payment_refunded(_refund_event(row), None, session)
+
+    assert row.status == SubscriptionStatus.CANCELLED
+    outside.provider.cancel_subscription.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_recording_a_refund_holds_the_orders_lock_until_the_transaction_ends(session):
+    # Two events for one refund (a first payment's order_refunded and
+    # subscription_payment_refunded) run in their own transactions. The second waits on
+    # this lock, then reads the first one's row and records nothing.
+    row = await _renewed_subscription(session)
+    held = text(
+        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()"
+        " AND ((classid::bigint << 32) | objid::bigint) = hashtextextended(:key, 0)"
+    )
+    assert (await session.execute(held, {"key": "refund:order-1"})).scalar_one() == 0
+
+    await RefundService(session).record_provider_refund(
+        lemonsqueezy_order_id="order-1",
+        user_id=row.user_id,
+        provider_refunded_total=PRICE,
+        original_amount=PRICE,
+        subscription_id=row.id,
+    )
+
+    assert (await session.execute(held, {"key": "refund:order-1"})).scalar_one() == 1
+    assert (await session.execute(held, {"key": "refund:order-2"})).scalar_one() == 0
 
 
 def test_a_payment_records_the_invoice_that_paid_the_period():

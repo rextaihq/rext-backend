@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Sequence
 from uuid import UUID
 
-from sqlalchemy import Integer, and_, cast, desc, func, select
+from sqlalchemy import Integer, and_, cast, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -169,6 +169,15 @@ class RefundService:
             The refund row created for the new money, or None when this call
             carried nothing we had not already recorded.
         """
+        # One recorder at a time per order: the read below and the insert are not
+        # atomic, and two events for one refund run in their own transactions (a
+        # first payment's order_refunded and subscription_payment_refunded, or the
+        # webhook racing the admin's refund that caused it). The second waits here,
+        # then reads what the first committed and records nothing.
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"refund:{lemonsqueezy_order_id}"},
+        )
         already_refunded = await self.get_refunded_total(lemonsqueezy_order_id)
         delta = int(provider_refunded_total or 0) - already_refunded
 
