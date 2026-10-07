@@ -9,11 +9,14 @@
    ```bash
    docker run -d --name rext-db -e POSTGRES_USER=rext -e POSTGRES_PASSWORD=rext -e POSTGRES_DB=rext_app \
      -p 5432:5432 pgvector/pgvector:pg17
+   # The first start initialises the database on a temporary, socket-only server, then restarts it:
+   # wait until the real server answers over TCP before creating the runtime's database.
+   until docker exec rext-db pg_isready -h 127.0.0.1 -U rext -q; do sleep 1; done
    docker exec rext-db createdb -U rext rext_app_runtime          # the LangGraph runtime's database
    docker run -d --name rext-redis -p 6379:6379 redis:7-alpine --maxmemory 128mb
    ```
 
-   MinIO is optional: without it the API serves, `/health` reports storage as unhealthy, and uploads and featured images fail. Set `REXT_STORAGE_SKIP_BUCKET_CHECK=1` to skip the bucket check at start.
+   MinIO is optional: without it the API serves, the start-up check logs that MinIO can't be reached, `/health` reports storage as unhealthy, and uploads and featured images fail. `REXT_STORAGE_SKIP_BUCKET_CHECK=1` (the tests set it) only skips creating the bucket when the storage module loads: the start-up check and `/health` still try MinIO.
 2. **The environment.** Python 3.11 only (`.python-version`); `uv` installs it if it's missing. `uv sync --frozen` builds the environment from `uv.lock`. It is several GB, since crawl4ai brings torch, transformers and Playwright.
 3. **`.env`.** Copy `.env.example`. Its database and Redis addresses are the containers above:
    - `POSTGRES_URI_CUSTOM=postgresql+asyncpg://rext:rext@localhost:5432/rext_app`;
