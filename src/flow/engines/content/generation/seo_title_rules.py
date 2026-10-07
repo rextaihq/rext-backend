@@ -340,7 +340,6 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     last = _bare(words[kept - 1])
     if last in _DANGLING_END_WORDS:
         return True
-    following = _bare(words[kept]) if kept < len(words) else ""
     # What the trim cut, all of it: only a time ("Today", "This Year") leaves a word whole;
     # "for Today and Tomorrow" was the preposition's object.
     removed = [word for word in (_bare(word) for word in words[kept:]) if word]
@@ -364,11 +363,9 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
         (len(removed) == 1 and removed[0] in _TIME_WORDS)
         or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS)
     )
-    if (
-        words[kept - 1][-1] in _TRAILING_PUNCTUATION
-        or (only_time_cut and not time_was_object)
-        or following in _PREPOSITION_AFTER_VERB
-    ):
+    # A preposition before another one is no proof it had no object: "in [under 10 Minutes]"
+    # nests the second in the first's object. "Rely On in 2026" is kept by its verb.
+    if words[kept - 1][-1] in _TRAILING_PUNCTUATION or (only_time_cut and not time_was_object):
         return False
     verb = _bare(words[kept - 2]) if kept > 1 else ""
     before_particle = _bare(words[kept - 3]) if kept > 2 else ""

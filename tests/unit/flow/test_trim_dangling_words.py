@@ -157,6 +157,13 @@ def test_a_sentence_adverb_is_no_object_either():
     )
 
 
+def test_a_preposition_whose_object_began_with_another_goes():
+    title = "SEO Agencies: A Guide to Building Better Search Rankings in under 10 Minutes"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: A Guide to Building Better Search Rankings"
+    )
+
+
 def test_a_verb_ending_in_o_keeps_its_preposition():
     title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
     assert _trim_to_max(title, "seo agencies") == (
