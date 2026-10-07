@@ -6,6 +6,7 @@ from src.flow.engines.content.generation.persona_relevance import (
     TOPIC_FIT_THRESHOLD,
     persona_fits_topic,
     rank_personas,
+    recommend_persona,
     score_persona,
     subject_fit,
 )
@@ -243,3 +244,35 @@ def test_a_short_speciality_matches_whole_words_only():
     assert persona_fits_topic(
         ai_persona, topic="ai writing tools", title="The best AI writing tools"
     )
+
+
+# --- the recommended author: a fit or nobody (E26, rext-control#559) ----------------------------
+
+
+@pytest.mark.unit
+def test_an_off_topic_persona_is_not_recommended():
+    """The staging pass: a podcast article defaulted to one of the site's people, a software founder here."""
+    ranked = rank_personas(
+        [FOUNDER_PERSONA],
+        topic="how to start a podcast",
+        title="How to Start a Podcast: A Step-by-Step Beginner's Guide",
+        search_intent="informational",
+        content_type="blog",
+    )
+
+    assert recommend_persona(ranked) is None
+    assert [r.persona_id for r in ranked] == ["founder-1"]  # still listed, for the user to pick
+
+
+@pytest.mark.unit
+def test_a_fitting_persona_is_recommended():
+    ranked = rank_personas(
+        [FOUNDER_PERSONA, MARKETER_PERSONA],
+        topic=BAKERY_TOPIC,
+        title=BAKERY_TITLE,
+        search_intent="informational",
+        content_type="blog",
+    )
+
+    assert recommend_persona(ranked) == "marketer-1"
+    assert recommend_persona([]) is None

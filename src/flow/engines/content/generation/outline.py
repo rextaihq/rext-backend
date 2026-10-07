@@ -58,6 +58,8 @@ async def _rank_personas_for_outline(
     Returns ``(recommended_persona_id, recommendations)``. The recommendation is
     a default the user can change or clear in the outline step — it is never the
     final word, so a scoring failure costs a helpful default and nothing else.
+    It's the best fit whose stated expertise covers the subject, or None when no
+    persona's does (rext-control#559); the recommendations list them all.
     """
     if not workspace_id or not outline:
         return None, []
@@ -66,7 +68,10 @@ async def _rank_personas_for_outline(
 
         from src.api.database.async_database import get_pooled_langgraph_db_context
         from src.api.models.knowledge_models.persona_model import Persona
-        from src.flow.engines.content.generation.persona_relevance import rank_personas
+        from src.flow.engines.content.generation.persona_relevance import (
+            rank_personas,
+            recommend_persona,
+        )
         from src.utils.loop_bridge import run_on_main_loop
 
         async def _query_personas():
@@ -90,12 +95,14 @@ async def _rank_personas_for_outline(
             content_type=content_type,
         )
         recommendations = [relevance.to_dict() for relevance in ranked]
-        recommended_id = ranked[0].persona_id if ranked else None
+        recommended_id = recommend_persona(ranked)
+        recommended = next((r for r in ranked if r.persona_id == recommended_id), None)
+        # The persona's id, not its name: drafted personas are real people.
         logger.info(
             "[PersonaSelect] recommended=%r score=%s of %d persona(s) for topic=%r "
             "intent=%r content_type=%r",
-            ranked[0].name if ranked else None,
-            ranked[0].score if ranked else None,
+            recommended_id,
+            recommended.score if recommended else None,
             len(ranked),
             topic,
             search_intent,
