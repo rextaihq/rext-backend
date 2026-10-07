@@ -278,6 +278,34 @@ def test_a_case_studys_cta_is_its_action():
     assert spec["outline_cta"]["text"] == "Book a strategy call"
 
 
+@pytest.mark.parametrize(
+    "line",
+    [">  > **Primary CTA:** Explore Features", " > > Primary CTA: Explore Features"],
+)
+def test_a_label_line_in_a_spaced_nested_blockquote_is_dropped(line):
+    labels = outline_cta_labels(BEST_TOOLS_OUTLINE)
+    assert strip_cta_label_lines(f"Before.\n{line}\nAfter.", labels) == "Before.\nAfter."
+
+
+def test_indented_code_inside_a_blockquote_keeps_its_cta_lines():
+    body = ">     Primary CTA: Explore Features\n\n**Primary CTA:** Explore Features"
+    cleaned = strip_cta_label_lines(body, outline_cta_labels(BEST_TOOLS_OUTLINE))
+    assert cleaned == ">     Primary CTA: Explore Features"
+
+
+def test_a_longer_fence_holds_a_shorter_one_and_its_cta_lines():
+    body = (
+        "> ````markdown\n"
+        "> ```\n"
+        "> **Primary CTA:** Explore Features\n"
+        "> ```\n"
+        "> ````\n\n"
+        "**Primary CTA:** Explore Features"
+    )
+    cleaned = strip_cta_label_lines(body, outline_cta_labels(BEST_TOOLS_OUTLINE))
+    assert cleaned == body.rsplit("\n\n", 1)[0]
+
+
 def test_a_code_example_inside_a_blockquote_keeps_its_cta_lines():
     body = (
         "> Mark up the button like this:\n"

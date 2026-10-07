@@ -31,15 +31,17 @@ _TEXT_FIELDS = ("introduction", "body_markdown", "conclusion")
 _MAX_DEPTH = 8
 
 # "**Primary CTA:** Explore Features", "- **Secondary CTA**: Compare Tools",
-# "### Primary CTA: X", "primary_cta: X", and any of them in a blockquote ("> ...").
+# "### Primary CTA: X", "primary_cta: X"; in a blockquote too, read without its markers.
 _LABEL_LINE = re.compile(
-    r"^[ \t]{0,3}(?:>[ \t]?)*(?:[-*+][ \t]+)?(?:#{1,6}[ \t]+)?(?:\*\*|__)?[ \t]*"
-    r"(?P<label>[^:*\n]{1,60}?)[ \t]*"
+    r"^[ \t]{0,3}(?:[-*+][ \t]+)?(?:#{1,6}[ \t]+)?(?:\*\*|__)?[ \t]*(?P<label>[^:*\n]{1,60}?)[ \t]*"
     r"(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*(?P<value>.*?)[ \t]*$"
 )
-# A fenced code block opens and closes with ``` or ~~~, in a blockquote too ("> ```");
-# an indented one is four spaces or a tab.
-_FENCE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*(```|~~~)")
+# A line's blockquote markers: each ">" may follow up to three spaces and take one after it
+# ("> ", ">> ", ">  > "). The rest of the line is read as if it stood alone.
+_QUOTE_MARKERS = re.compile(r"^(?:[ \t]{0,3}>[ \t]?)*")
+# A fenced code block opens with three or more backticks or tildes and closes with a run of
+# the same character at least as long; an indented one is four spaces or a tab.
+_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 _INDENTED_CODE = re.compile(r"^(?: {4}|\t)")
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
@@ -108,17 +110,19 @@ def strip_cta_label_lines(text: str, labels: dict[str, set[str]]) -> str:
 
     lines = text.split("\n")
     kept = []
-    fence = None  # the marker of the fenced code block the line is in
+    fence = None  # the marker run of the fenced code block the line is in
     for line in lines:
-        opening = _FENCE.match(line)
+        inner = _QUOTE_MARKERS.sub("", line, count=1)
+        opening = _FENCE.match(inner)
         if fence:
-            if opening and opening.group(1) == fence:
+            marker = opening.group(1) if opening else ""
+            if marker[:1] == fence[:1] and len(marker) >= len(fence):
                 fence = None
             kept.append(line)
         elif opening:
             fence = opening.group(1)
             kept.append(line)
-        elif _INDENTED_CODE.match(line) or not is_label_line(line):
+        elif _INDENTED_CODE.match(inner) or not is_label_line(inner):
             # Code is an example, never boilerplate: an article teaching CTA markup keeps it.
             kept.append(line)
     if len(kept) == len(lines):
