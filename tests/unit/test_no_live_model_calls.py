@@ -4,10 +4,13 @@ tests/conftest.py refuses every request the OpenAI client would send and fails t
 so a test can't spend credits or fail when the account is empty or the provider is down.
 """
 
+from types import SimpleNamespace
+
 import openai
 import pytest
 from langchain.chat_models import init_chat_model
 
+import tests.conftest as conftest
 from tests.conftest import LiveModelCallBlocked
 
 
@@ -35,6 +38,21 @@ def test_the_sync_client_is_refused_too(request):
     request.node.live_model_calls.clear()
 
 
-@pytest.mark.live_model
-def test_a_live_model_test_is_skipped_unless_asked():
-    pytest.fail("runs only with RUN_LIVE_MODEL_TESTS=1")
+def _marked_item(marker):
+    added = []
+    return SimpleNamespace(
+        added=added,
+        add_marker=added.append,
+        get_closest_marker=lambda name: object() if name == marker else None,
+    )
+
+
+@pytest.mark.parametrize(("opted_in", "skipped"), [(False, True), (True, False)])
+def test_a_live_model_test_is_skipped_unless_asked(monkeypatch, opted_in, skipped):
+    live, plain = _marked_item("live_model"), _marked_item("unit")
+    monkeypatch.setattr(conftest, "RUN_LIVE_MODEL_TESTS", opted_in)
+
+    conftest.pytest_collection_modifyitems(None, [live, plain])
+
+    assert [m.mark.name for m in live.added] == (["skip"] if skipped else [])
+    assert plain.added == []
