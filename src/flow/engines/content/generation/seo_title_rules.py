@@ -94,7 +94,9 @@ def title_max_chars(keyphrase: Any = "") -> int:
     TITLE_MAX_CHARS, or the keyphrase plus TITLE_ROOM_BESIDE_KEYPHRASE when that is more,
     never over TITLE_MAX_CHARS_CEILING. A short keyphrase keeps 59.
     """
-    length = len(normalize_title(keyphrase)) if keyphrase else 0
+    # Measured as keyphrase_fits_a_title measures it, so a keyword the gate lets through is
+    # never given a smaller limit than the gate assumed.
+    length = len(_normalize_for_match(keyphrase).strip()) if keyphrase else 0
     return min(TITLE_MAX_CHARS_CEILING, max(TITLE_MAX_CHARS, length + TITLE_ROOM_BESIDE_KEYPHRASE))
 
 
@@ -197,12 +199,14 @@ def keyphrase_title(keyphrase: Any) -> Optional[str]:
 
     Title-cased for display (matching is case-insensitive, so it still holds the exact
     phrase), and lifted to the minimum length with a claim-free qualifier as any repair is.
+    None when even that breaks the rules (a keyphrase whose punctuation takes it over the
+    limit, or one no qualifier lifts to the minimum): an invalid title is never offered.
     """
     keyphrase = normalize_title(keyphrase)
     if not keyphrase:
         return None
     title = " ".join(word[:1].upper() + word[1:] for word in keyphrase.split())
-    return repair_title(title, keyphrase) or title
+    return repair_title(title, keyphrase)
 
 
 # NOTE: resolving WHICH keyphrase to enforce is not this module's job — that

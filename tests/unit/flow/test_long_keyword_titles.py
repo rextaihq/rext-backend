@@ -139,3 +139,39 @@ def test_the_prompt_states_the_keyphrases_limit():
 
     assert "BETWEEN 50 AND 68" in prompt
     assert "BETWEEN 50 AND 59" not in prompt
+
+
+def test_the_fallback_never_offers_a_title_that_breaks_the_rules():
+    """76 characters as typed, under 75 with its punctuation flattened: the gate lets it
+    through, but no title of at most 75 can hold it as written, so there is no fallback."""
+    keyphrase = "c++ and c# developers for hire: best project management software for teams!!"
+    assert len(keyphrase) == 76
+    assert keyphrase_fits_a_title(keyphrase)
+    assert title_max_chars(keyphrase) == 75
+
+    assert keyphrase_title(keyphrase) is None
+
+
+@pytest.mark.asyncio
+async def test_a_regeneration_keeps_the_previous_set_rather_than_shrink_it(monkeypatch):
+    """One new title, or none: the caller keeps the titles the user already has (None)."""
+    one = AsyncMock()
+    one.ainvoke.side_effect = [
+        _topics("Best Project Management Software for Small Teams: How to Choose"),
+    ]
+    assert (
+        await tg._generate_and_validate_topics(
+            model=one, messages=[], query=LONG, keyphrase=LONG, regenerating=True
+        )
+        is None
+    )
+
+    monkeypatch.setattr(tg, "repair_title", lambda title, keyphrase: None)
+    none = AsyncMock()
+    none.ainvoke.side_effect = [_topics("Team Tools"), RuntimeError("repair model down")]
+    assert (
+        await tg._generate_and_validate_topics(
+            model=none, messages=[], query=LONG, keyphrase=LONG, regenerating=True
+        )
+        is None
+    )
