@@ -708,7 +708,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
 
     if feedback:
         logger.info("Adding user feedback to model prompt: %s", feedback)
-        low, high, _ = title_length_terms(keyphrase)
+        low, high, how = title_length_terms(keyphrase)
 
         messages.append(
             HumanMessage(
@@ -718,7 +718,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
                     "Keep ALL strict requirements from the system prompt. In "
                     f"particular, every title must still contain the exact phrase "
                     f'"{keyphrase}" and be {low}-{high} '
-                    "characters, and the anti-hallucination rules still apply. "
+                    f"characters ({how}), and the anti-hallucination rules still apply. "
                     "User feedback can change the angle, wording or emphasis of a "
                     "title -- it can NEVER change or remove the focus keyphrase."
                 )

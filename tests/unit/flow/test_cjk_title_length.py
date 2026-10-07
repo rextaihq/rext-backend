@@ -137,3 +137,13 @@ def test_the_prompt_counts_full_width_punctuation_and_names_the_other_scripts_ra
     assert "each full-width punctuation mark" in _prompt("项目管理软件")
     # A Latin keyword may still get a Chinese title ("最佳seo工具推荐").
     assert "20-30 of those characters" in _prompt("seo")
+
+
+def test_the_regenerate_note_keeps_the_counting_guidance():
+    import inspect
+
+    from src.flow.engines.content.generation import topic_generation
+
+    source = inspect.getsource(topic_generation.generate_topics)
+    assert "low, high, how = title_length_terms(keyphrase)" in source
+    assert "characters ({how})" in source
