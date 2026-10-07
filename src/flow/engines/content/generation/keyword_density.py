@@ -207,6 +207,17 @@ def strip_markdown_noise(text: str) -> str:
     return cleaned
 
 
+def strip_link_destinations(text: str) -> str:
+    """Markdown without the addresses a reader never reads: images go, a link keeps its anchor
+    text, a bare address goes. Everything else stays as written, symbols included, so "C#" is
+    still "C#" (strip_markdown_noise takes "#" for a heading mark)."""
+    if not text:
+        return ""
+    cleaned = _IMAGE_RE.sub(" ", text)
+    cleaned = _LINK_RE.sub(r"\1", cleaned)
+    return _BARE_URL_RE.sub(" ", cleaned)
+
+
 def tokenize_words(text: str) -> list[str]:
     """Lowercased word tokens, markdown already stripped by the caller."""
     return [w.lower() for w in _WORD_RE.findall(text or "")]

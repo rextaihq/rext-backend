@@ -33,6 +33,7 @@ from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyw
 from src.flow.engines.content.generation.keyword_density import (
     analyze_keyword_density,
     count_keyphrase_occurrences,
+    strip_link_destinations,
 )
 from src.flow.engines.content.generation.link_integrity import (
     LinkRecord,
@@ -483,7 +484,9 @@ def _keyword_appears(text: str, keyword: str) -> bool:
     if not _MEANINGFUL_SYMBOL.search(keyword):
         return bool(count_keyphrase_occurrences(text, keyword))
     as_written = r"\s+".join(re.escape(word) for word in keyword.split())
-    return re.search(rf"(?<![\w+#]){as_written}(?![\w+#])", text or "", re.IGNORECASE) is not None
+    # In the copy a reader sees: "node.js" inside a link's address is not the keyword used.
+    prose = strip_link_destinations(text or "")
+    return re.search(rf"(?<![\w+#]){as_written}(?![\w+#])", prose, re.IGNORECASE) is not None
 
 
 def check_secondary_keywords(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:

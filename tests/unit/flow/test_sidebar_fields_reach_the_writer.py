@@ -276,6 +276,9 @@ def test_a_missing_secondary_keyword_is_a_warning_not_a_block():
         (".NET", "It runs on the net.", False),
         (".NET", "It runs on .NET 8.", True),
         ("node.js", "Built with Node.js and care.", True),
+        # In a link's address the reader never sees it; in its anchor text they do.
+        ("node.js", "Read [the documentation](https://example.com/node.js-guide).", False),
+        ("node.js", "Read [the node.js guide](https://example.com/guide).", True),
         ("what is a content calendar?", "So, what is a content calendar, really", True),
         ("editorial calendar", "An editorial-calendar helps.", True),
     ],
@@ -295,6 +298,20 @@ def test_the_saved_article_keeps_the_approved_secondary_keywords():
 
     assert approved_secondary_keywords(outline, FOCUS) == ["editorial calendar"]
     assert approved_secondary_keywords({}, FOCUS) == []
+
+
+def test_an_emptied_keyword_list_is_saved_empty_not_as_the_models_own():
+    from src.flow.engines.content.generation.persist_content import _saved_secondary_keywords
+
+    final = {"secondary_keywords": ["a phrase the model chose"]}
+    listed = {"outline": {"keywords_to_include": [FOCUS, "posting schedule"]}}
+    emptied = {"outline": {"keywords_to_include": [FOCUS]}}
+
+    assert _saved_secondary_keywords(listed, final, FOCUS) == ["posting schedule"]
+    # The user removed every secondary keyword: the list holds only the focus keyphrase.
+    assert _saved_secondary_keywords(emptied, final, FOCUS) == []
+    # An older run's outline carries no list: the model's is all there is.
+    assert _saved_secondary_keywords({"outline": {}}, final, FOCUS) == ["a phrase the model chose"]
 
 
 def test_the_checklist_names_the_missing_keywords():
@@ -411,6 +428,8 @@ async def test_the_writer_gets_the_focus_keyphrase_apart_from_the_secondary_keyw
     # A keyword the user removed is named once, as removed, and is in no cluster note.
     assert message.count("calendar tools") == 1
     assert "KEYWORDS THE USER REMOVED: calendar tools" in message
+    # The approved headings win where one already contains a removed phrase.
+    assert "A heading of the approved outline that already contains one stays" in message
     assert "Keywords: theme days" in message
 
 

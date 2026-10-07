@@ -13,6 +13,17 @@ from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
 logger = logging.getLogger(__name__)
 
 
+def _saved_secondary_keywords(content_state: dict, final: dict, focus_keyphrase: str) -> list:
+    """The secondary keywords saved with the article: the list the user approved at the
+    outline, not the copy the model may or may not have written back. An outline with a
+    keyword list decides, even when the user emptied it; the model's list is only for an
+    outline that carries none (an older run)."""
+    outline = content_state.get("outline") or {}
+    if isinstance(outline.get("keywords_to_include"), list):
+        return approved_secondary_keywords(outline, focus_keyphrase)
+    return final.get("secondary_keywords") or []
+
+
 class ArticleNotSaved(RuntimeError):
     """The finished article couldn't be stored: the run ends as a failure, never as a success
     that left nothing in the library (G55). Its message is the one a person may see."""
@@ -199,13 +210,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         # (keyword_density.py). The column already existed and was never
         # populated, so the UI had no density to show.
         keyphrase_density=_as_float(final.get("keyphrase_density")),
-        # The list the user approved at the outline, not the copy the model may or may not
-        # have written back; the model's only for an outline that listed none.
-        secondary_keywords=approved_secondary_keywords(
-            content_state.get("outline") or {}, focus_keyphrase
-        )
-        or final.get("secondary_keywords")
-        or [],
+        secondary_keywords=_saved_secondary_keywords(content_state, final, focus_keyphrase),
         seo_score=_as_float(on_page.get("seo_health_score")),
         readability_score=_as_float(
             readability.get("flesch_reading_ease") or readability.get("score")
