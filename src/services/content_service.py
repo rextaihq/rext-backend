@@ -129,12 +129,20 @@ def _host_of(address: Optional[str]) -> Optional[str]:
 
 
 def _own_site_link(hosts: List[str]) -> str:
-    """A PostgreSQL pattern for an address on one of these hosts, with or without "www.": the
-    host must end there (a path, a port, a query, a closing bracket, a quote, a space or the
-    text's end), so "example.com.au" is no link to "example.com"."""
+    """A PostgreSQL pattern for a link to the workspace's own site, in Markdown or HTML:
+
+    - an address on one of these hosts, with or without "www." and with or without a scheme
+      ("https://example.com/x", "//example.com/x"). The host must end there (a path, a port, a
+      query, a closing bracket, a quote, a space or the text's end), so "example.com.au" is no
+      link to "example.com";
+    - a link from the site's root ("](/pricing)", href="/pricing"), which has no host at all.
+    """
     names = "|".join(re.escape(host) for host in hosts)
     ends = r'[/:?#)"<>\s' + "'" + "]"
-    return rf"://(www\.)?({names})({ends}|$)"
+    opens = r'[("=\s' + "'" + "]"
+    absolute = rf"(://|{opens}//)(www\.)?({names})({ends}|$)"
+    from_the_root = r"(\]\(|href=[" + "\"'" + r"])/([^/]|$)"
+    return f"({absolute})|({from_the_root})"
 
 
 class ContentService:
@@ -532,11 +540,13 @@ class ContentService:
         no_internal_links = None
         hosts = await self._own_hosts(workspace_id)
         if hosts:
-            # The published article is its introduction and its body together.
+            # The published article is its introduction and its body: the Markdown body, or the
+            # HTML one when there is no Markdown (as the publishers choose).
             own_site_link = _own_site_link(hosts)
+            body = func.coalesce(func.nullif(Content.body_markdown, ""), Content.body_html, "")
             links_to_own_site = or_(
                 func.coalesce(Content.introduction, "").op("~*")(own_site_link),
-                func.coalesce(Content.body_markdown, "").op("~*")(own_site_link),
+                body.op("~*")(own_site_link),
             )
             no_internal_links = await self.db.scalar(
                 select(func.count()).select_from(Content).where(*published, not_(links_to_own_site))
