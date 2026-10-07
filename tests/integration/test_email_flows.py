@@ -20,9 +20,41 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
+from src.api.database.base import Base
 from src.api.models.email_models.email_log import EmailLog
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.providers.email.mock_provider import MockEmailProvider
 from src.services.email_service import EmailService
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def email_tables(db_session):
+    """The tables these flows write, inside the test's transaction: already there on a migrated
+    database (checkfirst), made here on an empty one, and rolled back with the test."""
+    await db_session.run_sync(
+        lambda session: Base.metadata.create_all(
+            session.connection(),
+            tables=[Users.__table__, WorkspaceModel.__table__, EmailLog.__table__],
+            checkfirst=True,
+        )
+    )
+
+
+async def _user(db_session) -> Users:
+    """A real user: an email log refers to one by its id."""
+    user = Users(email=f"{uuid4().hex[:12]}@example.com")
+    db_session.add(user)
+    await db_session.flush()
+    return user
+
+
+async def _workspace(db_session, owner: Users) -> WorkspaceModel:
+    """A real workspace: an email log refers to one by its id."""
+    workspace = WorkspaceModel(user_id=owner.id, name="Acme", slug=f"acme-{uuid4().hex[:8]}")
+    db_session.add(workspace)
+    await db_session.flush()
+    return workspace
 
 
 class TestEmailSendingFlows:
@@ -98,8 +130,9 @@ class TestEmailSendingFlows:
         mock_config.resend_from_email = "noreply@rext.com"
         mock_config.resend_from_name = "Rext AI"
 
-        workspace_id = uuid4()
-        user_id = uuid4()
+        user = await _user(db_session)
+        workspace_id = (await _workspace(db_session, user)).id
+        user_id = user.id
 
         service = EmailService(db_session)
 
@@ -236,7 +269,7 @@ class TestEmailQueryFlows:
         mock_config.resend_from_email = "noreply@rext.com"
         mock_config.resend_from_name = "Rext AI"
 
-        user_id = uuid4()
+        user_id = (await _user(db_session)).id
 
         service = EmailService(db_session)
 
@@ -272,7 +305,7 @@ class TestEmailQueryFlows:
         mock_config.resend_from_email = "noreply@rext.com"
         mock_config.resend_from_name = "Rext AI"
 
-        workspace_id = uuid4()
+        workspace_id = (await _workspace(db_session, await _user(db_session))).id
 
         service = EmailService(db_session)
 
