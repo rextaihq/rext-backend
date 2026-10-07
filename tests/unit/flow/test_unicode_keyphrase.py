@@ -3,7 +3,7 @@
 Matching kept only a-z and 0-9, so a Chinese, Arabic or Cyrillic keyword flattened to nothing and
 an accented one lost its accented letters: no title could contain it, every title was dropped as
 missing the keyphrase, and the run ended at the title step. Text is now NFC-normalized and
-casefolded, the letters, marks and digits of every script are kept, and a keyword in a script
+lowercased, the letters, marks and digits of every script are kept, and a keyword in a script
 written without spaces is matched as a run of characters.
 """
 
@@ -61,6 +61,13 @@ def _nfd(text: str) -> str:
         # Lowercase, not casefold: ß and ss are different words.
         ("Maße und Gewichte", "Masse", False),
         ("MASSE UND GEWICHTE", "masse", True),
+        # Turkish: a capital dotted İ is an i; the dotless ı is a letter of its own.
+        ("İstanbul'da En İyi SEO Ajansları", "istanbul", True),
+        ("ISTANBUL İÇİN SEO REHBERİ", "İstanbul", True),
+        ("ıstanbul için seo", "istanbul", False),
+        # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
+        ("𠀀𠀁𠀂", "𠀁", True),
+        ("2026年𠮷野家の店舗", "𠮷野家", True),
     ],
 )
 def test_a_keyphrase_in_any_script_is_matched(title, keyphrase, expected):
