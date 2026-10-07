@@ -39,10 +39,7 @@ from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.services.lemonsqueezy_webhook_service import (
-    LemonSqueezyWebhookService,
-    WebhookVerificationError,
-)
+from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.refund_request_service import RefundRequestError, RefundRequestService
 from src.services.usage_tracking_service import UsageTrackingService
 from src.services.webhook_handlers import register_default_handlers
@@ -308,9 +305,14 @@ async def test_launch_offer_is_granted_once_however_often_its_events_arrive(db):
     assert [g.amount for g in await _grants(db, subscription)] == [1000]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="F8d rext-control#543: the first payment judges the window by the processing time",
+)
 async def test_a_trials_first_payment_gets_the_offer_when_it_started_in_the_window(db):
     """A paid plan's trial days, started in launch week, pays later: the bonus comes with
-    the first payment, judged by when the subscription started."""
+    the first payment, judged by when Lemon Squeezy started the subscription (its created_at),
+    not by when the event happened to be processed."""
     await _launch_promotion(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user = await _customer(db)
@@ -326,9 +328,6 @@ async def test_a_trials_first_payment_gets_the_offer_when_it_started_in_the_wind
     )
     subscription = await _subscription_of(db, ls_id)
     assert await _grants(db, subscription) == []  # nothing until it is paid
-    # start_date is when the event was processed; in launch week that is the event's own time.
-    subscription.start_date = started
-    await db.flush()
 
     await handle_subscription_payment_success(
         _invoice_event(user, ls_id, at=started + timedelta(days=7), billing_reason="initial"),
@@ -379,7 +378,7 @@ async def _paid_growth(db, *, ordered_days_ago=3):
     return user, order_id
 
 
-@pytest.mark.parametrize(("spent", "refundable"), [(0, True), (90, True), (105, False)])
+@pytest.mark.parametrize(("spent", "refundable"), [(0, True), (99, True), (100, False)])
 async def test_a_refund_needs_fewer_than_100_credits_used(db, spent, refundable):
     user, order_id = await _paid_growth(db)
     if spent:
@@ -549,37 +548,45 @@ def service_sessions(connection, monkeypatch):
 async def _service(db):
     service = LemonSqueezyWebhookService(db)
     register_default_handlers(service)
-    service.webhook_secret = SECRET
     return service
 
 
 async def test_a_replayed_renewal_does_not_refill_the_month(db, service_sessions):
+    """As the live route does it: verify, store (record_webhook), process (process_recorded)."""
+    from src.utils.lemonsqueezy_webhook import verify_webhook_signature
+
     user, ls_id, _ = await _active_growth(db)
     await db.commit()
-    renewal = _invoice_event(user, ls_id, at=datetime.now(timezone.utc), billing_reason="renewal")
-    body, signature = _signed(renewal)
+    body, signature = _signed(
+        _invoice_event(user, ls_id, at=datetime.now(timezone.utc), billing_reason="renewal")
+    )
     usage = UsageTrackingService(db)
 
-    first = await (await _service(db)).process_webhook(body, signature)
-    assert first["success"] is True
+    assert verify_webhook_signature(payload=body, signature=signature, secret=SECRET)
+    recorded = await (await _service(db)).record_webhook(body)
+    assert recorded["duplicate"] is False
+    processed = await (await _service(db)).process_recorded(recorded["event_id"])
+    assert processed["message"] == "Event processed successfully"
     assert await usage.consume_credits(user.id, 300)
     assert await usage.get_credit_balance(user.id) == 700
 
-    again = await (await _service(db)).process_webhook(body, signature)
-
-    assert "duplicate" in again["message"].lower()
+    again = await (await _service(db)).record_webhook(body)  # Lemon Squeezy sends it again
+    assert again["duplicate"] is True  # the route answers "duplicate" and processes nothing
+    once_more = await (await _service(db)).process_recorded(recorded["event_id"])
+    assert once_more["message"] == "Nothing to process"
     assert await usage.get_credit_balance(user.id) == 700  # not refilled to 1000
 
 
-async def test_an_event_with_a_wrong_signature_is_refused(db, service_sessions):
-    user, ls_id, _ = await _active_growth(db, spend=300)
-    body, _ = _signed(
-        _invoice_event(user, ls_id, at=datetime.now(timezone.utc), billing_reason="renewal")
-    )
+def test_an_event_with_a_wrong_signature_is_refused():
+    """The live route verifies first and answers 401 without storing anything."""
+    from src.utils.lemonsqueezy_webhook import verify_webhook_signature
 
-    with pytest.raises(WebhookVerificationError):
-        await (await _service(db)).process_webhook(body, "0" * 64)
-    assert await UsageTrackingService(db).get_credit_balance(user.id) == 700
+    body = json.dumps({"meta": {"event_name": "subscription_payment_success"}}).encode()
+    good = hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
+
+    assert verify_webhook_signature(payload=body, signature=good, secret=SECRET)
+    assert not verify_webhook_signature(payload=body, signature="0" * 64, secret=SECRET)
+    assert not verify_webhook_signature(payload=body + b" ", signature=good, secret=SECRET)
 
 
 # --- 5. the rest: plan changes, cancelling, refunds ------------------------------------------------
@@ -763,9 +770,21 @@ async def test_a_full_refund_of_a_renewal_ends_that_months_credits(db, no_refund
 
 
 @pytest.mark.xfail(strict=True, reason="F8c rext-control#538: not cancelled at Lemon Squeezy")
-async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(db, no_refund_mail):
-    """After a full refund ends access, an "active" update without a new payment keeps it ended."""
+async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(
+    db, no_refund_mail, monkeypatch
+):
+    """A full refund cancels the subscription at Lemon Squeezy, and an "active" update without a
+    new payment doesn't bring access back."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    import src.providers.payment.provider_factory as provider_factory
+    import src.services.webhook_handlers.order_handlers as order_handlers
     from src.services.webhook_handlers.order_handlers import handle_order_refunded
+
+    provider = MagicMock()
+    provider.cancel_subscription = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(provider_factory, "get_payment_provider", lambda: provider)
+    monkeypatch.setattr(order_handlers, "get_payment_provider", lambda: provider)
 
     user, order_id = await _paid_growth(db)
     plan = (await db.execute(select(SubscriptionPlan))).scalars().first()
@@ -774,6 +793,10 @@ async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(db, 
         await db.execute(select(UserSubscription).where(UserSubscription.user_id == user.id))
     ).scalar_one()
     await handle_order_refunded(_refund_event(user, order_id, variant), None, db)
+
+    # Lemon Squeezy's subscription ends too, or it charges the refunded customer next month.
+    provider.cancel_subscription.assert_awaited()
+    assert subscription.lemonsqueezy_subscription_id in str(provider.cancel_subscription.await_args)
 
     await handle_subscription_updated(
         _subscription_event(
