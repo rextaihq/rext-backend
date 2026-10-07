@@ -670,3 +670,9 @@ def test_a_sentence_after_an_abbreviation_still_ends_at_its_own_full_stop():
         "We compared Acme Inc. and Beta Ltd. on price.",
         "Then we chose.",
     ]
+
+
+def test_not_before_in_our_tests_places_the_finding_and_is_still_a_claim():
+    text = "We found the slowdown not in our tests but in production."
+    claims = find_unsupported_claims(text, {})
+    assert [(c.category, c.span) for c in claims] == [("fabricated_experience", "in our tests")]

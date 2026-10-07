@@ -584,6 +584,9 @@ def _numeric_claim_spans(text: str) -> dict[str, list[str]]:
 
 def _denies(text: str, testing: re.Match) -> bool:
     """Whether a negation right before the testing word denies that a test was run."""
+    if testing.group(0).lower().startswith("in "):
+        # "Not in our tests but in production" places the finding; it asserts the tests.
+        return False
     before = text[: testing.start()]
     negation = _NEGATION_BEFORE_RE.search(before)
     if not negation:
