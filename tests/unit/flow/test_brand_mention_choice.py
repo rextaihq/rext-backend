@@ -562,3 +562,81 @@ def test_tags_and_alt_text_that_name_the_excluded_brand_are_cleaned_in_code():
     # With a mention approved, both stay as written.
     kept, _ = _checked(article, _outline("prominent"))
     assert kept is article
+
+
+# -- Review round 1 of #938 ---------------------------------------------------------------
+
+LATER = {"brand_name": "Later", "brand_url": "https://later.test/"}
+
+
+def _later_outline(**extra):
+    return {**_outline("none"), "brand_voice_promotion": dict(LATER), **extra}
+
+
+def test_a_one_word_brand_is_taken_out_only_where_it_is_the_name():
+    from src.flow.engines.content.generation.validation import check_required_sections
+
+    article = {
+        **ARTICLE,
+        "body_markdown": "## What to do afterwards\n\nWater the beds.",
+        "tags": ["Later", "See you later", "Gardening"],
+        "images": [
+            {
+                "image_url": "https://cdn.example/a.png",
+                "alt_text": "Return later to water the plants",
+            },
+            {"image_url": "https://cdn.example/b.png", "alt_text": "The Later dashboard"},
+        ],
+    }
+
+    cleaned, spec = _checked(article, _later_outline())
+
+    # The tag that is the name goes; the ordinary word in a tag and in an alt text stays.
+    assert cleaned["tags"] == ["See you later", "Gardening"]
+    assert [image["alt_text"] for image in cleaned["images"]] == [
+        "Return later to water the plants",
+        "The dashboard",
+    ]
+    # A planned heading with the ordinary word is still asked for as written.
+    spec["planned_sections"] = [
+        {
+            "heading": "What to do later",
+            "level": 2,
+            "position": 1,
+            "of": 1,
+            "required": True,
+            "plan": "",
+        }
+    ]
+    assert check_required_sections(cleaned, spec)["passed"] is False
+
+
+def test_the_link_lists_lose_the_entry_of_a_link_removed_in_code():
+    brand_page = "https://acme.test/blog/soil"
+    article = {
+        **ARTICLE,
+        "body_markdown": f"## Choose the spot\n\n[A soil study]({brand_page}) and [a guide](https://soil.example/g).",
+        "outbound_links": [
+            {"url": brand_page, "anchor_text": "A soil study"},
+            {"url": "https://soil.example/g", "anchor_text": "a guide"},
+        ],
+    }
+
+    cleaned, _ = _checked(article, _outline("none"))
+
+    assert "acme.test" not in cleaned["body_markdown"]
+    assert [entry["url"] for entry in cleaned["outbound_links"]] == ["https://soil.example/g"]
+
+
+def test_an_approved_page_linked_with_a_fragment_is_still_approved():
+    internal = "https://www.acme.test/blog/garden-planner"
+    outline = _outline("none", internal_links=[{"url": internal, "title": "Garden planner"}])
+    article = {
+        **ARTICLE,
+        "body_markdown": f"See [our planner]({internal}/#steps) and [it again]({internal}?utm_source=x).",
+    }
+
+    cleaned, spec = _checked(article, outline)
+
+    assert cleaned is article
+    assert check_brand_absent(cleaned, spec)["passed"] is True
