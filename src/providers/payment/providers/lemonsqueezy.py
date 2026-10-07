@@ -479,7 +479,11 @@ class LemonSqueezyProvider(PaymentProvider):
                 **({"email": customer_email} if customer_email else {}),
                 **({"name": customer_name} if customer_name else {}),
             },
-            "preview": False,  # Always false - test mode is controlled by test products/API keys
+            # No preview object in the response: nothing reads it.
+            "preview": False,
+            # Sandbox mode creates a test-mode checkout whatever mode the API key is
+            # in, so a sandbox server holding a live key still takes no real payment.
+            "test_mode": self.sandbox_mode,
         }
 
         # Add discount code if provided (must be inside checkout_data, not top-level)
