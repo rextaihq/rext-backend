@@ -249,3 +249,18 @@ def is_account_creation_ip_allowlisted(client_ip: Optional[str]) -> bool:
     raw = getattr(get_settings(), "ACCOUNT_CREATION_IP_ALLOWLIST", "") or ""
     entries = [item.strip() for item in raw.split(",") if item.strip()]
     return ip_matches_allowlist(client_ip, entries)
+
+
+def mask_ip(host: Optional[str]) -> str:
+    """
+    The network an address belongs to, for a log line: an IPv4 address to its /24,
+    an IPv6 address to its /48. A visitor's address is personal data and never goes
+    into a log (AGENTS.md); the network still tells one source of traffic from
+    another. Anything that isn't an address ("unknown", a test client) passes as is.
+    """
+    try:
+        address = ip_address(host or "")
+    except ValueError:
+        return host or "unknown"
+    prefix = 24 if address.version == 4 else 48
+    return str(ip_network(f"{address}/{prefix}", strict=False))

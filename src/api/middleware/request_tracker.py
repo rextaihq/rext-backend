@@ -20,6 +20,7 @@ from fastapi import Request, Response
 
 from src.api.cache.redis_client import cache
 from src.api.config import get_settings
+from src.utils.ip_allowlist import mask_ip
 from src.utils.logger import logger
 
 # Minute counters must outlive the rollup interval by a wide margin: anything
@@ -196,7 +197,7 @@ class RequestTrackerMiddleware:
                 "method": request.method,
                 "path": request.url.path,
                 "query_params": self._get_redacted_query_params(request.query_params),
-                "client_ip": self._get_client_ip(request),
+                "client_ip": self._client_network_for_logs(request),
                 "user_agent": request.headers.get("User-Agent", "unknown"),
                 "event_type": "request_start",
             },
@@ -280,13 +281,13 @@ class RequestTrackerMiddleware:
             exc_info=True,
         )
 
-    def _get_client_ip(self, request: Request) -> str:
+    def _client_network_for_logs(self, request: Request) -> str:
         """
-        Extract client IP address from request.
-
-        Uses request.client.host which is set correctly by ProxyHeadersMiddleware.
+        The client's network, masked for the log (IPv4 /24, IPv6 /48), never its
+        address: request.client.host is the visitor's own IP once ProxyHeadersMiddleware
+        has applied X-Forwarded-For.
         """
-        return getattr(request.client, "host", "unknown") if request.client else "unknown"
+        return mask_ip(getattr(request.client, "host", None) if request.client else None)
 
     async def _record_api_metrics(
         self, processing_time_ms: int, status_code: int, path: str = ""
