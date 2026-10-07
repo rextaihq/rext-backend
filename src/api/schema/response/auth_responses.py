@@ -17,6 +17,8 @@ class AuthTokenResponse(BaseModel):
     user: UserResponse
     roles: List[str] = []
     permissions: List[str] = []
+    # OAuth login only: whether this login created the account (a sign-up, not a sign-in).
+    is_new_user: bool = False
 
 
 class VerifyEmailResponse(BaseModel):
