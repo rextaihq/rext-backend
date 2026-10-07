@@ -18,6 +18,7 @@ from src.flow.engines.content.generation.seo_title_rules import (
     title_range,
     title_width,
 )
+from src.flow.engines.content.generation.topic_generation import _build_system_prompt
 
 
 def test_width_is_length_for_latin_and_double_for_wide_characters():
@@ -96,3 +97,21 @@ def test_a_long_keyphrase_has_room_up_to_its_scripts_ceiling():
     assert keyphrase_fits_a_title("项" * 32)  # 64 wide
     assert not keyphrase_fits_a_title("项" * 33)
     assert title_range("", "seo agencies") == (50, 59)  # Latin as before
+
+
+def _prompt(keyphrase: str) -> str:
+    return _build_system_prompt(
+        keyphrase=keyphrase,
+        current_year=2026,
+        selected_intent="informational",
+        selected_content_type="guide",
+    )
+
+
+def test_the_prompt_states_the_range_in_the_characters_a_writer_counts():
+    chinese = _prompt("项目管理软件")
+    assert "BETWEEN 20 AND 30 CHARACTERS" in chinese
+    assert "Count each Chinese, Japanese or Korean character as one" in chinese
+    thai = _prompt("โปรแกรมจัดการโครงการ")
+    assert "BETWEEN 38 AND 55 CHARACTERS" in thai
+    assert "BETWEEN 50 AND 59 CHARACTERS" in _prompt("seo agencies")

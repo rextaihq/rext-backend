@@ -255,6 +255,23 @@ def _matched_width(keyphrase: Any) -> int:
     return title_width(_normalize_for_match(keyphrase).strip()) - _nfc(keyphrase).count("և")
 
 
+def title_length_terms(keyphrase: Any = "") -> tuple[int, int, str]:
+    """The range a prompt states for this keyphrase's titles, in the characters a writer counts,
+    and how to count them: a Chinese, Japanese or Korean title's range is half its width."""
+    low, high = title_range("", keyphrase)
+    family = _title_family(keyphrase)
+    if family == "cjk":
+        return (
+            low // 2,
+            high // 2,
+            "Count each Chinese, Japanese or Korean character as one, and a Latin letter, digit, "
+            "space or punctuation mark as half of one.",
+        )
+    if family == "thai":
+        return low, high, "Thai vowel and tone marks written above or below a letter don't count."
+    return low, high, "Count spaces and punctuation as characters."
+
+
 def title_max_chars(keyphrase: Any = "") -> int:
     """The widest a title for this keyphrase may be (TITLE_MAX_CHARS for a short Latin one)."""
     return title_range("", keyphrase)[1]
