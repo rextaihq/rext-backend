@@ -48,8 +48,19 @@ def _nfd(text: str) -> str:
         # Chinese has no spaces between words: the phrase as a run of characters.
         ("2026年最佳项目管理软件推荐", "项目管理软件", True),
         ("2026年最佳项目管理推荐", "项目管理软件", False),
-        # Japanese, kana and kanji.
+        # Japanese, kana and kanji, and halfwidth kana.
         ("小規模チーム向けのプロジェクト管理ツール比較", "プロジェクト管理ツール", True),
+        ("ﾌﾟﾛｼﾞｪｸﾄﾂｰﾙ比較", "ﾌﾟﾛｼﾞｪｸﾄﾂｰﾙ", True),
+        # A mixed phrase keeps the boundary at its Latin edge.
+        ("AIツール比較", "AIツール", True),
+        ("XAIツール比較", "AIツール", False),
+        ("项目管理 software 推荐", "项目管理 software", True),
+        ("项目管理 softwarex", "项目管理 software", False),
+        # A Latin word written against Chinese characters, with no space, is still a word.
+        ("最佳seo工具推荐", "seo", True),
+        # Lowercase, not casefold: ß and ss are different words.
+        ("Maße und Gewichte", "Masse", False),
+        ("MASSE UND GEWICHTE", "masse", True),
     ],
 )
 def test_a_keyphrase_in_any_script_is_matched(title, keyphrase, expected):
