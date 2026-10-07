@@ -113,6 +113,8 @@ def test_step_guides_plan_several_steps(content_type):
         "The H3s are missing",
         "H3s under each list item",
         "Subsections for pricing and features",
+        "H3s should be added",
+        "subsections must be included",
     ],
 )
 def test_feedback_asking_for_subsections_is_recognised(feedback):
@@ -138,6 +140,7 @@ def test_feedback_asking_for_subsections_is_recognised(feedback):
         "I don't think the H3s are needed",
         "Not sure the sub-headings are really necessary",
         "I don't think that any of the H3s are needed",
+        "H3s should not be added",
     ],
 )
 def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
@@ -163,6 +166,9 @@ def test_feedback_asking_for_fewer_subsections_is_recognised(feedback):
         "Not sure the subsections are useful enough yet",
         "I don't think the H3s should be removed",
         "The H3 under the intro is too long",
+        "The H3s do not need to be removed",
+        "The H3s don't need to be removed",
+        "the subsections shouldn't go",
     ],
 )
 def test_other_feedback_says_nothing_about_subsections(feedback):

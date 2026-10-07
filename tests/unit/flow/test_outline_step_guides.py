@@ -16,7 +16,8 @@ import src.flow.engines.content.generation.outline as outline_module
     [
         ("how-to-guide", {"steps": {"steps": []}}, "had 0 steps"),
         ("how-to-guide", {"steps": {"steps": [{"title": "Gather"}]}}, "had 1 step"),
-        ("tutorial", {"steps": None}, "had 0 steps"),
+        ("tutorial", {"modules": {"modules": []}, "steps": None}, "had 0 modules"),
+        ("tutorial", {"modules": {"modules": [{"title": "Basics"}]}, "steps": None}, None),
         ("how-to-guide", {"steps": {"steps": [{}, {}, {}]}}, None),
         ("blog", {"structure": {"sections": []}}, None),
     ],
@@ -44,7 +45,10 @@ async def _generate(monkeypatch, content_type, replies):
 
         async def ainvoke(self, messages):
             calls.append(messages)
-            return _Reply(queue.pop(0))
+            reply = queue.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return _Reply(reply)
 
     async def _none(*_a, **_kw):
         return None
@@ -113,3 +117,32 @@ async def test_a_full_how_to_costs_one_call(monkeypatch):
 
     assert len(outline["steps"]["steps"]) == 4
     assert len(calls) == 1
+
+
+@pytest.mark.unit
+async def test_a_tutorial_with_modules_and_no_steps_costs_one_call(monkeypatch):
+    """Its steps are an optional deeper breakdown: the modules are the tutorial."""
+    tutorial = {"title": "x", "modules": {"modules": [{"title": "Basics"}]}, "steps": None}
+
+    outline, calls = await _generate(monkeypatch, "tutorial", [tutorial])
+
+    assert outline["modules"]["modules"] == [{"title": "Basics"}]
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+async def test_a_thinner_second_attempt_keeps_the_first(monkeypatch):
+    outline, calls = await _generate(monkeypatch, "how-to-guide", [_how_to(2), _how_to(0)])
+
+    assert len(outline["steps"]["steps"]) == 2
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_a_failed_second_attempt_keeps_the_first(monkeypatch):
+    failure = RuntimeError("the model returned nothing usable")
+
+    outline, calls = await _generate(monkeypatch, "how-to-guide", [_how_to(1), failure])
+
+    assert len(outline["steps"]["steps"]) == 1
+    assert len(calls) == 2

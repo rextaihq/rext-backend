@@ -60,6 +60,20 @@ _MORE_AFTER = re.compile(
     r"^\W*(?:please|would\s+help|(?:are|is)\s+missing|(?:are\s+|is\s+)?(?:needed|required))\b",
     re.IGNORECASE,
 )
+# A removal that is negated right after the term keeps them: "the H3s do not need to be removed",
+# "the subsections shouldn't go" (review of #922).
+_KEPT_AFTER = re.compile(
+    r"^\W*(?:do(?:es)?|should|must|need|can)\s*(?:n[o']?t|not)\s+(?:(?:need|have)\s+to\s+)?"
+    r"(?:be\s+(?:removed|dropped|deleted|cut|taken\s+out|flattened)|go)\b",
+    re.IGNORECASE,
+)
+# A passive request to add them ("H3s should be added", "subsections must be included"), and its
+# negation, which asks for fewer.
+_ADDED_AFTER = re.compile(
+    r"^\W*(?:should|must|could|can|(?:needs?|has|have)\s+to)\s+(n[o']?t\s+|not\s+)?be\s+"
+    r"(?:added|included|used|introduced)\b",
+    re.IGNORECASE,
+)
 # A terse request that only says where they go: "H3s under each list item", "Subsections for
 # pricing and features". It counts when the mention opens the sentence, so "the H3 under the intro
 # is too long" still asks nothing (review round 2 of #922).
@@ -88,14 +102,17 @@ def subsection_request(feedback: str | None) -> str | None:
         for match in _SUBSECTION_WORDS.finditer(sentence):
             before, after = sentence[: match.start()], sentence[match.end() :]
             doubt = _DOUBT_BEFORE.search(before)
-            if doubt and _FEWER_AFTER.search(after):
-                # "I don't think the H3s should be removed": leave them as they are.
+            if (doubt and _FEWER_AFTER.search(after)) or _KEPT_AFTER.search(after):
+                # "I don't think the H3s should be removed", "the H3s do not need to be
+                # removed": leave them as they are.
                 continue
             doubted = doubt and _NEEDED_AFTER.search(after)
             placed = not before.strip() and _PLACED_AFTER.search(after)
-            if doubted or _FEWER_BEFORE.search(before) or _FEWER_AFTER.search(after):
+            added = _ADDED_AFTER.search(after)
+            not_added = bool(added and added.group(1))
+            if doubted or not_added or _FEWER_BEFORE.search(before) or _FEWER_AFTER.search(after):
                 asks.add("fewer")
-            elif _MORE_BEFORE.search(before) or _MORE_AFTER.search(after) or placed:
+            elif _MORE_BEFORE.search(before) or _MORE_AFTER.search(after) or placed or added:
                 asks.add("more")
     return "more" if "more" in asks else "fewer" if asks else None
 
