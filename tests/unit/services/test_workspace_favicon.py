@@ -14,7 +14,7 @@ from src.services.workspace_favicon import (
     find_favicon,
     store_favicon,
 )
-from src.utils.url_validator import SSRFValidationError
+from src.utils.url_validator import PublicOnlyTransport, SSRFValidationError
 
 PAGE = "https://shop.example.com/en/home"
 
@@ -213,6 +213,51 @@ async def test_a_failed_upload_stores_nothing(monkeypatch):
     monkeypatch.setattr("src.utils.storage.storage_service", _Storage())
 
     assert await store_favicon("ws-1", b"x", "image/png") is None
+
+
+def test_without_a_transport_the_fetch_goes_through_the_public_client():
+    """A customer's site and its icons: every connection goes only to the address checked public."""
+    client = workspace_favicon._client(None)
+
+    assert isinstance(client._transport, PublicOnlyTransport)
+
+
+@pytest.mark.asyncio
+async def test_a_name_the_first_check_passed_still_cannot_reach_a_private_address(monkeypatch):
+    """DNS rebinding: the module's own check saw a public address, the connection would get a
+    private one. The public client checks the request again and refuses it before it connects."""
+    from src.services.workspace_favicon import fetch_page_html
+
+    monkeypatch.setattr(workspace_favicon, "validate_url_for_ssrf", lambda url: url)
+
+    with pytest.raises(SSRFValidationError):
+        await fetch_page_html("http://127.0.0.1:9/")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_candidate_is_logged_without_its_query_or_credentials(monkeypatch):
+    lines = []
+
+    class _Logger:
+        def info(self, message, *args):
+            lines.append(message % args)
+
+    monkeypatch.setattr(workspace_favicon, "logger", _Logger())
+    html = """
+      <link rel="icon" href="https://user:hunter2@cdn.example.com/i.png?token=s3cret" sizes="64x64">
+      <link rel="icon" href="http://127.0.0.1/x.png?token=s3cret" sizes="32x32">
+    """
+
+    def handler(request):
+        raise httpx.ConnectError("down", request=request)
+
+    assert await find_favicon(html, PAGE, transport=httpx.MockTransport(handler)) is None
+
+    logged = "\n".join(lines)
+    assert "https://cdn.example.com/i.png failed" in logged
+    assert "refused http://127.0.0.1/x.png" in logged
+    assert "s3cret" not in logged
+    assert "hunter2" not in logged
 
 
 @pytest.mark.asyncio

@@ -18,11 +18,16 @@ class FooterLink:
     url: str
 
 
+# The copyright holder: Rext AI is a product of Revnix LLC (rext.ai's terms). Only this holder's line
+# says so; a caller's own company_name reads plainly.
+REXT_HOLDER = "Revnix LLC"
+
+
 @dataclass
 class FooterProps:
     """Props for email footer component"""
 
-    company_name: str = "Rext AI"
+    company_name: str = REXT_HOLDER
     company_address: Optional[str] = None
     links: List[FooterLink] = field(default_factory=list)
     unsubscribe_url: Optional[str] = None
@@ -85,10 +90,11 @@ def footer(props: Optional[FooterProps] = None) -> str:
         """
 
     # Copyright notice
+    behind_rext = ", the company behind Rext AI" if props.company_name == REXT_HOLDER else ""
     copyright_html = f"""
     <tr>
         <td style="padding: 10px 0; text-align: center; font-size: 12px; color: {props.text_color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            © {props.company_name}. All rights reserved.
+            © {props.company_name}{behind_rext}. All rights reserved.
         </td>
     </tr>
     """
@@ -110,15 +116,15 @@ def simple_footer() -> str:
 
 
 def standard_footer(
-    company_name: str = "Rext AI",
+    company_name: str = REXT_HOLDER,
     company_address: Optional[str] = None,
     unsubscribe_url: Optional[str] = None,
 ) -> str:
     """Render a standard footer with common links."""
     default_links = [
-        FooterLink(text="Help Center", url="https://help.rext.ai"),
-        FooterLink(text="Privacy Policy", url="https://rext.ai/privacy"),
-        FooterLink(text="Terms of Service", url="https://rext.ai/terms"),
+        FooterLink(text="Help", url="https://rext.ai/help"),
+        FooterLink(text="Privacy policy", url="https://rext.ai/privacy-policy"),
+        FooterLink(text="Terms", url="https://rext.ai/terms-and-conditions"),
     ]
 
     return footer(

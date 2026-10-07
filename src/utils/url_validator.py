@@ -378,3 +378,22 @@ def public_client(*, verify: ssl.SSLContext | str | bool = True, **kwargs) -> ht
     return httpx.AsyncClient(
         transport=PublicOnlyTransport(verify=verify), event_hooks=hooks, **kwargs
     )
+
+
+def loggable_url(url: object) -> str:
+    """An address as a log line may show it: its scheme, host (and port) and path, never its
+    userinfo (``user:password@``), query (a signed URL's token) or fragment.
+
+    src/web/wordpress.py keeps its own copy (``_loggable_url``) for now.
+    """
+    try:
+        parsed = urlparse(str(url))
+        host = parsed.hostname or ""
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+    except ValueError:
+        return "(an unreadable address)"
+    if not parsed.netloc:
+        # data:, blob: and other addresses without a host: the scheme says enough.
+        return f"{parsed.scheme}:..." if parsed.scheme else "(an address without a scheme)"
+    return f"{parsed.scheme}://{host}{parsed.path}"

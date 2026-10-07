@@ -334,8 +334,10 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
     warn_threshold: balance <= threshold (but still sufficient) →
     emits credits.low before running the node.
 
-    Post-deduction safety net: catches InsufficientCreditsError per-stage,
-    emits credits.exhausted, breaks the loop — node result still returned.
+    Post-deduction: a stage whose charge is refused (another run spent the
+    balance meanwhile) emits credits.exhausted and returns the same error as the
+    pre-flight, without the node's result, so the run ends unpaid work there
+    instead of handing it to the next stage.
 
     All DB calls go through _run_on_main_loop to avoid cross-loop asyncpg errors.
 
@@ -436,7 +438,15 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                                 )
                             except Exception:
                                 pass
-                            break
+                            return {
+                                "content": {
+                                    "error": (
+                                        f"Insufficient credits: need {e.required} for this stage, "
+                                        f"have {e.available}. Please upgrade your plan."
+                                    ),
+                                    "error_code": "insufficient_credits",
+                                }
+                            }
             return result
 
         return wrapper

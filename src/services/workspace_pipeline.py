@@ -41,6 +41,7 @@ from src.utils.fast_scraper import (
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.site_compliance import assess_site_compliance
+from src.utils.url_validator import public_client
 
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
 BrandVoiceGeneratorCallable = Callable[[str], Awaitable[Optional[BrandSchema]]]
@@ -997,12 +998,12 @@ class WorkspacePipeline:
         return []
 
     async def _feed_attempt(self) -> dict:
-        import httpx
 
         from src.utils.fast_scraper import SITEMAP_TIMEOUT, discover_feed_authors
 
         try:
-            async with httpx.AsyncClient(headers=REQUEST_HEADERS, follow_redirects=True) as client:
+            # The site's own address: public_client connects only to the address it checked.
+            async with public_client(headers=REQUEST_HEADERS, follow_redirects=True) as client:
                 home_html = ""
                 try:
                     resp = await client.get(self.url, timeout=SITEMAP_TIMEOUT)
@@ -1701,7 +1702,6 @@ class WorkspacePipeline:
             return {}
 
     async def _fetch_missing_author_archives(self, personas_data: list) -> None:
-        import httpx
 
         from src.utils.fast_scraper import (
             CONCURRENCY,
@@ -1725,7 +1725,8 @@ class WorkspacePipeline:
         sem = asyncio.Semaphore(CONCURRENCY)
         deadline = asyncio.get_event_loop().time() + _DERIVED_ARCHIVE_BUDGET
         try:
-            async with httpx.AsyncClient(headers=REQUEST_HEADERS, follow_redirects=True) as client:
+            # Author pages on the site, through the public client as every fetch of it is.
+            async with public_client(headers=REQUEST_HEADERS, follow_redirects=True) as client:
                 results = await asyncio.gather(
                     *[
                         find_author_archive(client, sem, self.url, name, deadline)
@@ -2062,12 +2063,12 @@ class WorkspacePipeline:
     async def _fetch_credited_articles(self, links: List[str]) -> Dict[str, str]:
         """Fetch articles a person is credited with that the scrape never read -
         a feed lists them, but the crawl stopped before reaching them."""
-        import httpx
 
         if not links:
             return {}
         try:
-            async with httpx.AsyncClient(
+            # Links the site's own pages give: through the public client, as every fetch of it is.
+            async with public_client(
                 headers=REQUEST_HEADERS, follow_redirects=True, timeout=_ANALYSIS_FETCH_SECONDS
             ) as client:
                 responses = await asyncio.gather(
