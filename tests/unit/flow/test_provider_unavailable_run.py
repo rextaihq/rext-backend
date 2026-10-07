@@ -8,6 +8,7 @@ topics_failed and no_serp_data do. The provider's errors are built as the OpenAI
 import httpx
 import openai
 import pytest
+from langgraph.graph import END
 
 import src.flow.engines.content.generation.content_generation as content_module
 import src.flow.engines.content.generation.outline as outline_module
@@ -228,6 +229,21 @@ async def test_a_stop_after_a_charge_without_an_outage_still_raises():
 
     with pytest.raises(StoppedAfterCharge):
         await step({})
+
+
+def test_a_refused_charge_and_an_outage_each_end_the_run_their_own_way():
+    # With rext-control#524's credit gate on the same edges: a refused charge ends the run, an outage
+    # ends it with the notice, anything else goes on.
+    branches = create_content_engine().builder.branches
+    for node, next_node in (
+        ("generate_outline", "review_outline"),
+        ("generate_content", "validate_content"),
+    ):
+        (route,) = (spec.path for spec in branches[node].values())
+        assert route.invoke({"content": {"error_code": "insufficient_credits"}}) == END
+        stopped = {"content": {"error_code": PROVIDER_UNAVAILABLE_CODE}}
+        assert route.invoke(stopped) == PROVIDER_UNAVAILABLE_NODE
+        assert route.invoke({"content": {}}) == next_node
 
 
 STALE = {
