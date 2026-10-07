@@ -56,11 +56,12 @@ _NEUTRAL_PREFIXES: tuple[str, ...] = (
 
 _WHITESPACE_RE = re.compile(r"\s+")
 # Scripts written without spaces between words (Thai, Lao, Myanmar, Khmer, kana including the
-# halfwidth forms, CJK ideographs, with the supplementary ideographic planes 2 and 3): no space
+# halfwidth forms, CJK ideographs and the iteration marks 々 〆 〇, with the supplementary
+# ideographic planes 2 and 3): no space
 # marks where their words begin and end, so a phrase's edge in one of them needs no space beside
 # it, and a character of one beside a phrase is a boundary in itself.
 _UNSPACED_SCRIPT_RE = re.compile(
-    "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+    "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3005-\u3007\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
     "\uf900-\ufaff\uff66-\uff9f\U00020000-\U0003ffff]"
 )
 _SPACE_BESIDE_UNSPACED_RE = re.compile(
@@ -103,7 +104,8 @@ def _normalize_for_match(text: Any) -> str:
     # the dot goes: Turkish "İstanbul" is "istanbul" in lowercase. A capital Σ lowercases to the
     # final ς at a word's end, which a user types as σ: both are σ. The Armenian ligature և is
     # եւ, as its capital ԵՒ lowercases.
-    lowered = _nfc(text).lower().replace("i\u0307", "i").replace("ς", "σ").replace("և", "եւ")
+    # Lowercasing can leave a letter and its accent apart ("J̌" is "ǰ"): NFC again after it.
+    lowered = _nfc(_nfc(text).lower()).replace("i\u0307", "i").replace("ς", "σ").replace("և", "եւ")
     kept: list[str] = []
     base_flattened = False
     for char in lowered:
