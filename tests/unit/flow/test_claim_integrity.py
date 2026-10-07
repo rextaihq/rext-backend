@@ -640,9 +640,25 @@ def test_a_link_after_an_abbreviation_starts_a_piece_of_its_own():
     ]
 
 
-def test_an_abbreviation_inside_a_sentence_still_ends_none():
-    text = "The company (Contentful Inc.) Enterprise plan lacks SSO."
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The company (Contentful Inc.) Enterprise plan lacks SSO.",
+        "We asked Dr. Smith about the Enterprise plan.",
+    ],
+)
+def test_an_abbreviation_inside_a_sentence_still_ends_none(text):
     assert [u.text for u in claim_integrity._units(text)] == [text]
+
+
+def test_a_company_suffix_outside_brackets_may_end_its_sentence():
+    # Joined, the second sentence's citation became the source of the first one's price.
+    text = "Acme costs $49 through Acme Inc. Beta is cheaper [Beta pricing](https://b.example)."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("Acme costs $49 through Acme Inc.", ()),
+        ("Beta is cheaper Beta pricing.", ("https://b.example",)),
+    ]
 
 
 def test_a_label_after_a_linked_sentence_is_that_sentences_source():
@@ -740,6 +756,10 @@ def test_a_denied_denial_or_a_qualified_never_is_still_a_testing_claim(text):
     [
         "We never tested these products ourselves.",
         "We have never personally tested these tools, so read the ratings as a guide.",
+        "We never tested in production.",
+        "We never tested under load.",
+        "We never tested on client sites.",
+        "We never tested with real customer data.",
     ],
 )
 def test_a_plain_never_stays_a_disclosure(text):
@@ -752,6 +772,8 @@ def test_a_plain_never_stays_a_disclosure(text):
         "It's not true that we said we never tested these tools.",
         "It's not true that the report says we never tested these tools.",
         "It's false that anyone claimed we haven't tested it.",
+        "It's not true that our logs show we never tested these tools.",
+        "It isn't the case that critics allege we never tested it.",
     ],
 )
 def test_a_denied_report_of_a_denial_asserts_no_test(text):
@@ -759,14 +781,8 @@ def test_a_denied_report_of_a_denial_asserts_no_test(text):
     assert [c.category for c in find_unsupported_claims(text, {})] == []
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "The company (Contentful Inc.) Enterprise plan lacks SSO.",
-        "Contentful Inc. Enterprise plan lacks SSO.",
-    ],
-)
-def test_an_abbreviation_ends_no_sentence(text):
+def test_an_abbreviation_inside_brackets_ends_no_sentence():
+    text = "The company (Contentful Inc.) Enterprise plan lacks SSO."
     assert [u.text for u in claim_integrity._units(text)] == [text]
     assert "[competitor_claim]" in _flagged(_check("comparison", text))
 
