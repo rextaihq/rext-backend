@@ -1,3 +1,10 @@
+"""schedule_if_allowed: an in-app notification is stored and its live delivery scheduled only
+when the user allows it.
+
+The preferences service, the locked re-check and the database are stubs (the real Notification
+model is built, with no session): nothing here reaches a database or the network.
+"""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -6,14 +13,19 @@ import pytest
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.services.notification_helper import NOTIFICATION_CONFIG, schedule_if_allowed
 
+HELPER = "src.services.notification_helper"
+
 
 @pytest.fixture
 def mock_db():
     db = MagicMock()
-    db.execute = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
+    no_duplicate = MagicMock()
+    no_duplicate.scalar.return_value = 0  # nothing alike within the de-duplication window
+    db.execute = AsyncMock(return_value=no_duplicate)
     return db
 
 
@@ -28,138 +40,118 @@ def sample_user_id():
 
 
 @pytest.fixture
-def sample_prefs(sample_user_id):
-    prefs = MagicMock(spec=NotificationPreferences)
-    prefs.user_id = uuid4()
-    prefs.in_app_notifications = True
-    # Initialize some common columns
-    prefs.ws_invite_received = True
-    prefs.avatar_uploaded = True
-    return prefs
+def sample_prefs():
+    return NotificationPreferences(
+        user_id=uuid4(),
+        email_notifications=True,
+        in_app_notifications=True,
+        category_preferences={},
+    )
+
+
+@pytest.fixture
+def logger(sample_prefs):
+    """The helper's preferences read and its locked re-check as stubs; yields its logger."""
+    service = MagicMock()
+    service.get_or_create = AsyncMock(return_value=sample_prefs)
+    with (
+        patch(f"{HELPER}.NotificationPreferencesService", return_value=service),
+        patch(f"{HELPER}._recheck_preference_enabled", AsyncMock(return_value=True)),
+        patch(f"{HELPER}.logger") as mock_logger,
+    ):
+        yield mock_logger
+
+
+async def _schedule(db, tasks, user_id, flag, message="Test message", payload=None):
+    await schedule_if_allowed(
+        db=db,
+        user_id=user_id,
+        background_tasks=tasks,
+        pref_flag=flag,
+        message=message,
+        payload=payload or {},
+    )
 
 
 @pytest.mark.asyncio
-async def test_schedule_if_allowed_unknown_flag(mock_db, mock_background_tasks, sample_user_id):
-    """Test that an unknown flag logs a warning and returns."""
-    with patch("src.services.notification_helper.logger") as mock_logger:
-        await schedule_if_allowed(
-            db=mock_db,
-            user_id=sample_user_id,
-            background_tasks=mock_background_tasks,
-            pref_flag="nonexistent_flag",
-            message="Test message",
-            payload={},
-        )
-        mock_logger.warning.assert_called_once()
-        assert "Unknown notification flag 'nonexistent_flag'" in mock_logger.warning.call_args[0][0]
-        mock_db.execute.assert_not_called()
+async def test_schedule_if_allowed_unknown_flag(
+    mock_db, mock_background_tasks, sample_user_id, logger
+):
+    """A flag the registry doesn't know is logged as an error, and nothing is stored or sent."""
+    await _schedule(mock_db, mock_background_tasks, sample_user_id, "nonexistent_flag")
+
+    logger.error.assert_any_call(
+        "Notification flag %r not found in NOTIFICATION_REGISTRY – "
+        "skipping notification for user %s",
+        "nonexistent_flag",
+        sample_user_id,
+    )
+    mock_db.add.assert_not_called()
+    mock_background_tasks.add_task.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_schedule_if_allowed_disabled_global_toggle(
-    mock_db, mock_background_tasks, sample_user_id, sample_prefs
+    mock_db, mock_background_tasks, sample_user_id, sample_prefs, logger
 ):
     """Test that disabled in_app_notifications skips notification."""
     sample_prefs.in_app_notifications = False
 
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = sample_prefs
-    mock_db.execute.return_value = mock_result
+    await _schedule(mock_db, mock_background_tasks, sample_user_id, "ws_invite_received")
 
-    with patch("src.services.notification_helper.logger") as mock_logger:
-        await schedule_if_allowed(
-            db=mock_db,
-            user_id=sample_user_id,
-            background_tasks=mock_background_tasks,
-            pref_flag="ws_invite_received",
-            message="Test message",
-            payload={},
-        )
-        mock_logger.debug.assert_any_call(
-            f"User {sample_user_id} disabled all in-app notifications."
-        )
-        mock_db.add.assert_not_called()
+    logger.debug.assert_any_call("User %s disabled all in-app notifications.", sample_user_id)
+    mock_db.add.assert_not_called()
+    mock_background_tasks.add_task.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_schedule_if_allowed_disabled_specific_flag(
-    mock_db, mock_background_tasks, sample_user_id, sample_prefs
+    mock_db, mock_background_tasks, sample_user_id, sample_prefs, logger
 ):
-    """Test that disabled specific preference skips notification."""
-    sample_prefs.ws_invite_received = False
+    """Test that a disabled category preference (a JSONB key) skips notification."""
+    sample_prefs.set_preference("ws_invite_received", False)
 
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = sample_prefs
-    mock_db.execute.return_value = mock_result
+    await _schedule(mock_db, mock_background_tasks, sample_user_id, "ws_invite_received")
 
-    with patch("src.services.notification_helper.logger") as mock_logger:
-        await schedule_if_allowed(
-            db=mock_db,
-            user_id=sample_user_id,
-            background_tasks=mock_background_tasks,
-            pref_flag="ws_invite_received",
-            message="Test message",
-            payload={},
-        )
-        mock_logger.debug.assert_any_call(
-            f"User {sample_user_id} has preference ws_invite_received=False — skipping notification."
-        )
-        mock_db.add.assert_not_called()
+    logger.debug.assert_any_call(
+        "User %s has preference %s=False – skipping notification.",
+        sample_user_id,
+        "ws_invite_received",
+    )
+    mock_db.add.assert_not_called()
+    mock_background_tasks.add_task.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_schedule_if_allowed_virtual_flag(
-    mock_db, mock_background_tasks, sample_user_id, sample_prefs
+    mock_db, mock_background_tasks, sample_user_id, logger
 ):
-    """Test that virtual flags map correctly (e.g., avatar_uploaded -> in_app_notifications)."""
-    # Force in_app_notifications to be True, even if specific flag logic is skipped
-    sample_prefs.in_app_notifications = True
+    """Virtual flags (avatar_uploaded) follow the in-app switch and are stored and sent."""
+    await _schedule(
+        mock_db, mock_background_tasks, sample_user_id, "avatar_uploaded", "Avatar updated"
+    )
 
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = sample_prefs
-    mock_db.execute.return_value = mock_result
-
-    # We need to mock Notification since it's imported inside the function
-    with patch("src.api.models.notification.notification_model.Notification") as MockNotification:
-        await schedule_if_allowed(
-            db=mock_db,
-            user_id=sample_user_id,
-            background_tasks=mock_background_tasks,
-            pref_flag="avatar_uploaded",
-            message="Avatar updated",
-            payload={},
-        )
-        # Verify it used Notification model
-        MockNotification.assert_called_once()
-        mock_db.add.assert_called_once()
+    mock_db.add.assert_called_once()
+    assert mock_db.add.call_args[0][0].category == "avatar_uploaded"
+    mock_background_tasks.add_task.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_schedule_if_allowed_success(
-    mock_db, mock_background_tasks, sample_user_id, sample_prefs
-):
+async def test_schedule_if_allowed_success(mock_db, mock_background_tasks, sample_user_id, logger):
     """Test successful notification scheduling and record creation."""
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = sample_prefs
-    mock_db.execute.return_value = mock_result
+    await _schedule(
+        mock_db,
+        mock_background_tasks,
+        sample_user_id,
+        "ws_invite_received",
+        "Welcome!",
+        {"key": "value"},
+    )
 
-    with patch("src.api.models.notification.notification_model.Notification") as MockNotification:
-        await schedule_if_allowed(
-            db=mock_db,
-            user_id=sample_user_id,
-            background_tasks=mock_background_tasks,
-            pref_flag="ws_invite_received",
-            message="Welcome!",
-            payload={"key": "value"},
-        )
-
-        # Verify Notification record creation
-        config = NOTIFICATION_CONFIG["ws_invite_received"]
-        MockNotification.assert_called_once()
-        args, kwargs = MockNotification.call_args
-        assert kwargs["title"] == config["title"]
-        assert kwargs["type"] == config["type"]
-        assert kwargs["category"] == "ws_invite_received"
-
-        # Verify background task scheduling
-        mock_background_tasks.add_task.assert_called_once()
+    config = NOTIFICATION_CONFIG["ws_invite_received"]
+    mock_db.add.assert_called_once()
+    notification = mock_db.add.call_args[0][0]
+    assert notification.title == config["title"]
+    assert notification.type == config["type"]
+    assert notification.category == "ws_invite_received"
+    mock_background_tasks.add_task.assert_called_once()
