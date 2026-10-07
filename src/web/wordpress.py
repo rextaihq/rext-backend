@@ -87,17 +87,51 @@ _PLAIN_MEDIA_TYPE = re.compile(r"[a-z0-9][a-z0-9.+-]{0,40}/[a-z0-9][a-z0-9.+-]{0
 # and nothing is decoded whole.
 _SCANNED_BODY_BYTES = 4000
 _CODE_IN_BODY = re.compile(rb'"code"\s*:\s*"([^"\\]{1,64})"|<Code>([^<]{1,64})</Code>')
-# An error code is words: "rest_upload_too_large", "NoSuchKey". Digits aren't allowed, so a
-# token in a field named "code" (an OAuth code) is never one.
-_ERROR_CODE = re.compile(r"[A-Za-z]+(?:[_.:-][A-Za-z]+)*")
-# A JSON object's key as a log line may name it.
-_JSON_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,40}")
+# A code is logged only when it's a known kind of error, never because of how it looks: a token
+# can be letters only. WordPress's REST errors all start "rest_" ("rest_upload_too_large");
+# S3's and MinIO's are a fixed list.
+_WORDPRESS_ERROR_CODE = re.compile(r"rest_[a-z_]{1,48}")
+_S3_ERROR_CODES = frozenset(
+    {
+        "AccessDenied",
+        "AuthorizationHeaderMalformed",
+        "AuthorizationQueryParametersError",
+        "BadDigest",
+        "EntityTooLarge",
+        "ExpiredToken",
+        "InternalError",
+        "InvalidAccessKeyId",
+        "InvalidArgument",
+        "InvalidBucketName",
+        "InvalidObjectState",
+        "InvalidRange",
+        "InvalidRequest",
+        "InvalidToken",
+        "MethodNotAllowed",
+        "NoSuchBucket",
+        "NoSuchKey",
+        "NoSuchUpload",
+        "NotImplemented",
+        "PermanentRedirect",
+        "PreconditionFailed",
+        "RequestTimeTooSkewed",
+        "RequestTimeout",
+        "ServiceUnavailable",
+        "SignatureDoesNotMatch",
+        "SlowDown",
+        "TemporaryRedirect",
+        "XMinioServerNotInitialized",
+    }
+)
+# The keys a media or post response is read by: an object's key names are the remote's text too,
+# so a log line says only which of these it has.
+_EXPECTED_JSON_KEYS = ("id", "data", "source_url", "link", "url", "code", "message")
 
 
 def _body_summary(response: Optional[httpx.Response]) -> str:
     """A remote server's response body as a log line may show it: its size, its media type when
-    that's a plain one, and the error code it names. Never for a person to read: a reason they see
-    names the status only (G59b, revnix/rext-control#632)."""
+    that's a plain one, and the error code it names when that's a known kind. Never for a person
+    to read: a reason they see names the status only (G59b, revnix/rext-control#632)."""
     if response is None:
         return "no response"
     try:
@@ -110,18 +144,21 @@ def _body_summary(response: Optional[httpx.Response]) -> str:
         parts.append(media_type)
     match = _CODE_IN_BODY.search(content[:_SCANNED_BODY_BYTES])
     if match:
-        code = (match.group(1) or match.group(2)).decode("utf-8", errors="replace").strip()
-        if _ERROR_CODE.fullmatch(code):
-            parts.append(f"code {code}")
+        wordpress, s3 = (
+            group and group.decode("utf-8", errors="replace") for group in match.groups()
+        )
+        if (wordpress and _WORDPRESS_ERROR_CODE.fullmatch(wordpress)) or s3 in _S3_ERROR_CODES:
+            parts.append(f"code {wordpress or s3}")
     return ", ".join(parts)
 
 
 def _json_shape(value: object) -> str:
-    """A JSON value as a log line may describe it: its type and size, and an object's key names
-    when they're plain words, never a value."""
+    """A JSON value as a log line may describe it: its type and size, and which of the expected
+    keys an object has, never a value or another key's name."""
     if isinstance(value, dict):
-        keys = [key for key in value if isinstance(key, str) and _JSON_KEY.fullmatch(key)]
-        return f"an object with {len(value)} keys ({', '.join(keys[:12])})"
+        known = [key for key in _EXPECTED_JSON_KEYS if key in value]
+        count = f"{len(value)} key" + ("" if len(value) == 1 else "s")
+        return f"an object with {count} (expected ones: {', '.join(known) or 'none'})"
     if isinstance(value, list):
         return f"a list of {len(value)} items"
     if isinstance(value, str):
