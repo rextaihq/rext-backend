@@ -136,11 +136,15 @@ class BlogSection(BaseModel):
 
 
 class ContentStructure(BaseModel):
-    sections: conlist(BlogSection, min_length=4, max_length=8) = Field(
+    # H2s and their H3s share one list, so the cap leaves room for subsections: 8 entries
+    # in all used to mean a blog with H3s had to drop H2s for them, and anything over the
+    # cap fails the whole outline at validation (rext-control#603).
+    sections: conlist(BlogSection, min_length=4, max_length=16) = Field(
         description=(
-            "4-8 sections covering the topic end to end, including a closing "
-            "summary/takeaways section. Main sections are H2; use H3 only "
-            "directly under a preceding H2."
+            "4-8 H2 sections covering the topic end to end, including a closing "
+            "summary/takeaways section, each followed by its H3 subsections where "
+            "it has distinct parts: at most 16 entries in all. An H3 comes "
+            "directly after its H2 or a sibling H3."
         )
     )
 

@@ -1,6 +1,115 @@
+import re
+
 from langchain_core.prompts import ChatPromptTemplate
 
+from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.prompts.system.outline import OUTLINE_GENERATION_PROMPT
+
+# H3 subsections, per content type (rext-control#603). Only blog and pillar-content outlines carry
+# heading levels; every other type has a fixed shape (steps, rankings, products, categories) whose
+# items each become a heading of their own in the article. Without an explicit rule the model
+# returned H2s only for 7 of 8 outlines, a pillar guide and a regeneration asking for H3s included.
+_EXPECTED, _BY_SHAPE, _NONE = "expected", "by_shape", "none"
+_SUBSECTION_POLICY = {"pillar-content": _EXPECTED, "blog": _BY_SHAPE}
+_STEP_TYPES = frozenset({"how-to-guide", "tutorial"})
+
+# Feedback that asks for subsections, in the words reviewers use: "H3s", "subsections",
+# "sub-headings", "nested headings".
+_ASKS_FOR_SUBSECTIONS = re.compile(
+    r"\bh3s?\b|\bsub[- ]?(?:sections?|headings?|heads?)\b|\bnested\s+headings?\b", re.IGNORECASE
+)
+
+_PARTS = "steps, stages, types, options, tools, or pros and cons"
+_PLACEMENT = (
+    "An H3 comes directly after its H2 or after a sibling H3, never first and never on its own."
+)
+
+
+def _kebab(value: str | None) -> str:
+    """A content type as written, lower-kebab-case, without the aliases ("listicle" stays)."""
+    return re.sub(r"[\s_-]+", "-", str(value or "").strip().lower()).strip("-")
+
+
+def asks_for_subsections(feedback: str | None) -> bool:
+    """Whether the reviewer's rejection reason asks for H3 subsections."""
+    return bool(feedback) and bool(_ASKS_FOR_SUBSECTIONS.search(str(feedback)))
+
+
+def outline_subsection_rule(
+    content_type: str | None,
+    raw_content_type: str | None = None,
+    feedback: str | None = None,
+) -> str:
+    """The outline prompt's rule for H3 subsections, for this content type.
+
+    Expected for pillar content; for a blog it follows the article's shape (expected for a
+    long guide, optional for a short post, none for a list article); none for the types
+    whose schema fixes the structure. Feedback asking for subsections makes them required
+    where the schema can hold them.
+    """
+    kind = normalize_content_type(content_type) or "blog"
+    raw = _kebab(raw_content_type)
+    policy = _NONE if raw == "listicle" else _SUBSECTION_POLICY.get(kind, _NONE)
+    asked = asks_for_subsections(feedback)
+
+    if policy == _EXPECTED:
+        lines = [
+            "H3 SUBSECTIONS: EXPECTED for this content type.",
+            f"- Wherever an H2 covers two or more distinct parts ({_PARTS}), give each part its "
+            "own H3 under that H2.",
+            "- A pillar guide's main sections nearly always have parts: plan H3s under at least "
+            "half of the H2s.",
+            f"- {_PLACEMENT}",
+        ]
+    elif policy == _BY_SHAPE:
+        lines = [
+            "H3 SUBSECTIONS: decide by the article's shape.",
+            "- A long blog or guide (a complete or ultimate guide, or a plan past about 1,200 "
+            f"words): EXPECTED. Wherever an H2 covers two or more distinct parts ({_PARTS}), give "
+            "each part its own H3 under that H2.",
+            "- A short blog (about 1,200 words or fewer): OPTIONAL. Use H3s only where an H2 "
+            "really splits into parts; H2s alone are fine.",
+            '- A list article ("Top 5 ...", "7 ways to ...", "best X for Y"): NONE. Each list '
+            "item is its own H2.",
+            "- The sections list holds the H2s and their H3s together: 4-8 H2s, plus H3s, at "
+            "most 16 entries in all.",
+            "- An H2 that has H3s keeps a short budget of its own (about 80-120 words, its "
+            "introduction) and its H3s carry the rest, so the plan's total stays the length "
+            "this article needs.",
+            f"- {_PLACEMENT}",
+        ]
+    elif raw == "listicle":
+        lines = [
+            "H3 SUBSECTIONS: NONE. This is a list article: each list item is its own H2, with "
+            "no H3s under it."
+        ]
+    else:
+        lines = [
+            "H3 SUBSECTIONS: NONE for this content type. Its schema fixes the structure: each "
+            "step, item or block you fill becomes a heading of its own in the article, so do not "
+            "nest headings inside them."
+        ]
+        if kind in _STEP_TYPES:
+            lines.append(
+                "- Plan 3-10 steps. A one-step guide is not a guide: split the work into the "
+                "steps a reader actually takes, in order."
+            )
+
+    if asked:
+        if policy == _NONE:
+            lines.append(
+                "- The reviewer's feedback asks for subsections. This content type can't nest "
+                "headings, but each step, item or block already gets a heading of its own in the "
+                "article: honour the request by giving every item its own entry with distinct, "
+                "fuller key points, and add the items the feedback names."
+            )
+        else:
+            lines.append(
+                "- The reviewer's feedback asks for subsections, so this pass MUST contain H3s: "
+                "add them under every H2 that covers distinct parts (at least two H2s with H3s), "
+                "and keep the H2s the feedback did not criticize."
+            )
+    return "\n".join(lines)
 
 
 def get_outline_prompt() -> ChatPromptTemplate:
@@ -50,10 +159,12 @@ Cluster to Content Structure Map (H1/H2/H3):
 ### STRICT REQUIREMENTS (DO NOT IGNORE)
 
 1. Output MUST be valid JSON matching the `Outline` Pydantic schema.
-2. Use 4–8 sections total.
+2. Use 4–8 main sections.
 3. Use exactly one H1: the selected topic/title.
 4. All main sections MUST be H2 and should follow the provided cluster-to-heading map when available.
-4b. H3 sections only when logically required under their parent H2; use them for supporting long-tail keywords or questions, not as standalone main sections.
+4b. Subsections, for this content type:
+{subsection_rule}
+   Where the cluster map lists sub-topics under a section, they are the first candidates for its H3s.
 5. Each section must:
    - Map to a clear search intent (Use the provided **Keyword Clusters** to guide these intents)
    - Include 2–4 key points (Ensure the 'Supporting Keywords' from the cluster are covered here)

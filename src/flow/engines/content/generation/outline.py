@@ -13,7 +13,7 @@ from src.flow.model.structure.outlines import (
     get_outline_model,
     normalize_content_type,
 )
-from src.flow.prompts.human.outline import get_outline_prompt
+from src.flow.prompts.human.outline import get_outline_prompt, outline_subsection_rule
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import (
     build_cluster_heading_map,
@@ -543,6 +543,9 @@ async def generate_outline(state: REXT) -> dict:
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
             cluster_heading_map=cluster_heading_map_context,
+            subsection_rule=outline_subsection_rule(
+                content_type, content_type_raw, outline_rejected_reason
+            ),
             rejected_reason=outline_rejected_reason,
             previous_outline=outline_state,
         )
