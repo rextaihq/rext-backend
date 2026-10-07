@@ -61,6 +61,7 @@ from src.flow.engines.content.generation.validation import (
     protected_links,
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.model.provider_outage import provider_outage
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.model.structure.outlines.schema_org import (
@@ -1357,6 +1358,9 @@ async def generate_content(state: REXT) -> dict:
         }
 
     except Exception as e:
+        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1).
+        if provider_outage(e) is not None:
+            raise
         logger.exception(f"Error generating content: {str(e)}")
         return {
             "content": {

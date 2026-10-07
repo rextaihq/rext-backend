@@ -2,8 +2,9 @@
 A run the AI provider can't serve ends with a notice (G75.1, revnix/rext-control#614).
 
 When the provider is unavailable (an empty account, a rate limit, a 5xx, out of reach, the key refused;
-src.flow.model.provider_outage) during the outline or the article, the node's error used to end the run
-with LangGraph's generic failure. Now the node returns the notice instead, and the graph ends the run at
+src.flow.model.provider_outage) during the outline or the article, the step's catch-all turned it into a
+generic error and the run went on, or LangGraph's generic failure ended it. Now those catch-alls let an
+outage through. Now the node returns the notice instead, and the graph ends the run at
 provider_unavailable, with the same run.failed event and content.error as no_serp_data and topics_failed.
 The team is alerted by the model's error hook (G75), once an hour.
 
@@ -29,15 +30,39 @@ PROVIDER_UNAVAILABLE_MESSAGE = (
 )
 
 
+def _without_old_notice(state: REXT, result: Any) -> Any:
+    """A step that worked clears a notice an earlier attempt on this thread left: `content` deep-merges, so the
+    old provider_unavailable code (copied into the step's answer, or left in the state) would route the
+    recovered run back to the end. A step's own error code is kept."""
+    if not isinstance(result, dict):
+        return result
+    before = (state.get("content") or {}).get("error_code")
+    content = result.get("content") if isinstance(result.get("content"), dict) else None
+    after = (content or {}).get("error_code")
+    if PROVIDER_UNAVAILABLE_CODE not in (before, after) or after not in (
+        None,
+        PROVIDER_UNAVAILABLE_CODE,
+    ):
+        return result
+    cleared = dict(content or {})
+    cleared["error_code"] = None
+    if cleared.get("error", PROVIDER_UNAVAILABLE_MESSAGE) == PROVIDER_UNAVAILABLE_MESSAGE:
+        cleared["error"] = None
+    return {**result, "content": cleared}
+
+
 def stop_on_outage(node: Callable) -> Callable:
-    """A graph node that, when the AI provider is unavailable, returns the notice instead of raising."""
+    """A graph node that, when the AI provider is unavailable, returns the notice instead of raising.
+
+    The node's own catch-all must let an outage through (`generate_outline` and `generate_content` re-raise
+    it); one that swallows every error keeps its best-effort behaviour."""
 
     @wraps(node)
     async def run(state: REXT, *args, **kwargs):
         try:
             result = node(state, *args, **kwargs)
             # A stand-in node (a test's) may be plain; the graph's own are async.
-            return await result if inspect.isawaitable(result) else result
+            result = await result if inspect.isawaitable(result) else result
         except Exception as error:
             outage = provider_outage(error)
             if outage is None:
@@ -54,6 +79,7 @@ def stop_on_outage(node: Callable) -> Callable:
                     "error_code": PROVIDER_UNAVAILABLE_CODE,
                 }
             }
+        return _without_old_notice(state, result)
 
     return run
 
