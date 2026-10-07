@@ -14,7 +14,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -296,9 +296,10 @@ async def test_deleting_an_article_for_good_takes_its_seo_data_and_its_embedding
     db.add(ContentSEOData(content_id=article.id, focus_keyphrase="sourdough"))
     await db.flush()
 
-    files = await WorkspaceTrashService(db).delete_forever(workspace.id, ARTICLE, article.id)
+    cleanup = await WorkspaceTrashService(db).delete_forever(workspace.id, ARTICLE, article.id)
 
-    assert files == []
+    assert cleanup.files == [] and cleanup.embeddings == [(workspace.id, article.id)]
+    assert forgotten == []  # not before the commit: the caller runs it after
     assert await db.scalar(select(Content.id).where(Content.id == article.id)) is None
     assert (
         await db.scalar(
@@ -306,6 +307,7 @@ async def test_deleting_an_article_for_good_takes_its_seo_data_and_its_embedding
         )
         is None
     )
+    await cleanup.run()
     assert forgotten == [(workspace.id, article.id)]
 
 
@@ -319,9 +321,10 @@ async def test_deleting_a_persona_for_good_leaves_its_articles_without_a_byline(
     article.persona_id = persona.id
     await db.flush()
 
-    files = await WorkspaceTrashService(db).delete_forever(workspace.id, PERSONA, persona.id)
+    cleanup = await WorkspaceTrashService(db).delete_forever(workspace.id, PERSONA, persona.id)
 
-    assert files == ["avatars/personas/abc.webp"]  # removed by the route once committed
+    assert cleanup.files == ["avatars/personas/abc.webp"]  # removed once committed
+    assert cleanup.embeddings == []
     assert await db.scalar(select(Persona.id).where(Persona.id == persona.id)) is None
     assert (await db.scalar(select(Content.persona_id).where(Content.id == article.id))) is None
     assert await db.scalar(select(Content.id).where(Content.id == article.id)) == article.id
@@ -356,6 +359,30 @@ async def test_the_purge_deletes_what_is_past_the_window_and_keeps_the_rest(
     assert not {old_article.id, old_persona.id, linked_persona.id} & left
     assert forgotten == [(workspace.id, old_article.id)]
     assert removed_files == ["avatars/personas/old.webp"]  # a linked picture isn't ours
+
+
+async def test_the_purge_cleans_up_only_what_it_deleted(db, removed_files, monkeypatch):
+    """A persona restored between the purge's read and its delete stays, with its photo."""
+    ann = await _user(db)
+    workspace = await _workspace(db, ann)
+    restored = await _persona(
+        db, workspace, deleted_days_ago=40, avatar_url="avatars/personas/restored.webp"
+    )
+    await _persona(db, workspace, deleted_days_ago=40, avatar_url="avatars/personas/gone.webp")
+    execute = db.execute
+
+    async def restore_first(statement, *args, **kwargs):
+        if getattr(statement, "is_delete", False) and restored.deleted_at is not None:
+            await execute(update(Persona).where(Persona.id == restored.id).values(deleted_at=None))
+            restored.deleted_at = None
+        return await execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db, "execute", restore_first)
+    purged = await WorkspaceTrashService(db).purge_expired(now=NOW)
+
+    assert purged == {ARTICLE: 0, PERSONA: 1}
+    assert removed_files == ["avatars/personas/gone.webp"]
+    assert await execute(select(Persona.id).where(Persona.id == restored.id))
 
 
 async def test_the_window_is_a_setting(db, monkeypatch):
@@ -463,5 +490,6 @@ async def test_deleting_an_article_for_good_through_the_route(db, app_for, forgo
         again = await client.delete(f"/workspaces/{workspace.id}/trash/articles/{article.id}")
 
     assert gone.status_code == 200
+    assert forgotten == [(workspace.id, article.id)]  # after the commit, as a background task
     assert again.status_code == 404
     assert isinstance(UUID(gone.json()["data"]["id"]), UUID)

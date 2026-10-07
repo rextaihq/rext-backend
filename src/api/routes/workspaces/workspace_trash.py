@@ -7,11 +7,10 @@ persona.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.routes.workspaces.workspace_personas import _delete_after_commit
 from src.api.schema.response.trash_responses import TrashActionResponse, TrashListResponse
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
@@ -76,12 +75,16 @@ async def _restore(db, workspace_id: str, user: dict, kind: str, item_id: UUID, 
     return success(data=restored, request=request, message=f"The {kind} is restored")
 
 
-async def _delete_forever(db, workspace_id: str, user: dict, kind: str, item_id: UUID, request):
+async def _delete_forever(
+    db, workspace_id: str, user: dict, kind: str, item_id: UUID, request, background_tasks
+):
     workspace, _ = await resolve_workspace_for_route(
         db=db, workspace_identifier=workspace_id, user=user
     )
-    for name in await WorkspaceTrashService(db).delete_forever(workspace.id, kind, item_id):
-        _delete_after_commit(db, name)
+    cleanup = await WorkspaceTrashService(db).delete_forever(workspace.id, kind, item_id)
+    # A background task runs once the response is sent, so after the commit, and not at all
+    # when the request fails: a restorable item never loses its embedding or its photo.
+    background_tasks.add_task(cleanup.run)
     return success(
         data={"kind": kind, "id": str(item_id)},
         request=request,
@@ -133,11 +136,14 @@ async def delete_article_forever(
     workspace_id: str,
     item_id: UUID,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """Delete an article in the trash for good."""
-    return await _delete_forever(db, workspace_id, user, ARTICLE, item_id, request)
+    return await _delete_forever(
+        db, workspace_id, user, ARTICLE, item_id, request, background_tasks
+    )
 
 
 @router.delete(
@@ -150,11 +156,14 @@ async def delete_persona_forever(
     workspace_id: str,
     item_id: UUID,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """Delete a persona in the trash for good, with its uploaded photo."""
-    return await _delete_forever(db, workspace_id, user, PERSONA, item_id, request)
+    return await _delete_forever(
+        db, workspace_id, user, PERSONA, item_id, request, background_tasks
+    )
 
 
 __all__ = ["router"]

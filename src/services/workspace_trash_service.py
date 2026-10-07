@@ -13,6 +13,7 @@ in the store, and the persona's uploaded photo.
 """
 
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
@@ -217,20 +218,25 @@ class WorkspaceTrashService:
 
     async def delete_forever(
         self, workspace_id: UUID, kind: str, item_id: UUID, now: Optional[datetime] = None
-    ) -> List[str]:
-        """Delete an item in the trash for good. Returns the stored files it leaves behind,
-        for the caller to remove once its transaction has committed."""
+    ) -> "Cleanup":
+        """Delete an item in the trash for good.
+
+        Returns what it leaves outside the database (the article's embedding, the persona's
+        uploaded photo) for the caller to clean up once its transaction has committed: done
+        before, a failed commit would leave a restorable item without them.
+        """
         item = await self._in_trash(workspace_id, kind, item_id, now or datetime.now(timezone.utc))
-        files = _uploaded_files(item) if kind == PERSONA else []
+        cleanup = Cleanup(
+            files=_uploaded_files(item) if kind == PERSONA else [],
+            embeddings=[(workspace_id, item_id)] if kind == ARTICLE else [],
+        )
         await self.db.delete(item)
         await self.db.flush()
-        if kind == ARTICLE:
-            await _forget_embeddings(workspace_id, [item_id])
         logger.info(
             "Deleted from the trash for good",
             extra={"workspace_id": str(workspace_id), "kind": kind, "item_id": str(item_id)},
         )
-        return files
+        return cleanup
 
     async def purge_expired(
         self, now: Optional[datetime] = None, batch_size: int = 500
@@ -238,60 +244,72 @@ class WorkspaceTrashService:
         """Delete for good everything in any workspace's trash past the retention window.
 
         One batch per kind at a time, each committed before the next, so no lock is held long.
+        Only the rows a batch actually deleted are counted and cleaned up after: one restored
+        between the batch's read and its delete no longer matches, and stays as it is.
         """
         cutoff = _cutoff(now or datetime.now(timezone.utc))
         purged = {ARTICLE: 0, PERSONA: 0}
-        while True:
-            rows = (
-                await self.db.execute(
-                    select(Content.id, Content.workspace_id)
-                    .where(Content.deleted_at.is_not(None), Content.deleted_at <= cutoff)
-                    .limit(batch_size)
+        for kind, model, returned in (
+            (ARTICLE, Content, (Content.id, Content.workspace_id)),
+            (PERSONA, Persona, (Persona.id, Persona.avatar_url)),
+        ):
+            while True:
+                ids = (
+                    (
+                        await self.db.execute(
+                            select(model.id)
+                            .where(model.deleted_at.is_not(None), model.deleted_at <= cutoff)
+                            .limit(batch_size)
+                        )
+                    )
+                    .scalars()
+                    .all()
                 )
-            ).all()
-            if not rows:
-                break
-            await self.db.execute(
-                delete(Content).where(
-                    and_(Content.id.in_([r.id for r in rows]), Content.deleted_at <= cutoff)
-                )
-            )
-            await self.db.commit()
-            purged[ARTICLE] += len(rows)
-            by_workspace: Dict[UUID, List[UUID]] = {}
-            for row in rows:
-                by_workspace.setdefault(row.workspace_id, []).append(row.id)
-            for workspace_id, ids in by_workspace.items():
-                await _forget_embeddings(workspace_id, ids)
-        while True:
-            rows = (
-                await self.db.execute(
-                    select(Persona.id, Persona.avatar_url)
-                    .where(Persona.deleted_at.is_not(None), Persona.deleted_at <= cutoff)
-                    .limit(batch_size)
-                )
-            ).all()
-            if not rows:
-                break
-            await self.db.execute(
-                delete(Persona).where(
-                    and_(Persona.id.in_([r.id for r in rows]), Persona.deleted_at <= cutoff)
-                )
-            )
-            await self.db.commit()
-            purged[PERSONA] += len(rows)
-            await remove_stored_files(
-                [
-                    r.avatar_url
-                    for r in rows
-                    if (r.avatar_url or "").startswith(_UPLOADED_AVATAR_PREFIX)
-                ]
-            )
+                if not ids:
+                    break
+                deleted = (
+                    await self.db.execute(
+                        delete(model)
+                        .where(and_(model.id.in_(ids), model.deleted_at <= cutoff))
+                        .returning(*returned)
+                    )
+                ).all()
+                await self.db.commit()
+                purged[kind] += len(deleted)
+                if kind == ARTICLE:
+                    cleanup = Cleanup(embeddings=[(row.workspace_id, row.id) for row in deleted])
+                else:
+                    cleanup = Cleanup(
+                        files=[
+                            row.avatar_url
+                            for row in deleted
+                            if (row.avatar_url or "").startswith(_UPLOADED_AVATAR_PREFIX)
+                        ]
+                    )
+                await cleanup.run()
         if purged[ARTICLE] or purged[PERSONA]:
             logger.info(
                 "Purged the trash", extra={"articles": purged[ARTICLE], "personas": purged[PERSONA]}
             )
         return purged
+
+
+@dataclass
+class Cleanup:
+    """What an item deleted for good leaves outside the database, removed after the commit."""
+
+    files: List[str] = field(default_factory=list)
+    embeddings: List[Tuple[UUID, UUID]] = field(default_factory=list)
+
+    async def run(self) -> None:
+        """Best effort: a stored file or an embedding nothing points at is cheaper than a
+        failed delete. Storage calls run off the event loop."""
+        await remove_stored_files(self.files)
+        if self.embeddings:
+            from src.services.content_embedding_service import ContentEmbeddingService
+
+            for workspace_id, content_id in self.embeddings:
+                await ContentEmbeddingService.delete_content_embedding(workspace_id, content_id)
 
 
 async def run_trash_purge_task() -> Dict[str, int]:
@@ -318,11 +336,3 @@ async def remove_stored_files(object_names: List[str]) -> None:
             await asyncio.to_thread(storage_service.delete_file, name)
         except Exception as exc:  # noqa: BLE001 - an orphan is not a failure
             logger.warning("could not delete stored file %s: %s", name, exc)
-
-
-async def _forget_embeddings(workspace_id: UUID, content_ids: List[UUID]) -> None:
-    """Best effort: an article deleted for good is no longer offered as related content."""
-    from src.services.content_embedding_service import ContentEmbeddingService
-
-    for content_id in content_ids:
-        await ContentEmbeddingService.delete_content_embedding(workspace_id, content_id)
