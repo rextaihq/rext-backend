@@ -126,6 +126,7 @@ def _acronym_takes_an(letters: str) -> bool | None:
 def _an_before(word: str) -> bool | None:
     """True when the word takes "an", False when "a", None when it isn't clear."""
     head = re.split(r"[-–/]", word.lstrip(_LEADING), maxsplit=1)[0].rstrip(_TRAILING)
+    head = re.sub(r"['’]s$", "", head)  # "URL's" is read as "URL"
     if not head:
         return None
     if head[0] in "0123456789":
@@ -136,9 +137,17 @@ def _an_before(word: str) -> bool | None:
     letters = "".join(_base_letter(char) or "" for char in head)
     if len(head) == 1:
         return first.upper() in _VOWEL_SOUND_NAMES
-    if len(letters) >= 2 and letters.isupper():
-        return _acronym_takes_an(letters)
     lower = letters.lower()
+    # "URLs", "APIs": an acronym's plural.
+    acronym = letters[:-1] if re.fullmatch(r"[A-Z]{2,}s", letters) else letters
+    # An all-caps word is a word, not letters, when it's one of the words below: "A ONE-PAGE",
+    # "A EUROPEAN", "AN HOURLY" (but "an EU", "a URL").
+    caps_word = lower in ("one", "once") or (
+        len(lower) >= 5
+        and lower.startswith((*_YOU_SOUND, *_UNI_YOU, *_UN_I, *_SILENT_H, *_EITHER_H))
+    )
+    if len(acronym) >= 2 and acronym.isupper() and not caps_word:
+        return _acronym_takes_an(acronym)
     if lower.startswith(_SILENT_H):
         return True
     if lower.startswith(_EITHER_H):
