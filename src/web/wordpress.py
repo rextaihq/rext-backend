@@ -52,12 +52,27 @@ def _loggable_url(url: object) -> str:
     return f"{parsed.scheme}://{host}{parsed.path}"
 
 
-_ADDRESS_IN_TEXT = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>()]+")
+# An address up to whitespace, a quote or an angle bracket. Parentheses are legal in a path, so
+# they don't end it; a known address (below) is replaced whole first, whatever it contains.
+_ADDRESS_IN_TEXT = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>]+")
 
 
-def _redact_urls(text: str) -> str:
+def _redact_urls(text: str, *addresses: object) -> str:
     """Every address in a message as _loggable_url gives it: an HTTP error's text names the URL it
-    requested, signed query and all."""
+    requested, signed query and all. ``addresses`` are the ones the message may name (the image's
+    own, the response's): each is replaced whole, as given and as httpx writes it, before the
+    pattern catches any other."""
+    for address in addresses:
+        if not address:
+            continue
+        shown = _loggable_url(address)
+        forms = {str(address)}
+        try:
+            forms.add(str(httpx.URL(str(address))))
+        except (httpx.InvalidURL, TypeError, ValueError):
+            pass
+        for form in sorted(forms, key=len, reverse=True):
+            text = text.replace(form, shown)
     return _ADDRESS_IN_TEXT.sub(lambda match: _loggable_url(match.group(0)), text)
 
 
@@ -931,8 +946,8 @@ class WordPressPublisher:
                         "[WordPress Media Download] http_attempt_failed attempt=%s/3 error_type=%s error=%s cause=%s",
                         attempt,
                         type(exc).__name__,
-                        _redact_urls(repr(exc)),
-                        _redact_urls(repr(exc.__cause__)),
+                        _redact_urls(repr(exc), image_url),
+                        _redact_urls(repr(exc.__cause__), image_url),
                     )
                     if attempt == 3:
                         raise
@@ -1178,7 +1193,8 @@ class WordPressPublisher:
         except httpx.TimeoutException as e:
             reason = _redact_urls(
                 f"Featured image {stage} timed out for {_loggable_url(image_url)}; "
-                f"error={type(e).__name__}({e!r}); cause={e.__cause__!r}"
+                f"error={type(e).__name__}({e!r}); cause={e.__cause__!r}",
+                image_url,
             )
             logger.error("[WordPress Media Upload] failed reason=%s", reason)
             raise ExternalServiceTimeoutException(
@@ -1189,7 +1205,8 @@ class WordPressPublisher:
                 f"Featured image {stage} network connection failed for "
                 f"{_loggable_url(image_url)} "
                 f"after 3 attempts; error={type(e).__name__}({e!r}); "
-                f"cause={e.__cause__!r}"
+                f"cause={e.__cause__!r}",
+                image_url,
             )
             logger.error("[WordPress Media Upload] failed reason=%s", reason)
             raise RextExternalServiceException(
@@ -1198,7 +1215,12 @@ class WordPressPublisher:
             ) from None
         except httpx.HTTPStatusError as e:
             body = e.response.text[:4000] if e.response is not None else ""
-            reason = _redact_urls(f"Image request failed: {e}; body={body}")
+            reason = _redact_urls(
+                f"Image request failed: {e}; body={body}",
+                image_url,
+                e.request.url if e.request is not None else None,
+                e.response.url if e.response is not None else None,
+            )
             logger.error(
                 "[WordPress Media Upload] failed image=%s reason=%s",
                 _loggable_url(image_url),
@@ -1215,13 +1237,14 @@ class WordPressPublisher:
             logger.warning(
                 "[WordPress Media Upload] refused host=%s reason=%s",
                 parsed_url.hostname,
-                _redact_urls(str(e)),
+                _redact_urls(str(e), image_url),
             )
             raise RextExternalServiceException(message=reason, service_name="WordPress") from None
         except Exception as e:
             reason = _redact_urls(
                 f"Unexpected featured image {stage} error: "
-                f"{type(e).__name__}({e!r}); cause={e.__cause__!r}"
+                f"{type(e).__name__}({e!r}); cause={e.__cause__!r}",
+                image_url,
             )
             # Where it failed, without the exceptions' own text (traceback.format_tb lists frames only).
             logger.error(
