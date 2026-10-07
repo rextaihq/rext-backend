@@ -82,9 +82,12 @@ class BodyImageUploadError(RextExternalServiceException):
     storage address that expires, and the live post would show it broken.
 
     ``notice`` says it for the person (an email, a notification): the image's file name and what
-    to do, without the technical reason the message carries."""
+    to do, without the technical reason the message carries. ``transient`` keeps whether the
+    upload's own failure may pass on a retry (a timeout, the network, HTTP 429 or 5xx), so a
+    scheduled publish doesn't retry a refusal that will repeat."""
 
-    def __init__(self, image_url: str, reason: str):
+    def __init__(self, image_url: str, reason: str, transient: bool = False):
+        self.transient = transient
         name = os.path.basename(urlparse(image_url).path) or _loggable_url(image_url)
         self.notice = (
             f"An image in the article ({name}) couldn't be copied to your WordPress media "
@@ -102,7 +105,14 @@ class BodyImageUploadError(RextExternalServiceException):
 
 def _body_image_refusal(error: Exception, image_url: str) -> BodyImageUploadError:
     reason = _redact_urls(getattr(error, "message", None) or str(error), image_url)
-    return BodyImageUploadError(image_url, reason)
+    transient = isinstance(error, ExternalServiceTimeoutException) or bool(
+        (getattr(error, "context", None) or {}).get("transient")
+    )
+    return BodyImageUploadError(image_url, reason, transient=transient)
+
+
+def _retryable_status(status_code: int) -> bool:
+    return status_code == 429 or status_code >= 500
 
 
 # Domains that only ever show up when an image URL was hallucinated by the
@@ -1167,7 +1177,11 @@ class WordPressPublisher:
                     media_response.status_code,
                     reason,
                 )
-                raise RextExternalServiceException(message=reason, service_name="WordPress")
+                raise RextExternalServiceException(
+                    message=reason,
+                    service_name="WordPress",
+                    context={"transient": _retryable_status(media_response.status_code)},
+                )
 
             try:
                 raw = media_response.json()
@@ -1242,6 +1256,7 @@ class WordPressPublisher:
             raise RextExternalServiceException(
                 message=reason,
                 service_name="WordPress",
+                context={"transient": True},
             ) from None
         except httpx.HTTPStatusError as e:
             body = e.response.text[:4000] if e.response is not None else ""
@@ -1256,7 +1271,14 @@ class WordPressPublisher:
                 _loggable_url(image_url),
                 reason,
             )
-            raise RextExternalServiceException(message=reason, service_name="WordPress") from None
+            raise RextExternalServiceException(
+                message=reason,
+                service_name="WordPress",
+                context={
+                    "transient": e.response is not None
+                    and _retryable_status(e.response.status_code)
+                },
+            ) from None
         except RextExternalServiceException:
             raise
         except SSRFValidationError as e:
