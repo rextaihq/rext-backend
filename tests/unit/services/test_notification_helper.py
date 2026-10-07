@@ -155,3 +155,30 @@ async def test_schedule_if_allowed_success(mock_db, mock_background_tasks, sampl
     assert notification.type == config["type"]
     assert notification.category == "ws_invite_received"
     mock_background_tasks.add_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_a_preference_turned_off_meanwhile_is_caught_by_the_locked_recheck(
+    mock_db, mock_background_tasks, sample_user_id, sample_prefs
+):
+    """The first read allows it; the locked re-read (FOR UPDATE) finds it turned off since."""
+    turned_off = NotificationPreferences(
+        user_id=sample_prefs.user_id, in_app_notifications=True, category_preferences={}
+    )
+    turned_off.set_preference("ws_invite_received", False)
+    locked = MagicMock()
+    locked.scalar_one_or_none.return_value = turned_off
+    mock_db.execute = AsyncMock(return_value=locked)
+    service = MagicMock()
+    service.get_or_create = AsyncMock(return_value=sample_prefs)  # still on at the first read
+
+    with (
+        patch(f"{HELPER}.NotificationPreferencesService", return_value=service),
+        patch(f"{HELPER}.logger"),
+    ):
+        await _schedule(mock_db, mock_background_tasks, sample_user_id, "ws_invite_received")
+
+    statement = mock_db.execute.call_args_list[0].args[0]
+    assert statement._for_update_arg is not None  # the re-read locks the row
+    mock_db.add.assert_not_called()
+    mock_background_tasks.add_task.assert_not_called()
