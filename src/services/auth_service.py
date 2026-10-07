@@ -58,8 +58,8 @@ from src.api.security.token_utils import (
     create_reset_token,
     create_verification_token,
     decode_and_verify_token,
-    hash_password,
-    verify_password,
+    hash_password_async,
+    verify_password_async,
     verify_refresh_token,
 )
 from src.config.plan_rules import TRIAL_DURATION_DAYS
@@ -192,7 +192,7 @@ class AuthService:
         validate_password_strength(password)
 
         # Hash password
-        hashed_pwd = hash_password(password)
+        hashed_pwd = await hash_password_async(password)
 
         # Create user
         # last_login_at is set here, not left NULL until the first password
@@ -334,7 +334,9 @@ class AuthService:
             )
 
         # Verify password
-        is_match = verify_password(password=password, hashed_password=db_user.password_hash)
+        is_match = await verify_password_async(
+            password=password, hashed_password=db_user.password_hash
+        )
 
         if not is_match:
             # Increment failed attempts
@@ -1272,7 +1274,7 @@ class AuthService:
         validate_password_strength(new_password)
 
         # Hash and update password
-        hashed_pwd = hash_password(new_password)
+        hashed_pwd = await hash_password_async(new_password)
         user.password_hash = hashed_pwd
         await self.db.flush()
 
