@@ -162,7 +162,25 @@ CREDIT_CHECK_FAILED = (
 
 
 async def _credit_check_failed(state: REXT) -> dict:
-    """Terminal node for a run whose credit check couldn't be read (library_router fails closed)."""
+    """Terminal node for a run whose credit check couldn't be read (library_router fails closed).
+
+    Like no_serp_data, the message reaches the user twice: as a custom stream event (type "run",
+    step "run.failed") for the generation view that is streaming, and as content.error in the
+    thread state, which the dock's status poll reads (the dashboard's E27, rext-control#570).
+    """
+    try:
+        from langgraph.config import get_stream_writer
+
+        get_stream_writer()(
+            {
+                "type": "run",
+                "step": "run.failed",
+                "error_code": "credit_check_failed",
+                "message": CREDIT_CHECK_FAILED,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
+        logger.warning("credit_check_failed stream emit failed: %s", type(exc).__name__)
     return {"content": {"error": CREDIT_CHECK_FAILED, "error_code": "credit_check_failed"}}
 
 
