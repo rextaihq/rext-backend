@@ -110,6 +110,12 @@ async def lifespan(app):
     else:
         logger.error("❌ Redis cache not connected — running with caching disabled")
 
+    # --- The free tools' bot check (G87) ---
+    if settings.TURNSTILE_SECRET_KEY:
+        logger.info("✅ Free tools: Cloudflare Turnstile tokens are verified")
+    else:
+        logger.info("Free tools: TURNSTILE_SECRET_KEY is unset, so their bot check is skipped")
+
     # --- Validate production configuration ---
     if settings.ENVIRONMENT == "production":
         try:
@@ -302,6 +308,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
+    allow_origin_regex=settings.allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=settings.cors_allowed_headers_list,
