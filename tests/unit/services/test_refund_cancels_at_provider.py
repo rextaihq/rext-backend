@@ -79,15 +79,19 @@ async def _active_subscription(db) -> UserSubscription:
 
 
 def _event(row: UserSubscription, status: str, minutes_later: int = 5) -> dict:
+    # Timed from the clock when the event is made, not from NOW (module import): a refund
+    # ends the row at the current time, and in a whole-suite run NOW is minutes earlier,
+    # which made a "later" event older than the refund (G44.17, revnix/rext-control#638).
+    now = datetime.now(timezone.utc)
     return {
         "data": {
             "type": "subscriptions",
             "id": row.lemonsqueezy_subscription_id,
             "attributes": {
                 "status": status,
-                "ends_at": (NOW + timedelta(days=30)).isoformat(),
-                "renews_at": (NOW + timedelta(days=30)).isoformat(),
-                "updated_at": (NOW + timedelta(minutes=minutes_later)).isoformat(),
+                "ends_at": (now + timedelta(days=30)).isoformat(),
+                "renews_at": (now + timedelta(days=30)).isoformat(),
+                "updated_at": (now + timedelta(minutes=minutes_later)).isoformat(),
             },
         }
     }
