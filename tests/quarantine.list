@@ -150,6 +150,7 @@ tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_wor
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_email_preferences_allow
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_email_with_preferences_check
 tests/unit/services/test_email_helpers.py::TestSendWorkspaceEmail::test_send_workspace_invitation_success
+tests/unit/services/test_email_preferences_service.py::TestCheckCanSend::test_cannot_send_when_a_category_is_turned_off  # G61 #523: the service ignores the category (JSONB) keys
 tests/unit/services/test_email_preferences_service.py::TestUnsubscribe::test_unsubscribe_from_specific_types  # G61 #523: the service ignores the category (JSONB) keys
 tests/unit/services/test_email_preferences_service.py::TestUpdatePreferences::test_update_multiple_preferences  # G61 #523: the service ignores the category (JSONB) keys
 tests/unit/services/test_email_service.py::TestEmailServiceRetryFailedEmail::test_retry_failed_email_success

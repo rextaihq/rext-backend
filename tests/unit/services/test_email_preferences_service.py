@@ -143,6 +143,20 @@ class TestCheckCanSend:
 
         assert can_send is True
 
+    @pytest.mark.asyncio
+    async def test_cannot_send_when_a_category_is_turned_off(
+        self, mock_db, sample_user_id, sample_preferences
+    ):
+        """A category turned off (a JSONB key) stops that email, and only that one (G61 #523)."""
+        sample_preferences.set_preference("billing_payment_success", False)
+        _returns(mock_db, sample_preferences)
+
+        service = EmailPreferencesService(mock_db)
+
+        assert await service.check_can_send(sample_user_id, "payment_succeeded") is False
+        assert await service.check_can_send(sample_user_id, "payment_recovered") is False
+        assert await service.check_can_send(sample_user_id, "payment_failed") is True
+
 
 class TestUpdatePreferences:
     """Tests for update_preferences method."""
