@@ -16,6 +16,11 @@ from pydantic import ValidationError
 from src.api.config import Settings, get_settings
 
 
+def _refused_fields(error: ValidationError) -> list:
+    """The settings fields a validation error refuses."""
+    return [".".join(str(part) for part in item["loc"]) for item in error.errors()]
+
+
 class TestJWTSecretValidation:
     """Test JWT secret key validation requirements."""
 
@@ -28,8 +33,9 @@ class TestJWTSecretValidation:
         with pytest.raises(ValidationError) as exc_info:
             Settings()
 
-        error_message = str(exc_info.value)
-        assert "SECRET_KEY must be at least 32 characters" in error_message
+        # Refused for this field, by the 32-character rule.
+        assert _refused_fields(exc_info.value) == ["SECRET_KEY"]
+        assert "at least 32 characters" in str(exc_info.value)
 
     def test_weak_refresh_secret_key_rejected_too_short(self, monkeypatch):
         """Test that REFRESH_SECRET_KEY shorter than 32 characters is rejected."""
@@ -39,11 +45,15 @@ class TestJWTSecretValidation:
         with pytest.raises(ValidationError) as exc_info:
             Settings()
 
-        error_message = str(exc_info.value)
-        assert "REFRESH_SECRET_KEY must be at least 32 characters" in error_message
+        assert _refused_fields(exc_info.value) == ["REFRESH_SECRET_KEY"]
+        assert "at least 32 characters" in str(exc_info.value)
 
     def test_placeholder_secret_key_rejected(self, monkeypatch):
-        """Test that placeholder SECRET_KEY values are rejected."""
+        """Test that placeholder SECRET_KEY values are rejected.
+
+        These four are all under 32 characters, so the length rule refuses them;
+        longer placeholders (the example file's own) are rext-control G58 #525.
+        """
         placeholder_values = ["your-secret-key-here", "changeme", "secret", "password"]
 
         for placeholder in placeholder_values:
@@ -53,8 +63,7 @@ class TestJWTSecretValidation:
             with pytest.raises(ValidationError) as exc_info:
                 Settings()
 
-            error_message = str(exc_info.value)
-            assert "insecure placeholder value" in error_message
+            assert _refused_fields(exc_info.value) == ["SECRET_KEY"], placeholder
 
     def test_placeholder_refresh_secret_key_rejected(self, monkeypatch):
         """Test that placeholder REFRESH_SECRET_KEY values are rejected."""
@@ -64,8 +73,7 @@ class TestJWTSecretValidation:
         with pytest.raises(ValidationError) as exc_info:
             Settings()
 
-        error_message = str(exc_info.value)
-        assert "insecure placeholder value" in error_message
+        assert _refused_fields(exc_info.value) == ["REFRESH_SECRET_KEY"]
 
     def test_strong_secret_keys_accepted(self, monkeypatch):
         """Test that strong SECRET_KEY and REFRESH_SECRET_KEY are accepted."""
