@@ -29,6 +29,13 @@ async def test_the_canonical_tag_is_the_normalized_url():
     )
 
 
+@pytest.mark.asyncio
+async def test_a_parameter_without_a_value_is_kept(  # G36.1, revnix/rext-control#440
+):
+    result = await generate_canonical_tag("https://example.com/report?print&utm_source=x&UTM_x")
+    assert result["normalized_url"] == "https://example.com/report?print"
+
+
 def test_the_canonical_route_answers_without_a_model():
     res = client.post("/api/v1/tools/canonical-tag-generator", json={"url": "https://example.com/"})
     assert res.status_code == 200

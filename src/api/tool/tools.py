@@ -408,10 +408,12 @@ def normalize_url(url: str) -> str:
     query_params = []
     if parsed.query:
         for param in parsed.query.split("&"):
-            if "=" in param:
-                key = param.split("=")[0].lower()
-                if key not in ["fbclid", "gclid"] and not key.startswith("utm_"):
-                    query_params.append(param)
+            if not param:
+                continue
+            # A key-only parameter (?print) is kept too: dropping it can point the tag at another page.
+            key = param.split("=")[0].lower()
+            if key not in ["fbclid", "gclid"] and not key.startswith("utm_"):
+                query_params.append(param)
 
     query = "&".join(query_params)
     path = parsed.path.rstrip("/") or "/"

@@ -110,6 +110,12 @@ async def lifespan(app):
     else:
         logger.error("❌ Redis cache not connected — running with caching disabled")
 
+    # --- The free tools' bot check (G87) ---
+    if settings.TURNSTILE_SECRET_KEY:
+        logger.info("✅ Free tools: Cloudflare Turnstile tokens are verified")
+    else:
+        logger.info("Free tools: TURNSTILE_SECRET_KEY is unset, so their bot check is skipped")
+
     # --- Validate production configuration ---
     if settings.ENVIRONMENT == "production":
         try:

@@ -229,6 +229,9 @@ services:
             RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-10000}
             RATE_LIMIT_PER_DAY: ${RATE_LIMIT_PER_DAY:-100000}
 
+            # The free tools' bot check (Cloudflare Turnstile); unset, there's no check
+            TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+
             # File Uploads
             UPLOAD_DIR: ${UPLOAD_DIR:-/app/secure_uploads}
             MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}

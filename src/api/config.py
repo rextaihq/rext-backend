@@ -189,6 +189,10 @@ class Settings(HidesSecrets, BaseSettings):
     FREE_TOOLS_DAILY_BUDGET_USD: float = Field(
         default=5.0, ge=0, description="Free tools: the most their model calls spend per day, US$"
     )
+    TURNSTILE_SECRET_KEY: Optional[str] = Field(
+        default=None,
+        description="Free tools: Cloudflare Turnstile's secret key for the bot check; unset, no check",
+    )
 
     # Trusted reverse proxy IPs (comma-separated)
     TRUSTED_PROXY_IPS: str = Field(
