@@ -1,6 +1,5 @@
 import logging
 
-from src.flow.engines.router.credits import out_of_credits
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,7 @@ def keyword_router(state: REXT) -> str:
     keyword_recs = seo_result.get("keyword_recommendations", {})
     is_changed = keyword_recs.get("is_changed", False)
 
-    if out_of_credits(state):
+    if keyword_recs.get("titles_unpaid"):
         logger.info("The title charge was refused, ending the run")
         return "INSUFFICIENT"
 

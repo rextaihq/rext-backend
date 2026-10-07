@@ -38,26 +38,19 @@ async def library_router(state: REXT) -> str:
             uid = UUID(str(user_id))
             wid = UUID(str(workspace_id)) if workspace_id else None
             balance = await _get_balance(uid, workspace_id=wid)
-        except InsufficientCreditsError as exc:
+        except InsufficientCreditsError:
             # Not a member of the workspace whose credits would pay.
-            logger.warning("Blocking run: %s (user=%s, workspace=%s)", exc, user_id, workspace_id)
+            logger.warning("Blocking run: the workspace's credits don't cover this caller")
             return "insufficient_credits"
         except Exception as exc:
             logger.warning(
-                "Blocking run: the credit check failed (user=%s, workspace=%s): %s",
-                user_id,
-                workspace_id,
-                exc,
+                "Blocking run: the credit check failed (%s)", type(exc).__name__, exc_info=True
             )
             return "credit_check_failed"
 
         if balance < total_cost:
             logger.warning(
-                "Blocking run: need %d credits for a full article, have %d (user=%s, workspace=%s)",
-                total_cost,
-                balance,
-                uid,
-                wid,
+                "Blocking run: need %d credits for a full article, have %d", total_cost, balance
             )
             _emit_credit_event(balance, "pipeline_start", total_cost, step="credits.exhausted")
             await notify_credit_owner(uid, wid, exceeded=True, balance=balance, required=total_cost)

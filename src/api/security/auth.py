@@ -20,6 +20,7 @@ from src.api.config import get_settings
 from src.api.database.async_database import get_async_db_context
 from src.api.middleware.exceptions import InvalidAPIKeyException, RextAuthenticationException
 from src.api.security.dependencies import get_current_user
+from src.api.security.run_admission import MAX_ACTIVE_RUNS, admit_run
 
 logger = logging.getLogger(__name__)
 
@@ -36,21 +37,17 @@ def _forbidden(detail: str = "Forbidden") -> Auth.exceptions.HTTPException:
     return Auth.exceptions.HTTPException(status_code=403, detail=detail)
 
 
-# How many of one user's generation runs may be in flight at once. The dashboard keeps
-# one; the server allows two (a second tab), so runs started together can't all pass the
-# credit checks before the first of them is charged.
-MAX_ACTIVE_RUNS = 2
 TOO_MANY_RUNS = (
     f"You already have {MAX_ACTIVE_RUNS} articles generating. "
     "Wait for one to finish, then start another."
 )
 
 
-async def _busy_threads(identity: str, but: object) -> int:
-    """How many of the user's threads have a run in flight, the thread `but` aside.
+async def _busy_threads(identity: str) -> set[str]:
+    """The ids of the user's threads with a run in flight.
 
-    Counted through the in-process client, which skips these handlers. If the count
-    can't be read, the run isn't held up: the credit checks still apply to it.
+    Read through the in-process client, which skips these handlers. If they can't be
+    read, none count: the run isn't held up, and the credit checks still apply to it.
     """
     from langgraph_sdk import get_client
 
@@ -60,8 +57,8 @@ async def _busy_threads(identity: str, but: object) -> int:
         )
     except Exception:
         logger.warning("active-run cap: could not count busy threads", exc_info=True)
-        return 0
-    return sum(1 for thread in threads if str(thread.get("thread_id")) != str(but))
+        return set()
+    return {str(thread.get("thread_id")) for thread in threads}
 
 
 @auth.authenticate
@@ -236,8 +233,10 @@ async def runs_need_content_create(
     )
     if not await _may_create_content(ctx.user.identity, workspace_id):
         raise _forbidden(CONTENT_CREATE_REFUSED)
-    # Starting or resuming a run starts paid work; the thread itself may be resumed.
-    if await _busy_threads(ctx.user.identity, value.get("thread_id")) >= MAX_ACTIVE_RUNS:
+    # Starting or resuming a run starts paid work: at most MAX_ACTIVE_RUNS per user,
+    # admitted atomically so runs requested together count each other (run_admission).
+    identity = ctx.user.identity
+    if not await admit_run(identity, value.get("thread_id"), lambda: _busy_threads(identity)):
         raise Auth.exceptions.HTTPException(status_code=429, detail=TOO_MANY_RUNS)
     _bind_to_its_user(ctx.user.identity, kwargs.get("input"))
     scope = {"owner": ctx.user.identity, "workspace_id": str(workspace_id)}
