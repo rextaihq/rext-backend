@@ -525,6 +525,23 @@ _STEP_GUIDES = frozenset({"how-to-guide", "tutorial"})
 _MIN_STEPS = 3
 
 
+def _summed_word_target(model_schema, sections: list) -> int:
+    """The sections' word budgets added up, kept inside the outline schema's own limits on
+    target_word_count (blog: 800 to 5,000). The sum replaces the target after validation, so
+    without the clamp a 16-entry blog outline could ask the writer for 12,800 words (review
+    round 3 of #890)."""
+    total = sum(s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict))
+    field = getattr(model_schema, "model_fields", {}).get("target_word_count")
+    limits = getattr(field, "metadata", None) or []
+    high = next((rule.le for rule in limits if getattr(rule, "le", None) is not None), None)
+    low = next((rule.ge for rule in limits if getattr(rule, "ge", None) is not None), None)
+    if high is not None:
+        total = min(total, high)
+    if low is not None:
+        total = max(total, low)
+    return total
+
+
 def _thin_structure(content_type: str, outline: dict) -> str | None:
     """What a generated outline is missing that makes it unusable, or None."""
     if content_type not in _STEP_GUIDES:
@@ -724,9 +741,7 @@ async def generate_outline(state: REXT) -> dict:
                     sections = container["sections"]
                     break
         if sections:
-            outline_dict["target_word_count"] = sum(
-                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
-            )
+            outline_dict["target_word_count"] = _summed_word_target(model_schema, sections)
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly
