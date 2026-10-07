@@ -4,6 +4,8 @@ The deterministic repair drops trailing words until a title fits, and could stop
 "in", "for" or "the": the title step offered "Innovations in ai content writing tools for
 agencies in". After a trim, trailing function words go too, never cutting into the keyphrase;
 if that leaves the title unusable, the plain trim is kept, so no title is lost for its last word.
+A preposition stays when the verb before it needs it ("Depend On", "Look For") or when it had
+no object for the trim to cut ("Fall Back On in 2026").
 """
 
 from src.flow.engines.content.generation.seo_title_rules import repair_title, title_is_valid
@@ -37,6 +39,38 @@ def test_the_keyphrase_is_never_cut_for_its_last_word():
 
     assert repaired == "The Complete List of Marketing Software: Tools to Rely On"
     assert title_is_valid(repaired, keyphrase)
+
+
+def test_a_preposition_the_verb_needs_stays():
+    """Cut after "On", the title still reads; "Businesses Depend" would not."""
+    title = "SEO Agencies: The Proven Experts Businesses Depend On Advice"  # 60
+    repaired = repair_title(title, "seo agencies")
+
+    assert repaired == "SEO Agencies: The Proven Experts Businesses Depend On"
+    assert title_is_valid(repaired, "seo agencies")
+
+
+def test_a_preposition_whose_object_was_cut_goes_but_the_verbs_stays():
+    title = "SEO Agencies: What Small Business Owners Should Look For in One"  # 63
+    repaired = repair_title(title, "seo agencies")
+
+    assert repaired == "SEO Agencies: What Small Business Owners Should Look For"
+
+
+def test_a_preposition_with_no_object_of_its_own_stays():
+    """The trim cut nothing of "On", which stood before "in 2026", whatever the verb."""
+    title = "SEO Tools: The Platforms Small Agencies Fall Back On in 2026 Today"  # 66
+    repaired = repair_title(title, "seo tools")
+
+    assert repaired == "SEO Tools: The Platforms Small Agencies Fall Back On"
+
+
+def test_a_preposition_after_a_noun_still_goes():
+    """Here "Plan" is a noun, as it mostly is in titles, and "for" lost its object."""
+    title = "SEO Tools for Agencies: How to Build a Marketing Plan for 2026 Now"  # 66
+    repaired = repair_title(title, "seo tools")
+
+    assert repaired == "SEO Tools for Agencies: How to Build a Marketing Plan"
 
 
 def test_the_plain_trim_is_kept_when_the_tidy_one_cannot_be_used():

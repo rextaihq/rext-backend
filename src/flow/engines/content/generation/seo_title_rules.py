@@ -56,12 +56,12 @@ _NEUTRAL_PREFIXES: tuple[str, ...] = (
 
 _WHITESPACE_RE = re.compile(r"\s+")
 # Scripts written without spaces between words (Thai, Lao, Myanmar, Khmer, kana including the
-# halfwidth forms, CJK ideographs): no space marks where their words begin and end, so a phrase's
-# edge in one of them needs no space beside it, and a character of one beside a phrase is a
-# boundary in itself.
+# halfwidth forms, CJK ideographs, with the supplementary ideographic planes 2 and 3): no space
+# marks where their words begin and end, so a phrase's edge in one of them needs no space beside
+# it, and a character of one beside a phrase is a boundary in itself.
 _UNSPACED_SCRIPT_RE = re.compile(
     "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
-    "\uf900-\ufaff\uff66-\uff9f]"
+    "\uf900-\ufaff\uff66-\uff9f\U00020000-\U0003ffff]"
 )
 _SURROUNDING_QUOTES = "\"'`“”‘’ "
 
@@ -89,9 +89,11 @@ def _normalize_for_match(text: Any) -> str:
     # Letters, marks and digits of every script are kept (an accented letter, Arabic, Cyrillic,
     # Devanagari's vowel signs); punctuation, symbols, separators and the underscore become spaces.
     # Lowercased, not casefolded: casefolding makes different words equal ("Maße" and "Masse").
+    # A capital dotted İ lowercases to "i" plus a combining dot that no lowercase i carries, so
+    # the dot goes: Turkish "İstanbul" is "istanbul" in lowercase.
+    lowered = _nfc(text).lower().replace("i\u0307", "i")
     flattened = "".join(
-        " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char
-        for char in _nfc(text).lower()
+        " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char for char in lowered
     )
     return f" {' '.join(flattened.split())} "
 
@@ -178,16 +180,79 @@ def title_is_valid(title: Any, keyphrase: Any = "") -> bool:
     return not title_violations(title, keyphrase)
 
 
+_TRAILING_PUNCTUATION = " ,;:-–—"
 # Words a trimmed title must not end on: a trim that stops just after one leaves the phrase
 # hanging ("Innovations in AI content writing tools for agencies in", G69a).
 _DANGLING_END_WORDS = frozenset(
     {
-        "a", "an", "the", "and", "or", "but", "nor", "&", "for", "of", "in", "on", "at", "to",
-        "by", "with", "from", "into", "onto", "over", "under", "about", "as", "via", "per",
-        "than", "vs", "versus", "your", "our", "their", "its", "my", "this", "that", "these",
-        "those", "is", "are",
+        "a", "an", "the", "and", "or", "but", "nor", "&", "via", "per", "than", "vs", "versus",
+        "your", "our", "their", "its", "my", "this", "that", "these", "those", "is", "are",
     }
 )  # fmt: skip
+_CONJUNCTIONS = frozenset({"and", "or", "but", "nor", "&"})
+
+
+def _verb_forms(verb: str) -> set[str]:
+    """A regular verb's written forms ("rely": relies, relied, relying), for the table below."""
+    stem = verb[:-1] if verb.endswith("e") else verb
+    forms = {verb, f"{verb}s", f"{stem}ed", f"{stem}ing"}
+    if verb.endswith("y") and verb[-2:-1] not in ("a", "e", "i", "o", "u"):
+        forms |= {f"{verb[:-1]}ies", f"{verb[:-1]}ied"}
+    if verb.endswith(("s", "sh", "ch", "x")):
+        forms.add(f"{verb}es")
+    return forms
+
+
+# A preposition left at the end once a trim cut its object dangles too ("for agencies in"), but
+# not after a verb that needs it ("Businesses Depend On", "What to Look For"): each preposition,
+# with the verbs it completes at a title's end. Verbs that are mostly nouns ("plan", "search",
+# "work") are left out, so "Your Marketing Plan for" is still tidied.
+_PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
+    preposition: frozenset(form for verb in verbs for form in _verb_forms(verb))
+    for preposition, verbs in {
+        "on": ("rely", "depend", "count", "focus", "build", "built", "bet", "betting", "insist"),
+        "for": ("look", "ask", "pay", "paid", "wait", "prepare", "apply", "use", "know", "known"),
+        "about": ("care", "talk", "think", "thought", "worry", "know", "known", "learn", "hear", "heard"),
+        "by": ("swear", "swore", "sworn", "stand", "stood", "live"),
+        "with": ("deal", "dealt", "agree", "cope"),
+        "in": ("believe", "invest", "specialize", "specialise"),
+        "of": ("make", "made", "consist", "approve"),
+        "to": ("listen", "switch", "migrate", "stick", "commit", "subscribe"),
+        "at": ("look", "aim"),
+        "as": ("know", "known", "serve"),
+        "from": ("benefit", "choose"),
+        "into": ("look", "dig", "dive", "tap"),
+        "over": ("think", "thought", "argue", "fight"),
+        "under": ("fall", "fell", "fallen"),
+        "onto": ("hold", "held", "latch"),
+    }.items()
+}  # fmt: skip
+
+
+def _bare(word: str) -> str:
+    return word.lower().strip(_TRAILING_PUNCTUATION)
+
+
+def _ends_dangling(words: list[str], kept: int) -> bool:
+    """Whether the title cut to its first ``kept`` words (a trim's result) ends on a word left
+    hanging."""
+    last = _bare(words[kept - 1])
+    if last in _DANGLING_END_WORDS:
+        return True
+    if last not in _PREPOSITION_AFTER_VERB:
+        return False
+    # A preposition that ended a clause, or stood before another one or a conjunction, had no
+    # object for the trim to cut ("Rely On: A Guide", "Fall Back On in 2026", "Sign In and").
+    following = _bare(words[kept]) if kept < len(words) else ""
+    if (
+        words[kept - 1][-1] in _TRAILING_PUNCTUATION
+        or not following
+        or following in _PREPOSITION_AFTER_VERB
+        or following in _CONJUNCTIONS
+    ):
+        return False
+    verb = _bare(words[kept - 2]) if kept > 1 else ""
+    return verb not in _PREPOSITION_AFTER_VERB[last]
 
 
 def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
@@ -195,23 +260,23 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
     ``tidy_end``, never stop on a dangling word either."""
     words = title.split()
     max_chars = title_max_chars(keyphrase)
-    trimmed = False
-    while len(words) > 1 and len(" ".join(words)) > max_chars:
-        candidate = " ".join(words[:-1]).rstrip(" ,;:-–—")
+
+    def first(count: int) -> str:
+        return " ".join(words[:count]).rstrip(_TRAILING_PUNCTUATION)
+
+    def can_cut_to(count: int) -> bool:
         # Never trim away the user's keyphrase to satisfy the length rule.
-        if keyphrase and not contains_keyphrase(candidate, keyphrase):
-            break
-        words = candidate.split()
-        trimmed = True
-    if trimmed and tidy_end:
+        return not keyphrase or contains_keyphrase(first(count), keyphrase)
+
+    kept = len(words)
+    while kept > 1 and len(first(kept)) > max_chars and can_cut_to(kept - 1):
+        kept -= 1
+    if tidy_end and kept < len(words):
         # A trim that stopped after "in", "for" or "the" drops it too; the minimum, if it is
         # missed now, is met by the claim-free padding.
-        while len(words) > 1 and words[-1].lower().strip(",;:-–—") in _DANGLING_END_WORDS:
-            candidate = " ".join(words[:-1]).rstrip(" ,;:-–—")
-            if keyphrase and not contains_keyphrase(candidate, keyphrase):
-                break
-            words = candidate.split()
-    return " ".join(words).rstrip(" ,;:-–—")
+        while kept > 1 and _ends_dangling(words, kept) and can_cut_to(kept - 1):
+            kept -= 1
+    return first(kept)
 
 
 def _pad_to_min(title: str, max_chars: int = TITLE_MAX_CHARS) -> str:
