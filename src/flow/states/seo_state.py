@@ -48,6 +48,9 @@ class KeywordRecommendationState(TypedDict):
     error: Optional[str]
     # Set only when the SERP had nothing to work from; the run then ends.
     serp_status: Optional[str]
+    # Each answer's own verdict: True when its title charge was refused, and the run then
+    # ends (keyword_router). Read by the backend only; an older checkpoint lacks it (False).
+    titles_unpaid: bool
 
 
 # Why the keyword overview has (or lacks) a search volume:

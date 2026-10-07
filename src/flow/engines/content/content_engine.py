@@ -55,6 +55,7 @@ def create_content_engine():
     from src.flow.engines.content.review.content.content_review import review_content
     from src.flow.engines.content.review.outline import review_outline
     from src.flow.engines.router.content_quality import validation_router
+    from src.flow.engines.router.credits import unless_out_of_credits
     from src.flow.engines.router.outline import outline_router
     from src.flow.engines.seo.keyword_clustering import keyword_clustering_node
 
@@ -96,7 +97,13 @@ def create_content_engine():
     )
     graph.add_edge("keyword_clustering", "map_keyword_clusters")
     graph.add_edge("map_keyword_clusters", "generate_outline")
-    graph.add_edge("generate_outline", "review_outline")
+    # A stage whose charge was refused ends the run there: its work isn't handed on,
+    # and no later stage runs unpaid (rext-control#524).
+    graph.add_conditional_edges(
+        "generate_outline",
+        unless_out_of_credits("review_outline"),
+        {"review_outline": "review_outline", END: END},
+    )
 
     graph.add_conditional_edges(
         "review_outline",
@@ -104,7 +111,11 @@ def create_content_engine():
         {"generate_content": "generate_content", "generate_outline": "generate_outline"},
     )
 
-    graph.add_edge("generate_content", "validate_content")
+    graph.add_conditional_edges(
+        "generate_content",
+        unless_out_of_credits("validate_content"),
+        {"validate_content": "validate_content", END: END},
+    )
     graph.add_conditional_edges(
         "validate_content",
         validation_router,
