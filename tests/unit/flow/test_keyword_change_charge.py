@@ -134,5 +134,5 @@ async def test_a_refused_title_charge_ends_the_run_before_the_titles(monkeypatch
 
     result = await _gate(monkeypatch, state, "running shoes")
 
-    assert result["content"]["error_code"] == "insufficient_credits"
+    assert result["seo_result"]["keyword_recommendations"]["titles_unpaid"] is True
     assert keyword_router({**state, **result}) == "INSUFFICIENT"

@@ -321,6 +321,9 @@ async def keyword_recommendation(state: REXT) -> Any:
                 "error": None,
                 "is_changed": is_changed,
                 "library_key": seo_result.get(KEYWORD_RESEARCH_KEY),
+                # This answer's own verdict: a refused title charge ends the run
+                # before the titles (keyword_router, rext-control#524).
+                "titles_unpaid": not titles_paid,
             },
         },
         "serp_payload": {
@@ -328,13 +331,4 @@ async def keyword_recommendation(state: REXT) -> Any:
             "query": primary_keyword,
             "country": selected_country,
         },
-        # A refused title charge ends the run before the titles are written
-        # (keyword_router, rext-control#524).
-        **(
-            {}
-            if titles_paid
-            else {
-                "content": {"error": "insufficient_credits", "error_code": "insufficient_credits"}
-            }
-        ),
     }

@@ -32,14 +32,18 @@ def create_rext_engine():
     flow.add_node("serp_engine", create_serp_engine())
     flow.add_node("seo_engine", create_seo_engine())
     flow.add_node("content_engine", create_content_engine())
+    flow.add_node("begin_run", _begin_run)
     flow.add_node("insufficient_credits", _insufficient_credits)
     flow.add_node("credit_check_failed", _credit_check_failed)
     flow.add_node("no_serp_data", _no_serp_data)
     flow.add_node("load_library_item", load_library_item)
     flow.add_node("charge_library_start", charge_library_start)
 
+    # A new run on a thread starts clean: an earlier run's terminal error (out of
+    # credits, say) must not end this one (rext-control#524).
+    flow.add_edge(START, "begin_run")
     flow.add_conditional_edges(
-        START,
+        "begin_run",
         library_router,
         {
             "serp_engine": "serp_engine",
@@ -127,6 +131,14 @@ async def _insufficient_credits(state: REXT) -> dict:
             "error_code": "insufficient_credits",
         }
     }
+
+
+async def _begin_run(state: REXT) -> dict:
+    """A new run clears the terminal error an earlier run on this thread left in its content."""
+    content = state.get("content") or {}
+    if content.get("error") is None and content.get("error_code") is None:
+        return {}
+    return {"content": {"error": None, "error_code": None}}
 
 
 CREDIT_CHECK_FAILED = (

@@ -158,10 +158,26 @@ def test_a_run_out_of_credits_ends_instead_of_going_on():
 
 def test_the_keyword_gate_ends_a_run_whose_title_charge_was_refused():
     state = {
-        "content": {"error_code": "insufficient_credits"},
-        "seo_result": {"keyword_recommendations": {"is_changed": False}},
+        "seo_result": {"keyword_recommendations": {"is_changed": False, "titles_unpaid": True}}
     }
     assert keyword_router(state) == "INSUFFICIENT"
+
+
+def test_an_earlier_runs_out_of_credits_error_doesnt_end_a_paid_answer():
+    # A topped-up retry on the same thread: the old error is still in the checkpoint.
+    state = {
+        "content": {"error_code": "insufficient_credits"},
+        "seo_result": {"keyword_recommendations": {"is_changed": False, "titles_unpaid": False}},
+    }
+    assert keyword_router(state) == "END"
+
+
+async def test_a_new_run_starts_without_an_earlier_runs_error():
+    from src.flow.engines.rext import _begin_run
+
+    stale = {"content": {"error": "Insufficient credits", "error_code": "insufficient_credits"}}
+    assert await _begin_run(stale) == {"content": {"error": None, "error_code": None}}
+    assert await _begin_run({"content": {"outline": {}}}) == {}
 
 
 def test_the_graphs_end_the_run_where_a_charge_is_refused():
@@ -175,5 +191,6 @@ def test_the_graphs_end_the_run_where_a_charge_is_refused():
     assert ("generate_content", "validate_content") in content_edges
 
     rext_edges = {(e.source, e.target) for e in create_rext_engine().get_graph().edges}
-    assert ("__start__", "credit_check_failed") in rext_edges
+    assert ("__start__", "begin_run") in rext_edges
+    assert ("begin_run", "credit_check_failed") in rext_edges
     assert ("seo_engine", "insufficient_credits") in rext_edges
