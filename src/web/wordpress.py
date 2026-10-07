@@ -76,19 +76,33 @@ def _redact_urls(text: str, *addresses: object) -> str:
     return _ADDRESS_IN_TEXT.sub(lambda match: _loggable_url(match.group(0)), text)
 
 
-def _body_image_refusal(error: Exception, image_url: str) -> RextExternalServiceException:
-    """Why a publish stops on an image in the post's body that couldn't be copied to the site's
+class BodyImageUploadError(RextExternalServiceException):
+    """A publish stopped on an image in the post's body that couldn't be copied to the site's
     media library. Published anyway, the image would keep its original address, often a signed
-    storage address that expires, and the live post would show it broken."""
+    storage address that expires, and the live post would show it broken.
+
+    ``notice`` says it for the person (an email, a notification): the image's file name and what
+    to do, without the technical reason the message carries."""
+
+    def __init__(self, image_url: str, reason: str):
+        name = os.path.basename(urlparse(image_url).path) or _loggable_url(image_url)
+        self.notice = (
+            f"An image in the article ({name}) couldn't be copied to your WordPress media "
+            "library. Replace or remove it, then publish again."
+        )
+        super().__init__(
+            message=(
+                f"Publishing stopped: an image in the article ({_loggable_url(image_url)}) "
+                "couldn't be copied to the site's media library. Replace or remove it, then "
+                f"publish again. Reason: {reason}"
+            ),
+            service_name="WordPress",
+        )
+
+
+def _body_image_refusal(error: Exception, image_url: str) -> BodyImageUploadError:
     reason = _redact_urls(getattr(error, "message", None) or str(error), image_url)
-    return RextExternalServiceException(
-        message=(
-            f"Publishing stopped: an image in the article ({_loggable_url(image_url)}) couldn't be "
-            f"copied to the site's media library. Replace or remove it, then publish again. "
-            f"Reason: {reason}"
-        ),
-        service_name="WordPress",
-    )
+    return BodyImageUploadError(image_url, reason)
 
 
 # Domains that only ever show up when an image URL was hallucinated by the
@@ -1561,9 +1575,12 @@ class WordPressPublisher:
             try:
                 media_info = await self._upload_featured_image(image_url, alt_text=featured_alt)
             except Exception as exc:
-                if image_url in body_images:
+                if image_url in body_images and not self._is_existing_wordpress_media_url(
+                    image_url
+                ):
                     # It's in the body too, where it can't stay with its original
-                    # address: stop now rather than download it a second time.
+                    # address: stop now rather than download it a second time. One
+                    # already in this site's media library stays as it is.
                     logger.error(
                         "[WordPress Publish] failed to upload featured image=%s, which the body "
                         "shows too; stopping the publish",
