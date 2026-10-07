@@ -47,8 +47,10 @@ class DataCleanupService:
 
         PostgreSQL has no DELETE ... LIMIT, so each batch deletes the ids a
         limited select picks, and is committed before the next one starts.
-        "fetch" takes the deleted rows out of the session too, so a caller that
-        loaded one doesn't still see it.
+        The delete repeats the conditions: a row updated after the select
+        picked it (a session refreshed meanwhile) is checked again as it now
+        is, and kept. "fetch" takes the deleted rows out of the session too, so
+        a caller that loaded one doesn't still see it.
 
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
@@ -66,7 +68,7 @@ class DataCleanupService:
             batch = select(model.id).where(*conditions).limit(batch_size)
             result = await self.db.execute(
                 delete(model)
-                .where(model.id.in_(batch))
+                .where(model.id.in_(batch), *conditions)
                 .execution_options(synchronize_session="fetch")
             )
             await self.db.commit()
