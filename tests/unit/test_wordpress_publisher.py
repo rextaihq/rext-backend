@@ -1090,3 +1090,28 @@ def test_a_huge_error_page_is_cut_before_it_is_scanned():
     logged = _loggable_body(body)
 
     assert len(logged) <= 501 and "secret-token" not in logged
+
+
+def test_a_protected_field_cut_by_the_scan_limit_is_still_taken_out():
+    """A CanonicalRequest opening early and closing past the limit kept its first part."""
+    from src.web.wordpress import _loggable_body
+
+    body = (
+        "<Error><Code>SignatureDoesNotMatch</Code><CanonicalRequest>GET\n/images/gone.png\n"
+        "X-Amz-Credential=AKIAEXAMPLEKEY%2F20261007&X-Amz-Signature=secret-token\n"
+        + "h" * 10_000
+        + "</CanonicalRequest></Error>"
+    )
+
+    logged = _loggable_body(body)
+
+    assert "SignatureDoesNotMatch" in logged
+    assert "AKIAEXAMPLEKEY" not in logged and "secret-token" not in logged
+
+
+def test_bare_amz_parameters_are_taken_out():
+    from src.web.wordpress import _loggable_body
+
+    logged = _loggable_body("canonical: X-Amz-Signature=secret-token&X-Amz-Date=20261007T000000Z")
+
+    assert "secret-token" not in logged and "X-Amz-Signature=…" in logged
