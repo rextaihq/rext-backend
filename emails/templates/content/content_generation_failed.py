@@ -5,6 +5,7 @@ Sent when AI content generation fails.
 """
 
 from emails.components import primary_button, secondary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -13,7 +14,7 @@ def render_content_generation_failed_email(
     content_title: str,
     error_message: str,
     retry_url: str,
-    support_url: str = "https://app.rext.ai/support",
+    support_url: str = SITE_CONTACT_URL,
     frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """

@@ -5,6 +5,7 @@ Sent when a user cancels their subscription.
 """
 
 from emails.components import primary_button, secondary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -14,7 +15,7 @@ def render_subscription_cancelled_email(
     end_date: str,
     workspace_url: str = "https://app.rext.ai",
     reactivate_url: str = "https://app.rext.ai/pricing",
-    feedback_url: str = "https://app.rext.ai/feedback",
+    feedback_url: str = SITE_CONTACT_URL,
     frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """

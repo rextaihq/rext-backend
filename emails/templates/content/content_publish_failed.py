@@ -7,6 +7,7 @@ Sent when a scheduled content publish fails due to a network/server error.
 from typing import Optional
 
 from emails.components import primary_button, secondary_button, simple_footer, simple_header
+from emails.site_links import SITE_CONTACT_URL
 from emails.utils.renderer import compose_email
 
 
@@ -21,7 +22,7 @@ def render_content_publish_failed_email(
     retry_url: str,
     reschedule_url: str,
     next_retry_at: Optional[str] = None,
-    support_url: str = "https://app.rext.ai/support",
+    support_url: str = SITE_CONTACT_URL,
     frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
