@@ -1304,7 +1304,18 @@ async def handle_subscription_cancelled(
         extra={"subscription_id": str(subscription.id), "status": subscription.status.value},
     )
 
-    # Fetch user + plan for the cancellation email
+    return await cancellation_email_task(db, subscription)
+
+
+async def cancellation_email_task(
+    db: AsyncSession, subscription: UserSubscription
+) -> Optional[Dict[str, Any]]:
+    """The cancellation's audit entry and its email (and in-app notice) data.
+
+    Used by subscription_cancelled and by the nightly reconcile when it finds a
+    cancellation whose webhook was missed.
+    """
+    end_date = subscription.end_date
     stmt = select(Users).where(Users.id == subscription.user_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()

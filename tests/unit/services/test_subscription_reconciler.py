@@ -7,7 +7,7 @@ rolled-back transaction, with the API replaced by a mock.
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -186,6 +186,142 @@ async def test_every_read_is_paced_a_failed_one_too(session, monkeypatch):
     )
 
     assert pause.await_count == 2
+
+
+# --- revnix/rext-control#529, part B -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_each_subscription_is_its_own_transaction(session, monkeypatch):
+    """Committed one by one, so no row stays locked while the batch reads the others."""
+    rows = [await _subscription(session, SubscriptionStatus.ACTIVE) for _ in range(3)]
+    commit = AsyncMock()
+    monkeypatch.setattr(session, "commit", commit)
+
+    await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                row.lemonsqueezy_subscription_id: {"status": "active", "updated_at": T2.isoformat()}
+                for row in rows
+            }
+        ),
+    )
+
+    assert commit.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_a_subscription_that_fails_to_read_goes_to_the_back(session):
+    broken = await _subscription(session, SubscriptionStatus.ACTIVE)
+    waiting = await _subscription(session, SubscriptionStatus.ACTIVE)
+    api = _api(
+        {
+            broken.lemonsqueezy_subscription_id: RuntimeError("404"),
+            waiting.lemonsqueezy_subscription_id: {
+                "status": "active",
+                "updated_at": T2.isoformat(),
+            },
+        }
+    )
+
+    first = await module.reconcile_subscriptions(session, api, limit=1)
+    second = await module.reconcile_subscriptions(session, api, limit=1)
+
+    read = [call.args[0] for call in api.get_subscription_attributes.await_args_list]
+    assert read == [broken.lemonsqueezy_subscription_id, waiting.lemonsqueezy_subscription_id]
+    assert first["failed"] == 1 and second["checked"] == 1
+    assert "reconciled_at" in broken.subscription_metadata
+
+
+@pytest.mark.asyncio
+async def test_a_revived_older_subscription_gets_the_duplicate_check(session, monkeypatch):
+    """A missed recovery brings an older one back while a newer one runs: a person is told."""
+    import src.services.duplicate_subscriptions as duplicates
+
+    alert = MagicMock()
+    monkeypatch.setattr(duplicates, "trigger_payment_alert", alert)
+    monkeypatch.delenv("BILLING_AUTO_SETTLE_DUPLICATES", raising=False)
+    older = await _subscription(session, SubscriptionStatus.UNPAID)
+    older.created_at = T1
+    newer = UserSubscription(
+        user_id=older.user_id,
+        plan_id=older.plan_id,
+        status=SubscriptionStatus.ACTIVE,
+        lemonsqueezy_subscription_id=f"ls-{uuid4().hex[:8]}",
+        provider_updated_at=T1,
+        created_at=T2,
+    )
+    session.add(newer)
+    await session.flush()
+
+    await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                older.lemonsqueezy_subscription_id: {
+                    "status": "active",
+                    "updated_at": T2.isoformat(),
+                },
+                newer.lemonsqueezy_subscription_id: {
+                    "status": "active",
+                    "updated_at": T1.isoformat(),
+                },
+            }
+        ),
+    )
+
+    assert older.subscription_metadata["duplicate_found_of"] == str(newer.id)
+    assert alert.call_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_a_cancellation_it_finds_sends_the_cancellation_email(session):
+    row = await _subscription(session, SubscriptionStatus.ACTIVE)
+
+    result = await module.reconcile_subscriptions(
+        session,
+        _api(
+            {
+                row.lemonsqueezy_subscription_id: {
+                    "status": "cancelled",
+                    "ends_at": (T2 + timedelta(days=20)).isoformat(),
+                    "updated_at": T2.isoformat(),
+                }
+            }
+        ),
+    )
+
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert [email["email_type"] for email in result["emails"]] == ["subscription_cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_the_notice_goes_out_when_the_email_fails():
+    from src.api.tasks import subscription_reconcile_task as task
+
+    db = AsyncMock()
+    session_cm = AsyncMock()
+    session_cm.__aenter__.return_value = db
+    email = {"send_email": True, "email_type": "subscription_unpaid", "email_data": {}}
+    notify = AsyncMock()
+
+    with (
+        patch.object(task, "AsyncSessionLocal", lambda: session_cm),
+        patch.object(
+            task,
+            "reconcile_subscriptions",
+            AsyncMock(return_value={"checked": 1, "changed": 1, "failed": 0, "emails": [email]}),
+        ),
+        patch(
+            "src.api.routes.subscriptions.webhook_routes._send_webhook_email",
+            AsyncMock(side_effect=RuntimeError("email provider down")),
+        ),
+        patch("src.api.routes.subscriptions.webhook_routes._send_webhook_notification", notify),
+    ):
+        await task.run_subscription_reconcile_task()
+
+    notify.assert_awaited_once_with(email)
 
 
 @pytest.mark.asyncio

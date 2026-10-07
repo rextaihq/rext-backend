@@ -17,6 +17,7 @@ from src.utils.logger import logger
 async def run_subscription_reconcile_task() -> Dict[str, Any]:
     async with AsyncSessionLocal() as db:
         try:
+            # It commits each subscription itself; this commits whatever is left.
             result = await reconcile_subscriptions(db)
             await db.commit()
         except Exception:
@@ -30,12 +31,17 @@ async def run_subscription_reconcile_task() -> Dict[str, Any]:
         _send_webhook_notification,
     )
 
+    # The email and the in-app notice go out independently, as for webhooks: an email
+    # outage doesn't keep the billing notice from the customer.
     for task in result.pop("emails"):
         try:
             await _send_webhook_email(task, None)
-            await _send_webhook_notification(task)
         except Exception:
             logger.error("Reconcile: could not send an email", exc_info=True)
+        try:
+            await _send_webhook_notification(task)
+        except Exception:
+            logger.error("Reconcile: could not send an in-app notice", exc_info=True)
 
     logger.info("Subscription reconcile finished", extra=result)
     return result
