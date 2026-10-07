@@ -16,6 +16,7 @@ from src.flow.engines.content.generation import topic_generation as tg
 from src.flow.engines.content.generation.seo_title_rules import (
     contains_keyphrase,
     keyphrase_fits_a_title,
+    keyphrase_title,
     normalize_title,
     title_is_valid,
     title_max_chars,
@@ -74,6 +75,11 @@ def _nfd(text: str) -> str:
         ("हिन्दी में सबसे अच्छा सॉफ्टवेयर", "हिन्\u200dदी", True),
         # An emoji's variation selector goes with the emoji: one emoji doesn't match another.
         ("\u2600\ufe0f weather guide for travellers", "\u2764\ufe0f", False),
+        # Punctuation between unspaced characters is no word break, either way round.
+        ("生成AI・ツール比較", "生成AIツール", True),
+        ("生成AIツール比較", "生成AI・ツール", True),
+        # Armenian: the ligature և is եւ, as its capital ԵՒ lowercases.
+        ("ՍՈՒՐՃ ԵՒ ԹԵՅ ԳՆԵԼՈՒ ՈՒՂԵՑՈՒՅՑ", "սուրճ և թեյ", True),
         # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
         ("𠀀𠀁𠀂", "𠀁", True),
         ("2026年𠮷野家の店舗", "𠮷野家", True),
@@ -81,6 +87,12 @@ def _nfd(text: str) -> str:
 )
 def test_a_keyphrase_in_any_script_is_matched(title, keyphrase, expected):
     assert contains_keyphrase(title, keyphrase) is expected
+
+
+def test_a_keyphrase_whose_capital_is_longer_can_still_be_repaired():
+    """Capitalizing "և" gives "ԵՒ": the repair leaves such a letter as typed."""
+    assert keyphrase_title("սուրճ և թեյ") is not None
+    assert contains_keyphrase(keyphrase_title("սուրճ և թեյ"), "սուրճ և թեյ")
 
 
 def test_an_empty_or_punctuation_only_keyphrase_matches_nothing():
