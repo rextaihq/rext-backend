@@ -77,6 +77,7 @@ class AuditEventType(str, Enum):
     ADMIN_SUBSCRIPTION_CANCELLED = "admin.subscription_cancelled"
     ADMIN_USER_MIGRATED = "admin.user_migrated"
     ADMIN_PLAN_CHANGED = "admin.plan_changed"
+    ADMIN_CREDITS_ADJUSTED = "admin.credits_adjusted"
 
     # License events
     LICENSE_CREATED = "license.created"
@@ -931,6 +932,50 @@ class AuditLogger:
                 **(metadata or {}),
             },
             ip_address=ip_address,
+            db=db,
+        )
+
+    async def log_admin_credits_adjusted(
+        self,
+        admin_id: UUID,
+        user_id: UUID,
+        subscription_id: UUID,
+        action: str,
+        amount: int,
+        balance_before: int,
+        balance_after: int,
+        reason: str,
+        grant_id: Optional[UUID] = None,
+        expires_at: Optional[datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[Any]:
+        """Log a super admin adding, deducting or resetting a user's credits.
+
+        Recorded against the affected user, the admin in the metadata. Returns the
+        audit row when it was written to ``db``.
+        """
+        return await self._log_event(
+            event_type=AuditEventType.ADMIN_CREDITS_ADJUSTED,
+            user_id=user_id,
+            admin_id=admin_id,
+            resource_type="subscription",
+            resource_id=subscription_id,
+            changes={
+                "old_values": {"balance": balance_before},
+                "new_values": {"balance": balance_after},
+            },
+            metadata={
+                "admin_id": str(admin_id),
+                "action": action,
+                "amount": amount,
+                "balance_before": balance_before,
+                "balance_after": balance_after,
+                "reason": reason,
+                "grant_id": str(grant_id) if grant_id else None,
+                "expires_at": expires_at.isoformat() if expires_at else None,
+                **(metadata or {}),
+            },
             db=db,
         )
 

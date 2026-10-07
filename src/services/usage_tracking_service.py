@@ -26,6 +26,7 @@ from src.services.credit_grants import (
     forfeit_grants,
     grant_balance,
     live_grants,
+    period_admin_adjustment,
     split_cost,
 )
 from src.utils.datetime_utils import next_billing_anchor
@@ -374,9 +375,13 @@ class UsageTrackingService:
         )
 
         balance = subscription.current_credits or 0
-        used = max(0, granted - balance - already_cut)
+        # An admin's deduction or reset this period moved the balance without any
+        # credit being used; it stays on top of what the refund leaves (a
+        # deduction stays deducted, a reset's credits stay given).
+        adjustment = period_admin_adjustment(subscription)
+        used = max(0, granted - balance - already_cut + adjustment)
         retained_grant = granted * (original_amount - refunded_total) // original_amount
-        target = max(0, retained_grant - used)
+        target = max(0, retained_grant - used + adjustment)
 
         # Never hand credits back: a refund can only reduce an entitlement.
         if target >= balance:
@@ -389,7 +394,7 @@ class UsageTrackingService:
             # changes to a plain JSONB column.
             meta["refund_credit_reduction"] = {
                 "order_id": str(lemonsqueezy_order_id),
-                "credits": granted - used - target,
+                "credits": granted - used + adjustment - target,
             }
             subscription.subscription_metadata = meta
         subscription.updated_at = datetime.now(timezone.utc)
