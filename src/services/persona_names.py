@@ -6,7 +6,7 @@ Used where a persona is created or renamed, and where one comes back from the tr
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import DuplicateResourceException
@@ -37,6 +37,12 @@ async def reject_duplicate_persona_name(
     the trash holds no name: a new one may take it, and that one then stops the
     trashed one coming back under it.
     """
+    # One request at a time per name in a workspace, until its transaction ends: two that both
+    # found the name free (a create and a restore, or a double-click) would otherwise both write.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"persona-name:{workspace_id}:{' '.join(name.split()).lower()}"},
+    )
     query = select(Persona.id).where(
         Persona.workspace_id == workspace_id,
         Persona.deleted_at.is_(None),

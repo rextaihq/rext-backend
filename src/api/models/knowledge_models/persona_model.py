@@ -32,6 +32,10 @@ class Persona(
             "deleted_at",
             postgresql_where=text("deleted_at IS NOT NULL"),
         ),
+        # The nightly purge looks across every workspace by deletion time.
+        Index(
+            "ix_persona_trash_purge", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")
+        ),
     )
 
     # id, workspace_id, created_at, updated_at provided by mixins

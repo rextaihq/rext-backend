@@ -59,6 +59,10 @@ class Content(
             "deleted_at",
             postgresql_where=text("deleted_at IS NOT NULL"),
         ),
+        # The nightly purge looks across every workspace by deletion time.
+        Index(
+            "ix_content_trash_purge", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")
+        ),
     )
 
     # Metadata and Status

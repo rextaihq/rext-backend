@@ -239,7 +239,7 @@ class WorkspaceTrashService:
         return cleanup
 
     async def purge_expired(
-        self, now: Optional[datetime] = None, batch_size: int = 500
+        self, now: Optional[datetime] = None, batch_size: int = 500, dry_run: bool = False
     ) -> Dict[str, int]:
         """Delete for good everything in any workspace's trash past the retention window.
 
@@ -249,6 +249,16 @@ class WorkspaceTrashService:
         """
         cutoff = _cutoff(now or datetime.now(timezone.utc))
         purged = {ARTICLE: 0, PERSONA: 0}
+        if dry_run:
+            # CLEANUP_DRY_RUN: what would go, counted; nothing deleted.
+            for kind, model in ((ARTICLE, Content), (PERSONA, Persona)):
+                purged[kind] = await self.db.scalar(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.deleted_at.is_not(None), model.deleted_at <= cutoff)
+                )
+            logger.info("Trash purge, dry run: would delete", extra=purged)
+            return purged
         for kind, model, returned in (
             (ARTICLE, Content, (Content.id, Content.workspace_id)),
             (PERSONA, Persona, (Persona.id, Persona.avatar_url)),
@@ -315,9 +325,10 @@ class Cleanup:
 async def run_trash_purge_task() -> Dict[str, int]:
     """The nightly purge (scheduled_tasks): its own session, committed batch by batch."""
     from src.api.database.async_database import AsyncSessionLocal
+    from src.config.cleanup_config import cleanup_config
 
     async with AsyncSessionLocal() as db:
-        return await WorkspaceTrashService(db).purge_expired()
+        return await WorkspaceTrashService(db).purge_expired(dry_run=cleanup_config.CLEANUP_DRY_RUN)
 
 
 def _uploaded_files(persona: Persona) -> List[str]:

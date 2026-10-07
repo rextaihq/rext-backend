@@ -65,6 +65,26 @@ async def list_workspace_trash(
     )
 
 
+def _once_committed(db: AsyncSession, task):
+    """`task`, to run in the background only if `db`'s transaction has committed."""
+    from sqlalchemy import event
+
+    committed = {"yes": False}
+
+    def on_commit(_session) -> None:
+        committed["yes"] = True
+
+    # Left in place rather than removed: removing a listener while SQLAlchemy dispatches the
+    # event fails the commit (G64). It lives as long as the request's session.
+    event.listen(db.sync_session, "after_commit", on_commit)
+
+    async def run() -> None:
+        if committed["yes"]:
+            await task()
+
+    return run
+
+
 async def _restore(db, workspace_id: str, user: dict, kind: str, item_id: UUID, request):
     workspace, _ = await resolve_workspace_for_route(
         db=db, workspace_identifier=workspace_id, user=user
@@ -82,9 +102,9 @@ async def _delete_forever(
         db=db, workspace_identifier=workspace_id, user=user
     )
     cleanup = await WorkspaceTrashService(db).delete_forever(workspace.id, kind, item_id)
-    # A background task runs once the response is sent, so after the commit, and not at all
-    # when the request fails: a restorable item never loses its embedding or its photo.
-    background_tasks.add_task(cleanup.run)
+    # After the response, and only if the transaction committed: a failed commit answers 500
+    # with these tasks still attached, and the item stays restorable with its embedding and photo.
+    background_tasks.add_task(_once_committed(db, cleanup.run))
     return success(
         data={"kind": kind, "id": str(item_id)},
         request=request,

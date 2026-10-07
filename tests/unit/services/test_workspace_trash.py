@@ -6,6 +6,7 @@ and each session works in a savepoint of it, so nothing is left behind. The stor
 and the file storage are stubbed; nothing reaches the network.
 """
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -406,7 +407,7 @@ def app_for(connection, monkeypatch):
     import src.api.routes.workspaces.workspace_trash as trash_routes
     import src.utils.rbac_utils as rbac
 
-    def build(user, workspace, *, readable=("content.read", "persona.read")):
+    def build(user, workspace, *, readable=("content.read", "persona.read"), failing_commit=False):
         async def resolved(*, db, workspace_identifier, user):
             return workspace, None
 
@@ -428,6 +429,8 @@ def app_for(connection, monkeypatch):
 
         async def override_db():
             async with _session(connection) as session:
+                if failing_commit:
+                    session.commit = AsyncMock(side_effect=RuntimeError("the commit failed"))
                 yield session
 
         app.dependency_overrides[get_async_db] = override_db
@@ -493,3 +496,47 @@ async def test_deleting_an_article_for_good_through_the_route(db, app_for, forgo
     assert forgotten == [(workspace.id, article.id)]  # after the commit, as a background task
     assert again.status_code == 404
     assert isinstance(UUID(gone.json()["data"]["id"]), UUID)
+
+
+async def test_a_failed_commit_leaves_the_embedding_and_the_photo(db, app_for, forgotten):
+    """The request answers 500 with its background tasks still attached: they do nothing, and
+    the article stays in the trash, restorable with its embedding."""
+    ann = await _user(db)
+    workspace = await _workspace(db, ann)
+    article = await _article(db, workspace, ann, deleted_days_ago=1)
+    await db.commit()
+
+    async with app_for(ann, workspace, failing_commit=True) as client:
+        failed = await client.delete(f"/workspaces/{workspace.id}/trash/articles/{article.id}")
+
+    assert failed.status_code == 500
+    assert forgotten == []
+    assert await db.scalar(select(Content.id).where(Content.id == article.id)) == article.id
+
+
+async def test_a_dry_run_counts_what_the_purge_would_delete_and_deletes_nothing(
+    db, forgotten, removed_files, monkeypatch
+):
+    ann = await _user(db)
+    workspace = await _workspace(db, ann)
+    article = await _article(db, workspace, ann, deleted_days_ago=31)
+    persona = await _persona(
+        db, workspace, deleted_days_ago=31, avatar_url="avatars/personas/x.webp"
+    )
+    await _persona(db, workspace, deleted_days_ago=3)
+
+    import src.api.database.async_database as database
+    from src.config.cleanup_config import cleanup_config
+
+    @asynccontextmanager
+    async def this_session():
+        yield db
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", this_session)
+    monkeypatch.setattr(cleanup_config, "CLEANUP_DRY_RUN", True)
+    counted = await trash_module.run_trash_purge_task()
+
+    assert counted == {ARTICLE: 1, PERSONA: 1}
+    assert await db.scalar(select(Content.id).where(Content.id == article.id)) == article.id
+    assert await db.scalar(select(Persona.id).where(Persona.id == persona.id)) == persona.id
+    assert (forgotten, removed_files) == ([], [])
