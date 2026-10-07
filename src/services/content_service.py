@@ -6,6 +6,7 @@ Strictly separates core content from SEO metadata.
 """
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -127,9 +128,13 @@ def _host_of(address: Optional[str]) -> Optional[str]:
     return host or None
 
 
-def _like_literal(text: str) -> str:
-    """A string to be matched as it is inside a LIKE pattern (escape character: backslash)."""
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+def _own_site_link(hosts: List[str]) -> str:
+    """A PostgreSQL pattern for an address on one of these hosts, with or without "www.": the
+    host must end there (a path, a port, a query, a closing bracket, a quote, a space or the
+    text's end), so "example.com.au" is no link to "example.com"."""
+    names = "|".join(re.escape(host) for host in hosts)
+    ends = r'[/:?#)"<>\s' + "'" + "]"
+    return rf"://(www\.)?({names})({ends}|$)"
 
 
 class ContentService:
@@ -513,26 +518,28 @@ class ContentService:
             Content.status == "published",
         )
         total = await self.db.scalar(select(func.count()).select_from(Content).where(*published))
+        # A description of spaces, tabs or line breaks only is no description.
+        has_description = ContentSEOData.meta_description.op("~")(r"\S")
         missing_meta = await self.db.scalar(
             select(func.count())
             .select_from(Content)
             .outerjoin(ContentSEOData, ContentSEOData.content_id == Content.id)
-            .where(*published, func.coalesce(func.btrim(ContentSEOData.meta_description), "") == "")
+            .where(
+                *published,
+                or_(ContentSEOData.meta_description.is_(None), not_(has_description)),
+            )
         )
         no_internal_links = None
         hosts = await self._own_hosts(workspace_id)
         if hosts:
+            # The published article is its introduction and its body together.
+            own_site_link = _own_site_link(hosts)
             links_to_own_site = or_(
-                *(
-                    Content.body_markdown.ilike(f"%://{prefix}{_like_literal(host)}%", escape="\\")
-                    for host in hosts
-                    for prefix in ("", "www.")
-                )
+                func.coalesce(Content.introduction, "").op("~*")(own_site_link),
+                func.coalesce(Content.body_markdown, "").op("~*")(own_site_link),
             )
             no_internal_links = await self.db.scalar(
-                select(func.count())
-                .select_from(Content)
-                .where(*published, or_(Content.body_markdown.is_(None), not_(links_to_own_site)))
+                select(func.count()).select_from(Content).where(*published, not_(links_to_own_site))
             )
         return {
             "published": total or 0,

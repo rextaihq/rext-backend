@@ -70,7 +70,7 @@ async def _workspace(session, *, url=None, sites=()):
 
 
 async def _article(
-    session, user, workspace, *, status="published", body="", meta=..., trashed=False
+    session, user, workspace, *, status="published", body="", intro=None, meta=..., trashed=False
 ):
     """An article; `meta` left out means no SEO row at all."""
     article = Content(
@@ -80,6 +80,7 @@ async def _article(
         slug=uuid4().hex[:10],
         status=status,
         body_markdown=body,
+        introduction=intro,
         deleted_at=datetime.now(timezone.utc) if trashed else None,
     )
     session.add(article)
@@ -108,6 +109,7 @@ async def test_a_missing_or_blank_meta_description_is_counted(session):
     await _article(session, user, workspace, meta="A real description of the article.")
     await _article(session, user, workspace, meta=None)
     await _article(session, user, workspace, meta="   ")
+    await _article(session, user, workspace, meta="\n\t \r\n")
     await _article(session, user, workspace)  # no SEO row at all
     # Not published, or in the trash: not counted.
     await _article(session, user, workspace, status="draft", meta=None)
@@ -115,8 +117,8 @@ async def test_a_missing_or_blank_meta_description_is_counted(session):
 
     health = await ContentService(session).content_health(workspace.id)
 
-    assert health["published"] == 4
-    assert health["missing_meta_description"] == 3
+    assert health["published"] == 5
+    assert health["missing_meta_description"] == 4
 
 
 @pytest.mark.asyncio
@@ -129,16 +131,23 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
     await _article(session, user, workspace, body="See [pricing](https://example.com/pricing).")
     await _article(session, user, workspace, body="Read [this](http://www.example.com/a) too.")
     await _article(session, user, workspace, body="On [the blog](https://blog.example.org/p).")
+    await _article(session, user, workspace, body="Ends on a bare address: https://example.com")
+    # The article is its introduction and its body: a link in either counts.
+    await _article(
+        session, user, workspace, intro="From [our guide](https://example.com/guide).", body="Text."
+    )
     # A site that is no longer connected, another site, a host that only starts the same.
     await _article(session, user, workspace, body="An [old link](https://old.example.net/p).")
     await _article(session, user, workspace, body="A [source](https://other.com/example.com).")
+    await _article(session, user, workspace, body="A [lookalike](https://example.com.au/article).")
+    await _article(session, user, workspace, body="A [shop](https://shop.example.com/item).")
     await _article(session, user, workspace, body="No link at all.")
     await _article(session, user, workspace, body=None)
 
     health = await ContentService(session).content_health(workspace.id)
 
-    assert health["published"] == 7
-    assert health["no_internal_links"] == 4
+    assert health["published"] == 11
+    assert health["no_internal_links"] == 6
 
 
 @pytest.mark.asyncio
