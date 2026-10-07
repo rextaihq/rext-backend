@@ -36,6 +36,7 @@ from src.flow.engines.content.generation.keyword_density import (
 from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
 from src.flow.engines.content.generation.outline import _fetch_known_entities
 from src.flow.engines.content.generation.outline_structure import (
+    faq_section_heading,
     format_guidance_for_prompt,
     format_structure_for_prompt,
     resolve_guidance_blocks,
@@ -301,8 +302,14 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
 
     approved_faqs = extract_outline_faqs(outline)
     if approved_faqs:
+        faq_heading = faq_section_heading(outline, content_type)
+        where = (
+            f'in the section "{faq_heading}", the outline\'s FAQ section (add no other FAQ section)'
+            if faq_heading
+            else "in the FAQ section"
+        )
         lines.append(
-            "Approved FAQs (MUST all appear verbatim/near-verbatim in the FAQ section — do not invent replacements):"
+            f"Approved FAQs (MUST all appear verbatim/near-verbatim {where} — do not invent replacements):"
         )
         for faq in approved_faqs:
             lines.append(f"- Q: {_short_text(faq['question'], 220)}")
