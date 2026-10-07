@@ -47,14 +47,27 @@ class AdmissionBusy(Exception):
     """Another start of the same user's holds the admission lock past the wait."""
 
 
+def _forget(read: asyncio.Future) -> None:
+    if not read.cancelled():
+        read.exception()  # retrieved, so a read that failed late isn't reported as unhandled
+
+
 async def _read_busy(busy_threads: BusyThreads) -> set[str]:
     """The user's busy threads, or none when the read takes longer than the bound, as when
-    it fails (auth._busy_threads): the run isn't held up, and the credit checks still apply."""
-    try:
-        return await asyncio.wait_for(busy_threads(), _READ_TIMEOUT_S)
-    except TimeoutError:
-        logger.warning("run admission: the busy-thread read timed out, counting none busy")
-        return set()
+    it fails (auth._busy_threads): the run isn't held up, and the credit checks still apply.
+
+    The bound is a hard one: a read still going then is cancelled and left to finish its
+    cancellation on its own. asyncio.wait_for would wait for that too, and a slow cleanup
+    could hold the lock past its lifetime.
+    """
+    read = asyncio.ensure_future(busy_threads())
+    done, _ = await asyncio.wait({read}, timeout=_READ_TIMEOUT_S)
+    if read in done:
+        return read.result()
+    read.cancel()
+    read.add_done_callback(_forget)
+    logger.warning("run admission: the busy-thread read timed out, counting none busy")
+    return set()
 
 
 def _admits(busy: set[str], recent: set[str], thread_id: str) -> bool:
@@ -84,7 +97,8 @@ async def _admit_with_redis(
             recent -= seen
         if not _admits(busy, recent, thread_id):
             return False
-        await redis.zadd(recent_key, {thread_id: now})
+        # Admitted now, after the read: the whole window is left for the runtime's insert.
+        await redis.zadd(recent_key, {thread_id: time.time()})
         await redis.expire(recent_key, ADMISSION_WINDOW_S * 2)
         return True
     finally:
@@ -104,7 +118,7 @@ async def _admit_in_process(identity: str, thread_id: str, busy_threads: BusyThr
         if not _admits(busy, set(admitted), thread_id):
             _local_admitted[identity] = admitted
             return False
-        admitted[thread_id] = now
+        admitted[thread_id] = time.time()  # after the read, as with Redis
         _local_admitted[identity] = admitted
         return True
 
