@@ -394,7 +394,33 @@ async def test_a_payment_after_the_refund_gives_nothing_back_and_tells_a_person(
     await session.refresh(row)
     assert row.status == SubscriptionStatus.CANCELLED
     assert row.end_date == ended and row.current_credits == credits
-    assert handler_alerts.call_args.kwargs["severity"] == "critical"
+    if event == "payment_success":
+        assert handler_alerts.call_count == 1
+        assert handler_alerts.call_args.kwargs["severity"] == "critical"
+    else:
+        # Lemon Squeezy sends payment_success with every recovery: that one alerts.
+        handler_alerts.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_charge_recovered_after_the_refund_on_an_older_invoice_tells_a_person(
+    session, alerts, monkeypatch
+):
+    """The invoice was created (and failed) before the refund; it was paid after it."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    handler_alerts = MagicMock()
+    monkeypatch.setattr(handlers, "trigger_payment_alert", handler_alerts)
+    row = await _active_subscription(session)
+    module.end_for_refund(row, order_id="ord-14")
+    await session.flush()
+
+    event = _event(row, "active", minutes_later=20)
+    event["data"]["attributes"]["created_at"] = (NOW - timedelta(days=3)).isoformat()
+    await handlers.handle_subscription_payment_success(event, SimpleNamespace(id=uuid4()), session)
+
+    assert handler_alerts.call_count == 1
+    assert "charged again" in handler_alerts.call_args.kwargs["message"]
 
 
 @pytest.mark.parametrize("event", ["payment_success", "payment_recovered"])

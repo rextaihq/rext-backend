@@ -181,14 +181,25 @@ def _ignore_payment_after_refund(
     It gives no plan and no credits back (F8c, revnix/rext-control#538); a person
     refunds it and cancels the subscription at Lemon Squeezy. A payment made before
     the refund and delivered late is the one refunded: it's ignored without an alert.
+    The invoice's `updated_at` is when it was paid (a recovered charge's invoice was
+    created earlier, before it failed).
+
+    Lemon Squeezy sends subscription_payment_success with every
+    subscription_payment_recovered, so only the success event alerts: one per charge.
     """
     if not is_ended_by_refund(subscription):
         return False
-    paid_at = _provider_time(sub_data.get("created_at") or sub_data.get("updated_at"))
+    paid_at = _provider_time(sub_data.get("updated_at"))
     ended_at = refund_ended_at(subscription)
     if paid_at is not None and ended_at is not None and paid_at < ended_at:
         logger.info(
             f"{event}: ignored, a payment from before the full refund that ended the subscription",
+            extra={"subscription_id": str(subscription.id)},
+        )
+        return True
+    if event == "subscription_payment_recovered":
+        logger.warning(
+            f"{event}: ignored, a full refund ended the subscription (its payment_success alerts)",
             extra={"subscription_id": str(subscription.id)},
         )
         return True
