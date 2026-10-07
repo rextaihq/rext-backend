@@ -126,6 +126,7 @@ def _build_keyword_instruction(
     content_payload: dict[str, Any],
     focus_keyword: str,
     content_type: str,
+    secondary_keywords: list[str] | None = None,
 ) -> str:
     """Tell the rewrite exactly how much exact-phrase usage has to survive.
 
@@ -158,7 +159,38 @@ def _build_keyword_instruction(
         "- Do NOT replace it with a synonym, reorder its words, or paraphrase it away "
         "while varying your phrasing — vary the sentences AROUND it instead.\n"
         "- If you expand or trim the article, scale its usage with the new length so it "
-        "stays inside that range."
+        "stays inside that range." + _secondary_keyword_lines(secondary_keywords)
+    )
+
+
+def _secondary_keyword_lines(secondary_keywords: list[str] | None) -> str:
+    """The other keywords the user approved: each kept at least once (FB2.18, rext-control#699)."""
+    keywords = [k for k in (secondary_keywords or []) if isinstance(k, str) and k.strip()]
+    if not keywords:
+        return ""
+    return (
+        "\n- The user also approved these secondary keywords; keep each at least once, as "
+        f"written where it reads naturally: {', '.join(keywords)}."
+    )
+
+
+def _build_reader_instruction(*, audience: Any, tone: Any) -> str:
+    """Who the article is for and its tone, as the user set them at the outline (FB2.18):
+    the rewrite was told neither, only the persona's voice and the brand voice."""
+    if isinstance(audience, list):
+        audience = ", ".join(str(a).strip() for a in audience if str(a).strip())
+    audience = " ".join(str(audience or "").split())
+    tone = " ".join(str(tone or "").split())
+    lines = [
+        f"- Written for: {audience}" if audience else "",
+        f"- Tone: {tone}" if tone else "",
+    ]
+    lines = [line for line in lines if line]
+    if not lines:
+        return ""
+    return (
+        "READER AND TONE — the user set these at the outline; keep the rewrite true to them:\n"
+        + "\n".join(lines)
     )
 
 
@@ -171,6 +203,9 @@ def _build_prompt_data(
     focus_keyword: str = "",
     brand_policy: BrandPlacementPolicy | None = None,
     article_voice: dict[str, Any] | None = None,
+    secondary_keywords: list[str] | None = None,
+    audience: Any = None,
+    tone: Any = None,
 ) -> dict[str, Any]:
     introduction = content_payload.get("introduction") or ""
     body_markdown = content_payload.get("body_markdown") or ""
@@ -254,10 +289,12 @@ def _build_prompt_data(
         "length_instruction": length_instruction,
         "voice_instruction": format_voice_for_rewrite(article_voice),
         "brand_instruction": brand_instruction,
+        "reader_instruction": _build_reader_instruction(audience=audience, tone=tone),
         "keyword_instruction": _build_keyword_instruction(
             content_payload=content_payload,
             focus_keyword=focus_keyword,
             content_type=content_type,
+            secondary_keywords=secondary_keywords,
         ),
     }
 
@@ -374,6 +411,9 @@ async def humanize_content(state: REXT) -> dict:
         focus_keyword=spec.get("target_keyword") or "",
         brand_policy=spec.get("brand_placement_policy"),
         article_voice=generation_meta.get("article_voice"),
+        secondary_keywords=spec.get("secondary_keywords"),
+        audience=outline.get("target_audience"),
+        tone=outline.get("tone"),
     )
     model = load_humanize_model().with_structured_output(schema)
     messages = get_humanize_prompt().format_messages(**prompt_data)

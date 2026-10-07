@@ -469,6 +469,25 @@ def check_keyword_presence(final_content: dict, spec: RequirementsSpec) -> Valid
     )
 
 
+def check_secondary_keywords(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """Each secondary keyword the user approved appears at least once (FB2.18,
+    rext-control#699). A warning, not blocking: a close natural variant is allowed
+    by the writer's instructions, so a missing exact phrase is reported, not repaired."""
+    keywords = spec.get("secondary_keywords") or []
+    if not keywords:
+        return _pass("secondary_keywords", "No secondary keywords approved; nothing to check.")
+    text = _combined_text(final_content)
+    missing = [k for k in keywords if not count_keyphrase_occurrences(text, k)]
+    if not missing:
+        return _pass("secondary_keywords", f"All {len(keywords)} secondary keywords appear.")
+    return _fail(
+        "secondary_keywords",
+        "warning",
+        f"{len(missing)} of {len(keywords)} approved secondary keywords don't appear as written: "
+        + ", ".join(f"'{k}'" for k in missing),
+    )
+
+
 def check_keyword_density(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     """Focus-keyphrase density sits inside a band derived from the FINAL length.
 
@@ -1967,6 +1986,7 @@ CHECK_REGISTRY: list[CheckFn] = [
     check_focus_keyphrase_in_introduction,
     check_title_subject_alignment,
     check_keyword_presence,
+    check_secondary_keywords,
     check_keyword_density,
     # H2/H3 subheadings: Yoast's keyphrase-in-subheadings distribution and a
     # length range. Repaired by a headings-only rewrite (see repair_content),
@@ -2005,6 +2025,7 @@ FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     check_focus_keyphrase_in_introduction,
     check_title_subject_alignment,
     check_keyword_presence,
+    check_secondary_keywords,
     # Humanization may reword headings while "improving the flow".
     check_subheading_keyphrase,
     check_subheading_length,

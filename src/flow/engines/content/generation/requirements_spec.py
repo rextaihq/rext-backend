@@ -46,6 +46,10 @@ class RequirementsSpec(TypedDict, total=False):
     # from the outline's optional `keyphrase_synonyms`; empty unless something
     # upstream supplies them — never model-guessed here.
     keyphrase_synonyms: list[str]
+    # The other keywords the user approved at the outline (keywords_to_include
+    # without the focus keyphrase): each should appear at least once, a soft
+    # requirement (FB2.18, rext-control#699).
+    secondary_keywords: list[str]
     # The EXACT title the user selected at the topic-selection interrupt.
     # Read-only from that moment on: topic_generation is the only stage allowed
     # to repair a title, so every later stage compares against this and reverts
@@ -232,6 +236,11 @@ def build_requirements_spec(
             normalize_focus_keyword(s)
             for s in (outline.get("keyphrase_synonyms") or [])
             if normalize_focus_keyword(s)
+        ],
+        secondary_keywords=[
+            str(k).strip()
+            for k in keywords_to_include
+            if str(k).strip() and str(k).strip().casefold() != focus_keyphrase.casefold()
         ],
         selected_title=selected_title or outline.get("title") or "",
         content_type=content_type or "",
