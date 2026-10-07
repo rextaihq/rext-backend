@@ -5,7 +5,6 @@ import re
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
-import httpx
 import textstat
 from langchain_core.output_parsers import StrOutputParser
 
@@ -46,7 +45,7 @@ from src.api.tool.schema.schema import (
     TitleTag,
 )
 from src.flow.model.llm_manager import load_model
-from src.utils.url_validator import refuse_private_addresses
+from src.utils.url_validator import public_client
 
 
 def _get_model(tool: str):
@@ -546,9 +545,7 @@ async def broken_link_checker(url):
     try:
         url_str = str(url)
         async with asyncio.timeout(LINK_CHECK_SECONDS):
-            async with httpx.AsyncClient(
-                event_hooks={"request": [refuse_private_addresses()]}
-            ) as client:
+            async with public_client() as client:
                 response = await client.get(url_str, timeout=5, follow_redirects=True)
                 return response.status_code == 200
     except Exception:
