@@ -153,6 +153,19 @@ def _start_month_given(subscription: UserSubscription) -> bool:
     )
 
 
+def record_start_month(subscription: UserSubscription) -> None:
+    """Write down whether a row from before the marker had its month, while the evidence is
+    still on it. Call it before a change to the status or the trial's end date: a trial that
+    converts (by Lemon Squeezy's update, or in the app) is active with no trial date
+    afterwards, and its first payment would take it for a start that opened paid."""
+    metadata = subscription.subscription_metadata or {}
+    if _START_MONTH_GIVEN not in metadata:
+        subscription.subscription_metadata = {
+            **metadata,
+            _START_MONTH_GIVEN: _start_month_given(subscription),
+        }
+
+
 def _opening_record(created_at: Optional[str], status: SubscriptionStatus) -> Dict[str, Any]:
     """A new row's metadata: when Lemon Squeezy created it, and whether it opened with its month."""
     return {
@@ -1152,6 +1165,10 @@ async def handle_subscription_updated(
     # CANCELLED with `end_date` still in the future), so the user keeps their
     # credits until `end_date` regardless of the status flip here.
     end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+
+    # Before the status and the trial's end date change: a row from before the start-month
+    # marker keeps its answer (a trial hasn't had its month, a paid start has).
+    record_start_month(subscription)
 
     previous_status = subscription.status
     subscription.status = internal_status

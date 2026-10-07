@@ -22,7 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import (
+    FAILED_PAYMENT_STATUSES,
+    UserSubscription,
+)
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
 
@@ -105,6 +108,11 @@ def change_plan_credits(
     The period's end can come from Lemon Squeezy's renews_at or from the stored reset date, so
     a change is in the earlier change's period when that period is the end it found
     (`period_before`, before the change moved it) or the end it leaves.
+
+    A period that had ended is refilled lazily, by the next spend or the renewal's invoice
+    (UsageTrackingService.consume_credits, not while a payment has failed). When neither has
+    come yet the balance is still last period's: the change opens the new period, in which
+    nothing was used, and an earlier change in the ended period doesn't count.
     """
 
     def key(moment: Optional[datetime]) -> Optional[str]:
@@ -112,6 +120,13 @@ def change_plan_credits(
 
     period = key(subscription.credits_reset_date)
     left = subscription.current_credits or 0
+    if (
+        period_before is not None
+        and as_utc(period_before) <= datetime.now(timezone.utc)
+        and subscription.status not in FAILED_PAYMENT_STATUSES
+        and old_monthly is not None
+    ):
+        left, period_before = old_monthly, None
     earlier = (subscription.subscription_metadata or {}).get(_PLAN_CHANGE) or {}
     if earlier.get("period") and earlier.get("period") in (period, key(period_before)):
         used = max(0, earlier["used"] + earlier["left"] - left)
