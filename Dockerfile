@@ -19,7 +19,7 @@ RUN for dep in /deps/*; do             echo "Installing $dep";             if [ 
 # -- End of local dependencies install --
 ENV LANGGRAPH_STORE='{"path": "src/flow/store/rext_store.py:generate_store"}'
 ENV LANGGRAPH_AUTH='{"path": "/deps/rext-backend/src/api/security/auth.py:auth", "disable_studio_auth": true}'
-ENV LANGGRAPH_HTTP='{"app": "/deps/rext-backend/src/api/server.py:app"}'
+ENV LANGGRAPH_HTTP='{"app": "/deps/rext-backend/src/api/server.py:app", "cors": {"allow_origins": []}}'
 ENV LANGGRAPH_CHECKPOINTER='{"ttl": {"default_ttl": 259200, "sweep_interval_minutes": 30}}'
 ENV LANGSERVE_GRAPHS='{"agent": "main:graph"}'
 
