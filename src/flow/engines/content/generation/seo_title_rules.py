@@ -55,11 +55,13 @@ _NEUTRAL_PREFIXES: tuple[str, ...] = (
 )
 
 _WHITESPACE_RE = re.compile(r"\s+")
-# Scripts written without spaces between words: a keyphrase in one of them is matched as a run of
-# characters, since no space marks where its words begin and end (Thai, Lao, Myanmar, Khmer,
-# kana, CJK ideographs).
+# Scripts written without spaces between words (Thai, Lao, Myanmar, Khmer, kana including the
+# halfwidth forms, CJK ideographs): no space marks where their words begin and end, so a phrase's
+# edge in one of them needs no space beside it, and a character of one beside a phrase is a
+# boundary in itself.
 _UNSPACED_SCRIPT_RE = re.compile(
-    "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"
+    "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+    "\uf900-\ufaff\uff66-\uff9f]"
 )
 _SURROUNDING_QUOTES = "\"'`“”‘’ "
 
@@ -79,16 +81,17 @@ def normalize_title(title: Any) -> str:
 
 
 def _normalize_for_match(text: Any) -> str:
-    """Casefolded, punctuation-flattened form used for keyphrase containment (G69b).
+    """Lowercase, punctuation-flattened form used for keyphrase containment (G69b).
 
     Padded with spaces so a containment test is implicitly word-boundary
     aware: "seo agency" must not match inside "seo agencyx".
     """
     # Letters, marks and digits of every script are kept (an accented letter, Arabic, Cyrillic,
     # Devanagari's vowel signs); punctuation, symbols, separators and the underscore become spaces.
+    # Lowercased, not casefolded: casefolding makes different words equal ("Maße" and "Masse").
     flattened = "".join(
         " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char
-        for char in _nfc(text).casefold()
+        for char in _nfc(text).lower()
     )
     return f" {' '.join(flattened.split())} "
 
@@ -100,13 +103,31 @@ def contains_keyphrase(text: Any, keyphrase: Any) -> bool:
     reordered or partial keyphrase does NOT count, because the user's
     requirement is the exact phrase.
     """
-    normalized_keyphrase = _normalize_for_match(keyphrase).strip()
-    if not normalized_keyphrase:
+    phrase = _normalize_for_match(keyphrase).strip()
+    if not phrase:
         return False
-    if _UNSPACED_SCRIPT_RE.search(normalized_keyphrase):
-        # No spaces mark word boundaries in these scripts: the phrase as a run of characters.
-        return normalized_keyphrase in _normalize_for_match(text)
-    return f" {normalized_keyphrase} " in _normalize_for_match(text)
+    haystack = _normalize_for_match(text)  # padded with a space at each end
+    start = haystack.find(phrase)
+    while start != -1:
+        end = start + len(phrase)
+        if _at_boundary(phrase[0], haystack[start - 1]) and _at_boundary(phrase[-1], haystack[end]):
+            return True
+        start = haystack.find(phrase, start + 1)
+    return False
+
+
+def _at_boundary(edge: str, beside: str) -> bool:
+    """Whether a phrase's edge character ends a word against the character beside it.
+
+    Each edge is judged on its own, so a mixed phrase ("AIツール") still needs its Latin edge
+    to end a word ("XAIツール" doesn't hold it). An edge in a script without spaces needs no
+    space; neither does any edge beside such a character ("最佳seo工具" holds "seo").
+    """
+    return (
+        beside == " "
+        or bool(_UNSPACED_SCRIPT_RE.match(edge))
+        or bool(_UNSPACED_SCRIPT_RE.match(beside))
+    )
 
 
 def title_max_chars(keyphrase: Any = "") -> int:
