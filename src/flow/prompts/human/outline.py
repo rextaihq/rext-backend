@@ -18,8 +18,9 @@ _SUBSECTION_WORDS = re.compile(
     r"\bh3s?\b|\bsub[- ]?(?:sections?|headings?|heads?)\b|\bnested\s+headings?\b", re.IGNORECASE
 )
 # A request for fewer: a cue up to three words before the term ("remove the H3s", "no
-# subsections", "don't use sub-headings", "too many H3s"), or a verdict just after it ("H3s
-# aren't needed", "the subsections are unnecessary").
+# subsections", "don't use sub-headings", "too many H3s"), or a whole verdict just after it ("H3s
+# aren't needed", "the subsections are unnecessary"); "the H3s aren't detailed enough" asks for
+# better ones, not fewer.
 _FEWER_BEFORE = re.compile(
     r"\b(?:no|without|remove|removing|drop|dropping|delete|deleting|fewer|less|flatten|avoid|"
     r"skip|stop|get\s+rid\s+of|too\s+many|(?:do|does)\s*n[o']?t\s+(?:\w+\s+)?"
@@ -27,8 +28,9 @@ _FEWER_BEFORE = re.compile(
     re.IGNORECASE,
 )
 _FEWER_AFTER = re.compile(
-    r"^\W*(?:\w+\W+){0,2}?(?:aren'?t|isn'?t|are\s+not|is\s+not|(?:are|is)\s+unnecessary|"
-    r"(?:are|is)\s+too\s+many|not\s+needed)\b",
+    r"^\W*(?:\w+\W+){0,2}?(?:(?:aren'?t|isn'?t|are\s+not|is\s+not)\s+(?:needed|necessary|"
+    r"wanted|required|useful|helpful)|(?:are|is)\s+(?:unnecessary|unneeded|redundant|overkill|"
+    r"pointless|too\s+many)|not\s+needed|(?:should|can|must)\s+go)\b",
     re.IGNORECASE,
 )
 
@@ -70,10 +72,13 @@ def outline_subsection_rule(
     Expected for pillar content; for a blog it follows the article's shape (expected for a
     long guide, optional for a short post, none for a list article); none for the types
     whose schema fixes the structure. Feedback asking for subsections makes them required
-    where the schema can hold them; feedback asking for fewer is followed.
+    where the schema can hold them (a listicle's too); feedback asking for fewer is followed.
     """
     kind = normalize_content_type(content_type) or "blog"
     raw = _kebab(raw_content_type)
+    # Whether the schema can hold H3s, apart from whether this article should have them: a
+    # listicle runs on the blog schema, so feedback asking for H3s there can still be met.
+    holds_h3s = kind in _SUBSECTION_POLICY
     policy = _NONE if raw == "listicle" else _SUBSECTION_POLICY.get(kind, _NONE)
     asked = subsection_request(feedback)
 
@@ -105,8 +110,8 @@ def outline_subsection_rule(
         ]
     elif raw == "listicle":
         lines = [
-            "H3 SUBSECTIONS: NONE. This is a list article: each list item is its own H2, with "
-            "no H3s under it."
+            "H3 SUBSECTIONS: NONE by default. This is a list article: each list item is its own "
+            "H2, with no H3s under it."
         ]
     else:
         lines = [
@@ -126,7 +131,7 @@ def outline_subsection_rule(
             "content type's default. Keep H3s only where the feedback leaves them."
         )
     elif asked == "more":
-        if policy == _NONE:
+        if not holds_h3s:
             lines.append(
                 "- The reviewer's feedback asks for subsections. This content type can't nest "
                 "headings, but each step, item or block already gets a heading of its own in the "
@@ -139,6 +144,11 @@ def outline_subsection_rule(
                 "add them under every H2 that covers distinct parts (at least two H2s with H3s), "
                 "and keep the H2s the feedback did not criticize."
             )
+    if holds_h3s and (policy != _NONE or asked == "more"):
+        lines.append(
+            "- Where the cluster map lists sub-topics under a section, they are the first "
+            "candidates for its H3s."
+        )
     return "\n".join(lines)
 
 
@@ -194,7 +204,6 @@ Cluster to Content Structure Map (H1/H2/H3):
 4. All main sections MUST be H2 and should follow the provided cluster-to-heading map when available.
 4b. Subsections, for this content type:
 {subsection_rule}
-   Where the cluster map lists sub-topics under a section, they are the first candidates for its H3s.
 5. Each section must:
    - Map to a clear search intent (Use the provided **Keyword Clusters** to guide these intents)
    - Include 2–4 key points (Ensure the 'Supporting Keywords' from the cluster are covered here)
