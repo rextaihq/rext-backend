@@ -997,9 +997,11 @@ Write the full article now. Every third-party claim must have an inline [text](u
                     lines.append(f"    A: {faq['answer']}")
 
         # The sections' order and headings are the user's: "adapt where needed" let the
-        # writer reorder them (G70, revnix/rext-control#586).
+        # writer reorder them (G70, revnix/rext-control#586). The length is the target
+        # word count the instructions give, not a fixed 3,000-word minimum that
+        # overrode every content type's range.
         lines.append(
-            "\nWrite the sections in this order, under these headings, and write each one fully. With images and fact links included, the minimum length should be: 3000 words total. Clearly mention the facts and stats with links."
+            "\nWrite the sections in this order, under these headings, and write each one fully. Keep to the target word count the instructions give. Clearly mention the facts and stats with links."
         )
 
         return "\n".join(lines)
