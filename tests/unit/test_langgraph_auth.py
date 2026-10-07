@@ -415,7 +415,8 @@ def _busy(monkeypatch, thread_ids, *, fails=False):
         async def search(self, **kwargs):
             asked.append(kwargs)
             if fails:
-                raise RuntimeError("runtime unavailable")
+                # A database error's text can carry the bound owner id.
+                raise RuntimeError(f"runtime unavailable for owner {kwargs['metadata']['owner']}")
             return [{"thread_id": t, "status": "busy"} for t in thread_ids]
 
     class _Client:
@@ -473,12 +474,18 @@ async def test_a_resume_is_capped_too(role, monkeypatch):
     assert exc.value.status_code == 429
 
 
-async def test_a_count_that_cant_be_read_does_not_hold_the_run_up(role, monkeypatch):
+async def test_a_count_that_cant_be_read_does_not_hold_the_run_up(role, monkeypatch, caplog):
     _busy(monkeypatch, [], fails=True)
 
-    scope = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), _new_run())
+    with caplog.at_level("WARNING"):
+        scope = await langgraph_auth.runs_need_content_create(
+            _ctx("threads", "create_run"), _new_run()
+        )
 
     assert scope["owner"] == USER
+    # The log names the error's class, never its text or the user.
+    assert "could not count busy threads (RuntimeError)" in caplog.text
+    assert USER not in caplog.text
 
 
 async def test_the_cap_is_counted_only_after_the_workspace_check(role, monkeypatch):
