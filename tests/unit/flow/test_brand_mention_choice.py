@@ -672,3 +672,89 @@ async def test_a_prominent_call_to_action_may_link(writer_message):
     )
 
     assert "Leave the call to action's `url` empty" not in message
+
+
+# -- Review round 2 (on the replayed pull request) ------------------------------------------
+
+
+@pytest.mark.parametrize("prominence", ["none", "subtle"])
+def test_a_brand_free_call_to_action_carries_no_link_whatever_the_writer_returned(prominence):
+    article = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\nAcme Tools maps the sun for you.",
+        "cta": {"text": "Start planning today", "url": "https://rival.example/editor"},
+    }
+
+    cleaned, spec = _checked(article, _outline(prominence))
+
+    assert spec["cta_without_link"] is True
+    assert cleaned["cta"] == {"text": "Start planning today", "url": None}
+
+
+def test_a_call_to_action_may_keep_an_approved_internal_link_or_any_link_when_prominent():
+    internal = "https://www.acme.test/blog/garden-planner"
+    outline = _outline("none", internal_links=[{"url": internal, "title": "Garden planner"}])
+    article = {**ARTICLE, "cta": {"text": "Read the planner", "url": internal + "/"}}
+
+    assert _checked(article, outline)[0] is article
+    # With a prominent mention the call to action links where the writer put it.
+    promoted = {**ARTICLE, "cta": {"text": "Try Acme Tools", "url": "https://acme.test/signup"}}
+    cleaned, spec = _checked(promoted, _outline("prominent"))
+    assert spec["cta_without_link"] is False and cleaned is promoted
+    # And an article whose keyphrase is the brand's own keeps its links: it is about the brand.
+    branded = _outline("none", focus_keyphrase="acme tools login")
+    assert build_requirements_spec(branded, "blog")["cta_without_link"] is False
+
+
+def test_an_image_embedded_in_the_article_loses_the_name_from_its_alt_text():
+    article = {
+        **ARTICLE,
+        "body_markdown": (
+            "## Choose the spot\n\n![Acme Tools dashboard](https://cdn.example/x.png)\n\n"
+            "![A raised bed](https://cdn.example/y.png)"
+        ),
+    }
+
+    cleaned, spec = _checked(article, _outline("none"))
+
+    assert "![dashboard](https://cdn.example/x.png)" in cleaned["body_markdown"]
+    assert "![A raised bed](https://cdn.example/y.png)" in cleaned["body_markdown"]
+    assert check_brand_absent(cleaned, spec)["passed"] is True
+
+
+@pytest.mark.asyncio
+async def test_the_final_repairs_answer_is_cleaned_before_it_is_rechecked(monkeypatch):
+    import src.flow.engines.content.generation.validation as validation
+
+    outline = _outline("none")
+    drifted = {**ARTICLE, "body_markdown": "## Choose the spot\n\nAcme Tools maps the sun."}
+
+    # The repair takes the name out of the prose and hands back a tag that names the brand.
+    async def repair(**kwargs):
+        given = kwargs["final_content"]
+        return {
+            **given,
+            "body_markdown": given["body_markdown"].replace("Acme Tools", "This app"),
+            "tags": ["Gardening", "Acme Tools"],
+        }
+
+    monkeypatch.setattr(validation, "run_targeted_repair", repair)
+    monkeypatch.setattr(
+        validation, "enforce_subheadings_for_spec", AsyncMock(side_effect=lambda c, *a, **k: c)
+    )
+
+    result = await validation.final_validate_content(
+        {
+            "content": {
+                "final_content": drifted,
+                "outline": outline,
+                "content_type": "blog",
+                "selected_topic": ARTICLE["title"],
+            },
+            "serp_payload": {"keyword": "vegetable garden"},
+        }
+    )
+
+    final = result["content"]["final_content"]
+    assert final["tags"] == ["Gardening"]
+    assert "Acme Tools" not in final["body_markdown"]

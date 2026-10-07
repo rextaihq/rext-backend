@@ -2340,6 +2340,8 @@ def apply_density_report(final_content: dict, spec: RequirementsSpec) -> dict:
     }
 
 
+# An image embed with its parts: "![alt](address)".
+_IMAGE_ALT_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
 # A markdown link, not an image: "[anchor](https://…)".
 _TEXT_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^)\s]+)\)")
 
@@ -2352,20 +2354,39 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
     So those go here, in code, before every check:
 
     * a text link to the brand's site keeps its words and loses its address;
-    * the call to action keeps its text and loses a link to that site;
     * a tag that names the brand is dropped;
-    * an image's alt text loses the name.
+    * an image's alt text loses the name, in the image list and in the article's own markup.
+
+    And, for "None" and for "Subtle" alike (the brand is kept out of the call to action):
+
+    * the call to action keeps its text and carries no link, unless the link is one of the
+      internal links the user approved. Told only in words, the writer sent readers to another
+      product's site instead; nothing a model is told is a guarantee.
 
     Internal links the user approved stay. Unchanged when nothing applies. The name in the
     article's own sentences is left to the check and the rewrite it asks for.
     """
     excluded = spec.get("excluded_brand")
-    if not excluded or not final_content:
+    if not final_content or not (excluded or spec.get("cta_without_link")):
         return final_content
-    name = (excluded.get("brand_name") or "").strip()
     approved = spec.get("approved_internal_links")
     removed: list[str] = []
     cleaned = dict(final_content)
+    cta = cleaned.get("cta")
+    if spec.get("cta_without_link") and isinstance(cta, dict) and cta.get("url"):
+        approved_keys = {
+            normalize_url(link.get("url") or "")
+            for link in approved or []
+            if isinstance(link, dict)
+        }
+        if normalize_url(str(cta["url"])) not in approved_keys:
+            removed.append("the call to action's link")
+            cleaned["cta"] = {**cta, "url": None}
+    if not excluded:
+        if removed:
+            logger.info("%s: brand choice applied in code to %s", stage, removed)
+        return cleaned if removed else final_content
+    name = (excluded.get("brand_name") or "").strip()
 
     def unlink(match: re.Match) -> str:
         if not is_excluded_brand_link(match.group(2), excluded, approved):
@@ -2373,17 +2394,17 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
         removed.append(match.group(2))
         return match.group(1)
 
+    def rename(match: re.Match) -> str:
+        alt = match.group(1)
+        if not _names_excluded_brand(alt, name):
+            return match.group(0)
+        removed.append("an image's alt text")
+        return f"![{_without_excluded_brand(alt, spec)}]({match.group(2)})"
+
     for field in LINK_FIELDS:
         if isinstance(cleaned.get(field), str):
-            cleaned[field] = _TEXT_LINK_RE.sub(unlink, cleaned[field])
-    cta = cleaned.get("cta")
-    if (
-        isinstance(cta, dict)
-        and isinstance(cta.get("url"), str)
-        and is_excluded_brand_link(cta["url"], excluded, None)
-    ):
-        removed.append(cta["url"])
-        cleaned["cta"] = {**cta, "url": None}
+            text = _TEXT_LINK_RE.sub(unlink, cleaned[field])
+            cleaned[field] = _IMAGE_ALT_RE.sub(rename, text)
     # The lists that mirror the prose's links: an entry left behind would be read as a link
     # the article lost, and a repair would try to put the excluded link back.
     for field in LINK_LIST_FIELDS:
@@ -2626,6 +2647,9 @@ async def final_validate_content(state: REXT) -> dict:
             # The repair writes a new body: a label line it brings back is dropped
             # before the recheck, so the CTA check never counts it as the CTA.
             repaired = strip_cta_labels(repaired, outline, stage="final_validate_content repair")
+            # The repair returns every field, tags and alt texts included: what code takes out
+            # for the brand choice is taken out of its answer too, before the recheck.
+            repaired = apply_brand_exclusion(repaired, spec, stage="final_validate_content repair")
             recheck = [fn(repaired, spec) for fn in FINAL_VALIDATE_CHECKS]
             # Only accept the repair when it did not make things worse overall.
             # A post-humanize repair has no loop behind it to catch a regression,
