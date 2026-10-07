@@ -33,6 +33,7 @@ def create_rext_engine():
     flow.add_node("seo_engine", create_seo_engine())
     flow.add_node("content_engine", create_content_engine())
     flow.add_node("insufficient_credits", _insufficient_credits)
+    flow.add_node("credit_check_failed", _credit_check_failed)
     flow.add_node("no_serp_data", _no_serp_data)
     flow.add_node("load_library_item", load_library_item)
     flow.add_node("charge_library_start", charge_library_start)
@@ -44,6 +45,7 @@ def create_rext_engine():
             "serp_engine": "serp_engine",
             "load_library_item": "load_library_item",
             "insufficient_credits": "insufficient_credits",
+            "credit_check_failed": "credit_check_failed",
         },
     )
 
@@ -79,10 +81,16 @@ def create_rext_engine():
     flow.add_conditional_edges(
         "seo_engine",
         keyword_router,
-        {"SERP_ENGINE": "serp_engine", "END": "content_engine", "NO_SERP": "no_serp_data"},
+        {
+            "SERP_ENGINE": "serp_engine",
+            "END": "content_engine",
+            "NO_SERP": "no_serp_data",
+            "INSUFFICIENT": "insufficient_credits",
+        },
     )
     flow.add_edge("content_engine", END)
     flow.add_edge("insufficient_credits", END)
+    flow.add_edge("credit_check_failed", END)
     flow.add_edge("no_serp_data", END)
 
     return flow.compile()
@@ -119,6 +127,16 @@ async def _insufficient_credits(state: REXT) -> dict:
             "error_code": "insufficient_credits",
         }
     }
+
+
+CREDIT_CHECK_FAILED = (
+    "We couldn't check your credits just now, so the run didn't start. Try again in a moment."
+)
+
+
+async def _credit_check_failed(state: REXT) -> dict:
+    """Terminal node for a run whose credit check couldn't be read (library_router fails closed)."""
+    return {"content": {"error": CREDIT_CHECK_FAILED, "error_code": "credit_check_failed"}}
 
 
 # What the user reads when a run ends for want of search results, by the

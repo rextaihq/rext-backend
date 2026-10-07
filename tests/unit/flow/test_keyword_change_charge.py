@@ -120,3 +120,19 @@ async def test_the_catalogue_states_what_a_change_costs(monkeypatch, charges):
     with_change = sum(costs[stage] for stage in charges())
     without_change = costs["serp_seo"] + costs["title_generation"]
     assert with_change - without_change == credit_rules()["keyword_change"] == 1
+
+
+async def test_a_refused_title_charge_ends_the_run_before_the_titles(monkeypatch, charges):
+    # Another run spent the balance between the analysis and this answer (rext-control#524).
+    async def consume(user_id, cost, stage, workspace_id=None):
+        if stage == "title_generation":
+            raise credit_module.InsufficientCreditsError(stage, cost, 0)
+
+    monkeypatch.setattr(credit_module, "consume_stage_credits", consume)
+    monkeypatch.setattr(credit_module, "_emit_credit_event", lambda *a, **k: None)
+    state = await _analysis(_payload())
+
+    result = await _gate(monkeypatch, state, "running shoes")
+
+    assert result["content"]["error_code"] == "insufficient_credits"
+    assert keyword_router({**state, **result}) == "INSUFFICIENT"

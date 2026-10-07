@@ -391,3 +391,94 @@ async def test_a_run_can_only_resume_its_gates(role, command):
         await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
 
     assert exc.value.status_code == 403
+
+
+# --- at most two runs in flight per user (G62, rext-control#524) ----------------------
+
+
+def _busy(monkeypatch, thread_ids, *, fails=False):
+    """The runtime's answer to "which of this user's threads are busy", through the in-process client."""
+    asked = []
+
+    class _Threads:
+        async def search(self, **kwargs):
+            asked.append(kwargs)
+            if fails:
+                raise RuntimeError("runtime unavailable")
+            return [{"thread_id": t, "status": "busy"} for t in thread_ids]
+
+    class _Client:
+        threads = _Threads()
+
+    monkeypatch.setattr("langgraph_sdk.get_client", lambda: _Client())
+    return asked
+
+
+def _new_run(thread_id="t-new"):
+    return {
+        "thread_id": thread_id,
+        "kwargs": {"input": {"serp_payload": {"workspace_id": WORKSPACE, "query": "q"}}},
+    }
+
+
+async def test_a_third_run_in_flight_is_refused(role, monkeypatch):
+    asked = _busy(monkeypatch, ["t-1", "t-2"])
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), _new_run())
+
+    assert exc.value.status_code == 429
+    assert exc.value.detail == langgraph_auth.TOO_MANY_RUNS
+    # Only the caller's own busy threads are counted.
+    assert asked == [{"metadata": {"owner": USER}, "status": "busy", "limit": 3}]
+
+
+async def test_a_second_run_in_flight_is_allowed(role, monkeypatch):
+    _busy(monkeypatch, ["t-1"])
+
+    scope = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), _new_run())
+
+    assert scope["owner"] == USER
+
+
+async def test_resuming_a_busy_thread_does_not_count_it(role, monkeypatch):
+    _busy(monkeypatch, ["t-1", "t-resumed"])
+    resume = {"thread_id": "t-resumed", "kwargs": {"command": {"resume": {"action": "approve"}}}}
+    resume["metadata"] = {"workspace_id": WORKSPACE}
+
+    await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), resume)
+
+
+async def test_a_resume_is_capped_too(role, monkeypatch):
+    _busy(monkeypatch, ["t-1", "t-2"])
+    resume = {
+        "thread_id": "t-paused",
+        "kwargs": {"command": {"resume": {"action": "approve"}}},
+        "metadata": {"workspace_id": WORKSPACE},
+    }
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), resume)
+    assert exc.value.status_code == 429
+
+
+async def test_a_count_that_cant_be_read_does_not_hold_the_run_up(role, monkeypatch):
+    _busy(monkeypatch, [], fails=True)
+
+    scope = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), _new_run())
+
+    assert scope["owner"] == USER
+
+
+async def test_the_cap_is_counted_only_after_the_workspace_check(role, monkeypatch):
+    asked = _busy(monkeypatch, ["t-1", "t-2"])
+    elsewhere = {
+        "thread_id": "t",
+        "kwargs": {"input": {"serp_payload": {"workspace_id": OTHER, "query": "q"}}},
+    }
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), elsewhere)
+
+    assert exc.value.status_code == 403
+    assert asked == []
