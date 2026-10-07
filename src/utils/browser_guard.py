@@ -36,6 +36,32 @@ PROXY_BROWSER_ARGS = [
 ]
 
 
+# crawl4ai launches Chromium with these whatever BrowserConfig.ignore_https_errors says.
+_CERTIFICATE_OVERRIDES = ("--ignore-certificate-errors", "--ignore-certificate-errors-spki-list")
+
+
+def verify_certificates(crawler) -> None:
+    """Make this crawler's Chromium check certificates: crawl4ai adds the launch flags that turn
+    certificate errors off, which the context's ignore_https_errors=False can't override. Call
+    it before the crawler starts; it changes this crawler only."""
+    manager = getattr(getattr(crawler, "crawler_strategy", None), "browser_manager", None)
+    build = getattr(manager, "_build_browser_args", None)
+    if build is None:
+        logger.warning("Browser launch flags not found: certificate errors may be ignored")
+        return
+
+    def launch_without_overrides():
+        launch = build()
+        launch["args"] = [
+            arg
+            for arg in launch.get("args", [])
+            if arg.split("=", 1)[0] not in _CERTIFICATE_OVERRIDES
+        ]
+        return launch
+
+    manager._build_browser_args = launch_without_overrides
+
+
 def _host_port(authority: str, default_port: int) -> tuple[str, int]:
     """'host:port' or '[v6]:port' from a CONNECT line."""
     parts = urlsplit(f"//{authority}")

@@ -1,5 +1,6 @@
 # === Standard library imports ===
 import asyncio
+import contextlib
 import contextvars
 import sys
 import threading
@@ -14,13 +15,23 @@ from langchain_core.documents import Document
 from src.api.lib.logger import auto_logger
 
 # === Project-specific imports ===
-from src.utils.browser_guard import PROXY_BROWSER_ARGS, PublicOnlyProxy
+from src.utils.browser_guard import PROXY_BROWSER_ARGS, PublicOnlyProxy, verify_certificates
 from src.utils.content_quality import assess_content_quality, build_thin_content_document
 from src.utils.multi_page_scraper import discover_relevant_links, scrape_extra_pages
 from src.utils.splitter import split_data
 from src.utils.url_validator import validate_url_for_ssrf
 
 logger = auto_logger()
+
+
+@contextlib.asynccontextmanager
+async def _guarded_crawler():
+    """A crawler whose browser reaches public addresses only and checks certificates."""
+    async with PublicOnlyProxy() as proxy:
+        crawler = AsyncWebCrawler(config=_browser_config(proxy))
+        verify_certificates(crawler)
+        async with crawler:
+            yield crawler
 
 
 def _browser_config(proxy: PublicOnlyProxy) -> BrowserConfig:
@@ -146,10 +157,7 @@ async def render_pages(
         rendered: Dict[str, str] = {}
         seen = set(queue)
         sem = asyncio.Semaphore(concurrency)
-        async with (
-            PublicOnlyProxy() as proxy,
-            AsyncWebCrawler(config=_browser_config(proxy)) as crawler,
-        ):
+        async with _guarded_crawler() as crawler:
 
             async def _one(url: str) -> Tuple[str, str]:
                 async with sem:
@@ -231,10 +239,7 @@ async def web_page_scraper(urls: list[str]) -> tuple[list, list]:
 
     async def _crawl() -> list:
         nonlocal extra_content
-        async with (
-            PublicOnlyProxy() as proxy,
-            AsyncWebCrawler(config=_browser_config(proxy)) as crawler,
-        ):
+        async with _guarded_crawler() as crawler:
             results = await crawler.arun(url=target_url, config=run_config)
 
             first = next((r for r in results if getattr(r, "success", False)), None)
