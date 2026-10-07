@@ -433,7 +433,7 @@ async def generate_content(state: REXT) -> dict:
         if removed_keywords:
             keyword_requirements += (
                 f"\nKEYWORDS THE USER REMOVED: {', '.join(removed_keywords)}\n"
-                "- Do not target these phrases: no heading built on one, and no sentence written to fit one in.\n"
+                "- Do not target these phrases: no new heading built on one, and no sentence written to fit one in. A heading of the approved outline that already contains one stays exactly as approved.\n"
             )
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
