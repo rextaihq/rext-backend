@@ -602,6 +602,49 @@ def test_a_citation_label_is_the_source_of_the_claim_before_it(label):
     assert units[0].cited_urls == ("https://r.example",)
 
 
+@pytest.mark.parametrize(
+    "linked",
+    [
+        "[Beta beats Acme](https://b.example).",
+        "[Beta wins on price](https://b.example).",
+        "[Beta outperforms Acme everywhere](https://b.example).",
+        "[Acme uses Beta's engine](https://b.example).",
+    ],
+)
+def test_a_linked_sentence_is_one_whatever_its_verb(linked):
+    # No list of verbs is complete: any lowercase word that isn't a source word makes it a sentence.
+    text = f"Acme plan costs $49. [Official pricing](https://a.example). {linked}"
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ("https://a.example",)
+    assert units[-1].cited_urls == ("https://b.example",)
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["ahrefs.com", "Beta Beats Acme", "Official pricing page", "Press release", "W3Techs, 2025"],
+)
+def test_a_name_an_address_or_a_headline_is_a_label(label):
+    units = claim_integrity._units(
+        f"73% of enterprises plan to adopt one. [{label}](https://r.example)."
+    )
+    assert units[0].cited_urls == ("https://r.example",)
+
+
+def test_a_link_after_an_abbreviation_starts_a_piece_of_its_own():
+    # Joined to "…Acme Inc.", Beta's page became the cited source of Acme's price.
+    text = "Acme charges $49 through Acme Inc. [Beta charges $49](https://beta.example)."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("Acme charges $49 through Acme Inc.", ()),
+        ("Beta charges $49.", ("https://beta.example",)),
+    ]
+
+
+def test_an_abbreviation_inside_a_sentence_still_ends_none():
+    text = "The company (Contentful Inc.) Enterprise plan lacks SSO."
+    assert [u.text for u in claim_integrity._units(text)] == [text]
+
+
 def test_a_label_after_a_linked_sentence_is_that_sentences_source():
     text = (
         "Costs vary. [Acme launched in 2024](https://b.example). "
@@ -678,6 +721,9 @@ def test_a_sentence_ends_after_a_closing_quote():
         # A denial that is itself denied asserts the test.
         "It's not true that we never tested the products ourselves.",
         "It isn't that we haven't tested the tools, it's that the tests were short.",
+        "It's false that we never tested the tools.",
+        "We deny that we never tested the tools.",
+        "It would be wrong that we never tested these plans.",
         # "Never" scoping a qualifier, not the testing itself.
         "We never tested in isolation; every benchmark used production data.",
         "We never tested without production data.",
@@ -697,6 +743,19 @@ def test_a_denied_denial_or_a_qualified_never_is_still_a_testing_claim(text):
     ],
 )
 def test_a_plain_never_stays_a_disclosure(text):
+    assert [c.category for c in find_unsupported_claims(text, {})] == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "It's not true that we said we never tested these tools.",
+        "It's not true that the report says we never tested these tools.",
+        "It's false that anyone claimed we haven't tested it.",
+    ],
+)
+def test_a_denied_report_of_a_denial_asserts_no_test(text):
+    # It denies that the statement was made, and says nothing about the test.
     assert [c.category for c in find_unsupported_claims(text, {})] == []
 
 

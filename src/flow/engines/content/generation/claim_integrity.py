@@ -116,16 +116,25 @@ _CITATION_LINK = r"\[[^\]]*\]\(https?://[^)\s]+\)"
 _CITATION_ONLY_RE = re.compile(
     rf"{_CITATION_LINK}(?:(?:[\s,;.&]|\b[Aa]nd\b)*{_CITATION_LINK})*[\s,;.]*"
 )
-# A citation label names its source ("Report A", "Gartner 2024"); a linked sentence says
-# something of its own ("[Acme launched in 2024](url).", "[Contentful costs $300 per
-# month](url)."). Only a label is the source of the claim before it: with a linked sentence's
-# address on it, that claim would be weighed against the wrong source alone.
+# A citation label names its source: names (capitalised words), figures and a few source words
+# ("Report A", "Gartner 2024", "Official pricing page", "State of CMS 2024 report"), or a bare
+# address ("ahrefs.com"). A linked sentence says something of its own ("[Acme launched in
+# 2024](url).", "[Beta beats Acme](url)."), and its address is its own: on the claim before it,
+# that claim would be weighed against the wrong source alone. Any other lowercase word makes
+# the text a sentence, whatever its verb, so no list of verbs has to be complete.
 _LABEL_MAX_WORDS = 8
-_LABEL_VERB_RE = re.compile(
-    r"\b(?:is|are|was|were|has|have|had|does|did|can|will|costs?|offers?|supports?|launched|"
-    r"includes?|lacks?|provides?|requires?)\b",
-    re.IGNORECASE,
+_LABEL_WORDS = frozenset(
+    "a an the of for and in on by to at from with vs report reports study studies survey surveys "
+    "research data analysis index benchmark benchmarks statistics stats review reviews pricing "
+    "page pages docs documentation guide guides blog article post source sources official "
+    "website site press release announcement changelog whitepaper paper papers overview "
+    "summary results edition annual state findings".split()
 )
+_LABEL_WORD_RE = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*")
+_BARE_ADDRESS_RE = re.compile(r"(?:https?://)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?")
+# A link that opens a piece: after an abbreviation's full stop it starts a new piece, so a
+# citation or a linked sentence is never joined to the sentence before it.
+_LINK_START_RE = re.compile(r"\s*\[[^\]]*\]\(https?://")
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9.'+-]*")
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -147,23 +156,33 @@ def _sentences(line: str) -> list[str]:
     """The line's sentences; a split after an abbreviation's full stop is joined back."""
     sentences: list[str] = []
     for part in _SENTENCE_SPLIT_RE.split(line):
-        if sentences and _ABBREVIATION_END_RE.search(sentences[-1]):
+        if (
+            sentences
+            and _ABBREVIATION_END_RE.search(sentences[-1])
+            and not _LINK_START_RE.match(part)
+        ):
             sentences[-1] = f"{sentences[-1]} {part}"
         else:
             sentences.append(part)
     return sentences
 
 
+def _is_source_name(label: str) -> bool:
+    label = label.strip()
+    if _BARE_ADDRESS_RE.fullmatch(label):
+        return True
+    if len(label.split()) > _LABEL_MAX_WORDS or _numeric_claim_spans(label):
+        return False
+    return not any(
+        word.islower() and word not in _LABEL_WORDS for word in _LABEL_WORD_RE.findall(label)
+    )
+
+
 def _is_citation_label(part: str) -> bool:
     """Only links, each one a source's name and not a sentence of its own."""
     if not _CITATION_ONLY_RE.fullmatch(part):
         return False
-    return all(
-        len(label.split()) <= _LABEL_MAX_WORDS
-        and not _LABEL_VERB_RE.search(label)
-        and not _numeric_claim_spans(label)
-        for label in (m.group(1) for m in _LINK_RE.finditer(part))
-    )
+    return all(_is_source_name(m.group(1)) for m in _LINK_RE.finditer(part))
 
 
 def _units(text: str) -> list[_Unit]:
@@ -287,11 +306,21 @@ _NEGATION_BEFORE_RE = re.compile(
     rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
     re.IGNORECASE,
 )
-# A denial that is itself denied asserts the test: "it's not true that we never tested",
-# "it isn't that we haven't tested".
+# A denial that is itself denied asserts the test: "it's not true that we never tested", "it
+# isn't that we haven't tested", "it's false that we never tested", "we deny that we never
+# tested". Not across a reported statement: "it's not true that we said we never tested"
+# denies the saying, and says nothing about the test.
 _NEGATED_FRAME_RE = re.compile(
-    r"(?:\bnot\b|n['\u2019]t\b)\s+(?:(?:true|the\s+case|correct|accurate)\s+)?that\s+"
-    r"(?:[\w'\u2019-]+\s+){0,4}[\w'\u2019-]*$",
+    r"(?:(?:\bnot\b|n['’]t\b)\s+(?:(?:true|the\s+case|correct|accurate)\s+)?"
+    r"|\b(?:false|untrue|incorrect|wrong|a\s+lie|a\s+myth)\s+"
+    r"|\b(?:den(?:y|ies|ied)|reject(?:s|ed)?|dispute[sd]?)\s+"
+    r"(?:the\s+(?:claim|idea|notion|suggestion)\s+)?)"
+    r"that\s+(?P<between>(?:[\w'’-]+\s+){0,4}[\w'’-]*)$",
+    re.IGNORECASE,
+)
+_REPORTING_RE = re.compile(
+    r"\b(?:sa(?:y|ys|id|ying)|claim(?:s|ed)?|stat(?:e|es|ed)|report(?:s|ed)?|wr(?:ote|ites?)|"
+    r"believ(?:e|es|ed)|th(?:ink|inks|ought)|suggest(?:s|ed)?|impl(?:y|ies|ied)|t(?:old|ells?))\b",
     re.IGNORECASE,
 )
 # "Never" followed by a qualifier denies the qualifier, not the test: "we never tested in
@@ -615,7 +644,8 @@ def _denies(text: str, testing: re.Match) -> bool:
     negation = _NEGATION_BEFORE_RE.search(before)
     if not negation:
         return False
-    if _NEGATED_FRAME_RE.search(before[: negation.start()]):
+    frame = _NEGATED_FRAME_RE.search(before[: negation.start()])
+    if frame and not _REPORTING_RE.search(frame.group("between")):
         return False
     return not (
         negation.group(0).lower().startswith("never")
