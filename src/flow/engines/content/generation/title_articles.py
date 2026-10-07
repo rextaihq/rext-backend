@@ -67,8 +67,10 @@ _UNI_YOU = (
 )  # fmt: skip
 _UN_I = (
     "unident", "unidea", "unimp", "unimag", "unindex", "unins", "uninf", "unint", "unini", "uninv",
-    "uninh", "unissu", "uniron", "unimm",
+    "uninh", "unissu", "uniron", "unimm", "unitem",
 )  # fmt: skip
+# More words whose "u" says "you": "a utensil", "a unanimous".
+_U_YOU = ("unanim", "utens", "utop", "uter", "ukul", "ubiq")
 # Silent h: "an hour", "an honest". Said either way by dialect ("an herb" in America): left.
 _SILENT_H = ("hour", "honest", "honor", "honour", "heir")
 _EITHER_H = ("herb", "homage", "historic", "humble")
@@ -161,8 +163,14 @@ def _an_before(word: str) -> bool | None:
         return False
     if lower.startswith("uni"):
         return True if lower.startswith(_UN_I) else False if lower.startswith(_UNI_YOU) else None
-    if lower.startswith(_YOU_SOUND):
+    if lower.startswith(_YOU_SOUND) or lower.startswith(_U_YOU):
         return False
+    if (
+        lower.startswith("u")
+        and not lower.startswith("un")
+        and re.match(r"u[^aeiou][aeiouy]", lower)
+    ):
+        return None  # "u", one consonant, a vowel: "you" as often as not (utensil, uber)
     return first.lower() in "aeiou"
 
 
@@ -224,5 +232,9 @@ def fix_title_articles(parsed: SEOTopics, keyphrase: str) -> SEOTopics:
         for change in _changes(topic.title):
             if not carries or contains_keyphrase(_apply(topic.title, [*kept, change]), keyphrase):
                 kept.append(change)
-        topic.title = _apply(topic.title, kept)
+        fixed = _apply(topic.title, kept)
+        # Two options that differed only by an article would become one twice over: the second
+        # keeps its own wording rather than showing the same title as another option.
+        if not any(other is not topic and other.title == fixed for other in parsed.topics):
+            topic.title = fixed
     return parsed
