@@ -447,6 +447,91 @@ async def test_html_disguised_as_image_is_rejected_before_upload():
 
 
 @pytest.mark.asyncio
+async def test_a_body_image_that_cannot_be_uploaded_stops_the_publish():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    first = "https://cdn.rext.test/first.png"
+    second = "https://cdn.rext.test/second.png?X-Amz-Signature=secret-token"
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=[
+            {"media_id": 41, "url": "https://example.com/wp-content/uploads/first.png"},
+            RextExternalServiceException(
+                message="WordPress media API returned HTTP 413; expected HTTP 201; body=too large",
+                service_name="WordPress",
+            ),
+        ]
+    )
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(
+                title="Two images",
+                body_html=f'<img src="{first}"><p>Text</p><img src="{second}">',
+            )
+        )
+
+    assert "HTTP 413" in raised.value.message
+    assert "https://cdn.rext.test/second.png" in raised.value.message
+    assert "secret-token" not in raised.value.message
+    publisher.client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_featured_image_the_body_shows_is_not_downloaded_twice_when_it_fails():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=RextExternalServiceException(
+            message="Downloaded resource is not a valid image", service_name="WordPress"
+        )
+    )
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped"):
+        await publisher.publish_post(
+            ContentCreate(
+                title="Featured and inline",
+                body_markdown="![Hero](https://cdn.rext.test/hero.png)\n\nText.",
+                images_data={"feature_image_url": "https://cdn.rext.test/hero.png"},
+            )
+        )
+
+    assert publisher._upload_featured_image.await_count == 1
+    publisher.client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_featured_image_outside_the_body_that_fails_is_left_out():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=RextExternalServiceException(
+            message="Downloaded resource is not a valid image", service_name="WordPress"
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201, json={"id": 91, "status": "publish", "title": "No hero", "featured_media": 0}
+        )
+    )
+
+    result = await publisher.publish_post(
+        ContentCreate(
+            title="No hero",
+            body_html="<p>Text only.</p>",
+            images_data={"feature_image_url": "https://cdn.rext.test/hero.png"},
+        )
+    )
+
+    assert result["post_id"] == 91
+    assert publisher.client.post.await_args.kwargs["json"]["featured_media"] == 0
+
+
+@pytest.mark.asyncio
 async def test_post_must_confirm_featured_media_id():
     publisher = WordPressPublisher(
         site_url="https://example.com", username="user", app_password="pass"
