@@ -157,6 +157,17 @@ async def lifespan(app):
     except Exception as e:
         logger.error(f"❌ MinIO initialization error: {e}")
 
+    # --- Publish the emails' logo, so storage holds the one this build carries ---
+    try:
+        from emails.components.header import publish_logo
+
+        if await asyncio.to_thread(publish_logo):
+            logger.info("✅ Email logo published to storage")
+        else:
+            logger.warning("Email logo not published; emails show the name as text")
+    except Exception as e:
+        logger.warning(f"⚠️ Email logo publish failed (non-fatal): {e}")
+
     # --- Register main event loop for cross-thread coroutine dispatch ---
     from src.utils import loop_registry
 
