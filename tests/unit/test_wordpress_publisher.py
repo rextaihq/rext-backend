@@ -1118,11 +1118,23 @@ def test_an_s3_error_names_its_code_and_nothing_of_the_request():
     assert "AKIAEXAMPLEKEY" not in logged and "secret-token" not in logged
 
 
-def test_a_code_with_digits_is_not_an_error_code():
-    """An OAuth reply's "code" is a credential, not an error's name."""
+@pytest.mark.parametrize(
+    ("body", "content_type"),
+    [
+        ('{"code": "4f9a2b7c1e"}', "application/json"),  # an OAuth reply's code is a credential
+        ('{"code": "secret-token"}', "application/json"),  # letters only, still not an error
+        ('{"code": "secrettoken"}', "application/json"),
+        ("<Error><Code>SecretToken</Code></Error>", "application/xml"),
+    ],
+)
+def test_a_code_that_is_not_a_known_error_is_left_out(body, content_type):
+    """Review round 1 of #898: a token can be letters only, so a code is logged only when it's a
+    WordPress REST error or one of S3's."""
     from src.web.wordpress import _body_summary
 
-    assert "code" not in _body_summary(_response('{"code": "4f9a2b7c1e"}', 200))
+    logged = _body_summary(_response(body, 400, content_type))
+
+    assert "code" not in logged and "ecret" not in logged
 
 
 def test_a_huge_error_page_is_measured_not_read():
@@ -1146,9 +1158,10 @@ def test_an_unexpected_json_value_is_described_by_its_shape():
 
     assert _json_shape(["https://cdn.rext.test/a.png?X-Amz-Signature=s"] * 3) == "a list of 3 items"
     assert _json_shape("secret-token") == "a string of 12 characters"
-    assert _json_shape({"id": "x", "has space": 1, "source_url": "s"}) == (
-        "an object with 3 keys (id, source_url)"
+    assert _json_shape({"id": "x", "access-token-abc": 1, "source_url": "s"}) == (
+        "an object with 3 keys (expected ones: id, source_url)"
     )
+    assert _json_shape({"access-token-abc": 1}) == "an object with 1 key (expected ones: none)"
     assert _json_shape(None) == "NoneType"
 
 
