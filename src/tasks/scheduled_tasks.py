@@ -70,7 +70,7 @@ from src.services.email_helpers import send_content_publish_failed_email
 from src.services.notification_helper import notify_now
 from src.services.notifications_services import notification_service
 from src.utils.logger import logger
-from src.web.wordpress import WordPressPublisher
+from src.web.wordpress import BodyImageUploadError, WordPressPublisher
 
 _PUBLISH_CONCURRENCY = 5
 _PUBLISH_BATCH_LIMIT = 200
@@ -100,6 +100,8 @@ def _get_publish_failure_reason(exc: Exception) -> str:
     explicitly recognized, so every failure type still gets a sensible
     explanation.
     """
+    if isinstance(exc, BodyImageUploadError):
+        return exc.notice
     if isinstance(exc, (ExternalServiceTimeoutException, httpx.TimeoutException)):
         return "Your WordPress site took too long to respond (timed out)."
     if isinstance(exc, (httpx.ConnectError, httpx.NetworkError)):

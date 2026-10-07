@@ -504,6 +504,56 @@ async def test_a_featured_image_the_body_shows_is_not_downloaded_twice_when_it_f
 
 
 @pytest.mark.asyncio
+async def test_a_featured_image_already_in_the_sites_library_does_not_stop_the_publish():
+    # Not example.com: the publisher drops images on such placeholder hosts before any upload.
+    publisher = WordPressPublisher(
+        site_url="https://blog.rext.test", username="user", app_password="pass"
+    )
+    hero = "https://blog.rext.test/wp-content/uploads/2026/07/hero.png"
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=RextExternalServiceException(
+            message="WordPress media API returned HTTP 403", service_name="WordPress"
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201, json={"id": 92, "status": "publish", "title": "Own image", "featured_media": 0}
+        )
+    )
+
+    await publisher.publish_post(
+        ContentCreate(
+            title="Own image",
+            body_html=f'<img src="{hero}"><p>Text.</p>',
+            images_data={"feature_image_url": hero},
+        )
+    )
+
+    payload = publisher.client.post.await_args.kwargs["json"]
+    assert payload["featured_media"] == 0
+    assert hero in payload["content"]
+    assert publisher._upload_featured_image.await_count == 1
+
+
+def test_a_scheduled_publish_tells_the_person_which_image_and_what_to_do():
+    from src.tasks.scheduled_tasks import _get_publish_failure_reason
+    from src.web.wordpress import BodyImageUploadError
+
+    error = BodyImageUploadError(
+        "https://cdn.rext.test/images/second.png?X-Amz-Signature=secret-token",
+        "WordPress media API returned HTTP 413",
+    )
+
+    notice = _get_publish_failure_reason(error)
+
+    assert "second.png" in notice
+    assert "Replace or remove it" in notice
+    assert "secret-token" not in notice
+    assert "HTTP 413" not in notice
+    assert "HTTP 413" in error.message
+
+
+@pytest.mark.asyncio
 async def test_a_featured_image_outside_the_body_that_fails_is_left_out():
     publisher = WordPressPublisher(
         site_url="https://example.com", username="user", app_password="pass"
