@@ -84,6 +84,8 @@ def _nfd(text: str) -> str:
         ("人々2026年ガイド", "人々", True),
         # A letter and accent that lowercasing leaves apart are still the one letter.
         ("J\u030c guide for beginners", "\u01f0", True),
+        # The zero-width space separates words, unlike the joiners.
+        ("Best SEO\u200bAgencies for Small Businesses", "seo agencies", True),
         # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
         ("𠀀𠀁𠀂", "𠀁", True),
         ("2026年𠮷野家の店舗", "𠮷野家", True),
@@ -91,6 +93,14 @@ def _nfd(text: str) -> str:
 )
 def test_a_keyphrase_in_any_script_is_matched(title, keyphrase, expected):
     assert contains_keyphrase(title, keyphrase) is expected
+
+
+def test_a_keyphrase_starting_with_a_dotless_i_can_still_be_repaired():
+    """Capitalizing "ışık" gives "Işık", which lowercases to a dotted i: it stays as typed."""
+    title = keyphrase_title("ışık terapisi")
+    assert title is not None
+    assert "ışık Terapisi" in title
+    assert contains_keyphrase(title, "ışık terapisi")
 
 
 def test_a_keyphrase_whose_capital_is_longer_can_still_be_repaired():

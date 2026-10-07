@@ -87,6 +87,23 @@ def test_a_time_phrase_or_a_particle_before_the_preposition_keeps_it():
     assert repaired == "SEO Agencies: What Small Businesses Need to Catch Up On"
 
 
+def test_that_closing_a_clause_stays_and_a_relative_that_goes():
+    assert repair_title(
+        "SEO Agencies: Learn Why Your Business Really Needs That Today", "seo agencies"
+    ) == ("SEO Agencies: Learn Why Your Business Really Needs That")
+    # Its clause was cut: "that" goes with it.
+    assert _trim_to_max(
+        "SEO Agencies: The Proven Tools Small Businesses Need That Save Hours", "seo agencies"
+    ) == ("SEO Agencies: The Proven Tools Small Businesses Need")
+
+
+def test_a_verb_ending_in_o_keeps_its_preposition():
+    title = "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To Ultimately"
+    assert _trim_to_max(title, "seo agencies") == (
+        "SEO Agencies: Learn Exactly Who This Helpful Guide Goes To"
+    )
+
+
 def test_a_verb_that_doubles_its_last_consonant_keeps_its_preposition():
     title = "SEO Agencies: A Strategy Your Whole Team Is Committed To Today"  # 62
     repaired = repair_title(title, "seo agencies")
