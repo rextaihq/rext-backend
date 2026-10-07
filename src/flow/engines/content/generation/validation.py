@@ -1327,12 +1327,24 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
     if prominence == "subtle":
         cta = final_content.get("cta") if isinstance(final_content.get("cta"), dict) else {}
         brand_host = _host(brand.get("brand_url") or "")
-        if brand_host and isinstance(cta.get("url"), str) and _host(cta["url"]) == brand_host:
+        cta_text = (cta.get("text") or "").strip().casefold()
+        # The call to action as structured (cta.url) and as the reader sees it (a link in the
+        # article whose text is the call to action).
+        cta_urls = [cta["url"]] if isinstance(cta.get("url"), str) else []
+        cta_urls += [
+            url
+            for anchor, url in _find_markdown_links(_combined_text(final_content))
+            if cta_text and anchor.strip().casefold() == cta_text
+        ]
+        brand_cta_url = next(
+            (url for url in cta_urls if _is_brand_host(_host(url), brand_host)), None
+        )
+        if brand_cta_url:
             return _fail(
                 "brand_prominence",
                 "blocking",
                 f"The user chose a SUBTLE mention: the call to action must not send readers to "
-                f"{brand_name}'s site ({cta['url']}). Point it at a next step in the article's own "
+                f"{brand_name}'s site ({brand_cta_url}). Point it at a next step in the article's own "
                 f"subject instead, without the brand.",
             )
         if total > 1:
@@ -1366,6 +1378,11 @@ def _host(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def _is_brand_host(host: str, brand_host: str) -> bool:
+    """The brand's own host or one of its subdomains (app., shop., …)."""
+    return bool(brand_host) and (host == brand_host or host.endswith("." + brand_host))
+
+
 def _excluded_mentions(text: str, brand_name: str) -> list:
     """Mentions of a brand the user excluded. A one-word name that is also an ordinary word
     ("Later", "Buffer") counts only in its own capitalisation and not at the start of a sentence,
@@ -1375,14 +1392,25 @@ def _excluded_mentions(text: str, brand_name: str) -> list:
         return _brand_occurrences(text, brand_name)
     pattern = re.compile(r"(?<![0-9A-Za-z])" + re.escape(brand_name.strip()) + r"(?![0-9A-Za-z])")
     sentence_start = re.compile(r"(?:^\s*(?:[#>*-]+\s*)?|[.!?]\s+|\n\s*(?:[#>*-]+\s*)?)$")
-    return [m for m in pattern.finditer(text) if not sentence_start.search(text[: m.start()])]
+    # At a sentence start the word is ordinary ("Later, …", "Later you can…") unless what follows
+    # reads as a name ("Later is…", "Later can help").
+    ordinary_next = re.compile(
+        r"\s*(?:,|[;:]|$|(?:you|we|they|i|it|he|she|the|a|an|this|that|these|those|on|in|at|"
+        r"that's|we'll|you'll|today|tonight)\b)",
+        re.IGNORECASE,
+    )
+    return [
+        m
+        for m in pattern.finditer(text)
+        if not sentence_start.search(text[: m.start()]) or not ordinary_next.match(text, m.end())
+    ]
 
 
 def _links_to_host(text: str, host: str, approved: set[str]) -> bool:
     """Whether ``text`` links to ``host`` other than through an approved internal link."""
     for url in _BARE_URL_RE.findall(text or ""):
         url = url.rstrip(").,;:!?\"'")
-        if _host(url) == host and url.rstrip("/") not in approved:
+        if _is_brand_host(_host(url), host) and url.rstrip("/") not in approved:
             return True
     return False
 
