@@ -1147,10 +1147,14 @@ def test_a_huge_error_page_is_measured_not_read():
     assert logged == f"{len(body)} bytes, text/html"  # the code past the scanned bytes isn't read
 
 
-def test_a_media_type_that_is_not_plain_is_left_out():
+@pytest.mark.parametrize(
+    "content_type", ["text/html, secret-token", "application/secret-token", "text/x-secret"]
+)
+def test_a_media_type_that_is_not_a_known_one_is_left_out(content_type):
+    """Review round 2 of #898: the header is the remote's text, whatever its shape."""
     from src.web.wordpress import _body_summary
 
-    assert _body_summary(_response("x", 500, "text/html, secret-token")) == "1 bytes"
+    assert _body_summary(_response("x", 500, content_type)) == "1 bytes"
 
 
 def test_an_unexpected_json_value_is_described_by_its_shape():
@@ -1233,3 +1237,22 @@ async def test_a_200_error_page_echoing_the_signed_address_stays_out_of_the_mess
     assert "secret-token" not in message and "Not found" not in message
     assert len(message) < 300
     assert "secret-token" not in " ".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_media_type_is_named_neither_in_the_reason_nor_the_log(caplog):
+    caplog.set_level("INFO")
+    publisher = _publisher_downloading(
+        httpx.Response(
+            200,
+            text="not an image",
+            headers={"content-type": "application/secret-token"},
+            request=httpx.Request("GET", _SIGNED),
+        )
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "not a valid image (another type, 12 bytes)" in message
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "secret-token" not in message and "application/secret-token" not in logged
