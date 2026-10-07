@@ -267,7 +267,7 @@ Cluster to Content Structure Map (H1/H2/H3):
 {subsection_rule}
 5. Each section must:
    - Map to a clear search intent (Use the provided **Keyword Clusters** to guide these intents)
-   - Include 2–4 key points (Ensure the 'Supporting Keywords' from the cluster are covered here)
+   - Include 2–4 key points, never fewer than 2 (Ensure the 'Supporting Keywords' from the cluster are covered here)
 5b. **Semantic Synthesis**: Each unique Keyword Cluster should ideally inform a main H2 or H3 heading. If clusters overlap semantically, merge them into a single authoritative section to avoid redundancy.
 6. Include:
    - At least 1 featured snippet–targeted section
@@ -286,6 +286,7 @@ Cluster to Content Structure Map (H1/H2/H3):
 12. WRITE FOR THIS READER: when "The Workspace's Reader and Offer" above says who the site writes for, choose and word the sections for that reader — the questions they actually have, at their level of expertise, with examples from their world — not for a generic reader.
 13. LET THE INTENT SHAPE THE STRUCTURE (use the dominant intent above): Informational → what it is, how it works, the steps or methods, pitfalls, examples. Commercial → how to choose (criteria), the options compared, pricing models, which fits which use case, a verdict. Transactional → the offer, proof, the objections answered, the next step. Navigational → where to go and how, step by step.
 14. WHERE THE OFFER FITS: when "What the brand offers" above relates to the topic, plan ONE section where a solution of that kind genuinely helps this reader, described by what it does. Do NOT name the brand there and do not make it a pitch: whether and how the brand is mentioned is decided later, at the outline review.
+15. Write every H2 and H3 heading in the title's capitalization style: when the title capitalizes only its first word and proper nouns (sentence case), so does every heading; when it capitalizes each major word (Title Case), every heading does too. Never mix the two in one outline.
 
 Return ONLY the JSON. No explanations.
 """,

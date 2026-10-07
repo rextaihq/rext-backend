@@ -73,12 +73,12 @@ Always output in this format:
 
 4. Main Sections
 
-   H2: Section Title
-   - Key points to cover
+   H2: Section heading (in the title's capitalization style)
+   - Key points to cover (at least two)
    - Suggested examples or angles
 
-   H3: Subsection Title
-   - Key points to cover
+   H3: Subsection heading
+   - Key points to cover (at least two)
 
 (repeat as needed with logical flow)
 
