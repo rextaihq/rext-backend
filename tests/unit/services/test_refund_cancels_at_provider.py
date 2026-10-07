@@ -230,3 +230,168 @@ async def test_the_admin_refund_cancels_at_lemon_squeezy_on_a_full_refund_only(
     provider.cancel_subscription.assert_awaited_once_with(row.lemonsqueezy_subscription_id)
     assert row.status == SubscriptionStatus.CANCELLED
     assert module.is_ended_by_refund(row)
+
+
+def _admin_refund_mocks(monkeypatch, *, order=None, total=3900):
+    """_issue_refund's collaborators: Lemon Squeezy and the order and refund records."""
+    import src.api.routes.subscriptions.admin.refund_routes as routes
+
+    provider = SimpleNamespace(
+        get_refund=AsyncMock(return_value={"attributes": {"total": total, "refunded_amount": 0}}),
+        create_refund=AsyncMock(
+            return_value={"id": "rf", "attributes": {"refunded_amount": total}}
+        ),
+        cancel_subscription=AsyncMock(),
+    )
+    monkeypatch.setattr(routes, "get_lemonsqueezy_provider", AsyncMock(return_value=provider))
+    orders = MagicMock()
+    orders.get_by_lemonsqueezy_id = AsyncMock(return_value=order)
+    monkeypatch.setattr(routes, "OrderService", MagicMock(return_value=orders))
+    refunds = MagicMock()
+    refunds.record_provider_refund = AsyncMock(return_value=None)
+    refunds.get_refunded_total = AsyncMock(return_value=total)
+    monkeypatch.setattr(routes, "RefundService", MagicMock(return_value=refunds))
+    monkeypatch.setattr(routes, "apply_refund_state", MagicMock())
+    monkeypatch.setattr(routes, "refundable_amount", MagicMock(return_value=0))
+    return routes, provider
+
+
+@pytest.mark.asyncio
+async def test_a_refund_by_order_alone_finds_the_subscription_through_lemon_squeezy(
+    session, alerts, monkeypatch
+):
+    """Refund requests carry only the order, and the order row often names no subscription."""
+    row = await _active_subscription(session)
+    order = SimpleNamespace(
+        total=3900,
+        subscription_id=None,
+        lemonsqueezy_subscription_id=row.lemonsqueezy_subscription_id,
+    )
+    routes, provider = _admin_refund_mocks(monkeypatch, order=order)
+
+    await routes._issue_refund(
+        session,
+        lemonsqueezy_order_id="ord-6",
+        user_id=row.user_id,
+        subscription_id=None,
+        amount=None,
+        reason="full",
+    )
+
+    provider.cancel_subscription.assert_awaited_once_with(row.lemonsqueezy_subscription_id)
+    assert row.status == SubscriptionStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_a_refund_never_ends_another_customers_subscription(session, alerts, monkeypatch):
+    row = await _active_subscription(session)
+    stranger = await _active_subscription(session)
+
+    # The order leads to the customer's own subscription: that one ends, not the one named.
+    order = SimpleNamespace(total=3900, subscription_id=row.id, lemonsqueezy_subscription_id=None)
+    routes, provider = _admin_refund_mocks(monkeypatch, order=order)
+    await routes._issue_refund(
+        session,
+        lemonsqueezy_order_id="ord-7",
+        user_id=row.user_id,
+        subscription_id=stranger.id,
+        amount=None,
+        reason="full",
+    )
+    provider.cancel_subscription.assert_awaited_once_with(row.lemonsqueezy_subscription_id)
+    assert stranger.status == SubscriptionStatus.ACTIVE
+
+    # The order leads nowhere and the request names someone else's: nothing ends, a person is told.
+    routes, provider = _admin_refund_mocks(monkeypatch, order=None)
+    await routes._issue_refund(
+        session,
+        lemonsqueezy_order_id="ord-8",
+        user_id=row.user_id,
+        subscription_id=stranger.id,
+        amount=None,
+        reason="full",
+    )
+    provider.cancel_subscription.assert_not_awaited()
+    assert stranger.status == SubscriptionStatus.ACTIVE
+    assert alerts.call_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_a_refund_made_in_lemon_squeezy_is_cancelled_there_from_its_webhook(
+    session, alerts, monkeypatch
+):
+    import src.services.webhook_handlers.order_handlers as handlers
+
+    row = await _active_subscription(session)
+    provider = SimpleNamespace(cancel_subscription=AsyncMock())
+    monkeypatch.setattr(handlers, "get_payment_provider", MagicMock(return_value=provider))
+    order = SimpleNamespace(
+        user_id=row.user_id,
+        subscription_id=row.id,
+        lemonsqueezy_subscription_id=None,
+        total=3900,
+        product_name="Starter",
+    )
+    orders = MagicMock()
+    orders.get_by_lemonsqueezy_id = AsyncMock(return_value=order)
+    orders.record_order = AsyncMock()
+    monkeypatch.setattr(handlers, "OrderService", MagicMock(return_value=orders))
+    refunds = MagicMock()
+    refunds.record_provider_refund = AsyncMock(return_value=None)
+    refunds.get_refunded_total = AsyncMock(return_value=3900)
+    monkeypatch.setattr(handlers, "RefundService", MagicMock(return_value=refunds))
+    monkeypatch.setattr(handlers, "apply_refund_state", MagicMock())
+    monkeypatch.setattr(handlers, "refundable_amount", MagicMock(return_value=0))
+
+    webhook = {
+        "data": {
+            "type": "orders",
+            "id": "ord-9",
+            "attributes": {"status": "refunded", "total": 3900, "refunded_amount": 3900},
+        }
+    }
+    await handlers.handle_order_refunded(webhook, SimpleNamespace(id=uuid4()), session)
+
+    provider.cancel_subscription.assert_awaited_once_with(row.lemonsqueezy_subscription_id)
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert module.is_ended_by_refund(row)
+
+
+@pytest.mark.asyncio
+async def test_a_subscription_already_cancelled_there_is_taken_as_done(session, alerts):
+    """The other refund path got there first, or a person did: not a failure."""
+    row = await _active_subscription(session)
+    provider = SimpleNamespace(
+        cancel_subscription=AsyncMock(side_effect=RuntimeError("422 already cancelled")),
+        get_subscription_attributes=AsyncMock(return_value={"status": "cancelled"}),
+    )
+
+    await module.cancel_at_provider_for_refund(row, order_id="ord-10", provider=provider)
+
+    alerts.assert_not_called()
+    record = row.subscription_metadata[module.ENDED_BY_REFUND]
+    assert record["provider_found_cancelled"] is True
+    assert "provider_cancel_failed" not in record
+
+
+@pytest.mark.parametrize("event", ["payment_success", "payment_recovered"])
+@pytest.mark.asyncio
+async def test_a_payment_after_the_refund_gives_nothing_back_and_tells_a_person(
+    session, alerts, monkeypatch, event
+):
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    handler_alerts = MagicMock()
+    monkeypatch.setattr(handlers, "trigger_payment_alert", handler_alerts)
+    row = await _active_subscription(session)
+    module.end_for_refund(row, order_id="ord-11")
+    await session.flush()
+    ended, credits = row.end_date, row.current_credits
+
+    handler = getattr(handlers, f"handle_subscription_{event}")
+    await handler(_event(row, "active", minutes_later=20), SimpleNamespace(id=uuid4()), session)
+
+    await session.refresh(row)
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert row.end_date == ended and row.current_credits == credits
+    assert handler_alerts.call_args.kwargs["severity"] == "critical"
