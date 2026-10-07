@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from typing import Optional, TypedDict
+from urllib.parse import urlparse
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
@@ -172,6 +173,40 @@ def excluded_brand_of(
     return {"brand_name": brand_name, "brand_url": (promo.get("brand_url") or "").strip()}
 
 
+def site_host(url: str) -> str:
+    """The host of an address, without "www."; "" for one that can't be read."""
+    try:
+        host = (urlparse(url or "").hostname or "").lower()
+    except ValueError:
+        # A malformed address ("https://[bad") names no host: a check reports, never raises.
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def on_site(host: str, site: str) -> bool:
+    """Whether ``host`` is ``site`` or one of its subdomains (app., shop., …)."""
+    return bool(site) and (host == site or host.endswith("." + site))
+
+
+def is_excluded_brand_link(
+    url: str, excluded: Optional[dict], approved_internal_links: Optional[list]
+) -> bool:
+    """Whether ``url`` goes to the site of a brand the user excluded, other than through an
+    internal link the user approved (the article lives on that site: its own pages stay linked).
+
+    Such a link is never protected, restored or kept: the "no mention" choice covers it, so no
+    step may hold on to it (rext-control#760)."""
+    brand_site = site_host((excluded or {}).get("brand_url") or "")
+    if not brand_site or not on_site(site_host(url), brand_site):
+        return False
+    approved = {
+        (link.get("url") or "").rstrip("/")
+        for link in approved_internal_links or []
+        if isinstance(link, dict)
+    }
+    return (url or "").rstrip("/") not in approved
+
+
 def brand_named_in(text: str, brand_name: str) -> bool:
     """Whether ``text`` names the brand as a word of its own, in any case."""
     name = (brand_name or "").strip()
@@ -288,6 +323,12 @@ def build_requirements_spec(
     placement_policy = apply_brand_prominence(type_policy, outline.get("brand_prominence"))
     blocks = resolve_outline_structure(outline, content_type)
     brand_context = _extract_brand_context(outline)
+    approved_internal_links = outline.get("internal_links") or []
+    excluded_brand = excluded_brand_of(
+        outline,
+        title=selected_title or outline.get("title") or "",
+        keyphrase=focus_keyphrase,
+    )
 
     return RequirementsSpec(
         target_keyword=focus_keyphrase,
@@ -314,13 +355,9 @@ def build_requirements_spec(
         ],
         hero_context=_hero_context(outline),
         hero_required=type_policy["prefers_top"],
-        approved_internal_links=outline.get("internal_links") or [],
+        approved_internal_links=approved_internal_links,
         brand_context=brand_context,
-        excluded_brand=excluded_brand_of(
-            outline,
-            title=selected_title or outline.get("title") or "",
-            keyphrase=focus_keyphrase,
-        ),
+        excluded_brand=excluded_brand,
         sourced_facts=outline.get("key_facts") or [],
         target_word_count=outline.get("target_word_count") or 0,
         cta_required=outline_cta is not None,
@@ -333,5 +370,13 @@ def build_requirements_spec(
             brand_context=brand_context,
             generation_meta=generation_meta,
         ),
-        link_inventory=list((generation_meta or {}).get("link_inventory") or []),
+        # A link to an excluded brand's site is never one to keep: recorded as a citation
+        # before the choice was read, it would be put back before every check.
+        link_inventory=[
+            record
+            for record in (generation_meta or {}).get("link_inventory") or []
+            if not is_excluded_brand_link(
+                (record or {}).get("url") or "", excluded_brand, approved_internal_links
+            )
+        ],
     )

@@ -509,6 +509,7 @@ async def humanize_content(state: REXT) -> dict:
             article_stage="post-humanization (tone finalized — preserve it)",
             protected=protected,
             brand_policy=spec.get("brand_placement_policy"),
+            excluded_brand=spec.get("excluded_brand"),
         )
         if repaired is not None and _repair_fixed(
             repaired, merged_payload, brand_failed, brand_context, spec, protected
