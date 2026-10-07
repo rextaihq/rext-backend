@@ -119,12 +119,18 @@ def _normalize_for_match(text: Any) -> str:
             if not base_flattened:
                 kept.append(char)
             continue
-        base_flattened = char == "_" or category[0] in "PSZC"
-        kept.append(" " if base_flattened else char)
+        flat = _flattened(char)
+        base_flattened = flat == " "
+        kept.append(flat)
     # Beside a script written without spaces, a space (or the punctuation it replaced: "生成AI・
     # ツール") is no word break, so it goes in both the phrase and the text.
     spaced = " ".join("".join(kept).split())
     return f" {_SPACE_BESIDE_UNSPACED_RE.sub('', spaced)} "
+
+
+def _flattened(char: str) -> str:
+    """A space for punctuation, a symbol, a separator, a control character or the underscore."""
+    return " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char
 
 
 def contains_keyphrase(text: Any, keyphrase: Any) -> bool:
@@ -391,11 +397,18 @@ def _acronym(word: str) -> Optional[str]:
 
 
 def _phrase_spans(title: str, keyphrase: str, ignore_case: bool) -> list[tuple[int, int]]:
-    """Where the keyphrase is written in the title as a whole-word run, letter for letter."""
-    pattern = re.compile(
-        rf"(?<!\w){re.escape(keyphrase)}(?!\w)", re.IGNORECASE if ignore_case else 0
-    )
-    return [match.span() for match in pattern.finditer(title)]
+    """Where the keyphrase is written in the title letter for letter, at the word boundaries
+    contains_keyphrase accepts: "seo" in "最佳seo工具" is a word."""
+    spans = []
+    for match in re.finditer(re.escape(keyphrase), title, re.IGNORECASE if ignore_case else 0):
+        start, end = match.span()
+        before = title[start - 1] if start else " "
+        after = title[end] if end < len(title) else " "
+        if _at_boundary(keyphrase[0], _flattened(before)) and _at_boundary(
+            keyphrase[-1], _flattened(after)
+        ):
+            spans.append((start, end))
+    return spans
 
 
 def _opens_at(title: str, start: int) -> bool:
@@ -429,47 +442,54 @@ def _title_style(title: str, skip: tuple[int, int]) -> Optional[str]:
     return "title" if sum(votes) * 2 > len(votes) else "sentence"
 
 
-def keyphrase_spellings(titles: Iterable[Any], keyphrase: Any) -> dict[str, str]:
-    """How the keyphrase's words are spelled where their case is not a matter of style.
+def keyphrase_spellings(titles: Iterable[Any], keyphrase: Any) -> dict[int, str]:
+    """How the keyphrase's words are spelled, by position, where their case is not a matter of
+    style.
 
     The user's own capitals come first ("London", "SEO"), then what the titles show: a capital
     inside a word ("SaaS", "iPhone"), or a capitalized word in the middle of a sentence-case
-    title (a name).
+    title (a name). By position, so "it" and "IT" in one keyphrase keep their own spellings.
     """
     keyphrase = normalize_title(keyphrase)
-    spellings: dict[str, str] = {}
+    spellings: dict[int, str] = {}
     for title in titles:
         title = normalize_title(title)
         for start, end in _phrase_spans(title, keyphrase, ignore_case=True):
             style = _title_style(title, (start, end))
-            for match in re.finditer(r"\S+", title[start:end]):
+            for index, match in enumerate(re.finditer(r"\S+", title[start:end])):
                 word = match.group()
                 if any(char.isupper() for char in word[1:]) or (
                     style == "sentence"
                     and word[:1].isupper()
                     and not _opens_at(title, start + match.start())
                 ):
-                    spellings.setdefault(word.lower(), word)
-    for word in keyphrase.split():
+                    spellings.setdefault(index, word)
+    for index, word in enumerate(keyphrase.split(" ")):
         if word != word.lower():
-            spellings[word.lower()] = word
+            spellings[index] = word
     return spellings
 
 
 def _cased_keyphrase(
-    keyphrase: str, style: Optional[str], opens: bool, spellings: dict[str, str]
+    keyphrase: str, style: Optional[str], opens: bool, spellings: dict[int, str]
 ) -> str:
     words = []
     for index, word in enumerate(keyphrase.split(" ")):
-        known = spellings.get(word.lower()) or _acronym(word)
-        if known:
-            words.append(_same_length_case(word, known))
-        elif (index == 0 and opens) or (
-            style == "title" and word.lower() not in _TITLE_CASE_SMALL_WORDS
-        ):
-            words.append(_capitalized(word))
-        else:
-            words.append(word)
+        if index in spellings:
+            words.append(_same_length_case(word, spellings[index]))
+            continue
+        # Each part of a joined word on its own: "seo-friendly" is "SEO-Friendly" in Title Case.
+        parts = re.split(r"([-/])", word)
+        for part_index in range(0, len(parts), 2):
+            part = parts[part_index]
+            acronym = _acronym(part)
+            if acronym:
+                parts[part_index] = _same_length_case(part, acronym)
+            elif (index == 0 and part_index == 0 and opens) or (
+                style == "title" and part.lower() not in _TITLE_CASE_SMALL_WORDS
+            ):
+                parts[part_index] = _capitalized(part)
+        words.append("".join(parts))
     return " ".join(words)
 
 
@@ -479,7 +499,7 @@ def display_keyphrase(keyphrase: Any) -> str:
     return _cased_keyphrase(keyphrase, "title", True, keyphrase_spellings([], keyphrase))
 
 
-def recase_keyphrase(title: Any, keyphrase: Any, spellings: Optional[dict[str, str]] = None) -> str:
+def recase_keyphrase(title: Any, keyphrase: Any, spellings: Optional[dict[int, str]] = None) -> str:
     """The title with the keyphrase written in the title's case, where it was copied as typed.
 
     "Find the Best seo agency for small business in 2026" becomes "Find the Best SEO Agency for
