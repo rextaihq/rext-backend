@@ -15,12 +15,12 @@ from emails.utils.renderer import compose_email
 RECOVERY_LINK_VALID_MINUTES = 30
 
 _P = (
-    "color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; "
+    "color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; "
     "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
     "'Helvetica Neue', Arial, sans-serif;"
 )
 _MUTED = (
-    "color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; "
+    "color: #737373; font-size: 14px; line-height: 20px; margin: 0; "
     "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
     "'Helvetica Neue', Arial, sans-serif;"
 )
@@ -56,7 +56,7 @@ def render_account_recovery_email(
         [
             simple_header(),
             """
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Account Is Scheduled for Deletion
         </h1>
         """,
@@ -78,17 +78,17 @@ def render_account_recovery_email(
         </div>
         """,
             f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 24px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
             </p>
-            <p style="color: #3b82f6; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
+            <p style="color: #171717; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
                 {recovery_url}
             </p>
         </div>
         """,
             f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+        <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
             <p style="{_MUTED}">
                 If you meant to close this account, no action is needed — it will be deleted automatically.
                 If you didn't expect this, contact our support team right away.
@@ -133,10 +133,10 @@ def create_account_recovery_email(
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #fafafa; border-radius: 6px;">
+            <p style="margin: 0; font-size: 12px; color: #737373; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Don't want to receive these emails?
-                <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+                <a href="{unsubscribe_url}" style="color: #737373; text-decoration: underline;">Unsubscribe</a>
             </p>
         </div>
         """
@@ -195,7 +195,7 @@ def render_account_deactivated_email(
         [
             simple_header(),
             """
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Account Has Been Deactivated
         </h1>
         """,
@@ -215,17 +215,17 @@ def render_account_deactivated_email(
         </div>
         """,
             f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 24px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
             </p>
-            <p style="color: #3b82f6; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
+            <p style="color: #171717; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
                 {login_url}
             </p>
         </div>
         """,
             f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+        <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
             <p style="{_MUTED}">
                 Didn't deactivate your account? Log in to reactivate it immediately and
                 contact our support team — someone else may have access to your password.
@@ -265,10 +265,10 @@ def create_account_deactivated_email(
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #fafafa; border-radius: 6px;">
+            <p style="margin: 0; font-size: 12px; color: #737373; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Don't want to receive these emails?
-                <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+                <a href="{unsubscribe_url}" style="color: #737373; text-decoration: underline;">Unsubscribe</a>
             </p>
         </div>
         """

@@ -18,10 +18,13 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_article_brand_policy,
 )
 from src.flow.engines.content.generation.outline_structure import (
+    faq_section_heading,
     format_structure_for_prompt,
     resolve_outline_structure,
 )
 from src.flow.engines.content.generation.persona_relevance import persona_fits_topic
+from src.flow.engines.content.generation.requirements_spec import excluded_brand_of
+from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
@@ -325,7 +328,7 @@ FACTS RULE:
 ========================
 CORE SEO REQUIREMENTS
 ========================
-- Use the user-selected page title VERBATIM (already 50–59 characters) — never rewrite it
+- Use the user-selected page title VERBATIM (its length already checked) — never rewrite it
 - Include the primary keyword naturally in:
   - Title
   - First 100 words (introduction)
@@ -375,7 +378,8 @@ FABRICATION IS BANNED:
 ========================
 FAQ SECTION (MANDATORY)
 ========================
-- Add a FAQ section at the end
+- Put the FAQs in the outline's FAQ section when it has one, under that section's own heading, which may not say "FAQ" (the APPROVED FAQs line names it). Add no other FAQ or questions section
+- Only when the outline has no FAQ section, add a FAQ section at the end
 - If the outline above includes an "APPROVED FAQs" list, you MUST use every one of those questions — do not invent new ones or drop any. Reword only for tone/flow; the answers should be expanded to 2–3 sentences where the outline gives a short or missing answer.
 - If no APPROVED FAQs are listed in the outline, include 3–5 real, relevant user questions with concise, clear answers (2–3 sentences each)
 
@@ -702,17 +706,20 @@ Write the full article now. Every third-party claim must have an inline [text](u
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
 
-        body_min = target_word_count
-        body_buffer = max(200, int(target_word_count * 0.15))
-        body_max = body_min + body_buffer
-        total_min = target_word_count + 200
-        total_max = total_min + body_buffer
-        section_min = max(300, int(target_word_count * 0.12))
-        subsection_min = max(120, int(target_word_count * 0.05))
+        # The article is checked against the target band (check_word_count_band):
+        # introduction and body together. The parts are planned inside that band, so
+        # these instructions never ask for more than the check accepts; an 800-word
+        # target used to be told 1,000-1,200 words and fail above 896.
+        total_min, total_max = compute_word_target_band(target_word_count)
+        intro_words = min(200, max(60, round(target_word_count * 0.12)))
+        body_min = max(0, total_min - intro_words)
+        body_max = max(0, total_max - intro_words)
+        section_min = max(80, round(target_word_count * 0.10))
+        subsection_min = max(40, round(target_word_count * 0.04))
 
         length_acceptance_block = (
             f"WORD COUNT — NON-NEGOTIABLE:\n"
-            f"- `introduction` field: minimum 200 words\n"
+            f"- `introduction` field: about {intro_words} words\n"
             f"- `body_markdown` field: {body_min}-{body_max} words — stay within this range\n"
             f"- Combined total: {total_min}-{total_max} words — stay within this range\n"
             f"- Every H2 section: minimum {section_min} words\n"
@@ -723,7 +730,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         length_enforcement_block = (
             f"### MANDATORY LENGTH ENFORCEMENT\n"
             f"Your output MUST meet ALL of the following before submitting:\n"
-            f"- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph\n"
+            f"- `introduction`: about {intro_words} words, in full paragraphs\n"
             f"- `body_markdown`: {body_min}-{body_max} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
             f"- Total combined length: {total_min}-{total_max} words — do not go meaningfully under or over this range\n\n"
             f"EXPANSION RULES — apply to every section that runs short:\n"
@@ -980,16 +987,26 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         approved_faqs = extract_outline_faqs(outline)
         if approved_faqs:
+            faq_heading = faq_section_heading(outline, content_type)
+            where = (
+                f'the outline\'s section "{faq_heading}" (its FAQ section, under that heading; add no other FAQ section)'
+                if faq_heading
+                else "a FAQ section at the end of the article"
+            )
             lines.append(
-                f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN a FAQ section at the end of the article, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):"
+                f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN {where}, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):"
             )
             for faq in approved_faqs:
                 lines.append(f"  - Q: {faq['question']}")
                 if faq.get("answer"):
                     lines.append(f"    A: {faq['answer']}")
 
+        # The sections' order and headings are the user's: "adapt where needed" let the
+        # writer reorder them (G70, revnix/rext-control#586). The length is the target
+        # word count the instructions give, not a fixed 3,000-word minimum that
+        # overrode every content type's range.
         lines.append(
-            "\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links."
+            "\nWrite the sections in this order, under these headings, and write each one fully. Keep to the target word count the instructions give. Clearly mention the facts and stats with links."
         )
 
         return "\n".join(lines)
@@ -1011,6 +1028,17 @@ Write the full article now. Every third-party claim must have an inline [text](u
         part — visible at the highest-priority point in the prompt too, not
         just once, buried in a much longer human message.
         """
+        excluded = excluded_brand_of(outline or {})
+        if excluded and not (outline or {}).get("promote_brand"):
+            # The user chose no mention (rext-control#700): said here too, at the top of the
+            # prompt, since the outline itself may still name the brand.
+            name = excluded["brand_name"]
+            return (
+                "## BRAND EXCLUSION — MANDATORY\n\n"
+                f"The user chose NO mention of {name}. Do not name {name}, or link to its site, "
+                "anywhere in the article, its call to action or its meta tags, even where the "
+                "outline names it. The human message below says how to handle those parts."
+            )
         if not outline or not outline.get("promote_brand"):
             return ""
         promo = outline.get("brand_voice_promotion") or {}

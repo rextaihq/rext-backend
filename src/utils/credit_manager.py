@@ -197,6 +197,33 @@ async def _get_balance(uid: UUID, workspace_id: Optional[UUID] = None) -> int:
     return await _run_on_main_loop(_query())
 
 
+async def can_afford_stage(user_id, stage: str, workspace_id: Optional[UUID] = None) -> bool:
+    """
+    Whether the credit owner's balance covers `stage` now, without deducting.
+
+    For a stage charged only on delivery (the featured image): the run checks it
+    before starting the paid work. True for an unauthenticated run (nothing is
+    charged) and when the ids can't be read, as consume_stage_credits skips them.
+    """
+    if user_id is None:
+        return True
+    try:
+        uid = UUID(str(user_id))
+        wid = UUID(str(workspace_id)) if workspace_id else None
+    except (ValueError, AttributeError):
+        return True
+    try:
+        return await _get_balance(uid, workspace_id=wid) >= STAGE_CREDITS[stage]
+    except InsufficientCreditsError:
+        # Not a member of the workspace: nobody's credits to charge.
+        return False
+    except Exception:
+        # The balance can't be read now: the stage's work isn't started, so a run
+        # that has paid for its other stages still finishes.
+        logger.warning("credit_manager: balance unreadable for %s; treated as unaffordable", stage)
+        return False
+
+
 async def consume_stage_credits(
     user_id, cost: int, stage: str, workspace_id: Optional[UUID] = None
 ) -> None:
@@ -307,8 +334,10 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
     warn_threshold: balance <= threshold (but still sufficient) →
     emits credits.low before running the node.
 
-    Post-deduction safety net: catches InsufficientCreditsError per-stage,
-    emits credits.exhausted, breaks the loop — node result still returned.
+    Post-deduction: a stage whose charge is refused (another run spent the
+    balance meanwhile) emits credits.exhausted and returns the same error as the
+    pre-flight, without the node's result, so the run ends unpaid work there
+    instead of handing it to the next stage.
 
     All DB calls go through _run_on_main_loop to avoid cross-loop asyncpg errors.
 
@@ -409,7 +438,15 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                                 )
                             except Exception:
                                 pass
-                            break
+                            return {
+                                "content": {
+                                    "error": (
+                                        f"Insufficient credits: need {e.required} for this stage, "
+                                        f"have {e.available}. Please upgrade your plan."
+                                    ),
+                                    "error_code": "insufficient_credits",
+                                }
+                            }
             return result
 
         return wrapper

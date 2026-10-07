@@ -110,7 +110,7 @@ INFO: Daily subscription tasks completed
 Ensure these environment variables are set:
 - `RESEND_API_KEY` - For sending emails
 - `DATABASE_URL` - Database connection
-- `FRONTEND_URL` - For email links (default: https://app.rext.com)
+- `FRONTEND_URL` - For email links (default: http://localhost:3000; the deploys set the dashboard's address)
 
 ### Testing
 

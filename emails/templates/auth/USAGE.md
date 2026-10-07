@@ -234,7 +234,7 @@ email_html = render_verification_email(
 
 ```python
 # Use different URL for staging/production
-frontend_url = os.getenv("FRONTEND_URL", "https://app.rext.com")
+frontend_url = os.getenv("FRONTEND_URL", "https://app.rext.ai")
 
 email_html = create_verification_email(
     user_name="John",
@@ -308,12 +308,12 @@ Ensure these are set in `.env`:
 
 ```env
 # Frontend URL for email links
-FRONTEND_URL=https://app.rext.com
+FRONTEND_URL=https://app.rext.ai
 
 # Email service configuration (already set in Phase 1)
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_xxxxxxxxxxxxx
-RESEND_FROM_EMAIL=noreply@rext.com
+RESEND_FROM_EMAIL=noreply@<a domain verified in Resend>
 RESEND_FROM_NAME=Rext AI
 ```
 

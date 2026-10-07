@@ -171,6 +171,7 @@ def _build_prompt_data(
     focus_keyword: str = "",
     brand_policy: BrandPlacementPolicy | None = None,
     article_voice: dict[str, Any] | None = None,
+    excluded_brand: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     introduction = content_payload.get("introduction") or ""
     body_markdown = content_payload.get("body_markdown") or ""
@@ -245,6 +246,14 @@ def _build_prompt_data(
             brand_url=brand_context.get("brand_url", ""),
             content_type=content_type,
             policy=policy,
+        )
+    elif excluded_brand:
+        # The user chose no mention (rext-control#700): a rewrite must not bring the brand in.
+        brand_instruction = (
+            f'BRAND EXCLUSION — the user chose NO mention of "{excluded_brand["brand_name"]}": do not '
+            "name it, or link to its site (the article's internal links stay), anywhere in the title, "
+            "the introduction, the body, a heading or a call to action. If the draft names it, "
+            "rewrite that sentence without it."
         )
 
     return {
@@ -374,6 +383,7 @@ async def humanize_content(state: REXT) -> dict:
         focus_keyword=spec.get("target_keyword") or "",
         brand_policy=spec.get("brand_placement_policy"),
         article_voice=generation_meta.get("article_voice"),
+        excluded_brand=spec.get("excluded_brand"),
     )
     model = load_humanize_model().with_structured_output(schema)
     messages = get_humanize_prompt().format_messages(**prompt_data)

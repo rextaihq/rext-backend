@@ -203,6 +203,31 @@ async def _record_error(
         logger.warning(f"Failed to persist error log: {persist_error}")
 
 
+_VALUE_NOT_RECORDED = "[not recorded]"
+
+
+def _message_without_input(err: Dict[str, Any]) -> Any:
+    """
+    A validation message as it is recorded: without the rejected value.
+
+    A validator may quote the input back to the caller so they can see what was
+    wrong ("Use MM/DD/YYYY ... Got: <what they typed>"). The response keeps
+    that; the log never does, whatever was typed into the field. Two forms are
+    cut: the "Got: <input>" ending those validators use, and the input itself
+    wherever a message repeats it whole.
+    """
+    message = err.get("msg")
+    if not isinstance(message, str):
+        return message
+    head, quoted, _ = message.partition(" Got: ")
+    if quoted:
+        message = f"{head} Got: {_VALUE_NOT_RECORDED}"
+    value = err.get("input")
+    if isinstance(value, str) and len(value.strip()) >= 4 and value in message:
+        message = message.replace(value, _VALUE_NOT_RECORDED)
+    return message
+
+
 def _validation_error_metadata(exc: Exception) -> Dict[str, Any]:
     """
     Summarise which fields failed validation.
@@ -210,7 +235,7 @@ def _validation_error_metadata(exc: Exception) -> Dict[str, Any]:
     A 422 is only actionable if you know what the client actually sent that was
     wrong, so record the offending field paths and rule names. Values are
     deliberately excluded -- a rejected request body routinely contains
-    passwords and tokens.
+    passwords and tokens -- including from a message that quotes one back.
     """
     try:
         errors = exc.errors()  # type: ignore[attr-defined]
@@ -227,7 +252,7 @@ def _validation_error_metadata(exc: Exception) -> Dict[str, Any]:
             {
                 "field": " -> ".join(str(loc) for loc in err.get("loc", ())),
                 "rule": err.get("type"),
-                "message": err.get("msg"),
+                "message": _message_without_input(err),
             }
             for err in errors[:limit]
         ],

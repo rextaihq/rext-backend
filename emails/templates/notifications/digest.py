@@ -28,10 +28,10 @@ def _section_html(section: Dict) -> str:
         when = escape(str(item.get("when", "")))
         rows += f"""
         <tr>
-            <td style="padding: 10px 0; border-bottom: 1px solid #f0f0f0;">
-                <p style="color: #111827; font-size: 14px; font-weight: 600; margin: 0 0 2px 0; font-family: {_FONT};">{headline}</p>
-                <p style="color: #6b7280; font-size: 13px; line-height: 19px; margin: 0; font-family: {_FONT};">{detail}</p>
-                <p style="color: #9ca3af; font-size: 12px; margin: 4px 0 0 0; font-family: {_FONT};">{when}</p>
+            <td style="padding: 10px 0; border-bottom: 1px solid #f5f5f5;">
+                <p style="color: #171717; font-size: 14px; font-weight: 600; margin: 0 0 2px 0; font-family: {_FONT};">{headline}</p>
+                <p style="color: #737373; font-size: 13px; line-height: 19px; margin: 0; font-family: {_FONT};">{detail}</p>
+                <p style="color: #737373; font-size: 12px; margin: 4px 0 0 0; font-family: {_FONT};">{when}</p>
             </td>
         </tr>
         """
@@ -40,15 +40,15 @@ def _section_html(section: Dict) -> str:
     remaining = count - len(items)
     if remaining > 0:
         more = f"""
-        <p style="color: #6b7280; font-size: 13px; margin: 8px 0 0 0; font-family: {_FONT};">
+        <p style="color: #737373; font-size: 13px; margin: 8px 0 0 0; font-family: {_FONT};">
             + {remaining} more
         </p>
         """
 
     return f"""
     <div style="margin: 24px 0 0 0;">
-        <h3 style="color: #111827; font-size: 16px; font-weight: 700; margin: 0 0 6px 0; font-family: {_FONT};">
-            {title} <span style="color: #9ca3af; font-weight: 500;">({count})</span>
+        <h3 style="color: #171717; font-size: 16px; font-weight: 700; margin: 0 0 6px 0; font-family: {_FONT};">
+            {title} <span style="color: #737373; font-weight: 500;">({count})</span>
         </h3>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
             {rows}
@@ -93,18 +93,18 @@ def render_digest_email(
         [
             simple_header(),
             f"""
-        <h1 style="color: #111827; font-size: 26px; font-weight: 700; margin: 0 0 8px 0; font-family: {_FONT};">
+        <h1 style="color: #171717; font-size: 26px; font-weight: 700; margin: 0 0 8px 0; font-family: {_FONT};">
             Your {safe_label} Digest
         </h1>
-        <p style="color: #6b7280; font-size: 14px; margin: 0 0 24px 0; font-family: {_FONT};">
+        <p style="color: #737373; font-size: 14px; margin: 0 0 24px 0; font-family: {_FONT};">
             {safe_range}
         </p>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: {_FONT};">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: {_FONT};">
             Hi {safe_name},
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 8px 0; font-family: {_FONT};">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 8px 0; font-family: {_FONT};">
             Here's what happened in your account — <strong>{total_count}</strong>
             update{"s" if total_count != 1 else ""} in this period.
         </p>
@@ -112,7 +112,7 @@ def render_digest_email(
             sections_html,
             primary_button("View all activity", notifications_url),
             f"""
-        <p style="color: #9ca3af; font-size: 13px; line-height: 19px; margin: 32px 0 0 0; font-family: {_FONT};">
+        <p style="color: #737373; font-size: 13px; line-height: 19px; margin: 32px 0 0 0; font-family: {_FONT};">
             You're receiving this because the {safe_label.lower()} digest is enabled
             in your notification settings.
         </p>

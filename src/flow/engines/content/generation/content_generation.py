@@ -14,6 +14,7 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
+from src.api.config import settings
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
@@ -35,14 +36,19 @@ from src.flow.engines.content.generation.keyword_density import (
 from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
 from src.flow.engines.content.generation.outline import _fetch_known_entities
 from src.flow.engines.content.generation.outline_structure import (
+    faq_section_heading,
     format_guidance_for_prompt,
     format_structure_for_prompt,
     resolve_guidance_blocks,
     resolve_outline_structure,
 )
+from src.flow.engines.content.generation.provider_unavailable import StoppedAfterCharge
 from src.flow.engines.content.generation.repair_content import enforce_subheadings_for_spec
 from src.flow.engines.content.generation.requirements_spec import (
+    brand_kept_out_of_cta,
+    brand_named_in,
     build_requirements_spec,
+    excluded_brand_of,
     resolve_outline_cta,
 )
 from src.flow.engines.content.generation.structured_body import (
@@ -60,6 +66,7 @@ from src.flow.engines.content.generation.validation import (
     protected_links,
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.model.provider_outage import provider_outage
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.model.structure.outlines.schema_org import (
@@ -71,6 +78,7 @@ from src.utils.credit_manager import (
     STAGE_CREDITS,
     InsufficientCreditsError,
     _emit_credit_event,
+    can_afford_stage,
     consume_stage_credits,
 )
 from src.utils.image_placeholder import build_placeholder_marker
@@ -290,8 +298,14 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
 
     approved_faqs = extract_outline_faqs(outline)
     if approved_faqs:
+        faq_heading = faq_section_heading(outline, content_type)
+        where = (
+            f'in the section "{faq_heading}", the outline\'s FAQ section (add no other FAQ section)'
+            if faq_heading
+            else "in the FAQ section"
+        )
         lines.append(
-            "Approved FAQs (MUST all appear verbatim/near-verbatim in the FAQ section — do not invent replacements):"
+            f"Approved FAQs (MUST all appear verbatim/near-verbatim {where} — do not invent replacements):"
         )
         for faq in approved_faqs:
             lines.append(f"- Q: {_short_text(faq['question'], 220)}")
@@ -299,6 +313,27 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
                 lines.append(f"  A: {_short_text(faq['answer'], 400)}")
 
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
+
+
+async def _charge_delivered_image(content_state: dict, user_id, workspace_id) -> dict:
+    """Charge the featured image's credit once the image is in the article.
+
+    Once per run (image_credit_deducted), like the upfront stages. A run that can't
+    pay was told not to generate one; if the balance still fell short meanwhile, or
+    the charge failed, the image stays in the article and nobody is charged for it.
+    """
+    if content_state.get("image_credit_deducted"):
+        return content_state
+    stage = "featured_image"
+    try:
+        await consume_stage_credits(user_id, STAGE_CREDITS[stage], stage, workspace_id=workspace_id)
+    except InsufficientCreditsError:
+        logger.warning("generate_content: featured image delivered without its credit")
+        return content_state
+    except Exception:
+        logger.exception("generate_content: charging the featured image failed")
+        return content_state
+    return {**content_state, "image_credit_deducted": True}
 
 
 async def generate_content(state: REXT) -> dict:
@@ -716,10 +751,54 @@ async def generate_content(state: REXT) -> dict:
                     f"Before finishing, re-read your own opening (or ranked list) and confirm {brand_name} is actually there.\n"
                 )
 
+        # The user chose NO mention (rext-control#700). Skipping the promotion block alone left the
+        # writer free to name the brand, and the outline, generated before the choice, may already
+        # name it in a product list or the call to action.
+        excluded = excluded_brand_of(outline, title=topic, keyphrase=primary_keyword)
+        if excluded and not outline.get("promote_brand"):
+            excluded_name = excluded["brand_name"]
+            brand_promo_str = (
+                f"\n========================\n"
+                f"BRAND EXCLUSION — REQUIRED\n"
+                f"========================\n"
+                f"The user chose NO mention of {excluded_name}. Do not name {excluded_name}, or link to "
+                f"its site (the internal links you were given above stay), anywhere: not in the title, "
+                f"the introduction, the body, a heading, a list, the FAQs, the call to action or its "
+                f"link, the meta title or the meta description. Where the "
+                f"outline names {excluded_name} (a product list, a comparison, the call to action), "
+                f"write that part without it: name another real product where a list needs one, or "
+                f"none. This overrides any instruction to follow the outline's wording exactly.\n"
+            )
+            final_brand_reminder = (
+                f"\nFINAL CHECK BEFORE YOU WRITE: {excluded_name} appears nowhere in what you write, "
+                f"including the call to action and the meta description.\n"
+            )
+
         # 7️⃣b Build CTA block, only if the approved outline declares one for this content type
         outline_cta = resolve_outline_cta(outline)
         cta_str = ""
-        if outline_cta:
+        cta_brand = brand_kept_out_of_cta(outline)
+        if outline_cta and cta_brand and brand_named_in(outline_cta["text"], cta_brand):
+            # The outline's call to action names a brand the user's choice keeps out of a call to
+            # action (None, or Subtle's one body mention): its exact text would contradict that.
+            cta_str = (
+                f"\n========================\n"
+                f"CALL-TO-ACTION — REQUIRED\n"
+                f"========================\n"
+                f'The approved outline defines this CTA: "{outline_cta["text"]}"\n'
+                f"It names {cta_brand}, but the user's choice keeps {cta_brand} out of the call to "
+                f"action. Populate the 'cta' output field ({{text, url, placement}}) with the same "
+                f"intent in your own words, WITHOUT naming {cta_brand} or linking to its site, and make "
+                f"sure that same text also appears verbatim as an actual call-to-action inside "
+                f"body_markdown or the introduction.\n"
+            )
+        elif outline_cta:
+            cta_link_rule = (
+                f"Its link must not point to {cta_brand}'s site: the user's choice keeps "
+                f"{cta_brand} out of the call to action.\n"
+                if cta_brand
+                else ""
+            )
             cta_str = (
                 f"\n========================\n"
                 f"CALL-TO-ACTION — REQUIRED\n"
@@ -728,6 +807,7 @@ async def generate_content(state: REXT) -> dict:
                 f"Populate the 'cta' output field ({{text, url, placement}}) using this exact CTA text "
                 f"(or a close natural variant preserving the same meaning), and make sure that same "
                 f"text also appears verbatim as an actual call-to-action inside body_markdown or the introduction.\n"
+                f"{cta_link_rule}"
             )
 
         # 7️⃣c Title + subject lock.
@@ -824,11 +904,12 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
-        # Deduct all content stages before agent invoke (once, upfront). Guarded
+        # Deduct the content stages before agent invoke (once, upfront). Guarded
         # by credits_deducted so a checkpoint-driven resume of this node (e.g.
         # after a transient failure later in the function) doesn't deduct twice.
+        # The featured image is charged only once it is delivered (below).
         if not content_state.get("credits_deducted"):
-            for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
+            for _stage in ("content_drafting", "humanization", "deep_research"):
                 try:
                     await consume_stage_credits(
                         user_id, STAGE_CREDITS[_stage], _stage, workspace_id=workspace_id
@@ -856,6 +937,19 @@ async def generate_content(state: REXT) -> dict:
         # and to hand validate_content real citation ground truth via
         # generation_meta.searched_results.
         counters = {"search": [0], "image_task": None, "search_results": []}
+
+        # The image is charged on delivery, so check now that the run can pay for
+        # it: without the credit the writer gets the manual-upload placeholder
+        # instead of a paid image nobody is charged for.
+        if (
+            settings.AI_IMAGE_GENERATION_ENABLED
+            and not content_state.get("image_credit_deducted")
+            and not await can_afford_stage(user_id, "featured_image", workspace_id=workspace_id)
+        ):
+            counters["image_allowed"] = False
+            logger.info(
+                "generate_content: no credit left for the featured image; not generating it"
+            )
 
         # Current facts from the official sites of the brand and every product the
         # outline names, fetched before writing. The calls count against the SAME
@@ -1209,6 +1303,7 @@ async def generate_content(state: REXT) -> dict:
                 )
                 content_dict["images"] = images_list
                 logger.info("generate_content: image injected -> %s", image_url)
+                content_state = await _charge_delivered_image(content_state, user_id, workspace_id)
             else:
                 logger.info(
                     "generate_content: image task returned no valid URL; skipping injection."
@@ -1319,6 +1414,10 @@ async def generate_content(state: REXT) -> dict:
         }
 
     except Exception as e:
+        # The AI provider unavailable ends the run with its notice (stop_on_outage, G75.1). The notice
+        # keeps the marks of the stages charged above, so a retry on this thread doesn't charge them again.
+        if provider_outage(e) is not None:
+            raise StoppedAfterCharge(content_state) from e
         logger.exception(f"Error generating content: {str(e)}")
         return {
             "content": {

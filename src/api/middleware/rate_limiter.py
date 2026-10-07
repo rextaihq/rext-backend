@@ -29,6 +29,7 @@ from fastapi import HTTPException, Request, status
 
 from src.api.cache.redis_client import cache
 from src.api.lib.log_policy import get_event_level, log_with_level
+from src.utils.ip_allowlist import limiter_client_host, mask_ip
 from src.utils.logger import logger
 
 SECONDS_PER_MINUTE = 60
@@ -36,6 +37,16 @@ SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE
 SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
 REDIS_TTL_GRACE_SECONDS = SECONDS_PER_MINUTE
 CLEANUP_TRIGGER_REQUEST_COUNT = 1000
+
+
+def key_for_logs(client_key: str) -> str:
+    """
+    A client key as a log line may show it: the address in an ``ip:`` key masked to
+    its network (``ip:203.0.113.0/24``), the rest as it is. The limiter itself still
+    counts by the full key.
+    """
+    head, sep, address = client_key.rpartition("ip:")
+    return f"{head}{sep}{mask_ip(address)}" if sep else client_key
 
 
 @dataclass(frozen=True)
@@ -214,15 +225,15 @@ class RateLimiter:
         """
         Generate a unique key for the client.
 
-        Prefers user ID if authenticated, falls back to IP address.
-        Uses request.client.host (set by ProxyHeadersMiddleware for proxied requests).
+        Prefers user ID if authenticated, falls back to IP address: the visitor's
+        (set by ProxyHeadersMiddleware for proxied requests), or the direct peer when
+        the trusted-proxy setting is a catch-all (limiter_client_host).
         """
         user_id = getattr(request.state, "user_id", None)
         if user_id:
             return f"user:{user_id}"
 
-        client_ip = request.client.host if request.client else "unknown"
-        return f"ip:{client_ip}"
+        return f"ip:{limiter_client_host(request)}"
 
     def cleanup_old_entries(self) -> int:
         """
@@ -310,7 +321,7 @@ class RateLimiterMiddleware:
             log_with_level(
                 logger,
                 get_event_level("rate_limit_exceeded"),
-                f"Rate limit exceeded for {client_key}: {limit_type} limit reached. Retry after {retry_after}s",
+                f"Rate limit exceeded for {key_for_logs(client_key)}: {limit_type} limit reached. Retry after {retry_after}s",
             )
 
             # Standard 429 response
@@ -398,7 +409,7 @@ class EndpointRateLimiter:
         """
         # Get client identifier
         user_id = getattr(request.state, "user_id", None)
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = limiter_client_host(request)
 
         # Base key is IP-based
         client_key = f"ip:{client_ip}"
@@ -446,7 +457,7 @@ class EndpointRateLimiter:
                     log_with_level(
                         logger,
                         get_event_level("rate_limit_exceeded"),
-                        f"Rate limit exceeded for {client_key} on {self.description}: "
+                        f"Rate limit exceeded for {key_for_logs(client_key)} on {self.description}: "
                         f"{count}/{self.requests} in {self.window_seconds}s",
                     )
                     raise HTTPException(
@@ -485,7 +496,7 @@ class EndpointRateLimiter:
             log_with_level(
                 logger,
                 get_event_level("rate_limit_exceeded"),
-                f"Rate limit exceeded for {client_key} on {self.description}: "
+                f"Rate limit exceeded for {key_for_logs(client_key)} on {self.description}: "
                 f"{len(timestamps)}/{self.requests} in {self.window_seconds}s",
             )
 

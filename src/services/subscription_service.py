@@ -17,6 +17,7 @@ Does NOT:
 - Process payments (that's payment service - future)
 """
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -53,6 +54,7 @@ from src.providers.payment.provider_factory import get_payment_provider_singleto
 from src.services.audit_logger import audit_logger
 from src.services.duplicate_subscriptions import is_known_duplicate
 from src.services.notification_helper import schedule_if_allowed
+from src.services.refund_cancellation import is_ended_by_refund
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
 
@@ -96,7 +98,8 @@ def billing_action(
     subscription); a paused one, or a cancelled one whose end hasn't come, is
     resumed. Either way a second subscription would bill twice.
     """
-    if subscription is None or is_known_duplicate(subscription):
+    # A duplicate, or a subscription a full refund ended, is never offered back.
+    if subscription is None or is_known_duplicate(subscription) or is_ended_by_refund(subscription):
         return None
     status = subscription.status
     if status in (SubscriptionStatus.PAST_DUE, SubscriptionStatus.SUSPENDED):
@@ -407,8 +410,24 @@ class SubscriptionService:
 
         logger.info(f"🔍 DEBUG: Variant ID is {variant_id}")
 
-        # A repeated request for the same checkout gets the one already open.
-        reuse_key = f"checkout:open:{user_id}:{variant_id}:{discount_code or ''}"
+        # A repeated request for the same checkout gets the one already open: the same
+        # in everything that changes the checkout (plan, discount, affiliate, where it
+        # returns), so a different affiliate or return address opens its own.
+        reuse_key = (
+            "checkout:open:"
+            + hashlib.sha256(
+                "\x1f".join(
+                    [
+                        str(user_id),
+                        str(variant_id),
+                        discount_code or "",
+                        affiliate_code or "",
+                        success_url or "",
+                        cancel_url or "",
+                    ]
+                ).encode()
+            ).hexdigest()
+        )
         open_checkout = await cache.get(reuse_key)
         if open_checkout:
             logger.info(

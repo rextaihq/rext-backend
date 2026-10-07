@@ -50,8 +50,8 @@ def create_invitation_reminder_email(
     description_html = ""
     if workspace_description:
         description_html = f"""
-        <div style="margin: 24px 0; padding: 16px; background-color: #f9fafb; border-radius: 6px; border-left: 4px solid #3b82f6;">
-            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin: 24px 0; padding: 16px; background-color: #fafafa; border-radius: 6px; border-left: 4px solid #111a17;">
+            <p style="color: #404040; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>About this workspace:</strong><br>
                 {workspace_description}
             </p>
@@ -72,12 +72,12 @@ def create_invitation_reminder_email(
         [
             simple_header(workspace_name),
             """
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             ⏰ Reminder: Your workspace invitation is expiring soon
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             This is a friendly reminder that <strong>{inviter_name}</strong> has invited you to join <strong>{workspace_name}</strong>.
         </p>
         """,
@@ -89,18 +89,18 @@ def create_invitation_reminder_email(
         </div>
         """,
             f"""
-        <div style="margin: 24px 0; padding: 20px; background-color: #eff6ff; border-radius: 6px; border: 1px solid #bfdbfe;">
+        <div style="margin: 24px 0; padding: 20px; background-color: #fafafa; border-radius: 6px; border: 1px solid #e5e5e5;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                     <td style="padding: 8px 0;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                        <p style="color: #404040; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                             <strong>Your Role:</strong> {role_name}
                         </p>
                     </td>
                 </tr>
                 <tr>
                     <td style="padding: 8px 0;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                        <p style="color: #404040; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                             <strong>Workspace:</strong> {workspace_name}
                         </p>
                     </td>
@@ -110,17 +110,17 @@ def create_invitation_reminder_email(
         """,
             description_html,
             """
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Don't miss this opportunity! Click the button below to accept your invitation now:
         </p>
         """,
             primary_button("Accept Invitation Now", invitation_url),
             f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 24px; padding: 16px; background-color: #f5f5f5; border-radius: 6px;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
             </p>
-            <p style="color: #3b82f6; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
+            <p style="color: #171717; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
                 {invitation_url}
             </p>
         </div>
@@ -138,8 +138,8 @@ def create_invitation_reminder_email(
         </div>
         """,
             f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin-top: 32px; border-top: 1px solid #e5e5e5; padding-top: 24px;">
+            <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 If you don't want to join {workspace_name}, you can safely ignore this email. The invitation will expire automatically.
             </p>
         </div>

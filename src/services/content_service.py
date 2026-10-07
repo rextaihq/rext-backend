@@ -13,6 +13,7 @@ from uuid import UUID
 
 import markdown
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -55,6 +56,14 @@ from src.utils.wordpress_status import (
 )
 from src.web.shopify_bridge import ShopifyAppBridge
 from src.web.wordpress import WordPressPublisher
+
+# How many slugs a save tries when other saves keep taking the one it read as free (G58).
+SLUG_ATTEMPTS = 4
+
+
+def _is_slug_conflict(exc: IntegrityError) -> bool:
+    """Whether the insert or update broke the workspace's unique slug, not another constraint."""
+    return "uq_content_workspace_slug" in str(getattr(exc, "orig", exc))
 
 
 def _extract_feature_image_url(images_data: Any) -> Optional[str]:
@@ -114,6 +123,42 @@ class ContentService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _flush_with_free_slug(self, content: Content, title: str, workspace_id: UUID) -> None:
+        """Give the article a free slug for its title, and flush it (G58, revnix/rext-control#510).
+
+        generate_unique_slug reads the slugs in use, so two saves of one title at the same moment
+        can pick the same slug, and the second insert breaks uq_content_workspace_slug. Each try
+        runs in a savepoint, and on that conflict the other save has committed, so reading again
+        finds the next free slug. uq_content_workspace_slug covers the trash, so a trashed
+        article's slug is taken too.
+        """
+        # Read before any try: a savepoint rolled back expires the article, and reading an expired
+        # attribute is I/O an async session can't do on attribute access.
+        exclude_id = content.id
+        for attempt in range(1, SLUG_ATTEMPTS + 1):
+            try:
+                async with self.db.begin_nested():
+                    content.slug = await generate_unique_slug(
+                        self.db,
+                        slugify(title),
+                        Content,
+                        workspace_id=workspace_id,
+                        exclude_id=exclude_id,
+                        include_deleted=True,
+                    )
+                    self.db.add(content)
+                    await self.db.flush()
+                if attempt > 1:
+                    await self.db.refresh(content)
+                return
+            except IntegrityError as exc:
+                if attempt == SLUG_ATTEMPTS or not _is_slug_conflict(exc):
+                    raise
+                logger.info(
+                    "Content slug taken by a concurrent save; choosing another",
+                    extra={"workspace_id": str(workspace_id), "attempt": attempt},
+                )
 
     async def _title_taken(
         self, workspace_id: UUID, title: str, exclude_id: Optional[UUID] = None
@@ -184,18 +229,11 @@ class ContentService:
                 resource_type="Content", conflicting_field="title", conflicting_value=data.title
             )
 
-        base_slug = slugify(data.title)
-        # uq_content_workspace_slug covers the trash, so a trashed article's slug is taken too.
-        unique_slug = await generate_unique_slug(
-            self.db, base_slug, Content, workspace_id=workspace_id, include_deleted=True
-        )
-
-        # Create main content
+        # Create main content; its slug is chosen as it's saved (_flush_with_free_slug).
         content = Content(
             workspace_id=workspace_id,
             created_by_user_id=user_id,
             title=data.title,
-            slug=unique_slug,
             introduction=data.introduction,
             body_markdown=data.body_markdown,
             body_html=data.body_html,
@@ -212,8 +250,7 @@ class ContentService:
             updated_at=datetime.now(timezone.utc),
         )
 
-        self.db.add(content)
-        await self.db.flush()
+        await self._flush_with_free_slug(content, data.title, workspace_id)
 
         # Save SEO data
         if data.seo_data:
@@ -271,15 +308,10 @@ class ContentService:
                     resource_type="Content", conflicting_field="title", conflicting_value=data.title
                 )
 
-            content.slug = await generate_unique_slug(
-                self.db,
-                slugify(data.title),
-                Content,
-                workspace_id=workspace_id,
-                exclude_id=content.id,
-                include_deleted=True,
-            )
             content.title = data.title
+            renamed = True
+        else:
+            renamed = False
 
         # Captured before the assignment: the transition is the fact the
         # activity feed is recording, and once the column is overwritten there
@@ -334,6 +366,9 @@ class ContentService:
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
+        if renamed:
+            # The new title's slug, chosen as it's saved: another save may be taking it now.
+            await self._flush_with_free_slug(content, content.title, workspace_id)
 
         # Only upsert embedding if title or introduction might have changed
         # We can optimize by just running it on every update for safety, as requested by the user.

@@ -447,6 +447,188 @@ async def test_html_disguised_as_image_is_rejected_before_upload():
 
 
 @pytest.mark.asyncio
+async def test_a_body_image_that_cannot_be_uploaded_stops_the_publish():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    first = "https://cdn.rext.test/first.png"
+    second = "https://cdn.rext.test/second.png?X-Amz-Signature=secret-token"
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=[
+            {"media_id": 41, "url": "https://example.com/wp-content/uploads/first.png"},
+            RextExternalServiceException(
+                message="WordPress media API returned HTTP 413; expected HTTP 201; body=too large",
+                service_name="WordPress",
+            ),
+        ]
+    )
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(
+                title="Two images",
+                body_html=f'<img src="{first}"><p>Text</p><img src="{second}">',
+            )
+        )
+
+    assert "HTTP 413" in raised.value.message
+    assert "https://cdn.rext.test/second.png" in raised.value.message
+    assert "secret-token" not in raised.value.message
+    publisher.client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_featured_image_the_body_shows_is_not_downloaded_twice_when_it_fails():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=RextExternalServiceException(
+            message="Downloaded resource is not a valid image", service_name="WordPress"
+        )
+    )
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped"):
+        await publisher.publish_post(
+            ContentCreate(
+                title="Featured and inline",
+                body_markdown="![Hero](https://cdn.rext.test/hero.png)\n\nText.",
+                images_data={"feature_image_url": "https://cdn.rext.test/hero.png"},
+            )
+        )
+
+    assert publisher._upload_featured_image.await_count == 1
+    publisher.client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_featured_image_already_in_the_sites_library_does_not_stop_the_publish():
+    # Not example.com: the publisher drops images on such placeholder hosts before any upload.
+    publisher = WordPressPublisher(
+        site_url="https://blog.rext.test", username="user", app_password="pass"
+    )
+    hero = "https://blog.rext.test/wp-content/uploads/2026/07/hero.png"
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=RextExternalServiceException(
+            message="WordPress media API returned HTTP 403", service_name="WordPress"
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201, json={"id": 92, "status": "publish", "title": "Own image", "featured_media": 0}
+        )
+    )
+
+    await publisher.publish_post(
+        ContentCreate(
+            title="Own image",
+            body_html=f'<img src="{hero}"><p>Text.</p>',
+            images_data={"feature_image_url": hero},
+        )
+    )
+
+    payload = publisher.client.post.await_args.kwargs["json"]
+    assert payload["featured_media"] == 0
+    assert hero in payload["content"]
+    assert publisher._upload_featured_image.await_count == 1
+
+
+def test_a_scheduled_publish_tells_the_person_which_image_and_what_to_do():
+    from src.tasks.scheduled_tasks import _get_publish_failure_reason
+    from src.web.wordpress import BodyImageUploadError
+
+    error = BodyImageUploadError(
+        "https://cdn.rext.test/images/second.png?X-Amz-Signature=secret-token",
+        "WordPress media API returned HTTP 413",
+    )
+
+    notice = _get_publish_failure_reason(error)
+
+    assert "second.png" in notice
+    assert "Replace or remove it" in notice
+    assert "secret-token" not in notice
+    assert "HTTP 413" not in notice
+    assert "HTTP 413" in error.message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("media_status", "retried"), [(413, False), (401, False), (429, True), (503, True)]
+)
+async def test_a_scheduled_publish_retries_only_an_image_failure_that_may_pass(
+    monkeypatch, media_status, retried
+):
+    from src.tasks.scheduled_tasks import _is_transient_publish_error
+
+    # The upload's own retries on HTTP 429 wait between attempts.
+    monkeypatch.setattr("src.web.wordpress.asyncio.sleep", AsyncMock())
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.rext.test/image.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(return_value=httpx.Response(media_status, json={}))
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException) as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Retry", body_html='<img src="https://cdn.rext.test/image.png">')
+        )
+
+    assert _is_transient_publish_error(raised.value) is retried
+
+
+def test_an_image_that_isnt_one_is_not_retried():
+    from src.tasks.scheduled_tasks import _is_transient_publish_error
+    from src.web.wordpress import _body_image_refusal
+
+    refusal = _body_image_refusal(
+        RextExternalServiceException(
+            message="Downloaded resource is not a valid image", service_name="WordPress"
+        ),
+        "https://cdn.rext.test/expired.png",
+    )
+
+    assert _is_transient_publish_error(refusal) is False
+
+
+@pytest.mark.asyncio
+async def test_a_featured_image_outside_the_body_that_fails_is_left_out():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=RextExternalServiceException(
+            message="Downloaded resource is not a valid image", service_name="WordPress"
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201, json={"id": 91, "status": "publish", "title": "No hero", "featured_media": 0}
+        )
+    )
+
+    result = await publisher.publish_post(
+        ContentCreate(
+            title="No hero",
+            body_html="<p>Text only.</p>",
+            images_data={"feature_image_url": "https://cdn.rext.test/hero.png"},
+        )
+    )
+
+    assert result["post_id"] == 91
+    assert publisher.client.post.await_args.kwargs["json"]["featured_media"] == 0
+
+
+@pytest.mark.asyncio
 async def test_post_must_confirm_featured_media_id():
     publisher = WordPressPublisher(
         site_url="https://example.com", username="user", app_password="pass"
@@ -723,3 +905,354 @@ async def test_creates_missing_wordpress_category_and_assigns_its_id():
     assert create_call.args[0] == "https://example.com/wp-json/wp/v2/categories"
     assert create_call.kwargs["json"] == {"name": "WordPress"}
     assert publish_call.kwargs["json"]["categories"] == [12]
+
+
+# --- G59b (revnix/rext-control#632): a stopped publish names the status, never the body ---
+
+_SIGNED = "https://cdn.rext.test/images/gone.png?X-Amz-Signature=secret-token&X-Amz-Expires=600"
+
+
+def _publisher_downloading(response: httpx.Response) -> WordPressPublisher:
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(return_value=response)
+    publisher.client.send = AsyncMock()
+    publisher.client.post = AsyncMock()
+    return publisher
+
+
+async def _stopped_message(publisher: WordPressPublisher) -> str:
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Gone image", body_markdown=f"Text.\n\n![Gone]({_SIGNED})\n")
+        )
+    publisher.client.post.assert_not_awaited()
+    return raised.value.message
+
+
+@pytest.mark.asyncio
+async def test_a_404_page_echoing_the_signed_address_stays_out_of_the_message(caplog):
+    """Google's 404 page wrote the requested path and its signed query back into the reason."""
+    page = (
+        "<!DOCTYPE html><html><title>Error 404 (Not Found)!!1</title><p>The requested URL "
+        "<code>/images/gone.png?X-Amz-Signature=secret-token&amp;X-Amz-Expires=600</code> "
+        "was not found on this server." + " padding" * 300 + "</html>"
+    )
+    publisher = _publisher_downloading(
+        httpx.Response(404, text=page, request=httpx.Request("GET", _SIGNED))
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "HTTP 404" in message
+    assert "X-Amz-" not in message and "secret-token" not in message
+    assert "body=" not in message and "<" not in message
+    assert len(message) < 300
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "secret-token" not in logged
+
+
+@pytest.mark.asyncio
+async def test_an_s3_error_body_never_shows_its_signature_even_in_the_log(caplog):
+    xml = (
+        "<?xml version='1.0' encoding='UTF-8'?><Error><Code>SignatureDoesNotMatch</Code>"
+        "<AWSAccessKeyId>AKIAEXAMPLEKEY</AWSAccessKeyId><SignatureProvided>secret-token"
+        "</SignatureProvided><StringToSign>AWS4-HMAC-SHA256\n20261007T000000Z\nsecret-scope"
+        "</StringToSign><CanonicalRequest>GET\n/images/gone.png\nX-Amz-Signature=secret-token"
+        "</CanonicalRequest></Error>"
+    )
+    publisher = _publisher_downloading(
+        httpx.Response(403, text=xml, request=httpx.Request("GET", _SIGNED))
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "HTTP 403" in message and "SignatureDoesNotMatch" not in message
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "SignatureDoesNotMatch" in logged  # the log keeps what went wrong…
+    for secret in ("secret-token", "AKIAEXAMPLEKEY", "secret-scope"):
+        assert secret not in logged  # …and never the request's credentials
+
+
+@pytest.mark.asyncio
+async def test_a_wordpress_refusal_names_its_status_without_its_body():
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\n" + b"0" * 64,
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.rext.test/fine.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(
+            413,
+            json={"code": "rest_upload_too_large", "message": "x" * 2000},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Too big", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    assert "HTTP 413" in raised.value.message
+    assert (
+        "body=" not in raised.value.message and "rest_upload_too_large" not in raised.value.message
+    )
+    assert len(raised.value.message) < 300
+
+
+@pytest.mark.asyncio
+async def test_the_servers_own_reason_phrase_stays_out_of_the_message():
+    publisher = _publisher_downloading(
+        httpx.Response(
+            404,
+            text="gone",
+            request=httpx.Request("GET", _SIGNED),
+            extensions={
+                "reason_phrase": b"Not Found /images/gone.png?X-Amz-Signature=secret-token"
+            },
+        )
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "HTTP 404 Not Found" in message and "secret-token" not in message
+
+
+def _publisher_uploading(upload: httpx.Response) -> WordPressPublisher:
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\n" + b"0" * 64,
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.rext.test/fine.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(return_value=upload)
+    publisher.client.post = AsyncMock()
+    return publisher
+
+
+@pytest.mark.asyncio
+async def test_every_log_of_a_wordpress_upload_body_is_redacted(caplog):
+    caplog.set_level("INFO")
+    publisher = _publisher_uploading(
+        httpx.Response(
+            413,
+            json={"message": "refused https://cdn.rext.test/fine.png?X-Amz-Signature=secret-token"},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped"):
+        await publisher.publish_post(
+            ContentCreate(title="Refused", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    assert "secret-token" not in " ".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_json_shape_is_a_plain_reason():
+    publisher = _publisher_uploading(
+        httpx.Response(
+            201,
+            json=["https://cdn.rext.test/fine.png?X-Amz-Signature=secret-token"] * 50,
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped") as raised:
+        await publisher.publish_post(
+            ContentCreate(title="Odd", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    assert "unexpected response" in raised.value.message
+    assert "secret-token" not in raised.value.message and len(raised.value.message) < 300
+
+
+def _response(body, status=500, content_type="application/json"):
+    return httpx.Response(
+        status,
+        content=body if isinstance(body, bytes) else body.encode(),
+        headers={"content-type": content_type},
+        request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+    )
+
+
+def test_a_logged_body_is_a_summary_never_its_text():
+    """G59b's redactors knew addresses and S3's fields; a secret under any other name went to the
+    log as is (G59c, revnix/rext-control#636)."""
+    from src.web.wordpress import _body_summary
+
+    body = '{"code": "rest_forbidden", "authorization": "Bearer secret-token"}'
+
+    logged = _body_summary(_response(body, 403))
+
+    assert logged == f"{len(body)} bytes, application/json, code rest_forbidden"
+
+
+def test_an_s3_error_names_its_code_and_nothing_of_the_request():
+    from src.web.wordpress import _body_summary
+
+    body = (
+        "<Error><Code>SignatureDoesNotMatch</Code><CanonicalRequest>GET\n/images/gone.png\n"
+        "X-Amz-Credential=AKIAEXAMPLEKEY%2F20261007&X-Amz-Signature=secret-token"
+        "</CanonicalRequest></Error>"
+    )
+
+    logged = _body_summary(_response(body, 403, "application/xml"))
+
+    assert logged.endswith("application/xml, code SignatureDoesNotMatch")
+    assert "AKIAEXAMPLEKEY" not in logged and "secret-token" not in logged
+
+
+@pytest.mark.parametrize(
+    ("body", "content_type"),
+    [
+        ('{"code": "4f9a2b7c1e"}', "application/json"),  # an OAuth reply's code is a credential
+        ('{"code": "secret-token"}', "application/json"),  # letters only, still not an error
+        ('{"code": "secrettoken"}', "application/json"),
+        ("<Error><Code>SecretToken</Code></Error>", "application/xml"),
+    ],
+)
+def test_a_code_that_is_not_a_known_error_is_left_out(body, content_type):
+    """Review round 1 of #898: a token can be letters only, so a code is logged only when it's a
+    WordPress REST error or one of S3's."""
+    from src.web.wordpress import _body_summary
+
+    logged = _body_summary(_response(body, 400, content_type))
+
+    assert "code" not in logged and "ecret" not in logged
+
+
+def test_a_huge_error_page_is_measured_not_read():
+    from src.web.wordpress import _body_summary
+
+    body = b"<p>" + b"x" * 5_000_000 + b'"code": "late_code"</p>'
+
+    logged = _body_summary(_response(body, 404, "text/html; charset=utf-8"))
+
+    assert logged == f"{len(body)} bytes, text/html"  # the code past the scanned bytes isn't read
+
+
+@pytest.mark.parametrize(
+    "content_type", ["text/html, secret-token", "application/secret-token", "text/x-secret"]
+)
+def test_a_media_type_that_is_not_a_known_one_is_left_out(content_type):
+    """Review round 2 of #898: the header is the remote's text, whatever its shape."""
+    from src.web.wordpress import _body_summary
+
+    assert _body_summary(_response("x", 500, content_type)) == "1 bytes"
+
+
+def test_an_unexpected_json_value_is_described_by_its_shape():
+    from src.web.wordpress import _json_shape
+
+    assert _json_shape(["https://cdn.rext.test/a.png?X-Amz-Signature=s"] * 3) == "a list of 3 items"
+    assert _json_shape("secret-token") == "a string of 12 characters"
+    assert _json_shape({"id": "x", "access-token-abc": 1, "source_url": "s"}) == (
+        "an object with 3 keys (expected ones: id, source_url)"
+    )
+    assert _json_shape({"access-token-abc": 1}) == "an object with 1 key (expected ones: none)"
+    assert _json_shape(None) == "NoneType"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_upload_logs_its_code_and_no_field_of_its_body(caplog):
+    caplog.set_level("INFO")
+    publisher = _publisher_uploading(
+        httpx.Response(
+            500,
+            json={"code": "rest_upload_error", "authorization": "Bearer secret-token"},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="Publishing stopped"):
+        await publisher.publish_post(
+            ContentCreate(title="Refused", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "code rest_upload_error" in logged
+    assert "secret-token" not in logged and "authorization" not in logged
+
+
+@pytest.mark.asyncio
+async def test_no_publish_step_decodes_a_whole_body(monkeypatch):
+    """`response.text` decoded a body whole before a log line cut it: a large error page was
+    decoded for nothing."""
+
+    def decoded_whole(self):
+        raise AssertionError("a response body was decoded whole")
+
+    monkeypatch.setattr(httpx.Response, "text", property(decoded_whole))
+    publisher = _publisher_uploading(
+        httpx.Response(
+            413,
+            content=b"<html>" + b"x" * 1_000_000 + b"</html>",
+            headers={"content-type": "text/html"},
+            request=httpx.Request("POST", "https://example.com/wp-json/wp/v2/media"),
+        )
+    )
+
+    with pytest.raises(RextExternalServiceException, match="HTTP 413"):
+        await publisher.publish_post(
+            ContentCreate(title="Too big", body_markdown="![Fine](https://cdn.rext.test/fine.png)")
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_200_error_page_echoing_the_signed_address_stays_out_of_the_message(caplog):
+    """A storage or CDN error page served as 200 was quoted in the reason (its body_preview)."""
+    page = (
+        "<html><body>Not found: /images/gone.png?X-Amz-Signature=secret-token"
+        + " pad" * 200
+        + "</body></html>"
+    )
+    publisher = _publisher_downloading(
+        httpx.Response(
+            200,
+            text=page,
+            headers={"content-type": "text/html; charset=utf-8"},
+            request=httpx.Request("GET", _SIGNED),
+        )
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "not a valid image (text/html" in message
+    assert "secret-token" not in message and "Not found" not in message
+    assert len(message) < 300
+    assert "secret-token" not in " ".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_media_type_is_named_neither_in_the_reason_nor_the_log(caplog):
+    caplog.set_level("INFO")
+    publisher = _publisher_downloading(
+        httpx.Response(
+            200,
+            text="not an image",
+            headers={"content-type": "application/secret-token"},
+            request=httpx.Request("GET", _SIGNED),
+        )
+    )
+
+    message = await _stopped_message(publisher)
+
+    assert "not a valid image (another type, 12 bytes)" in message
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "secret-token" not in message and "application/secret-token" not in logged

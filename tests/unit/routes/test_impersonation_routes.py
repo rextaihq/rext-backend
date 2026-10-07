@@ -4,13 +4,27 @@ Unit tests for impersonation API routes.
 Tests the impersonation status endpoint with various JWT token scenarios.
 """
 
+import json
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 
 from src.api.routes.users.impersonation import get_impersonation_status
+from src.services.impersonation_service import ImpersonationService
+
+
+async def _status(current_user: dict, *, session_valid: bool = True) -> dict:
+    """The route's data, as the client reads it from the response envelope."""
+    with patch.object(
+        ImpersonationService, "is_session_valid", AsyncMock(return_value=session_valid)
+    ):
+        response = await get_impersonation_status(
+            request=None, db=AsyncMock(), current_user=current_user
+        )
+    return json.loads(response.body)["data"]
 
 
 @pytest.mark.asyncio
@@ -19,14 +33,14 @@ async def test_get_impersonation_status_not_impersonating():
     # Arrange - Regular user without impersonation flag
     current_user = {
         "identity": str(uuid4()),
-        "username": "regular_user",
+        "full_name": "regular_user",
         "email": "user@example.com",
         "roles": ["editor"],
         "permissions": ["content.read"],
     }
 
     # Act
-    result = await get_impersonation_status(current_user=current_user)
+    result = await _status(current_user)
 
     # Assert
     assert result == {"is_impersonating": False}
@@ -38,7 +52,7 @@ async def test_get_impersonation_status_not_impersonating_explicit_false():
     # Arrange - User with explicit is_impersonating=False
     current_user = {
         "identity": str(uuid4()),
-        "username": "regular_user",
+        "full_name": "regular_user",
         "email": "user@example.com",
         "roles": ["editor"],
         "permissions": ["content.read"],
@@ -46,7 +60,7 @@ async def test_get_impersonation_status_not_impersonating_explicit_false():
     }
 
     # Act
-    result = await get_impersonation_status(current_user=current_user)
+    result = await _status(current_user)
 
     # Assert
     assert result == {"is_impersonating": False}
@@ -62,7 +76,7 @@ async def test_get_impersonation_status_while_impersonating():
 
     current_user = {
         "identity": impersonated_user_id,
-        "username": "target_user",
+        "full_name": "target_user",
         "email": "target@example.com",
         "roles": ["viewer"],
         "permissions": ["content.read"],
@@ -72,7 +86,7 @@ async def test_get_impersonation_status_while_impersonating():
     }
 
     # Act
-    result = await get_impersonation_status(current_user=current_user)
+    result = await _status(current_user)
 
     # Assert
     assert result["is_impersonating"] is True
@@ -80,7 +94,7 @@ async def test_get_impersonation_status_while_impersonating():
     assert result["impersonated_user_id"] == impersonated_user_id
     assert result["impersonated_user_email"] == "target@example.com"
     assert result["impersonated_user_name"] == "target_user"
-    assert result["started_at"] == started_at
+    assert result["started_at"] == started_at.isoformat()
 
 
 @pytest.mark.asyncio
@@ -89,11 +103,11 @@ async def test_get_impersonation_status_with_all_fields():
     # Arrange - Full impersonation context
     original_user_id = str(uuid4())
     impersonated_user_id = str(uuid4())
-    started_at = datetime(2025, 10, 7, 10, 0, 0)
+    started_at = datetime(2025, 10, 7, 10, 0, 0, tzinfo=timezone.utc)
 
     current_user = {
         "identity": impersonated_user_id,
-        "username": "john_doe",
+        "full_name": "john_doe",
         "email": "john@example.com",
         "roles": ["editor", "viewer"],
         "permissions": ["content.read", "content.update"],
@@ -103,7 +117,7 @@ async def test_get_impersonation_status_with_all_fields():
     }
 
     # Act
-    result = await get_impersonation_status(current_user=current_user)
+    result = await _status(current_user)
 
     # Assert - Verify all fields present and correct
     assert result["is_impersonating"] is True
@@ -111,7 +125,7 @@ async def test_get_impersonation_status_with_all_fields():
     assert result["impersonated_user_id"] == impersonated_user_id
     assert result["impersonated_user_email"] == "john@example.com"
     assert result["impersonated_user_name"] == "john_doe"
-    assert result["started_at"] == started_at
+    assert result["started_at"] == started_at.isoformat()
 
 
 @pytest.mark.asyncio
@@ -122,14 +136,14 @@ async def test_get_impersonation_status_with_missing_optional_fields():
 
     current_user = {
         "identity": impersonated_user_id,
-        "username": "target_user",
+        "full_name": "target_user",
         "email": "target@example.com",
         "is_impersonating": True,
         # Missing: original_user_id, impersonation_started_at
     }
 
     # Act
-    result = await get_impersonation_status(current_user=current_user)
+    result = await _status(current_user)
 
     # Assert - Should still work with None values for missing fields
     assert result["is_impersonating"] is True
@@ -147,7 +161,7 @@ async def test_get_impersonation_status_empty_user_dict():
     current_user = {}
 
     # Act
-    result = await get_impersonation_status(current_user=current_user)
+    result = await _status(current_user)
 
     # Assert
     assert result == {"is_impersonating": False}
@@ -159,7 +173,7 @@ async def test_get_impersonation_status_response_structure():
     # Arrange
     current_user = {
         "identity": str(uuid4()),
-        "username": "target",
+        "full_name": "target",
         "email": "target@example.com",
         "is_impersonating": True,
         "original_user_id": str(uuid4()),
@@ -167,7 +181,7 @@ async def test_get_impersonation_status_response_structure():
     }
 
     # Act
-    result = await get_impersonation_status(current_user=current_user)
+    result = await _status(current_user)
 
     # Assert - Verify all expected keys exist
     expected_keys = {
@@ -177,5 +191,40 @@ async def test_get_impersonation_status_response_structure():
         "impersonated_user_email",
         "impersonated_user_name",
         "started_at",
+        "session_id",
     }
     assert set(result.keys()) == expected_keys
+
+
+@pytest.mark.asyncio
+async def test_get_impersonation_status_refuses_an_ended_session():
+    """A token from an impersonation session that has been ended gets a 401."""
+    current_user = {
+        "identity": str(uuid4()),
+        "email": "target@example.com",
+        "is_impersonating": True,
+        "original_user_id": str(uuid4()),
+        "session_id": str(uuid4()),
+    }
+
+    with pytest.raises(HTTPException) as error:
+        await _status(current_user, session_valid=False)
+
+    assert error.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_impersonation_status_reports_a_live_session():
+    session_id = str(uuid4())
+    current_user = {
+        "identity": str(uuid4()),
+        "email": "target@example.com",
+        "is_impersonating": True,
+        "original_user_id": str(uuid4()),
+        "session_id": session_id,
+    }
+
+    result = await _status(current_user)
+
+    assert result["is_impersonating"] is True
+    assert result["session_id"] == session_id

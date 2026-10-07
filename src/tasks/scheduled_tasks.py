@@ -70,7 +70,7 @@ from src.services.email_helpers import send_content_publish_failed_email
 from src.services.notification_helper import notify_now
 from src.services.notifications_services import notification_service
 from src.utils.logger import logger
-from src.web.wordpress import WordPressPublisher
+from src.web.wordpress import BodyImageUploadError, WordPressPublisher
 
 _PUBLISH_CONCURRENCY = 5
 _PUBLISH_BATCH_LIMIT = 200
@@ -84,6 +84,10 @@ def _is_transient_publish_error(exc: Exception) -> bool:
     the exact same way on every attempt, so retrying them just burns the
     retry budget and delays the FAILED notification for no benefit.
     """
+    if isinstance(exc, BodyImageUploadError):
+        # A refused image (HTTP 401 or 413, not an image) is refused again, and each
+        # attempt would leave the images uploaded before it in the media library again.
+        return exc.transient
     if isinstance(exc, (ExternalServiceTimeoutException, RextExternalServiceException)):
         return True
     if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError)):
@@ -100,6 +104,8 @@ def _get_publish_failure_reason(exc: Exception) -> str:
     explicitly recognized, so every failure type still gets a sensible
     explanation.
     """
+    if isinstance(exc, BodyImageUploadError):
+        return exc.notice
     if isinstance(exc, (ExternalServiceTimeoutException, httpx.TimeoutException)):
         return "Your WordPress site took too long to respond (timed out)."
     if isinstance(exc, (httpx.ConnectError, httpx.NetworkError)):

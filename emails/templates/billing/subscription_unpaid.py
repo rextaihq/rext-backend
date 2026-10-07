@@ -33,24 +33,24 @@ def render_subscription_unpaid_email(
         [
             simple_header(),
             f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: {_FONT};">
+        <h1 style="color: #171717; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: {_FONT};">
             Your plan has stopped
         </h1>
         """,
             f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {_FONT};">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {_FONT};">
             Hi {user_name},
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {_FONT};">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {_FONT};">
             We tried your renewal payment for <strong>{plan_name}</strong> several times over the past two weeks and couldn't collect it, so your plan has stopped.
         </p>
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {_FONT};">
+        <p style="color: #404040; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: {_FONT};">
             Update your card to reactivate it. Your workspaces and content are kept.
         </p>
         """,
             primary_button("Update your card", update_payment_url),
             f"""
-        <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: {_FONT};">
+        <p style="color: #737373; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: {_FONT};">
             <strong>Need help?</strong> Reply to this email and our support team will help with the payment.
         </p>
         """,
