@@ -131,6 +131,7 @@ class TestToDict:
             "in_app_enabled",
             "digest_enabled",
             "digest_frequency",
+            "digest_last_sent_at",
             "workspace_notifications",
             "content_generation",
             "billing",
