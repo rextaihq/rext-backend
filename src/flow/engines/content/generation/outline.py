@@ -192,6 +192,15 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         # the user, or auto-extracted from the scraped site) is the only trustworthy
         # source. workspace_url (the site the workspace represents) is the only value
         # that may be used as a hyperlink target for the promo.
+        if not brand_data["brand_name"] and not workspace_url:
+            # A workspace made from its owner's description has no site behind its label, and
+            # its brand name is empty until the owner writes one. With neither, nothing here
+            # may stand in as the brand: the article promotes none.
+            logger.info(
+                "[BrandPromo] No brand name and no website for workspace %s: no brand to promote",
+                workspace_id,
+            )
+            return None
         brand_name = brand_data["brand_name"] or workspace_name or "Brand"
         if not brand_data["brand_name"]:
             logger.info(
@@ -964,6 +973,22 @@ async def generate_outline(state: REXT) -> dict:
                     )
                 else:
                     fuller = gained >= 0
+                # What the second attempt held and whether it was taken: the numbers a person
+                # needs to tell "the model wrote no H3s again" from "it wrote them and was
+                # refused". Counts and yes or no only, never a heading's words.
+                logger.info(
+                    "The second outline attempt was %s: content_type=%s first_h2=%s first_h3=%s "
+                    "second_h2=%s second_h3=%s second_sections=%s gained=%s main_headings_kept=%s",
+                    "kept" if fuller else "not kept",
+                    content_type,
+                    _main_sections(outline_dict),
+                    _subsections(outline_dict),
+                    _main_sections(retried),
+                    _subsections(retried),
+                    len(_outline_sections(retried)),
+                    gained,
+                    _keeps_main_sections(outline_dict, retried),
+                )
                 if fuller:
                     outline_dict = retried
 

@@ -31,6 +31,8 @@ class SubscriptionPlan(Base, SerializableMixin):
     features = Column(JSONB, default=dict)  # Flexible JSON for features
     max_workspaces = Column(Integer, default=100)
     max_members_per_workspace = Column(Integer, default=5)
+    # Read by nothing since the API-call quota went; mapped until its column is dropped, so a
+    # plan made now still has the figure the release before this one compares against.
     max_api_calls_per_month = Column(Integer, default=10000)
 
     # Credit-based billing
@@ -69,7 +71,12 @@ class SubscriptionPlan(Base, SerializableMixin):
     # Relationships
     subscriptions = relationship("UserSubscription", back_populates="plan")
     trial_conversions = relationship("TrialConversion", back_populates="plan")
-    # to_dict() inherited from SerializableMixin
+
+    def to_dict(self, **kwargs):
+        """The mixin's, without the legacy quota: mapped until its column is dropped, read by
+        nothing, and no part of a plan any more."""
+        exclude = [*(kwargs.pop("exclude", None) or []), "max_api_calls_per_month"]
+        return super().to_dict(exclude=exclude, **kwargs)
 
     @property
     def features_list(self) -> list:

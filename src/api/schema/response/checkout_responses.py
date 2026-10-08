@@ -24,18 +24,11 @@ class UsageMetric(BaseModel):
     unlimited: bool
 
 
-class APIUsageMetric(UsageMetric):
-    """Schema for API usage metrics including reset date."""
-
-    reset_date: Optional[datetime] = None
-
-
 class UsageMetricsResponse(BaseModel):
     """Response schema for detailed resource usage metrics."""
 
     workspaces: UsageMetric
     members: UsageMetric
-    api_calls: APIUsageMetric
     meta: Dict[str, Any]
 
 

@@ -262,7 +262,7 @@ def traces_sampler(sampling_context: Dict[str, Any]) -> float:
         return 1.0  # 100% - critical payment operations
 
     # Other payment endpoints at high rate
-    if any(segment in path for segment in ["/subscriptions/", "/plans/", "/licenses/", "/trials/"]):
+    if any(segment in path for segment in ["/subscriptions/", "/plans/", "/trials/"]):
         return 0.8  # 80%
 
     # Sample admin endpoints at higher rate

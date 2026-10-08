@@ -333,7 +333,7 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                 },
             },
         },
-        # ===== ORDER/LICENSE EVENTS =====
+        # ===== ORDER EVENTS =====
         "order_created": {
             "meta": {
                 "event_name": "order_created",

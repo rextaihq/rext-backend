@@ -13,6 +13,8 @@ import pytest
 
 from src.services import money_events
 from src.services.money_events import (
+    _plan_query,
+    _plan_source,
     money_event,
     record_money_event,
     send_money_event,
@@ -29,6 +31,7 @@ def _subscription(**attributes):
             "attributes": {
                 "variant_name": "Growth",
                 "product_name": "Rext",
+                "variant_id": 77,
                 "status": "active",
                 "user_email": "mary@example.com",
                 "user_name": "Mary",
@@ -64,17 +67,17 @@ def test_a_started_subscription_says_which_plan_and_never_who():
 
     assert event == {
         "event": "subscription_started",
-        "properties": {"plan": "Growth", "product": "Rext", "status": "active"},
+        "properties": {"product": "Rext", "variant": "Growth", "status": "active"},
     }
     sent = json.dumps(event)
     for private in ("mary", "user-1", "ls_sub_1", "42"):
         assert private not in sent
 
 
-def test_a_renewal_carries_the_amount_in_the_currency_s_unit():
+def test_a_paid_invoice_carries_the_amount_in_the_currency_s_unit():
     event = money_event("subscription_payment_success", _invoice())
 
-    assert event["event"] == "subscription_renewed"
+    assert event["event"] == "subscription_payment_succeeded"
     assert event["properties"] == {
         "status": "paid",
         "currency": "USD",
@@ -83,14 +86,141 @@ def test_a_renewal_carries_the_amount_in_the_currency_s_unit():
     }
 
 
-@pytest.mark.parametrize("reason", ["initial", "updated", None])
-def test_a_first_payment_or_a_plan_change_s_charge_is_not_a_renewal(reason):
-    assert money_event("subscription_payment_success", _invoice(billing_reason=reason)) is None
+@pytest.mark.parametrize("reason", ["initial", "renewal", "updated"])
+def test_every_paid_invoice_is_counted_with_what_it_was_for(reason):
+    # A first payment and a plan change's charge move money as a renewal does.
+    event = money_event("subscription_payment_success", _invoice(billing_reason=reason))
+
+    assert event["event"] == "subscription_payment_succeeded"
+    assert event["properties"]["billing_reason"] == reason
+    assert event["properties"]["amount"] == 49.0
+
+
+@pytest.mark.parametrize("currency", ["USD", "EUR", "JPY", "KWD", None])
+def test_an_amount_is_read_as_the_books_read_it_with_the_dollar_figure_beside_it(currency):
+    # Hundredths whatever the currency, as the orders and the refunds are kept: the event's
+    # figure is the books' figure. What a chart adds up across currencies is amount_usd.
+    event = money_event(
+        "subscription_payment_success",
+        _invoice(currency=currency, total=4999, total_usd=4100, refunded_amount=1000),
+    )
+
+    assert event["properties"]["amount"] == 49.99
+    assert event["properties"]["refunded_total"] == 10.0
+    assert event["properties"]["amount_usd"] == 41.0
+
+
+def test_an_amount_that_is_not_a_number_is_left_out():
+    for total in (True, "abc", None):
+        assert (
+            "amount"
+            not in money_event("subscription_payment_success", _invoice(total=total))["properties"]
+        )
+
+
+def test_the_plan_is_the_backend_s_own_name_for_it():
+    # An invoice names no plan: it comes from the subscription the backend holds.
+    held = {"plan": "growth", "billing_period": "yearly"}
+
+    properties = money_event("subscription_payment_success", _invoice(), held)["properties"]
+
+    assert properties["plan"] == "growth"
+    assert properties["billing_period"] == "yearly"
+    assert "plan" not in money_event("subscription_payment_success", _invoice())["properties"]
+    # Only words: nothing else that a lookup might hand over is passed on.
+    odd = money_event("subscription_payment_success", _invoice(), {"plan": 7, "user_id": "u"})
+    assert "plan" not in odd["properties"] and "user_id" not in odd["properties"]
+
+
+def test_a_refunded_order_names_its_product_from_its_first_item():
+    payload = {
+        "meta": {},
+        "data": {
+            "id": "501",
+            "attributes": {
+                "total": 4900,
+                "refunded_amount": 4900,
+                "currency": "USD",
+                "user_email": "mary@example.com",
+                "first_order_item": {
+                    "product_name": "Rext",
+                    "variant_name": "Growth",
+                    "price": 4900,
+                    "order_id": 501,
+                },
+            },
+        },
+    }
+
+    event = money_event("order_refunded", payload)
+
+    assert event["properties"]["product"] == "Rext"
+    assert event["properties"]["variant"] == "Growth"
+    assert "mary" not in json.dumps(event) and "order_id" not in event["properties"]
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload", "found"),
+    [
+        (
+            "subscription_created",
+            {"data": {"id": "ls_sub_1", "attributes": {"variant_id": 77}}},
+            ("variant", "77"),
+        ),
+        (
+            "order_refunded",
+            {"data": {"id": 501, "attributes": {"first_order_item": {"variant_id": 78}}}},
+            ("variant", "78"),
+        ),
+        (
+            "subscription_payment_success",
+            {"data": {"attributes": {"subscription_id": 9, "billing_reason": "renewal"}}},
+            ("subscription", "9"),
+        ),
+        (
+            "subscription_payment_refunded",
+            {"data": {"attributes": {"subscription_id": 9, "billing_reason": "initial"}}},
+            ("subscription", "9"),
+        ),
+        ("subscription_created", {"data": {"id": "ls_sub_1", "attributes": {}}}, None),
+        ("order_refunded", {"data": {"id": 501, "attributes": {}}}, None),
+        ("subscription_payment_success", {"data": {"attributes": {}}}, None),
+        ("license_key_created", {"data": {"id": "1"}}, None),
+    ],
+)
+def test_a_webhook_s_plan_is_read_from_what_it_names(event_type, payload, found):
+    assert _plan_source(event_type, payload) == found
+
+
+def test_an_invoice_that_may_be_a_plan_change_s_names_no_plan():
+    # A plan change's invoice can arrive before the webhook that moves the subscription, so
+    # what the backend holds may be the plan being left: better none than the wrong one. A
+    # refund that doesn't say what its invoice was for could be such a one.
+    def invoice(**attributes):
+        return {"data": {"attributes": {"subscription_id": 9, **attributes}}}
+
+    assert _plan_source("subscription_payment_success", invoice(billing_reason="updated")) is None
+    assert _plan_source("subscription_payment_refunded", invoice(billing_reason="updated")) is None
+    assert _plan_source("subscription_payment_refunded", invoice()) is None
+    # A paid invoice with no reason given is read as usual.
+    assert _plan_source("subscription_payment_failed", invoice()) == ("subscription", "9")
+
+
+def test_a_plan_is_found_by_the_variant_that_was_bought_or_by_the_invoice_s_subscription():
+    by_variant = str(_plan_query("variant", "78"))
+    by_subscription = str(_plan_query("subscription", "9"))
+
+    # As it was sold: the subscription's plan today plays no part in an order's refund.
+    assert "lemonsqueezy_variant_id_monthly" in by_variant
+    assert "lemonsqueezy_variant_id_yearly" in by_variant
+    assert "user_subscriptions" not in by_variant
+    assert "user_subscriptions.lemonsqueezy_subscription_id" in by_subscription
 
 
 @pytest.mark.parametrize(
     ("theirs", "ours"),
     [
+        ("subscription_payment_success", "subscription_payment_succeeded"),
         ("subscription_cancelled", "subscription_cancelled"),
         ("subscription_expired", "subscription_expired"),
         ("subscription_payment_failed", "subscription_payment_failed"),
@@ -158,6 +288,9 @@ def test_a_sandbox_purchase_is_never_counted():
     assert money_event("subscription_created", _subscription(test_mode=True)) is None
 
 
+AT = datetime(2026, 10, 8, 5, 0, tzinfo=timezone.utc)
+
+
 def _client(requests, status=200):
     def handler(request):
         requests.append(request)
@@ -219,12 +352,17 @@ async def test_a_server_event_carries_the_person_only_when_one_is_given(monkeypa
 
     async with _client(requests) as client:
         await send_server_event(
-            "workspace_created", {"first_workspace": True}, key="ws-1", client=client
+            "workspace_created",
+            {"first_workspace": True},
+            key="ws-1",
+            occurred_at=AT,
+            client=client,
         )
         await send_server_event(
             "workspace_created",
             {"first_workspace": True},
             key="ws-1",
+            occurred_at=AT,
             person_id="user-1",
             client=client,
         )
@@ -238,6 +376,8 @@ async def test_a_server_event_carries_the_person_only_when_one_is_given(monkeypa
     assert known["uuid"] == anonymous["uuid"]
     for body in (anonymous, known):
         assert body["event"] == "workspace_created"
+        # Sent again, it is the same event only with the same time.
+        assert body["timestamp"] == "2026-10-08T05:00:00+00:00"
         assert body["properties"] == {
             **body["properties"],
             "first_workspace": True,
@@ -252,8 +392,8 @@ async def test_two_kinds_of_event_about_one_thing_are_two_events(monkeypatch):
     requests = []
 
     async with _client(requests) as client:
-        await send_server_event("credits_spent", {}, key="row-1", client=client)
-        await send_server_event("credits_low", {}, key="row-1", client=client)
+        await send_server_event("credits_spent", {}, key="row-1", occurred_at=AT, client=client)
+        await send_server_event("credits_low", {}, key="row-1", occurred_at=AT, client=client)
 
     first, second = (json.loads(request.content)["uuid"] for request in requests)
     assert first != second
@@ -286,29 +426,123 @@ async def test_an_answer_that_says_the_project_is_over_quota_is_not_a_success(mo
         return httpx.Response(200, json={"status": 1, "quota_limited": ["events"]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(over_quota)) as client:
-        assert await send_server_event("credits_spent", {}, key="row-1", client=client) is False
+        assert (
+            await send_server_event("credits_spent", {}, key="row-1", occurred_at=AT, client=client)
+            is False
+        )
 
     def not_json(request):
         return httpx.Response(200, text="ok")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(not_json)) as client:
-        assert await send_server_event("credits_spent", {}, key="row-1", client=client) is True
+        assert (
+            await send_server_event("credits_spent", {}, key="row-1", occurred_at=AT, client=client)
+            is True
+        )
+
+
+async def test_the_sender_asks_for_the_time_and_an_event_without_one_carries_none(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    requests = []
+
+    async with _client(requests) as client:
+        with pytest.raises(TypeError):
+            await send_server_event("credits_spent", {}, key="row-1", client=client)
+        assert (
+            await send_server_event(
+                "credits_spent", {}, key="row-1", occurred_at=None, client=client
+            )
+            is True
+        )
+
+    assert len(requests) == 1
+    assert "timestamp" not in json.loads(requests[0].content)
+
+
+def _rows(*rows):
+    """A session whose reads answer with these rows, one read each."""
+    db = AsyncMock()
+    db.execute.side_effect = [MagicMock(first=MagicMock(return_value=row)) for row in rows]
+    return db
 
 
 async def test_recording_reads_the_stored_webhook_and_sends_its_event(monkeypatch):
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
-    row = MagicMock(
-        event_name="subscription_created",
-        payload=_subscription(),
-        created_at=datetime(2026, 10, 8, 5, 0, tzinfo=timezone.utc),
-    )
-    db = AsyncMock()
-    db.execute.return_value = MagicMock(first=MagicMock(return_value=row))
+    row = MagicMock(event_name="subscription_created", payload=_subscription(), created_at=AT)
+    # The plan that sells variant 77 as its yearly one.
+    plan = MagicMock(lemonsqueezy_variant_id_yearly="77")
+    plan.name = "growth"
+    db = _rows(row, plan)
 
     with patch.object(money_events, "send_money_event", new=AsyncMock(return_value=True)) as send:
         assert await record_money_event(db, "evt_1") is True
 
-    send.assert_awaited_once_with("evt_1", "subscription_created", row.payload, row.created_at)
+    send.assert_awaited_once_with(
+        "evt_1",
+        "subscription_created",
+        row.payload,
+        row.created_at,
+        held={"plan": "growth", "billing_period": "yearly"},
+    )
+
+
+async def test_recording_sends_without_a_plan_when_none_is_held_or_the_read_fails(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    row = MagicMock(event_name="subscription_payment_success", payload=_invoice(), created_at=AT)
+
+    with patch.object(money_events, "send_money_event", new=AsyncMock(return_value=True)) as send:
+        assert await record_money_event(_rows(row, None), "evt_1") is True
+        failing = _rows(row)
+        failing.execute.side_effect = [
+            MagicMock(first=MagicMock(return_value=row)),
+            RuntimeError("connection lost"),
+        ]
+        assert await record_money_event(failing, "evt_2") is True
+
+    assert [call.kwargs for call in send.await_args_list] == [{"held": None}, {"held": None}]
+    # The caller goes on using its session: a failed read is rolled back, not left broken.
+    failing.rollback.assert_awaited_once()
+
+
+async def test_recording_names_an_invoice_s_plan_from_the_subscription_held(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    row = MagicMock(event_name="subscription_payment_success", payload=_invoice(), created_at=AT)
+    held = MagicMock(billing_period=MagicMock(value="monthly"))
+    held.name = "starter"
+    db = _rows(row, held)
+
+    with patch.object(money_events, "send_money_event", new=AsyncMock(return_value=True)) as send:
+        assert await record_money_event(db, "evt_1") is True
+
+    assert db.execute.await_count == 2
+    assert send.await_args.kwargs == {"held": {"plan": "starter", "billing_period": "monthly"}}
+
+
+async def test_recording_names_a_refunded_order_s_plan_as_it_was_sold(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    payload = {
+        "meta": {},
+        "data": {"id": 501, "attributes": {"total": 4900, "first_order_item": {"variant_id": 78}}},
+    }
+    row = MagicMock(event_name="order_refunded", payload=payload, created_at=AT)
+    # Variant 78 is the starter plan's monthly one; its yearly one is another.
+    plan = MagicMock(lemonsqueezy_variant_id_yearly="79")
+    plan.name = "starter"
+    db = _rows(row, plan)
+
+    with patch.object(money_events, "send_money_event", new=AsyncMock(return_value=True)) as send:
+        assert await record_money_event(db, "evt_1") is True
+
+    assert send.await_args.kwargs == {"held": {"plan": "starter", "billing_period": "monthly"}}
+
+
+async def test_recording_reads_no_plan_for_a_webhook_with_no_event(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    row = MagicMock(event_name="subscription_updated", payload=_subscription(), created_at=AT)
+    db = _rows(row)
+
+    assert await record_money_event(db, "evt_1") is False
+    assert db.execute.await_count == 1
 
 
 async def test_recording_reads_nothing_when_analytics_is_not_configured(monkeypatch):

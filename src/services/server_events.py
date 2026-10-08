@@ -40,6 +40,7 @@ from src.api.models.user_models.users import Users
 from src.services import money_events
 from src.utils import loop_registry
 from src.utils.logger import logger
+from src.utils.loop_bridge import on_worker_thread
 
 GRANTED = "granted"
 DENIED = "denied"
@@ -263,7 +264,8 @@ def send_soon(sending: Coroutine[Any, Any, Any]) -> None:
     For a caller that must not be held up by analytics (a charge inside a run, a
     graph node). The send runs on the server's own loop when the caller is on
     another one: a node's loop can end before a request does, and the database
-    pool belongs to the server's. With no loop at all, nothing is sent.
+    pool belongs to the server's. With no loop of the server's to run on (none at all, or
+    a run's own loop before the server's is registered), nothing is sent.
     """
     try:
         main_loop = loop_registry.get()
@@ -273,11 +275,15 @@ def send_soon(sending: Coroutine[Any, Any, Any]) -> None:
             running = None
         if main_loop is not None and main_loop is not running and main_loop.is_running():
             asyncio.run_coroutine_threadsafe(sending, main_loop)
-        elif running is not None:
+        elif running is not None and (running is main_loop or not on_worker_thread()):
             task = running.create_task(sending)
             _in_flight.add(task)
             task.add_done_callback(_in_flight.discard)
         else:
+            # No loop of the server's to send on: none at all, or a run's own loop on one of
+            # the runtime's job threads before the main loop is registered. It is dropped, never sent
+            # from there: its read of the person would use the pool from another loop
+            # (rext-control#858).
             sending.close()
     except Exception as error:  # noqa: BLE001 - analytics never fails the work it reports
         sending.close()

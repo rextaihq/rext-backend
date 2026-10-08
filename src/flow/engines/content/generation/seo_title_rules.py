@@ -548,6 +548,162 @@ def _local_language(title: str) -> Optional[str]:
     return "zh-Hans" if simplified > traditional else "han"
 
 
+# ── How a title ends (G65, rext-control #560) ──────────────────────────────────────────────
+#
+# No part of validity: a title the customer wrote or picked is never refused for how it ends.
+# The title step asks these of what the model wrote, and sends a weak ending to the repair.
+
+# Last words that would fit any title: what a model reaches the minimum length with
+# ("...Best Practices Now", "...at Work Today", "...How Does It Work Easily?").
+_FILLER_END_WORDS = frozenset(
+    {"now", "today", "here", "easily", "effectively", "efficiently", "successfully"}
+)
+_FILLER_END_PHRASES = frozenset({("for", "you"), ("right", "now")})
+# Words "for you" completes ("Which Plan Is Right for You", "Guides Made for You"): no filler
+# after them, nor after a regular participle ("Designed for You", "Tailored for You").
+_COMPLETED_BY_FOR_YOU = frozenset(
+    {
+        "right", "best", "good", "better", "enough", "work", "works", "working", "fit", "fits",
+        "mean", "means", "matter", "matters", "made", "built", "written", "chosen", "meant",
+        "done", "ready",
+    }
+)  # fmt: skip
+# Prepositions that need an object, so a title that ends on one was cut short ("...Grow Over
+# Time With"). Only those that are never an adverb or a particle: "Look Around", "Start Over"
+# and "What Lies Beyond" end whole. A verb that takes the preposition may end on it ("What to
+# Look For"), and a question asked with what, who, which or where strands one by nature ("Who
+# Is This Guide For?").
+_OBJECT_PREPOSITIONS = frozenset(
+    {
+        "with", "for", "of", "to", "at", "from", "by", "into", "onto", "upon", "as", "during",
+        "between", "among", "toward", "towards", "until", "despite", "against", "in", "on",
+        "about",
+    }
+)  # fmt: skip
+_STRANDING_QUESTION_WORDS = frozenset({"what", "who", "whom", "which", "where"})
+# Verbs that end a whole title on a preposition or a particle, besides the trim's table ("Tools
+# Your Whole Team Can Work With", "Where Readers Sign In", "What Is Going On"). For titles
+# nobody cut: the trim's table leaves out "work" and its like, which are nouns as often, so
+# that "Your Team's Work With" is still tidied after a cut.
+_ENDS_ON_ITS_PREPOSITION: dict[str, frozenset[str]] = {
+    preposition: frozenset(form for verb in verbs for form in _verb_forms(verb))
+    for preposition, verbs in {
+        "with": ("work", "start", "begin", "began", "live", "go", "went", "come", "stay", "play", "partner", "compete", "comply", "experiment", "struggle", "connect"),
+        "for": ("care", "hope", "watch", "stand", "stood", "qualify", "account", "budget", "save", "shop", "settle", "aim", "plan", "search", "work", "go", "fall", "opt", "vote"),
+        "in": ("check", "plug", "join", "move", "cash", "tune", "fill", "step", "chip", "lock", "live", "work", "zoom", "dial", "weigh", "trade", "settle", "get", "come", "let"),
+        "on": ("turn", "go", "going", "carry", "hold", "move", "log", "hang", "catch", "switch", "take", "try", "work", "save", "pass", "live", "sign", "come", "get"),
+        "about": ("ask", "write", "read", "go", "bring", "come", "forget", "dream", "complain"),
+        "to": ("look", "get", "come", "refer", "apply", "belong", "adapt", "aspire", "agree", "object", "amount", "contribute", "lead"),
+        "from": ("learn", "start", "come", "hear", "heard", "borrow", "buy", "order", "work", "save", "stay"),
+        "at": ("work", "arrive", "stay", "start", "excel", "stop", "laugh"),
+        "of": ("think", "thought", "take", "took", "dream", "hear", "heard", "let", "beware"),
+        "by": ("go", "come", "get", "pass", "drop", "abide"),
+        "into": ("get", "turn", "run", "break", "grow", "buy", "fall", "move", "come", "go"),
+        "against": ("protect", "guard", "compete", "decide"),
+    }.items()
+}  # fmt: skip
+_SPACE_BEFORE_PUNCTUATION_RE = re.compile(r"\s+(?=[?!.,;:]+(?:\s|$))")
+# Words a whole title doesn't end on ("...Examples to Enhance Your"): the trim's list without
+# the modals, which close a clause in a title nobody cut ("Yes, You Can").
+_UNFINISHED_END_WORDS = _DANGLING_END_WORDS - {
+    "can", "could", "would", "should", "might", "must", "shall",
+}  # fmt: skip
+_WORD_EDGES = _TRAILING_PUNCTUATION + "?!.\"'“”‘’()"
+
+
+def _plain_words(title: str) -> list[str]:
+    """The title's words in lowercase without their punctuation; a mark that stands alone
+    ("Today ?") is no word."""
+    return [word for word in (raw.lower().strip(_WORD_EDGES) for raw in title.split()) if word]
+
+
+def _closed_up(title: Any) -> str:
+    """The normalized title with no space before a closing mark ("Today ?" is "Today?")."""
+    return _SPACE_BEFORE_PUNCTUATION_RE.sub("", normalize_title(title))
+
+
+def _balanced(title: str) -> bool:
+    """Whether every bracket and quotation mark that opens also closes."""
+    pairs = (("(", ")"), ("[", "]"), ("“", "”"))
+    return all(title.count(opening) == title.count(closing) for opening, closing in pairs) and (
+        title.count('"') % 2 == 0
+    )
+
+
+def _completes_for_you(word: str) -> bool:
+    return word in _COMPLETED_BY_FOR_YOU or (len(word) > 4 and word.endswith("ed"))
+
+
+def _preposition_left_hanging(title: str, words: list[str]) -> bool:
+    """Whether the title's last word is a preposition whose object is missing."""
+    last = words[-1]
+    if last not in _OBJECT_PREPOSITIONS:
+        return False
+    # The clause the title ends in: "What Is X? Five Examples to Compare With" asks nothing
+    # with its last words.
+    clauses = [clause for clause in re.split(r"[:?!|—–]", title) if clause.strip()]
+    clause = _plain_words(clauses[-1]) if clauses else words
+    # ...and within it, the part after its last "and", "or" or "but": in "What It Is and How
+    # Your Savings Grow With" the question word asks about the first half only.
+    joins = [index for index, word in enumerate(clause) if word in ("and", "or", "but")]
+    if _STRANDING_QUESTION_WORDS.intersection(clause[joins[-1] + 1 :] if joins else clause):
+        return False
+    before = words[-2]
+    if before in ("and", "or"):  # a pair that shares its object elsewhere, or none
+        return False
+    if before in _PREPOSITION_AFTER_VERB.get(last, ()) or before in _ENDS_ON_ITS_PREPOSITION.get(
+        last, ()
+    ):
+        return False
+    phrasal = before in _PARTICLES and len(words) > 2 and words[-3] in _PHRASAL_VERBS
+    return not (phrasal and last not in ("of", "to"))
+
+
+def title_ending_problem(title: Any, keyphrase: Any = "") -> Optional[str]:
+    """Why the title's ending is weak: "unfinished:your" for a word left hanging, "filler:now"
+    for words that would fit any title. None for an ending that is fine, for one that is the
+    keyphrase's own last words, and for a title of one word."""
+    cleaned = _closed_up(title)
+    words = _plain_words(cleaned)
+    if len(words) < 2:
+        return None
+    # The keyphrase as the title matcher reads it: "start-today" ends "...You Can Start Today".
+    own = _normalize_for_match(keyphrase).split()
+    if own and _normalize_for_match(cleaned).split()[-len(own) :] == own:
+        return None
+    last = words[-1]
+    if last in _UNFINISHED_END_WORDS or _preposition_left_hanging(cleaned, words):
+        return f"unfinished:{last}"
+    pair = (words[-2], last)
+    if pair in _FILLER_END_PHRASES:
+        if pair == ("for", "you") and len(words) > 2 and _completes_for_you(words[-3]):
+            return None
+        return f"filler:{' '.join(pair)}"
+    return f"filler:{last}" if last in _FILLER_END_WORDS else None
+
+
+def without_filler_ending(title: Any, keyphrase: Any = "") -> Optional[str]:
+    """The title without its one filler word, when what is left is a valid title that ends
+    well ("...Understanding Best Practices Now"). None when it isn't: the ending then has to
+    be written anew, which is the repair's work."""
+    cleaned = _closed_up(title)
+    problem = title_ending_problem(cleaned, keyphrase) or ""
+    if not problem.startswith("filler:") or " " in problem:
+        return None
+    words = cleaned.split()
+    asks = words[-1].rstrip("\"'”’)").endswith("?")
+    shorter = " ".join(words[:-1]).rstrip(_TRAILING_PUNCTUATION) + ("?" if asks else "")
+    if (
+        not title_is_valid(shorter, keyphrase)
+        or title_ending_problem(shorter, keyphrase)
+        or _ends_dangling(words, len(words) - 1)
+        # The word closed a bracket or a quotation that opened before it ("(Start Here)").
+        or not _balanced(shorter)
+    ):
+        return None
+    return shorter
+
+
 def _pad_to_min(title: str, keyphrase: str = "") -> str:
     """Lift a too-short title into range with claim-free qualifiers.
 

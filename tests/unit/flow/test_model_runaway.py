@@ -611,7 +611,8 @@ WATCHED_CALLS = {
     "src/flow/engines/content/utils/eeat.py": 1,
     "src/flow/engines/content/generation/humanize_content.py": 1,
     "src/flow/engines/content/generation/repair_content.py": 1,
-    "src/services/workspace_pipeline.py": 4,  # a new workspace's brand and its people
+    # A new workspace's brand and its people, and the draft from a description when it has no site.
+    "src/services/workspace_pipeline.py": 5,
 }
 
 
