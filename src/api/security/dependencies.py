@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import Depends, Header, HTTPException
 from langgraph_sdk import Auth
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -17,6 +18,7 @@ from src.api.database.async_database import get_async_db
 # Lazy import to avoid circular dependency
 # if TYPE_CHECKING:
 from src.api.middleware.exceptions import (
+    DatabaseConnectionException,
     RextAuthenticationException,
     TokenExpiredException,
 )
@@ -38,6 +40,33 @@ _BLOCKED_STATUSES = {
         "Your account has been banned. Please contact support for assistance.",
     ),
 }
+
+
+# What the two reads of a session check raise when the database, the pooler or the network is the
+# one that failed: nothing the caller's token did. (A timeout is an OSError.)
+_DATABASE_AWAY = (SQLAlchemyError, OSError)
+
+
+def _session_check_could_not_run(error: Exception, where: str) -> DatabaseConnectionException:
+    """The answer when a session check could not read the database: 503, never a 401
+    (rext-control#874).
+
+    The token's blacklist row and the session's row are read on every request. When those reads
+    fail, the caller's token has not been found wanting: the server could not look. Answered as
+    401 "Token validation failed", it told a signed-in person their sign-in was bad (seen on
+    staging on 8 October 2026, in a stopping process's last seconds). A 503 says what happened:
+    try again. The log names the error's type and where; the caller is told neither.
+    """
+    logger.error(
+        "Session check could not read the database in %s (%s): answering 503",
+        where,
+        type(error).__name__,
+        exc_info=True,
+    )
+    return DatabaseConnectionException(
+        message="We could not check your session just now. Please try again.",
+        context={"during": where},
+    )
 
 
 async def _say_which_session_was_refused(db: AsyncSession, session_id: UUID, user_id: UUID) -> None:
@@ -173,6 +202,8 @@ async def get_current_user(
     except RextAuthenticationException:
         # Re-raise authentication exceptions (including blacklist check)
         raise
+    except _DATABASE_AWAY as e:
+        raise _session_check_could_not_run(e, "get_current_user") from e
     except Exception as e:
         logger.error(f"Unexpected error in get_current_user: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
@@ -308,6 +339,8 @@ async def get_current_user_sse(
     except RextAuthenticationException:
         # Re-raise authentication exceptions (including blacklist check)
         raise
+    except _DATABASE_AWAY as e:
+        raise _session_check_could_not_run(e, "get_current_user_sse") from e
     except Exception as e:
         logger.error(f"Unexpected error in get_current_user_sse: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
