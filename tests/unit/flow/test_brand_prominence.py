@@ -28,6 +28,7 @@ from src.flow.engines.content.generation.validation import (
     FINAL_VALIDATE_CHECKS,
     check_brand_placement_policy,
     check_brand_prominence,
+    check_brand_url_accuracy,
 )
 
 BRAND = "Acme Run"
@@ -303,6 +304,51 @@ def test_prominent_needs_the_closing_mention():
     assert "closing call to action" in result["detail"]
 
     assert _prominence_check("prominent", intro_brand=True, closing=True)["passed"]
+
+
+def test_a_repair_after_the_rewrite_is_not_kept_when_it_makes_a_subtle_mention_two():
+    """Replayed on a real draft (rext-control#787): asked to move a Subtle article's one
+    mention earlier, the repair after the rewrite added a second one in the earlier section.
+    The place then passed, the repair was kept, and the article named the brand twice."""
+    from src.flow.engines.content.generation.humanize_content import _repair_fixed
+
+    spec = build_requirements_spec(_blog_outline(brand_prominence="subtle"), "blog")
+    too_late = _article(late_body=True)
+    placement = check_brand_placement_policy(too_late, spec)
+    assert not placement["passed"] and check_brand_prominence(too_late, spec)["passed"]
+
+    moved = _article(early_body=True)
+    added = _article(early_body=True, late_body=True)
+    assert check_brand_placement_policy(added, spec)["passed"]  # the place alone is fixed
+
+    assert _repair_fixed(moved, too_late, placement, spec["brand_context"], spec, [])
+    assert not _repair_fixed(added, too_late, placement, spec["brand_context"], spec, [])
+
+
+def test_a_repair_after_the_rewrite_is_not_kept_when_the_first_mention_loses_its_link():
+    from src.flow.engines.content.generation.humanize_content import _repair_fixed
+
+    def linked(article):
+        late = f"{BRAND} also helps here."
+        return {
+            **article,
+            "body_markdown": article["body_markdown"].replace(
+                late, f"[{BRAND}](https://acme.test) also helps here."
+            ),
+        }
+
+    # No level chosen: nothing limits the mentions, and the link is still the first one's.
+    spec = build_requirements_spec(_blog_outline(), "blog")
+    before = linked(_article(late_body=True))
+    with_a_bare_mention_first = linked(_article(early_body=True, late_body=True))
+    placement = {"name": "brand_placement_policy", "passed": False}
+    assert check_brand_placement_policy(with_a_bare_mention_first, spec)["passed"]
+    assert check_brand_url_accuracy(before, spec)["passed"]
+    assert not check_brand_url_accuracy(with_a_bare_mention_first, spec)["passed"]
+
+    assert not _repair_fixed(
+        with_a_bare_mention_first, before, placement, spec["brand_context"], spec, []
+    )
 
 
 def test_no_level_is_not_checked():
