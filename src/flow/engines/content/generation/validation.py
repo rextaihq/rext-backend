@@ -1605,12 +1605,23 @@ _EMPHASIS_MARKS_RE = re.compile(r"[*_~`]+")
 
 
 def _trim_address(url: str) -> str:
-    """An address as found in running text, without the punctuation that follows it. A closing
-    bracket stays when it closes one the address opened ("…/wiki/Foo_(bar)")."""
-    url = url.rstrip(".,;:!?\"'")
-    while url.endswith(")") and url.count(")") > url.count("("):
-        url = url[:-1].rstrip(".,;:!?\"'")
-    return url
+    """An address as found in running text, without what follows it.
+
+    It ends at a closing bracket it did not open: the one that closes its markdown link,
+    whatever stands right after. Read to the next space, "…/planner/)—then" was an address of
+    its own, an approved internal link no longer matched itself, and a "no mention" article
+    failed for a link to the brand's site it did not have. A bracket the address opened stays
+    ("…/wiki/Foo_(bar)"). Then without the punctuation after it."""
+    depth = 0
+    for index, char in enumerate(url):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if not depth:
+                url = url[:index]
+                break
+            depth -= 1
+    return url.rstrip(".,;:!?\"'")
 
 
 # An image embed: "![alt](address)". Its address is where the picture is stored, not a link a
