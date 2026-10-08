@@ -17,6 +17,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.brand_voice_schema import BrandSchema
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
+from src.flow.model.runaway import ainvoke_watched
 from src.services.sse_service import (
     emit_pipeline_complete,
     emit_step_failure,
@@ -2110,11 +2111,13 @@ class WorkspacePipeline:
                     evidence, urls, _ = self._persona_evidence(persona, fetched)
             if len(evidence) < _ANALYSIS_MIN_EVIDENCE_CHARS:
                 return evidence, urls, None
-            out = await model.ainvoke(
+            out = await ainvoke_watched(
+                model,
                 [
                     SystemMessage(content=_PERSONA_ANALYSIS_PROMPT),
                     HumanMessage(content=f"Person: {persona.get('name')}\n\n{evidence}"),
-                ]
+                ],
+                stage="workspace_personas",
             )
             result = out.model_dump() if hasattr(out, "model_dump") else dict(out or {})
             return evidence, urls, result
@@ -2269,7 +2272,7 @@ STRICT RULES FOR PERSONAS:
                     + (content or getattr(self, "_team_text", ""))
                 ),
             ]
-            return await structured.ainvoke(messages)
+            return await ainvoke_watched(structured, messages, stage="workspace_brand")
 
         async def _extract_authors() -> list:
             author_text = (
@@ -2280,14 +2283,16 @@ STRICT RULES FOR PERSONAS:
             from langchain_core.messages import HumanMessage, SystemMessage
 
             model = load_model(temperature=0).with_structured_output(BrandSchema)
-            out = await model.ainvoke(
+            out = await ainvoke_watched(
+                model,
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(
                         content="Analyze the articles and writing provided for each author below. For every real author (even with only 1 article), extract their persona attributes: name, professional_title ('Author' or stated site role), areas_of_expertise from their article topics, tone_of_voice from their writing style, bio/description grounded in what they write, demographics (who their articles are written for), pain_points addressed in their writing, goals, and behaviors. An author's profile page, when present, is at the top of their block:\n\n"
                         + author_text
                     ),
-                ]
+                ],
+                stage="workspace_brand",
             )
             return [p.model_dump() if hasattr(p, "model_dump") else p for p in (out.personas or [])]
 
@@ -2298,14 +2303,16 @@ STRICT RULES FOR PERSONAS:
             from langchain_core.messages import HumanMessage, SystemMessage
 
             model = load_model(temperature=0).with_structured_output(BrandSchema)
-            out = await model.ainvoke(
+            out = await ainvoke_watched(
+                model,
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(
                         content="Read the leadership pages and extract every founder and team member with source='team_member':\n\n"
                         + text
                     ),
-                ]
+                ],
+                stage="workspace_brand",
             )
             return [p.model_dump() if hasattr(p, "model_dump") else p for p in (out.personas or [])]
 
