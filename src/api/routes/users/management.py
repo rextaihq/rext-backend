@@ -27,7 +27,7 @@ from src.api.schema.response.user_management_responses import (
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.user_schema import DataExportRequest, DataExportResponse, UpdateUser
 from src.api.security.dependencies import get_current_user
-from src.services.admin_plan_changes import plans_of_users
+from src.services.admin_plan_changes import NO_PLAN, plans_of_users
 from src.services.audit_service import AuditService
 from src.services.email_service import EmailService
 from src.services.session_service import SessionService
@@ -122,7 +122,7 @@ async def get_users(
 
     # Each row's plan, for the list's Plan column: one query for the page.
     plans = await plans_of_users(db, [user.id for user in result["users"]])
-    user_data = [{**user.to_dict(), **plans.get(user.id, {})} for user in result["users"]]
+    user_data = [{**user.to_dict(), **plans.get(user.id, NO_PLAN)} for user in result["users"]]
 
     return success(
         data={

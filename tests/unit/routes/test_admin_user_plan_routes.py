@@ -9,6 +9,7 @@ cache are stubbed under the real guards.
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -78,7 +79,11 @@ async def session():
 
 @pytest.fixture
 def lemon(monkeypatch):
-    provider = MagicMock(update_subscription=AsyncMock())
+    provider = MagicMock(
+        update_subscription=AsyncMock(
+            side_effect=lambda **sent: SimpleNamespace(plan_id=sent["price_id"])
+        )
+    )
     monkeypatch.setattr(
         subscription_service_module, "get_payment_provider_singleton", lambda: provider
     )
@@ -309,10 +314,16 @@ async def test_a_super_admins_own_kind_is_never_the_target(session, call, lemon)
     other_admin, row = await _customer(session, starter)
     admin = await _user(session)
 
+    # The options say so first, so the dashboard offers nothing it would be refused.
+    options = await call(admin, "GET", _url(other_admin), super_admins=[admin, other_admin])
     response = await call(
         admin, "POST", _url(other_admin), _change(growth), super_admins=[admin, other_admin]
     )
 
+    data = options.json()["data"]
+    assert data["change"]["allowed"] is False
+    assert "Super Admin" in data["change"]["refused_reason"]
+    assert data["trial_extension"]["allowed"] is False
     assert response.status_code in (400, 403)
     assert row.plan_id == starter.id
     lemon.update_subscription.assert_not_awaited()
@@ -360,3 +371,46 @@ async def test_an_unknown_user_is_not_found(session, call, lemon):
     response = await call(admin, "GET", _url(ghost), super_admins=[admin])
 
     assert response.status_code == 404
+
+
+async def test_the_users_list_carries_each_rows_plan(session, call, lemon, monkeypatch):
+    # GET /api/v1/user/users is the list the dashboard's Admin > Users page reads.
+    growth = await _plan(session, "growth", price=89, credits=1000)
+    paying, _ = await _customer(session, growth)
+    trying, _ = await _trial_user(session)
+    nobody = await _user(session)
+    admin = await _user(session)
+
+    def row(user):
+        return SimpleNamespace(
+            id=user.id,
+            to_dict=lambda: {
+                "id": str(user.id),
+                "email": user.email,
+                "status": "active",
+                "email_verified": True,
+                "created_at": NOW.isoformat(),
+            },
+        )
+
+    page = {"page": 1, "per_page": 50, "total": 3, "total_pages": 1}
+    monkeypatch.setattr(
+        "src.api.routes.users.management.UserService.get_users",
+        AsyncMock(
+            return_value={
+                "users": [row(paying), row(trying), row(nobody)],
+                "pagination": {**page, "has_next": False, "has_prev": False},
+            }
+        ),
+    )
+
+    response = await call(
+        admin, "GET", "/api/v1/user/users", super_admins=[admin], permissions=["user.manage"]
+    )
+
+    assert response.status_code == 200
+    rows = {r["id"]: r for r in response.json()["data"]["users"]}
+    plan = ("plan_display_name", "is_trial", "billing_period")
+    assert [rows[str(paying.id)][k] for k in plan] == ["Growth", False, "monthly"]
+    assert [rows[str(trying.id)][k] for k in plan] == ["Trial", True, "monthly"]
+    assert [rows[str(nobody.id)][k] for k in plan] == [None, False, None]

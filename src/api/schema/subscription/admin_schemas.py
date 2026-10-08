@@ -144,7 +144,7 @@ class AdminPlanChange(BaseModel):
     plan_id: UUID
     billing_period: Literal["monthly", "yearly"]
     billing: Literal["next_renewal", "charge_now", "not_billed"]
-    reason: str = Field(..., description="Why, shown to the customer in their activity")
+    reason: str = Field(..., description="Why, kept with the audit entry")
 
     model_config = ConfigDict(
         str_strip_whitespace=True,
@@ -163,6 +163,6 @@ class AdminTrialExtension(BaseModel):
     """Body for a super admin moving a trial's end to a later date."""
 
     ends_at: datetime = Field(..., description="The trial's new end, later than its own")
-    reason: str = Field(..., description="Why, shown to the customer in their activity")
+    reason: str = Field(..., description="Why, kept with the audit entry")
 
     model_config = ConfigDict(str_strip_whitespace=True)

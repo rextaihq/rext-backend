@@ -930,10 +930,10 @@ class AuditLogger:
     ) -> Optional[Any]:
         """Log a super admin changing a user's plan.
 
-        Recorded against the affected user, so it shows in their activity. The reason
-        is free text and may name the customer or an incident: it goes to the audit
-        row only, not to the application log. Returns the audit row when it was
-        written to ``db``.
+        Recorded against the affected user, so the change shows in their activity
+        (without the reason: that list shows no details). The reason is free text and
+        may name the customer or an incident: it goes to the audit row only, not to
+        the application log. Returns the audit row when it was written to ``db``.
         """
         return await self._log_event(
             event_type=AuditEventType.ADMIN_PLAN_CHANGED,

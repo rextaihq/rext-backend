@@ -19,7 +19,8 @@ chooses is the money:
 A trial is not moved to a paid plan here: that would be a paid plan nobody pays
 for. Its end can be moved later instead, and credits added
 (src/services/admin_credits.py). Every change carries the admin's reason and is
-written to the audit log against the user; without that entry it is not made.
+written to the audit log against the user; the reason is for that record, the
+customer's activity shows the change without it.
 """
 
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.api.cache.decorators import invalidate_cache
+from src.api.lib.sentry_config import trigger_payment_alert
 from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     RextValidationException,
@@ -68,6 +70,8 @@ _ON_TRIAL = (
     "a trial isn't moved to a paid plan from here."
 )
 _NO_SUBSCRIPTION = "This user has no plan that grants access, so there is no plan to change."
+_TRIAL_ENDED = "This user's trial has ended, so there is no plan to change and no trial to extend."
+_PROTECTED = "A Super Admin's account is managed outside this screen: nothing is changed from here."
 
 
 @dataclass(frozen=True)
@@ -89,7 +93,7 @@ def clean_reason(reason: Optional[str]) -> str:
             field_errors={
                 "reason": [
                     f"Between {REASON_MIN_LENGTH} and {REASON_MAX_LENGTH} characters, "
-                    "shown to the customer"
+                    "kept with the audit entry"
                 ]
             },
         )
@@ -104,6 +108,38 @@ async def _current_subscription(db: AsyncSession, user_id: UUID) -> Optional[Use
 def _is_trial(subscription: UserSubscription) -> bool:
     plan = subscription.plan
     return subscription.status == SubscriptionStatus.TRIAL or bool(plan and plan.is_trial_plan)
+
+
+async def _trial_has_ended(db: AsyncSession, user_id: UUID) -> bool:
+    """Whether the user's newest subscription is a trial: asked only when none grants
+    access, so the admin reads why there is nothing to change."""
+    newest = (
+        await db.execute(
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return newest is not None and _is_trial(newest)
+
+
+async def _standing_of(
+    db: AsyncSession,
+    user_id: UUID,
+    subscription: Optional[UserSubscription],
+    protected: bool = False,
+) -> _Standing:
+    if protected:
+        billed = bool(
+            subscription
+            and (subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id)
+        )
+        return _Standing(subscription, billed, _PROTECTED, _PROTECTED)
+    if subscription is None and await _trial_has_ended(db, user_id):
+        return _Standing(None, False, _TRIAL_ENDED, _TRIAL_ENDED)
+    return _standing(subscription)
 
 
 def _standing(subscription: Optional[UserSubscription]) -> _Standing:
@@ -154,8 +190,16 @@ def _period_refusal(
         if subscription.billing_period == period:
             return "This is the user's plan now."
         return "A billing period can't be changed alone yet: choose another plan."
-    if standing.billed_by_provider and not _variant(plan, period):
-        return f"{plan.display_name} has no {period.value} price at Lemon Squeezy."
+    if standing.billed_by_provider:
+        # Another billing cycle can move Lemon Squeezy's billing date or charge at once,
+        # so "nothing is charged now" couldn't be promised for it.
+        if subscription.billing_period and subscription.billing_period != period:
+            return (
+                f"This subscription is billed {subscription.billing_period.value}: "
+                "its billing period can't be changed from here yet."
+            )
+        if not _variant(plan, period):
+            return f"{plan.display_name} has no {period.value} price at Lemon Squeezy."
     return None
 
 
@@ -235,12 +279,15 @@ def _extension_window(subscription: UserSubscription) -> tuple[datetime, datetim
     return earliest, now + timedelta(days=TRIAL_EXTENSION_MAX_DAYS)
 
 
-async def plan_options(db: AsyncSession, user_id: UUID) -> Dict[str, Any]:
+async def plan_options(
+    db: AsyncSession, user_id: UUID, *, protected: bool = False
+) -> Dict[str, Any]:
     """What an admin sees before changing a user's plan: the plan now, whether it may be
     changed or the trial extended, and each plan and period with how it would be billed
-    and the month's credits it would leave."""
+    and the month's credits it would leave. ``protected``: the user is a Super Admin, whose
+    account the two changes refuse, so nothing is offered."""
     subscription = await _current_subscription(db, user_id)
-    standing = _standing(subscription)
+    standing = await _standing_of(db, user_id, subscription, protected)
     current = subscription.plan if subscription else None
     plans = []
     for plan in await _offered_plans(db, current.id if current else None):
@@ -356,7 +403,7 @@ async def change_plan(
     """
     reason = clean_reason(reason)
     subscription = await _current_subscription(db, user_id)
-    standing = _standing(subscription)
+    standing = await _standing_of(db, user_id, subscription)
     if standing.change_refused:
         raise _refuse(standing.change_refused, "admin_plan_standing")
     current = subscription.plan
@@ -412,7 +459,37 @@ async def change_plan(
         db=db,
     )
     if audit is None:
-        # A plan change nobody can trace is not made: the caller rolls back.
+        # A plan change nobody can trace is not kept: the caller rolls back. Lemon Squeezy
+        # has changed already, though, and can't be rolled back with it: its
+        # subscription_updated brings the plan here in line, and a person is told, since
+        # that update carries neither the admin nor the reason.
+        if standing.billed_by_provider:
+            trigger_payment_alert(
+                alert_type="admin_plan_change_unrecorded",
+                message=(
+                    "An admin's plan change was accepted by Lemon Squeezy but could not be "
+                    "written to the audit log: the plan here follows Lemon Squeezy's update; "
+                    "record who changed it and why"
+                ),
+                severity="high",
+                context={
+                    "subscription_id": str(subscription_id),
+                    "admin_id": str(admin_id),
+                    "old_plan": current.name,
+                    "new_plan": plan.name,
+                    "billing": billing,
+                },
+                user_id=str(user_id),
+                operation="admin_plan_change",
+            )
+            raise BusinessRuleViolationException(
+                message=(
+                    "Lemon Squeezy has changed the plan, but the change could not be recorded "
+                    "here. The plan here follows when Lemon Squeezy's update arrives; the "
+                    "team has been alerted."
+                ),
+                rule_name="admin_plan_unrecorded",
+            )
         raise RuntimeError("The plan change could not be written to the audit log")
 
     logger.info(
@@ -466,7 +543,7 @@ async def extend_trial(
         .with_for_update(of=UserSubscription)
     )
     subscription = result.scalar_one_or_none()
-    standing = _standing(subscription)
+    standing = await _standing_of(db, user_id, subscription)
     if standing.extension_refused:
         raise _refuse(standing.extension_refused, "admin_trial_standing")
 
@@ -515,10 +592,14 @@ async def extend_trial(
     }
 
 
+# A row of the Users list for a user with no subscription that grants access.
+NO_PLAN: Dict[str, Any] = {"plan_display_name": None, "is_trial": False, "billing_period": None}
+
+
 async def plans_of_users(db: AsyncSession, user_ids: Iterable[UUID]) -> Dict[UUID, Dict[str, Any]]:
     """Each user's plan as the admin's Users list shows it: the name, whether it is a
     trial and the billing period, from the newest subscription that grants access.
-    One query for the whole page; a user without one is left out."""
+    One query for the whole page; a user without one is left out (NO_PLAN)."""
     ids = list(user_ids)
     if not ids:
         return {}
