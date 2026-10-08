@@ -670,6 +670,46 @@ def typed_section_blocks(outline: dict, content_type: str) -> list[OutlineBlock]
     return [block for block in resolved if block.key in keys and not block.parent]
 
 
+def sections_in_article_order(
+    blocks: list[OutlineBlock], typed: list[OutlineBlock]
+) -> list[OutlineBlock]:
+    """The written blocks with each typed section where `_with_typed_sections` puts it: before
+    the first block that stands after it in the approved order. What the writing screen counts
+    its sections against while the article is still being written (rext-control#773)."""
+    placed = list(blocks)
+    for block in typed:
+        at = next((i for i, other in enumerate(placed) if other.order > block.order), len(placed))
+        placed.insert(at, block)
+    return placed
+
+
+def typed_section_drafts(
+    content_type: str, title: str = ""
+) -> dict[str, Callable[[Any], Optional[tuple[str, str]]]]:
+    """How each typed section of the type reads while the article is still being written: its
+    value to (heading, markdown), or None with nothing to show.
+
+    The heading is the plain one. The one that carries the keyphrase is chosen against the
+    finished body (`_typed_heading`), which does not exist yet; and as there, a title that is
+    surely in another language gets no heading of these English words.
+    """
+    from src.flow.model.structure.outlines import normalize_content_type
+
+    writers = _TYPED_SECTIONS.get(normalize_content_type(content_type)) or {}
+    headed = not reads_as_another_language(title)
+
+    def draft(
+        write: Callable[[Any], str], plain: str
+    ) -> Callable[[Any], Optional[tuple[str, str]]]:
+        def read(value: Any) -> Optional[tuple[str, str]]:
+            markdown = write(value)
+            return (plain if headed else "", markdown) if markdown else None
+
+        return read
+
+    return {key: draft(write, plain) for key, (write, _, plain) in writers.items()}
+
+
 def _typed_heading(
     with_keyphrase: Optional[str],
     plain: str,
