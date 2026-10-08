@@ -26,6 +26,7 @@ from src.api.schema.response.workspace_responses import (
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.workspace_schema import (
+    DESCRIPTION_MAX_LENGTH,
     DESCRIPTION_MIN_LENGTH,
     WorkspaceResponseSchema,
     WorkspaceSchema,
@@ -106,6 +107,9 @@ async def create_workspace(
             "and to whom."
         )
         raise RextValidationException(message=short, field_errors={"description": [short]})
+    if description and len(description) > DESCRIPTION_MAX_LENGTH:
+        long = f"Your description is too long. Keep it to {DESCRIPTION_MAX_LENGTH:,} characters."
+        raise RextValidationException(message=long, field_errors={"description": [long]})
 
     if url:
         # Reject dead or made-up domains before any workspace row or pipeline exists.

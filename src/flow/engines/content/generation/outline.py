@@ -190,6 +190,15 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         # the user, or auto-extracted from the scraped site) is the only trustworthy
         # source. workspace_url (the site the workspace represents) is the only value
         # that may be used as a hyperlink target for the promo.
+        if not brand_data["brand_name"] and not workspace_url:
+            # A workspace made from its owner's description has no site behind its label, and
+            # its brand name is empty until the owner writes one. With neither, nothing here
+            # may stand in as the brand: the article promotes none.
+            logger.info(
+                "[BrandPromo] No brand name and no website for workspace %s: no brand to promote",
+                workspace_id,
+            )
+            return None
         brand_name = brand_data["brand_name"] or workspace_name or "Brand"
         if not brand_data["brand_name"]:
             logger.info(

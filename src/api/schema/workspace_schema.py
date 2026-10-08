@@ -63,13 +63,14 @@ class WorkspaceSchema(BaseModel):
         None,
         description="The website to read. Without one, `description` is required",
     )
+    # Its length is judged by the route, on the trimmed text and only when it is used: a
+    # request with a website has always been free to carry a description it doesn't need.
     description: Optional[str] = Field(
         None,
-        max_length=DESCRIPTION_MAX_LENGTH,
         description=(
             "For a business with no website yet: what it sells and to whom, in the owner's "
-            "words. The brand voice is drafted from it, and it is kept as the brand voice's "
-            "`about`. Ignored when `url` is sent"
+            "words, 20 to 1,000 characters once trimmed. The brand voice is drafted from it, "
+            "and it is kept as the brand voice's `about`. Ignored when `url` is sent"
         ),
     )
 

@@ -138,7 +138,7 @@ _REFUSED_RENDER_MIN_SECONDS = 8.0
 _REFUSED_RENDER_MAX_SECONDS = 20.0
 # A workspace with no website: how long its run waits for the brand-voice row the create request
 # writes (the request commits as it answers, the run starts just before).
-_ABOUT_ROW_TRIES = 10
+_ABOUT_ROW_TRIES = 40
 _ABOUT_ROW_WAIT_SECONDS = 0.5
 
 _NAME_TITLES = {
@@ -1649,11 +1649,13 @@ class WorkspacePipeline:
                 if record is not None:
                     break
                 # The create request writes the row with the description and commits as it
-                # answers; a run that got here first waits for it rather than add a second.
+                # answers; a run that got here first waits for it.
                 await asyncio.sleep(_ABOUT_ROW_WAIT_SECONDS)
             if record is None:
-                record = BrandVoice(workspace_id=self.workspace_id)
-                self.db.add(record)
+                # Never a row of its own: nothing keeps a workspace to one brand voice, so a
+                # second, once the request did commit, would break every read of it. The run
+                # fails instead, and a retry drafts again from the row that is there by then.
+                raise RuntimeError("The workspace's brand voice was not there to draft into")
             record.brand_name = data.get("brand_name") or record.brand_name
             record.about = record.about or data.get("about")
             record.customer_profile = data.get("customer_profile") or record.customer_profile
@@ -1696,7 +1698,9 @@ class WorkspacePipeline:
             await svc.upsert_brand_voice_embedding(
                 workspace_id=self.workspace_id,
                 brand_data=brand_voice_schema.model_dump(),
-                workspace_name=workspace.name if workspace else None,
+                # With no website the workspace's name is only a label: when the draft gave no
+                # brand name, none is embedded in its place.
+                workspace_name=workspace.name if workspace and self.url else None,
             )
         except Exception:
             pass
