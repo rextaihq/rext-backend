@@ -24,7 +24,11 @@ from src.flow.model.structure.outlines import (
     get_outline_model,
     normalize_content_type,
 )
-from src.flow.prompts.human.outline import get_outline_prompt, outline_subsection_rule
+from src.flow.prompts.human.outline import (
+    get_outline_prompt,
+    outline_subsection_rule,
+    subsection_request,
+)
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import (
     build_cluster_heading_map,
@@ -575,6 +579,8 @@ def _summed_word_target(model_schema, sections: list) -> int:
     return total
 
 
+_PILLAR = "pillar-content"
+
 # What each step guide is built from, the least of it an outline can have, and what the second
 # attempt is asked for. A tutorial is built from its required modules: its `steps` are an optional
 # deeper breakdown, so their absence isn't a fault (review of #922).
@@ -592,10 +598,39 @@ _STRUCTURE = {
         1,
         "its modules, each with its title and what it teaches, in the order a learner takes them",
     ),
+    # Pillar content is expected to have H3 subsections (outline_subsection_rule), and its schema
+    # holds them, but the model often returns H2s only on this larger schema: two runs of two in
+    # the staging proof (rext-control#603). Counted as H3 sections, not as a block of its own.
+    _PILLAR: (
+        "sections",
+        "H3 subsection",
+        1,
+        "H3 subsections: wherever an H2 covers two or more distinct parts, each part as its own "
+        'section with heading_level "H3", directly after that H2',
+    ),
 }
 
 
+def _outline_sections(outline: dict) -> list:
+    """An outline's sections, wherever its schema keeps them: a flat top-level `sections`, or
+    nested under a container such as a blog's or a pillar's `structure.sections`."""
+    sections = outline.get("sections")
+    if isinstance(sections, list) and sections:
+        return sections
+    for container_key in ("structure", "content_structure"):
+        container = outline.get(container_key)
+        if isinstance(container, dict) and isinstance(container.get("sections"), list):
+            return container["sections"]
+    return []
+
+
 def _structure_count(content_type: str, outline: dict) -> int:
+    if content_type == _PILLAR:
+        return sum(
+            1
+            for section in _outline_sections(outline)
+            if isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H3"
+        )
     key = _STRUCTURE[content_type][0]
     block = outline.get(key)
     if isinstance(block, dict):
@@ -603,12 +638,18 @@ def _structure_count(content_type: str, outline: dict) -> int:
     return len(block) if isinstance(block, list) else 0
 
 
-def _thin_structure(content_type: str, outline: dict, reviewed: bool = False) -> str | None:
+def _thin_structure(
+    content_type: str, outline: dict, reviewed: bool = False, fewer_subsections: bool = False
+) -> str | None:
     """What a generated outline is missing that makes it unusable, or None.
 
     ``reviewed`` is a regeneration after a person's feedback: their own ask sets the length
-    ("combine it into two steps"), so only an empty structure is thin then."""
+    ("combine it into two steps"), so only an empty structure is thin then.
+    ``fewer_subsections`` is that feedback asking for fewer H3s: a pillar outline without any
+    is then what was asked for."""
     if content_type not in _STRUCTURE:
+        return None
+    if content_type == _PILLAR and fewer_subsections:
         return None
     _, name, least, _ = _STRUCTURE[content_type]
     if reviewed:
@@ -775,9 +816,15 @@ async def generate_outline(state: REXT) -> dict:
             )
         outline_dict = generated_outline.model_dump()
 
-        # Asked once more, only when the outline can't be written from: one extra model call.
+        # Asked once more, only when the outline can't be written from (or, for pillar content,
+        # has none of the subsections it is expected to have): one extra model call.
         reviewed = str(outline_rejected_reason or "None").strip().lower() not in ("", "none")
-        thin = _thin_structure(content_type, outline_dict, reviewed=reviewed)
+        thin = _thin_structure(
+            content_type,
+            outline_dict,
+            reviewed=reviewed,
+            fewer_subsections=subsection_request(outline_rejected_reason) == "fewer",
+        )
         if thin:
             logger.warning("Outline %s for content_type=%s; asking once more", thin, content_type)
             retry_note = HumanMessage(
@@ -809,9 +856,12 @@ async def generate_outline(state: REXT) -> dict:
                     "The second outline attempt failed; keeping the first", exc_info=True
                 )
             else:
-                if _structure_count(content_type, retried) >= _structure_count(
+                gained = _structure_count(content_type, retried) - _structure_count(
                     content_type, outline_dict
-                ):
+                )
+                # A pillar's second attempt was asked for subsections only: without any it is
+                # no fuller than the first, which stays.
+                if gained > 0 or (gained == 0 and content_type != _PILLAR):
                     outline_dict = retried
 
         # A first outline is held to its main sections and their budgets (outline_depth.py). A
@@ -843,13 +893,7 @@ async def generate_outline(state: REXT) -> dict:
         # blog's `structure.sections`. Reading only the flat key meant blog
         # outlines never had their word budget recomputed and silently fell back
         # to the schema default regardless of how deep the plan actually was.
-        sections = outline_dict.get("sections") or []
-        if not sections:
-            for container_key in ("structure", "content_structure"):
-                container = outline_dict.get(container_key)
-                if isinstance(container, dict) and isinstance(container.get("sections"), list):
-                    sections = container["sections"]
-                    break
+        sections = _outline_sections(outline_dict)
         if sections:
             outline_dict["target_word_count"] = _summed_word_target(model_schema, sections)
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
