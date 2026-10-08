@@ -213,15 +213,17 @@ def _payment_gives_a_month(billing_reason: Optional[str], start_month_given: boo
 
     A renewal does. A first payment does unless the subscription opened with its month: the
     invoice paid for that month, and processed after the customer spent, a reset would give
-    the spending back (F8e). A plan change's prorated invoice ("updated") doesn't: the change
-    itself set the credits (F8a).
+    the spending back (F8e). A plan change's invoice ("updated") follows the same rule. On a
+    subscription that has had its month the change itself set the credits (F8a), and its
+    prorated payment brings nothing. On one that hasn't, it is the first payment under
+    another name: a trial ended by a plan change in the app is invoiced at once, and Lemon
+    Squeezy labels an invoice a subscription update produced "updated". The change left the
+    trial's balance alone, so this payment brings the month.
 
     `start_month_given` is _start_month_given() as the row stood before this payment changed
     its status.
     """
-    if billing_reason == "updated":
-        return False
-    if billing_reason == "initial":
+    if billing_reason in ("initial", "updated"):
         return not start_month_given
     return True
 

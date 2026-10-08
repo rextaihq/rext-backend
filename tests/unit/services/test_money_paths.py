@@ -862,9 +862,11 @@ async def test_the_next_period_after_a_plan_change_starts_from_its_own_month(db)
     assert await usage.get_credit_balance(user.id) == 300  # 400 less the 100 used this period
 
 
-async def test_a_trials_plan_change_gives_no_credits_until_its_first_payment(db):
+@pytest.mark.parametrize("billing_reason", ["initial", "updated"])
+async def test_a_trials_plan_change_gives_no_credits_until_its_first_payment(db, billing_reason):
     """On a paid plan's trial days the credits come with the first payment: switching plans
-    during the trial doesn't hand out a month."""
+    during the trial doesn't hand out a month. That payment brings it under either name: Lemon
+    Squeezy labels an invoice a subscription update produced "updated"."""
     starter = await _plan(db, "starter", price=39, credits=400)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user = await _customer(db)
@@ -898,7 +900,7 @@ async def test_a_trials_plan_change_gives_no_credits_until_its_first_payment(db)
     assert (await _subscription_of(db, ls_id)).current_credits == opening
 
     await handle_subscription_payment_success(
-        _invoice_event(user, ls_id, at=now - timedelta(minutes=30), billing_reason="initial"),
+        _invoice_event(user, ls_id, at=now - timedelta(minutes=30), billing_reason=billing_reason),
         None,
         db,
     )
@@ -1157,11 +1159,13 @@ async def _trial_from_before_the_marker(db, plan, now):
     return user, ls_id
 
 
+@pytest.mark.parametrize("billing_reason", ["initial", "updated"])
 async def test_a_trial_from_before_the_marker_upgraded_in_the_app_gets_its_month_when_paid(
-    db, monkeypatch
+    db, monkeypatch, billing_reason
 ):
     """The in-app change makes the trial active and clears its end date. The row says first
-    that it hasn't had its month, so the first payment still brings it."""
+    that it hasn't had its month, so the first payment still brings it: the invoice the change
+    asks for at once, which Lemon Squeezy labels "updated", or one labelled "initial"."""
     starter = await _plan(db, "starter", price=39, credits=400)
     growth = await _plan(db, "growth", price=89, credits=1000)
     now = datetime.now(timezone.utc)
@@ -1178,12 +1182,24 @@ async def test_a_trial_from_before_the_marker_upgraded_in_the_app_gets_its_month
     assert upgraded.subscription_metadata["start_month_given"] is False
 
     await handle_subscription_payment_success(
-        _invoice_event(user, ls_id, at=now + timedelta(minutes=1), billing_reason="initial"),
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=1), billing_reason=billing_reason),
         None,
         db,
     )
 
-    assert (await _subscription_of(db, ls_id)).current_credits == 1000
+    paid = await _subscription_of(db, ls_id)
+    assert paid.current_credits == 1000
+    assert paid.subscription_metadata["start_month_given"] is True
+
+    # It brought the month once. A later plan change's prorated payment, under the same
+    # name, brings nothing: the customer keeps what the spending left.
+    assert await UsageTrackingService(db).consume_credits(user.id, 300)
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=9), billing_reason="updated"),
+        None,
+        db,
+    )
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 700
 
 
 async def test_a_trial_from_before_the_marker_that_converts_gets_its_month_when_paid(db):
