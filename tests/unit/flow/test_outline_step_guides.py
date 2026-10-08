@@ -377,3 +377,47 @@ async def test_feedback_about_the_subsections_of_one_section_leaves_the_others(m
 
     assert outline["structure"]["sections"][2]["heading_level"] == "H3"
     assert len(calls) == 2
+
+
+# -- A blog's plan inside the range the product shows for a blog (rext-control#837) ---------
+
+
+def _blog(*budgets, minutes=None):
+    outline = {
+        "title": "x",
+        "structure": {
+            "sections": [
+                {"heading": f"Part {n}", "heading_level": "H2", "suggested_word_count": words}
+                for n, words in enumerate(budgets, 1)
+            ]
+        },
+    }
+    if minutes is not None:
+        outline["target_reading_time_minutes"] = minutes
+    return outline
+
+
+@pytest.mark.unit
+async def test_a_blog_planned_over_its_range_comes_back_inside_it_with_its_reading_time(
+    monkeypatch,
+):
+    outline, calls = await _generate(
+        monkeypatch, "blog", [_blog(400, 400, 400, 400, 400, 400, 400, 400, minutes=16)]
+    )
+
+    budgets = [section["suggested_word_count"] for section in outline["structure"]["sections"]]
+    assert budgets == [250] * 8
+    assert outline["target_word_count"] == 2000
+    # 16 minutes was for 3,200 words: 2,000 of them read in 10.
+    assert outline["target_reading_time_minutes"] == 10
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+async def test_a_blog_planned_inside_its_range_is_as_the_model_wrote_it(monkeypatch):
+    outline, _ = await _generate(monkeypatch, "blog", [_blog(300, 350, 300, 400, 300, minutes=8)])
+
+    budgets = [section["suggested_word_count"] for section in outline["structure"]["sections"]]
+    assert budgets == [300, 350, 300, 400, 300]
+    assert outline["target_word_count"] == 1650
+    assert outline["target_reading_time_minutes"] == 8

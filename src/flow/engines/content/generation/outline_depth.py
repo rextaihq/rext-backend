@@ -19,13 +19,6 @@ MAX_MAIN_SECTIONS = 8
 # budget of an introducing H2 spread to every section.
 MAIN_SECTION_MIN_WORDS = 200
 
-# The most a type's plan adds up to, where the product shows a narrower range than the outline
-# model allows. A blog is 800 to 2,000 words on the content-type step and beside the outline's
-# Target words; its model inherits the base bound (5,000). The bound is held here and not on
-# the model: structured output is not strict, and a model that wrote a larger target would fail
-# the run on a tighter bound. With whole budgets a blog of eight sections planned 2,200 words
-# (rext-control#837).
-PLAN_MAX_WORDS = {"blog": 2000}
 # Budgets are brought down to a multiple of this, as the model writes them.
 _BUDGET_STEP = 10
 
@@ -156,11 +149,11 @@ def fit_budgets(
     return sections, removed
 
 
-def hold_plan_inside_its_range(outline: dict, content_type: str) -> int:
-    """Bring a generated outline's budgets inside the range the product shows for its type, in
-    place. Returns the words that came off; 0 for a type whose model's own bound is that range
-    already, and for an outline whose sections carry no heading levels."""
-    most = PLAN_MAX_WORDS.get(content_type)
+def hold_plan_inside_its_range(outline: dict, most: int | None) -> int:
+    """Bring a generated outline's budgets down until its plan adds up to ``most`` words or
+    fewer (the range the product shows for its type, `outlines.plan_ceiling`), in place.
+    Returns the words that came off; 0 with no ceiling, and for an outline with no section
+    list."""
     if not most:
         return 0
     for key in _CONTAINERS:

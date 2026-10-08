@@ -8,13 +8,13 @@ a blog planned at 700 to 800 words. The prompt says both rules; `outline_depth` 
 import pytest
 
 from src.flow.engines.content.generation.outline_depth import (
-    PLAN_MAX_WORDS,
     fill_main_budgets,
     fit_budgets,
     hold_main_sections,
     hold_plan_inside_its_range,
     raise_subsections,
 )
+from src.flow.model.structure.outlines import plan_ceiling, target_word_count_range
 from src.flow.model.structure.outlines.infomational.blog import ContentStructure
 from src.flow.prompts.human.outline import outline_subsection_rule
 
@@ -323,10 +323,27 @@ def test_only_a_type_whose_range_is_narrower_than_its_model_is_held():
     blog = {"structure": {"sections": _planned(400, 400, 400, 400, 400, 400)}}
     pillar = {"structure": {"sections": _planned(400, 400, 400, 400, 400, 400)}}
 
-    assert hold_plan_inside_its_range(blog, "blog") == 2400 - 1980
+    assert plan_ceiling("blog") == 2000
+    assert hold_plan_inside_its_range(blog, plan_ceiling("blog")) == 2400 - 1980
     assert sum(s["suggested_word_count"] for s in blog["structure"]["sections"]) == 1980
-    assert hold_plan_inside_its_range(pillar, "pillar-content") == 0
+    # A type whose model declares its own range has no ceiling here: nothing is held.
+    assert plan_ceiling("pillar-content") is None
+    assert hold_plan_inside_its_range(pillar, plan_ceiling("pillar-content")) == 0
     assert sum(s["suggested_word_count"] for s in pillar["structure"]["sections"]) == 2400
     # An outline with no section list (a how-to's steps) has nothing to hold.
-    assert hold_plan_inside_its_range({"steps": {"steps": []}}, "blog") == 0
-    assert PLAN_MAX_WORDS == {"blog": 2000}
+    assert hold_plan_inside_its_range({"steps": {"steps": []}}, 2000) == 0
+
+
+def test_a_type_nobody_knows_is_given_the_blogs_model_and_held_as_a_blog():
+    """Review round 1: the outline model falls back to the blog's for an unknown type."""
+    assert plan_ceiling("newsletter-digest") == 2000
+    assert target_word_count_range("newsletter-digest") == (800, 2000)
+
+
+def test_the_range_an_approval_is_checked_against_is_the_products():
+    """Review round 1: a client that asks for a 3,000-word blog at approval is not let past
+    the range the outline step holds a blog's plan to. Every other type keeps its model's."""
+    assert target_word_count_range("blog") == (800, 2000)
+    assert target_word_count_range("pillar-content") == (4500, 6000)
+    assert target_word_count_range("how-to-guide") == (1500, 3000)
+    assert target_word_count_range("white-paper")[1] == 15000

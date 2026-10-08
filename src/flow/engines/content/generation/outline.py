@@ -10,7 +10,6 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.engines.content.generation.outline_depth import (
-    PLAN_MAX_WORDS,
     hold_main_sections,
     hold_plan_inside_its_range,
 )
@@ -27,6 +26,7 @@ from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
     normalize_content_type,
+    plan_ceiling,
 )
 from src.flow.prompts.human.outline import (
     get_outline_prompt,
@@ -928,17 +928,26 @@ async def generate_outline(state: REXT) -> dict:
         # A plan above the range the product shows for the type is brought inside it first,
         # every budget by the same share (outline_depth.py): a first outline and one written
         # again after feedback alike, since the range is the type's, not the plan's.
-        trimmed = hold_plan_inside_its_range(outline_dict, content_type)
+        most = plan_ceiling(content_type)
+        trimmed = hold_plan_inside_its_range(outline_dict, most)
+        sections = _outline_sections(outline_dict)
         if trimmed:
             logger.info(
                 "Outline plan brought inside its type's range: %s words off, content_type=%s",
                 trimmed,
                 content_type,
             )
-        sections = _outline_sections(outline_dict)
+            # The model's reading time was for the plan it wrote: it comes down with it.
+            minutes = outline_dict.get("target_reading_time_minutes")
+            kept = sum(
+                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
+            )
+            if isinstance(minutes, int) and not isinstance(minutes, bool) and minutes > 0:
+                outline_dict["target_reading_time_minutes"] = max(
+                    1, round(minutes * kept / (kept + trimmed))
+                )
         if sections:
             target = _summed_word_target(model_schema, sections)
-            most = PLAN_MAX_WORDS.get(content_type)
             outline_dict["target_word_count"] = min(target, most) if most else target
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
