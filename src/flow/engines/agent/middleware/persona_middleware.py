@@ -30,8 +30,10 @@ from src.flow.engines.content.generation.requirements_spec import (
     excluded_brand_of,
 )
 from src.flow.engines.content.generation.structured_body import (
+    STEPS_PER_SECTION,
     early_body_sections,
     planned_section_count,
+    planned_step_count,
 )
 from src.flow.engines.content.generation.word_count_utils import plan_section_lengths
 from src.flow.model.structure.outlines.render import extract_outline_faqs
@@ -788,6 +790,11 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # article has: a floor per section from the target alone added up past the band
         # whenever the outline had many sections (rext-control#787).
         sections = planned_section_count(outline or {}, content_type) if outline else 0
+        # A how-to guide's steps, written a field each, are planned words too: each weighs a
+        # third of a section, or ten full steps would come on top of the target
+        # (rext-control#817).
+        steps = planned_step_count(outline or {}, content_type) if outline else 0
+        planned = sections + -(-steps // STEPS_PER_SECTION)
         (
             total_min,
             total_max,
@@ -798,7 +805,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             average_high,
             section_min,
             subsection_min,
-        ) = plan_section_lengths(target_word_count, sections)
+        ) = plan_section_lengths(target_word_count, planned)
         # An average, not a quota per section: the approved total is the one budget.
         section_average_line = (
             f"- This article has {sections} H2 sections: about {average_low}-{average_high} words "
@@ -807,6 +814,13 @@ Write the full article now. Every third-party claim must have an inline [text](u
             if sections > 1
             else ""
         )
+        if steps:
+            section_average_line += (
+                f"- Its {steps} steps (the `step_1` to `step_{steps}` fields) are part of that "
+                f"body, not extra: about {average_low // STEPS_PER_SECTION}-"
+                f"{average_high // STEPS_PER_SECTION} words each ON AVERAGE, full instructions "
+                f"in each. The H2 sections' average above already leaves room for them\n"
+            )
 
         length_acceptance_block = (
             f"WORD COUNT — NON-NEGOTIABLE:\n"

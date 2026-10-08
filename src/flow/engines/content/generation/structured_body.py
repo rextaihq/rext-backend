@@ -414,6 +414,22 @@ def written_steps(
     return (steps, block.order) if steps else ([], 0)
 
 
+# What a step weighs in the plan of the article's length: a third of an H2 section. Ten steps
+# of a 1,500-word guide with four other sections are then about 60 words each, a little under
+# half of its body.
+STEPS_PER_SECTION = 3
+
+
+def planned_step_count(outline: dict, content_type: str) -> int:
+    """How many steps the writer writes a field each for: 0 for any article but a how-to
+    guide with a usable list of approved steps."""
+    try:
+        return len(written_steps(outline, content_type)[0])
+    except Exception:
+        logger.exception("planned_step_count: no steps read for content_type=%s", content_type)
+        return 0
+
+
 def _step_description(step: dict, number: int, of: int) -> str:
     """A step's field: its place, its approved title and what the outline planned for it."""
     lines = [
@@ -1007,7 +1023,9 @@ def assemble_structured_payload(
             written = written + typed_shown
             # What the sections add to the body, as the length check counts words: its
             # maximum grows by exactly this (word_count_utils.typed_section_allowance).
-            typed_words = len(assembled.split()) - without
+            # Not for steps written a field each: those were planned inside the target
+            # (planned_step_count), where a list the writer added on its own was not.
+            typed_words = 0 if steps else len(assembled.split()) - without
     missing_required = [b.key for b in blocks if b.required and b.key not in written]
     if missing_required:
         # Should be unreachable — these are required fields under constrained
