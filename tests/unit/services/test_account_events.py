@@ -3,6 +3,7 @@ what each carries, that running out is told once per crossing, and that a charge
 waits for any of it. The report, the database and Redis are fakes here.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -23,11 +24,28 @@ from src.utils.credit_manager import (
 AT = datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc)
 
 
+class _Redis:
+    """SET with nx, as Redis does it: the first caller sets the key, the others get nothing."""
+
+    def __init__(self, marks):
+        self.marks = marks
+
+    async def set(self, key, value, nx=False, ex=None):
+        await asyncio.sleep(0)  # let another caller in, as a real round trip would
+        if nx and key in self.marks:
+            return None
+        self.marks[key] = value
+        return True
+
+
 @pytest.fixture
 def world(monkeypatch):
-    """Analytics on; what would be reported is kept. `workspaces` is how many the account made."""
+    """Analytics on; what would be reported is kept. `creations` is how many workspaces the
+    audit log says the account made; `redis` False is a server without Redis."""
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
-    state = SimpleNamespace(sent=[], marks={}, workspaces=1, owner=uuid4(), sessions=0)
+    state = SimpleNamespace(
+        sent=[], marks={}, creations=1, owner=uuid4(), sessions=0, owners_read=0, redis=True
+    )
 
     async def report(name, properties, **kwargs):
         state.sent.append((name, properties, kwargs))
@@ -36,26 +54,23 @@ def world(monkeypatch):
     @asynccontextmanager
     async def session():
         state.sessions += 1
-        counted = SimpleNamespace(scalar_one=lambda: state.workspaces)
+        counted = SimpleNamespace(scalar_one=lambda: state.creations)
         yield SimpleNamespace(execute=AsyncMock(return_value=counted))
 
     async def owner_of(_user_id, _workspace_id):
+        state.owners_read += 1
         return state.owner
-
-    async def get(key):
-        return state.marks.get(key)
-
-    async def put(key, value, ttl=300):
-        state.marks[key] = value
-        return True
 
     async def delete(key):
         return state.marks.pop(key, None) is not None
 
+    cache = SimpleNamespace(
+        is_enabled=lambda: state.redis, redis=_Redis(state.marks), delete=delete
+    )
     monkeypatch.setattr(account_events, "report_event", report)
     monkeypatch.setattr(account_events, "get_async_db_context", session)
     monkeypatch.setattr(account_events, "_owner_of", owner_of)
-    monkeypatch.setattr(account_events, "cache", SimpleNamespace(get=get, set=put, delete=delete))
+    monkeypatch.setattr(account_events, "cache", cache)
     return state
 
 
@@ -89,32 +104,46 @@ async def test_a_new_account_says_how_it_was_made(world, method, told):
 
     name, properties, sent_with = world.sent[0]
     assert (name, properties) == ("user_signed_up", {"method": told})
-    assert sent_with == {"key": str(user_id), "occurred_at": AT, "user_id": user_id}
+    assert (sent_with["occurred_at"], sent_with["user_id"]) == (AT, user_id)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("made", "first"), [(1, True), (2, False), (5, False)])
-async def test_a_new_workspace_says_whether_it_is_the_first(world, made, first):
-    world.workspaces = made
+async def test_an_events_key_is_the_same_for_the_same_thing_and_never_its_id(world):
+    """The sender names the key when it logs a send that failed: an account's id there
+    would put a personal identifier in the log."""
+    user_id, workspace_id = uuid4(), uuid4()
+
+    await account_events.user_signed_up(user_id, "credentials", AT)
+    await account_events.user_signed_up(user_id, "credentials", AT)
+    await account_events.workspace_created(user_id, workspace_id, AT)
+
+    first, again, workspace = (sent_with["key"] for _, _, sent_with in world.sent)
+    assert first == again != workspace
+    for key in (first, workspace):
+        assert str(user_id) not in key and str(workspace_id) not in key
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("creations", "first"), [(1, True), (0, True), (2, False), (5, False)])
+async def test_a_new_workspace_is_the_first_when_the_account_made_no_other(world, creations, first):
+    """Counted from the audit log's creations, not from what the account owns now: one it
+    handed over still counts, one handed to it doesn't."""
+    world.creations = creations
     user_id, workspace_id = uuid4(), uuid4()
 
     await account_events.workspace_created(user_id, workspace_id, AT)
 
     name, properties, sent_with = world.sent[0]
     assert (name, properties) == ("workspace_created", {"first_workspace": first})
-    assert sent_with == {
-        "key": str(workspace_id),
-        "occurred_at": AT,
-        "user_id": user_id,
-        "workspace_id": workspace_id,
-    }
+    assert (sent_with["user_id"], sent_with["workspace_id"]) == (user_id, workspace_id)
+    assert sent_with["occurred_at"] == AT
 
 
 async def _charge(
-    balance_after, credits=1, user_id=None, workspace_id=None, action="content_drafting"
+    balance_after, credits=1, owner=None, workspace_id=None, action="content_drafting"
 ):
     await account_events.credits_charged(
-        user_id or uuid4(),
+        owner or uuid4(),
         workspace_id,
         action=action,
         credits=credits,
@@ -125,16 +154,18 @@ async def _charge(
 
 
 @pytest.mark.asyncio
-async def test_a_charge_is_told_about_the_account_whose_credits_were_spent(world):
-    member, workspace_id = uuid4(), uuid4()
+async def test_a_charge_is_told_about_the_account_it_was_taken_from(world):
+    """The charge says whose credits it took; who owns the workspace later doesn't matter."""
+    charged, workspace_id = uuid4(), uuid4()
 
-    await _charge(96, credits=4, user_id=member, workspace_id=workspace_id, action="deep_research")
+    await _charge(96, credits=4, owner=charged, workspace_id=workspace_id, action="deep_research")
 
     assert _names(world) == ["credits_spent"]
     _, properties, sent_with = world.sent[0]
     assert properties == {"action": "deep_research", "credits": 4, "balance_after": 96}
-    assert sent_with["user_id"] == world.owner != member
+    assert sent_with["user_id"] == charged
     assert (sent_with["workspace_id"], sent_with["occurred_at"]) == (workspace_id, AT)
+    assert world.owners_read == 0
 
 
 @pytest.mark.asyncio
@@ -167,13 +198,17 @@ async def test_low_is_told_by_the_charge_that_crosses_it_and_no_other(
         assert properties == {"balance": balance_after, "threshold": LOW_CREDITS_THRESHOLD}
 
 
+async def _refuse(world, action="generate_outline", owner=None):
+    await account_events.credits_refused(
+        uuid4(), None, action=action, occurred_at=AT, owner_id=owner
+    )
+
+
 @pytest.mark.asyncio
 async def test_running_out_is_told_once_however_many_runs_are_refused_after(world):
-    await _charge(balance_after=0)
+    await _charge(balance_after=0, owner=world.owner)
     for _ in range(3):
-        await account_events.credits_refused(
-            uuid4(), None, action="generate_outline", occurred_at=AT
-        )
+        await _refuse(world, owner=world.owner)
 
     assert _names(world).count("credits_out") == 1
     out = next(p for name, p, _ in world.sent if name == "credits_out")
@@ -181,22 +216,53 @@ async def test_running_out_is_told_once_however_many_runs_are_refused_after(worl
 
 
 @pytest.mark.asyncio
-async def test_a_refusal_with_no_charge_before_it_tells_it_once(world):
-    """The balance went to nothing some other way (a deduction, a trial that ended)."""
-    for _ in range(2):
-        await account_events.credits_refused(uuid4(), None, action="serp_seo", occurred_at=AT)
+async def test_runs_refused_at_the_same_moment_tell_it_once(world):
+    """Each would find no mark and set one; only the one that sets it tells."""
+    await asyncio.gather(*(_refuse(world, owner=world.owner) for _ in range(5)))
 
-    assert world.sent[0][:2] == ("credits_out", {"action": "serp_seo"})
     assert _names(world) == ["credits_out"]
 
 
 @pytest.mark.asyncio
+async def test_a_refusal_with_no_charge_before_it_tells_it_once_for_the_workspaces_owner(world):
+    """The balance went to nothing some other way (a deduction, a trial that ended), and
+    the run was refused before any charge: the owner is read here."""
+    for _ in range(2):
+        await _refuse(world, action="serp_seo")
+
+    name, properties, sent_with = world.sent[0]
+    assert (name, properties) == ("credits_out", {"action": "serp_seo"})
+    assert sent_with["user_id"] == world.owner
+    assert _names(world) == ["credits_out"]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_charge_names_the_account_it_was_short_on(world):
+    short = uuid4()
+
+    await _refuse(world, owner=short)
+
+    assert world.sent[0][2]["user_id"] == short
+    assert world.owners_read == 0
+
+
+@pytest.mark.asyncio
 async def test_after_credits_come_back_running_out_again_is_a_new_crossing(world):
-    await account_events.credits_refused(uuid4(), None, action="serp_seo", occurred_at=AT)
-    await _charge(balance_after=40)  # credits again, and a charge went through
-    await account_events.credits_refused(uuid4(), None, action="deep_research", occurred_at=AT)
+    await _refuse(world, owner=world.owner)
+    await _charge(balance_after=40, owner=world.owner)  # credits again, a charge went through
+    await _refuse(world, owner=world.owner)
 
     assert _names(world).count("credits_out") == 2
+
+
+@pytest.mark.asyncio
+async def test_without_redis_there_is_no_mark_and_every_refusal_is_told(world):
+    world.redis = False
+
+    for _ in range(2):
+        await _refuse(world, owner=world.owner)
+
+    assert _names(world) == ["credits_out", "credits_out"]
 
 
 @pytest.mark.asyncio
@@ -206,9 +272,9 @@ async def test_with_analytics_off_nothing_is_read_or_sent(world, monkeypatch):
     await account_events.user_signed_up(uuid4(), "credentials", AT)
     await account_events.workspace_created(uuid4(), uuid4(), AT)
     await _charge(balance_after=0)
-    await account_events.credits_refused(uuid4(), None, action="serp_seo", occurred_at=AT)
+    await _refuse(world)
 
-    assert (world.sent, world.sessions, world.marks) == ([], 0, {})
+    assert (world.sent, world.sessions, world.marks, world.owners_read) == ([], 0, {}, 0)
 
 
 @pytest.mark.asyncio
@@ -219,7 +285,25 @@ async def test_an_event_that_fails_never_reaches_its_caller(world, monkeypatch):
     await account_events.user_signed_up(uuid4(), "credentials", AT)
     await account_events.workspace_created(uuid4(), uuid4(), AT)
     await _charge(balance_after=3)
-    await account_events.credits_refused(uuid4(), None, action="serp_seo", occurred_at=AT)
+    await _refuse(world)
+
+
+@pytest.mark.asyncio
+async def test_a_routes_background_task_starts_the_event_and_doesnt_wait_for_it(monkeypatch):
+    """The tasks queued behind it (the verification email) aren't held up by analytics."""
+    monkeypatch.setattr(server_events.loop_registry, "get", lambda: None)
+    release, done = asyncio.Event(), asyncio.Event()
+
+    async def slow_event(user_id, method, occurred_at):
+        await release.wait()
+        done.set()
+
+    await account_events.start(slow_event, uuid4(), "credentials", AT)
+
+    # start() is back while the event is still waiting.
+    assert not done.is_set()
+    release.set()
+    await asyncio.wait_for(done.wait(), timeout=2)
 
 
 # --- the charge itself (src/utils/credit_manager.py) hands the event over and goes on
@@ -227,9 +311,11 @@ async def test_an_event_that_fails_never_reaches_its_caller(world, monkeypatch):
 
 @pytest.fixture
 def charge(monkeypatch):
-    """A charge with its database and notices stood in; what it hands to analytics is kept."""
+    """A charge with its database and notices stood in; what it hands to analytics is kept.
+    `outcome` is what the charge's own transaction gives: the account charged and its balance."""
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
-    state = SimpleNamespace(started=[], outcome=96)
+    state = SimpleNamespace(started=[], owner=uuid4())
+    state.outcome = (state.owner, 96)
 
     async def on_main_loop(work):
         work.close()
@@ -255,16 +341,16 @@ def charge(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_a_committed_charge_hands_its_event_over_without_waiting(charge):
-    user_id, workspace_id = uuid4(), uuid4()
+async def test_a_committed_charge_hands_its_event_over_with_the_account_it_charged(charge):
+    member, workspace_id = uuid4(), uuid4()
     before = datetime.now(timezone.utc)
 
-    await consume_stage_credits(str(user_id), 4, "deep_research", workspace_id=workspace_id)
+    await consume_stage_credits(str(member), 4, "deep_research", workspace_id=workspace_id)
 
     assert charge.started == [
         (
             "credits_charged",
-            (user_id, workspace_id),
+            (charge.owner, workspace_id),
             {
                 "action": "deep_research",
                 "credits": 4,
@@ -278,15 +364,19 @@ async def test_a_committed_charge_hands_its_event_over_without_waiting(charge):
 
 
 @pytest.mark.asyncio
-async def test_a_charge_refused_for_lack_of_credits_says_so(charge):
-    charge.outcome = InsufficientCreditsError("humanization", 5, 2)
+async def test_a_charge_refused_for_lack_of_credits_says_so_with_the_account_that_was_short(charge):
+    charge.outcome = InsufficientCreditsError("humanization", 5, 2, owner_id=charge.owner)
     user_id = uuid4()
 
     with pytest.raises(InsufficientCreditsError):
         await consume_stage_credits(str(user_id), 5, "humanization")
 
     assert charge.started == [
-        ("credits_refused", (user_id, None), {"action": "humanization", "occurred_at": ANY})
+        (
+            "credits_refused",
+            (user_id, None),
+            {"action": "humanization", "occurred_at": ANY, "owner_id": charge.owner},
+        )
     ]
 
 
@@ -316,7 +406,11 @@ async def test_a_run_refused_before_it_starts_says_so(charge, monkeypatch):
     assert ran == []
     assert result["content"]["error_code"] == "insufficient_credits"
     assert charge.started == [
-        ("credits_refused", (user_id, None), {"action": "generate_outline", "occurred_at": ANY})
+        (
+            "credits_refused",
+            (user_id, None),
+            {"action": "generate_outline", "occurred_at": ANY, "owner_id": None},
+        )
     ]
 
 

@@ -240,7 +240,11 @@ async def create_user(
     await db.commit()
     await db.refresh(new_user)
     background_tasks.add_task(
-        account_events.user_signed_up, new_user.id, "credentials", datetime.now(timezone.utc)
+        account_events.start,
+        account_events.user_signed_up,
+        new_user.id,
+        "credentials",
+        datetime.now(timezone.utc),
     )
 
     # Get frontend URL from environment
@@ -569,6 +573,7 @@ async def oauth_login(
     if tokens.get("is_new_user"):
         # A background task runs once the response is sent, so after this route's commit.
         background_tasks.add_task(
+            account_events.start,
             account_events.user_signed_up,
             new_user.id,
             oauth_data.provider,
@@ -706,7 +711,11 @@ async def register_with_invitation(
 
     await db.commit()
     background_tasks.add_task(
-        account_events.user_signed_up, existing_user.id, "invitation", datetime.now(timezone.utc)
+        account_events.start,
+        account_events.user_signed_up,
+        existing_user.id,
+        "invitation",
+        datetime.now(timezone.utc),
     )
 
     # Notify inviter. notify_now commits in its own session: this route has

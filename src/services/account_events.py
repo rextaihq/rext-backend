@@ -12,21 +12,24 @@ The names and properties are the list on the task (``server_events.EVENT_PROPERT
 Nothing else is sent: no email, no name, no workspace name or address.
 """
 
+import hashlib
 import os
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Callable, Coroutine, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
 
 from src.api.cache.redis_client import cache
 from src.api.database.async_database import get_async_db_context
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.services.server_events import report_event
+from src.api.models.audit_models.audit_logs import AuditLog
+from src.services.server_events import report_event, send_soon
 from src.utils.logger import logger
 
 SIGNUP_METHODS = ("credentials", "google", "github", "invitation")
+# The audit action the workspace route records for a creation.
+WORKSPACE_CREATED = "workspace.create"
 
 # An account that is out of credits stays "out" until a charge goes through again:
 # the runs refused meanwhile are one crossing, not one each. Kept in Redis for as
@@ -37,6 +40,23 @@ _OUT_MARK_SECONDS = 40 * 24 * 60 * 60
 def configured() -> bool:
     """Whether analytics is switched on here (the project's key is set)."""
     return bool(os.getenv("POSTHOG_PROJECT_KEY"))
+
+
+async def start(event: Callable[..., Coroutine[Any, Any, None]], *args: Any) -> None:
+    """
+    For a route's background task: start one of the events below and don't wait for it.
+
+    Background tasks run one after the other once the response is sent (so after the
+    route's commit); an event awaited there would hold up the tasks queued behind it,
+    the verification email among them.
+    """
+    send_soon(event(*args))
+
+
+def _key(kind: str, thing: Any) -> str:
+    """An event's key for a thing with an id: the same for the same thing, and not the
+    id itself, since the sender names the key when it logs a send that failed."""
+    return hashlib.sha256(f"{kind}:{thing}".encode()).hexdigest()[:32]
 
 
 def _failed(name: str, error: Exception) -> None:
@@ -55,7 +75,7 @@ async def user_signed_up(user_id: UUID, method: Optional[str], occurred_at: date
         await report_event(
             "user_signed_up",
             {"method": known if known in SIGNUP_METHODS else None},
-            key=str(user_id),
+            key=_key("user_signed_up", user_id),
             occurred_at=occurred_at,
             user_id=user_id,
         )
@@ -69,19 +89,20 @@ async def workspace_created(user_id: UUID, workspace_id: UUID, occurred_at: date
         return
     try:
         async with get_async_db_context() as db:
-            # Every workspace the account ever made, the deleted ones too: a second
-            # workspace after the first was deleted is not a first.
+            # Every workspace this account ever made, from the audit log's record of each
+            # creation (written with it, and kept for a year): the workspaces it owns now
+            # would miss one it deleted or handed over, and count one handed to it.
             made = (
                 await db.execute(
                     select(func.count())
-                    .select_from(WorkspaceModel)
-                    .where(WorkspaceModel.user_id == user_id)
+                    .select_from(AuditLog)
+                    .where(AuditLog.user_id == user_id, AuditLog.action == WORKSPACE_CREATED)
                 )
             ).scalar_one()
         await report_event(
             "workspace_created",
             {"first_workspace": made <= 1},
-            key=str(workspace_id),
+            key=_key("workspace_created", workspace_id),
             occurred_at=occurred_at,
             user_id=user_id,
             workspace_id=workspace_id,
@@ -94,6 +115,15 @@ def _out_mark(owner_id: UUID) -> str:
     return f"analytics:credits_out:{owner_id}"
 
 
+async def _claim_out(owner_id: UUID) -> bool:
+    """Mark the account out of credits. True for the one caller that set the mark:
+    of several runs refused at once, one tells it. Without Redis there is no mark to
+    set, and every caller is told yes."""
+    if not cache.is_enabled() or cache.redis is None:
+        return True
+    return bool(await cache.redis.set(_out_mark(owner_id), "1", nx=True, ex=_OUT_MARK_SECONDS))
+
+
 async def _owner_of(user_id: UUID, workspace_id: Optional[UUID]) -> UUID:
     """Whose credits a run in this workspace spends: the workspace's owner."""
     # credit_manager calls this module, so it is imported here and not at the top.
@@ -104,7 +134,7 @@ async def _owner_of(user_id: UUID, workspace_id: Optional[UUID]) -> UUID:
 
 
 async def credits_charged(
-    user_id: UUID,
+    owner_id: UUID,
     workspace_id: Optional[UUID],
     *,
     action: str,
@@ -118,15 +148,14 @@ async def credits_charged(
     this charge took the balance below ``low_threshold`` (one article's cost), or
     ``credits_out`` when it left nothing.
 
-    The events are about the account whose credits were spent (the workspace's
-    owner), which is whose plan and whose answer on analytics they carry. A charge
-    has no id of its own, so each event's key is made here, once: nothing sends a
-    charge's event twice.
+    ``owner_id`` is the account that was charged, as the charge itself resolved it
+    (the workspace's owner): the events carry its plan and its answer on analytics,
+    whoever owns the workspace by the time they are sent. A charge has no id of its
+    own, so each event's key is made here, once: nothing sends a charge's event twice.
     """
     if not configured():
         return
     try:
-        owner_id = await _owner_of(user_id, workspace_id)
         about = {"occurred_at": occurred_at, "user_id": owner_id, "workspace_id": workspace_id}
         await report_event(
             "credits_spent",
@@ -142,8 +171,8 @@ async def credits_charged(
                 **about,
             )
         if balance_after <= 0:
-            await cache.set(_out_mark(owner_id), 1, ttl=_OUT_MARK_SECONDS)
-            await report_event("credits_out", {"action": action}, key=uuid.uuid4().hex, **about)
+            if await _claim_out(owner_id):
+                await report_event("credits_out", {"action": action}, key=uuid.uuid4().hex, **about)
         else:
             # Credits again (a reset, a new plan, an admin's addition) and a charge went
             # through: the next time it runs out is a new crossing.
@@ -153,22 +182,29 @@ async def credits_charged(
 
 
 async def credits_refused(
-    user_id: UUID, workspace_id: Optional[UUID], *, action: str, occurred_at: datetime
+    user_id: UUID,
+    workspace_id: Optional[UUID],
+    *,
+    action: str,
+    occurred_at: datetime,
+    owner_id: Optional[UUID] = None,
 ) -> None:
     """
     A run was refused for lack of credits: ``credits_out``, once per crossing.
 
     The charge that emptied the balance has said it already (``credits_charged``),
     and so has an earlier refusal: the account is marked out until a charge goes
-    through again. Without Redis the mark can't be kept and every refusal is sent.
+    through again, and of several refusals at once only the one that set the mark
+    tells it. ``owner_id`` is the account the refused charge resolved, when there was
+    one; a run refused before it starts has none, and the owner is read here.
     """
     if not configured():
         return
     try:
-        owner_id = await _owner_of(user_id, workspace_id)
-        if await cache.get(_out_mark(owner_id)) is not None:
+        if owner_id is None:
+            owner_id = await _owner_of(user_id, workspace_id)
+        if not await _claim_out(owner_id):
             return
-        await cache.set(_out_mark(owner_id), 1, ttl=_OUT_MARK_SECONDS)
         await report_event(
             "credits_out",
             {"action": action},

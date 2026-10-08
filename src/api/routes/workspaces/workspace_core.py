@@ -146,6 +146,7 @@ async def create_workspace(
 
     # A background task runs once the response is sent, so after this route's commit.
     background_tasks.add_task(
+        account_events.start,
         account_events.workspace_created,
         user_id,
         UUID(str(workspace_id)),
