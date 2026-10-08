@@ -123,11 +123,18 @@ def _owner(state: REXT, config) -> str:
 
 
 def _refused(
-    state: REXT, error_code: str = LIBRARY_ITEM_MISSING, message: str = LIBRARY_ITEM_MESSAGE
+    state: REXT,
+    error_code: str = LIBRARY_ITEM_MISSING,
+    message: str = LIBRARY_ITEM_MESSAGE,
+    *,
+    stage: str | None = None,
+    reason: str | None = None,
 ) -> Dict[str, Any]:
+    """End the start with a message for the person. For the counts it is a refusal at the
+    analysis unless the caller says otherwise."""
     from src.services.generation_events import ANALYSIS, REFUSED, announce_failed
 
-    announce_failed(state, stage=ANALYSIS, reason=REFUSED)
+    announce_failed(state, stage=stage or ANALYSIS, reason=reason or REFUSED)
     try:
         from langgraph.config import get_stream_writer
 
@@ -169,6 +176,7 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
     workspace_id = str(serp_payload.get("workspace_id") or "")
 
     item = None
+    unreadable = False
     if key and owner and workspace_id and runtime is not None and runtime.store is not None:
         try:
             found = await runtime.store.aget(("library", owner, workspace_id), str(key))
@@ -176,9 +184,16 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - an unreadable item is refused like a missing one
             # The key embeds the searched keyword (or whatever was typed): never logged.
             logger.warning("A Library item could not be read: %s", type(exc).__name__)
+            unreadable = True
 
     if not item or not item.get("original_query"):
         logger.info("Library start refused: the named item is not in this user's Library")
+        if unreadable:
+            # The person reads the same message; in the counts a store that could not be read
+            # is ours, not theirs.
+            from src.services.generation_events import INTERNAL
+
+            return _refused(state, reason=INTERNAL)
         return _refused(state)
 
     query = item["original_query"]
@@ -194,7 +209,10 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
         )
 
         logger.info("Library start refused: the item's keyword is longer than a title can be")
-        return _refused(state, TOPICS_FAILED_CODE, KEYWORD_TOO_LONG_MESSAGE)
+        # The same refusal as a typed keyword's at the title step, counted at the same stage.
+        from src.services.generation_events import TITLES
+
+        return _refused(state, TOPICS_FAILED_CODE, KEYWORD_TOO_LONG_MESSAGE, stage=TITLES)
 
     # The research is for one market: its country, stored with items made since
     # E17; an older item takes the start's.

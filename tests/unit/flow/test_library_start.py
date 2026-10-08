@@ -420,3 +420,36 @@ async def test_a_library_start_is_counted_with_its_items_country_and_a_refused_o
     assert name == "content_generation_failed"
     assert (properties["stage"], properties["reason"]) == ("analysis", "refused")
     assert len(seen) == 2
+
+
+async def test_a_refused_library_start_is_counted_for_what_stopped_it(billing, monkeypatch):
+    """Review round 3 of the events: the same message for the person, the right cause in the
+    counts. A keyword no title can hold is refused at the titles, as a typed one is; a store
+    that could not be read is ours, not a refusal."""
+    import src.services.generation_events as events
+
+    seen = []
+    monkeypatch.setattr(
+        events, "_announce", lambda name, properties, state, **how: seen.append((name, properties))
+    )
+
+    too_long = {**ITEM, "original_query": "the " + "longest keyword anyone ever typed " * 6}
+    store = Store({(("library", U1, W1), KEY): too_long})
+    refused = await load_library_item(
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
+    )
+
+    class Unreadable:
+        async def aget(self, namespace, key):
+            raise RuntimeError("the store is down")
+
+    unreadable = await load_library_item(
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=Unreadable())
+    )
+
+    assert refused["content"]["error"] == KEYWORD_TOO_LONG_MESSAGE
+    assert unreadable["content"]["error_code"] == LIBRARY_ITEM_MISSING
+    assert [(name, p["stage"], p["reason"]) for name, p in seen] == [
+        ("content_generation_failed", "titles", "refused"),
+        ("content_generation_failed", "analysis", "internal"),
+    ]
