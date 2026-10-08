@@ -361,6 +361,81 @@ def uses_structured_body(content_type: str) -> bool:
     return normalize_content_type(content_type) not in STRUCTURED_BODY_EXCLUDED_TYPES
 
 
+# ── A how-to guide's steps, a field each (G98a, revnix/rext-control#817) ─────
+#
+# The typed `steps` list left the writer to its own list: four to six steps of a
+# sentence each, whatever the outline approved. Each approved step is asked for
+# by name instead, a required field in the approved order, and
+# `assemble_structured_payload` builds the typed list from them under the
+# approved titles. The list is shown as it was (`_numbered_steps`).
+
+STEPS_KEY = "steps"
+# More steps than this is no list a reader follows: such an outline keeps the typed list.
+MAX_STEP_FIELDS = 20
+
+
+def step_field(number: int) -> str:
+    return f"step_{number}"
+
+
+def approved_steps(block: Optional[OutlineBlock]) -> list[dict]:
+    """The steps of the approved outline's `steps` block, in the approved order: the place in
+    the list is the step's number, whatever `step_number` still says after a reorder. Empty
+    when the block is no list of titled steps."""
+    data = block.data if block is not None else None
+    items = data.get(STEPS_KEY) if isinstance(data, dict) else data
+    if not isinstance(items, list) or not 0 < len(items) <= MAX_STEP_FIELDS:
+        return []
+    titled = [
+        item for item in items if isinstance(item, dict) and str(item.get("title") or "").strip()
+    ]
+    return titled if len(titled) == len(items) else []
+
+
+def _steps_block(outline: dict, content_type: str, base_model: type[BaseModel]) -> list[dict]:
+    """The approved steps the writer gets a field each for: a how-to guide's, when its content
+    model writes steps at all."""
+    from src.flow.model.structure.outlines import normalize_content_type
+
+    if normalize_content_type(content_type) != "how-to-guide":
+        return []
+    if STEPS_KEY not in base_model.model_fields:
+        return []
+    block = next(
+        (b for b in resolve_outline_structure(outline or {}, content_type) if b.key == STEPS_KEY),
+        None,
+    )
+    return approved_steps(block)
+
+
+def _step_description(step: dict, number: int, of: int) -> str:
+    """A step's field: its place, its approved title and what the outline planned for it."""
+    lines = [
+        f"Step {number} of {of} of the approved outline: {str(step.get('title')).strip()!r}.",
+        "REQUIRED. Write this step's instructions in full, as prose a reader can follow "
+        "without the outline: what to do, what they should see when it is done, and what to "
+        "avoid. Several sentences; a short list or a code block inside the step is fine.",
+        "Only the instructions: no heading, no number and not the title, which the article "
+        "sets before your text exactly as approved.",
+    ]
+    planned = [
+        ("Planned", step.get("description")),
+        ("Expected result", step.get("expected_result")),
+        ("Warning", step.get("warning")),
+    ]
+    lines += [f"{label}: {str(value).strip()}" for label, value in planned if value]
+    tips = [str(tip).strip() for tip in step.get("tips") or [] if str(tip).strip()]
+    if tips:
+        lines.append("Tips to work in: " + "; ".join(tips))
+    return "\n".join(lines)
+
+
+_STEPS_LEFT_TO_FIELDS = (
+    "Leave this empty. Each approved step is written in its own field "
+    "(step_1, step_2, ...), and this list is built from them."
+)
+
+
 def build_structured_content_model(
     outline: dict,
     content_type: str,
@@ -455,7 +530,19 @@ def build_structured_content_model(
         + _model_key(content_type, resolved)[1:]
         + context.signature
     )
-    cached = None if _is_per_article(resolved) else _MODEL_CACHE.get(key)
+    try:
+        steps = _steps_block(outline, content_type, base_model)
+    except Exception:
+        logger.exception(
+            "build_structured_content_model: could not read the approved steps for "
+            "content_type=%s; they stay with the typed list.",
+            content_type,
+        )
+        steps = []
+    # A model with a field per approved step is this article's own, as one with expanded
+    # sections is.
+    per_article = _is_per_article(resolved) or bool(steps)
+    cached = None if per_article else _MODEL_CACHE.get(key)
     if cached is not None:
         return cached, resolved
 
@@ -469,6 +556,17 @@ def build_structured_content_model(
                 Optional[ContentBlock],
                 Field(default=None, description=description),
             )
+
+    for number, step in enumerate(steps, 1):
+        fields[step_field(number)] = (
+            str,
+            Field(description=_step_description(step, number, len(steps))),
+        )
+    if steps:
+        fields[STEPS_KEY] = (
+            base_model.model_fields[STEPS_KEY].annotation,
+            Field(default_factory=list, description=_STEPS_LEFT_TO_FIELDS),
+        )
 
     # Re-describe the two base fields that point the writer at `body_markdown`.
     # Same types and defaults, so every validator and downstream consumer is
@@ -503,7 +601,7 @@ def build_structured_content_model(
         )
         return None
 
-    if not _is_per_article(resolved):
+    if not per_article:
         _MODEL_CACHE[key] = model
     logger.info(
         "build_structured_content_model: %s -> %s blocks=%s schema_context=%s directive_fields=%s",
@@ -782,6 +880,33 @@ def _with_typed_sections(
     return placed, shown
 
 
+def _steps_from_fields(content_dict: dict, typed: Optional[list[OutlineBlock]]) -> list[dict]:
+    """The typed `steps` list from the fields the writer wrote a step each in, under the
+    approved titles and in the approved order. Empty when no step field holds text: a payload
+    written before the fields existed, or assembled once already, keeps the list it has."""
+    block = next((b for b in typed or [] if b.key == STEPS_KEY), None)
+    approved = approved_steps(block)
+    if not any(_is_step_field(key) for key in content_dict):
+        return []
+    steps = []
+    for number, step in enumerate(approved, 1):
+        text = content_dict.get(step_field(number))
+        if isinstance(text, str) and text.strip():
+            steps.append(
+                {"title": str(step["title"]).strip(), "description": text.strip(), "tools": []}
+            )
+        else:
+            logger.warning(
+                "assemble_structured_payload: step %s of the approved outline was not written",
+                number,
+            )
+    return steps
+
+
+def _is_step_field(key: str) -> bool:
+    return re.fullmatch(r"step_\d+", key) is not None
+
+
 def assemble_structured_payload(
     content_dict: dict,
     blocks: list[OutlineBlock],
@@ -825,7 +950,15 @@ def assemble_structured_payload(
         ordered.append((block.key, written))
 
     assembled = blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
-    payload = {k: v for k, v in content_dict.items() if k not in {b.key for b in blocks}}
+    # A how-to guide's steps, written a field each: the typed list is theirs (G98a).
+    steps = _steps_from_fields(content_dict, typed)
+    if steps:
+        content_dict = {**content_dict, STEPS_KEY: steps}
+    payload = {
+        k: v
+        for k, v in content_dict.items()
+        if k not in {b.key for b in blocks} and not _is_step_field(k)
+    }
     # Links the model wrote into its own `body_markdown` rather than into the
     # section blocks. The prompt and the base schema both told the writer that
     # every link belongs "inside body_markdown", and that string is replaced
