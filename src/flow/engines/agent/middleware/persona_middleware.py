@@ -14,6 +14,7 @@ from src.flow.engines.content.generation.article_voice import (
     format_voice_for_writer,
 )
 from src.flow.engines.content.generation.brand_placement_policy import (
+    DEFAULT_BODY_ATTENTION_MAX_FRACTION,
     build_brand_structural_injection,
     resolve_article_brand_policy,
 )
@@ -27,7 +28,11 @@ from src.flow.engines.content.generation.requirements_spec import (
     brand_named_in,
     excluded_brand_of,
 )
-from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.engines.content.generation.structured_body import (
+    early_body_sections,
+    planned_section_count,
+)
+from src.flow.engines.content.generation.word_count_utils import plan_section_lengths
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
@@ -777,18 +782,38 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # introduction and body together. The parts are planned inside that band, so
         # these instructions never ask for more than the check accepts; an 800-word
         # target used to be told 1,000-1,200 words and fail above 896.
-        total_min, total_max = compute_word_target_band(target_word_count)
-        intro_words = min(200, max(60, round(target_word_count * 0.12)))
-        body_min = max(0, total_min - intro_words)
-        body_max = max(0, total_max - intro_words)
-        section_min = max(80, round(target_word_count * 0.10))
-        subsection_min = max(40, round(target_word_count * 0.04))
+        #
+        # The sections' floors are planned inside it too, from the number of sections this
+        # article has: a floor per section from the target alone added up past the band
+        # whenever the outline had many sections (rext-control#787).
+        sections = planned_section_count(outline or {}, content_type) if outline else 0
+        (
+            total_min,
+            total_max,
+            intro_words,
+            body_min,
+            body_max,
+            average_low,
+            average_high,
+            section_min,
+            subsection_min,
+        ) = plan_section_lengths(target_word_count, sections)
+        # An average, not a quota per section: the approved total is the one budget.
+        section_average_line = (
+            f"- This article has {sections} H2 sections: about {average_low}-{average_high} words "
+            f"each ON AVERAGE keeps the body in its range. One section may run shorter and "
+            f"another longer; the total may not leave the range\n"
+            if sections > 1
+            else ""
+        )
 
         length_acceptance_block = (
             f"WORD COUNT — NON-NEGOTIABLE:\n"
             f"- `introduction` field: about {intro_words} words\n"
             f"- `body_markdown` field: {body_min}-{body_max} words — stay within this range\n"
-            f"- Combined total: {total_min}-{total_max} words — stay within this range\n"
+            f"- Combined total: {total_min}-{total_max} words — stay within this range. An article "
+            f"OVER {total_max} words fails the same check as one under {total_min}\n"
+            f"{section_average_line}"
             f"- Every H2 section: minimum {section_min} words\n"
             f"- Every H3 subsection: minimum {subsection_min} words\n"
             f"- DO NOT submit until you have counted and confirmed the total falls within {total_min}-{total_max} words"
@@ -800,14 +825,14 @@ Write the full article now. Every third-party claim must have an inline [text](u
             f"- `introduction`: about {intro_words} words, in full paragraphs\n"
             f"- `body_markdown`: {body_min}-{body_max} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
             f"- Total combined length: {total_min}-{total_max} words — do not go meaningfully under or over this range\n\n"
-            f"EXPANSION RULES — apply to every section that runs short:\n"
+            f"EXPANSION RULES — only while the total is under {total_min} words, for a section that runs short:\n"
             f"- Add a deeper technical explanation (how it works, why it matters)\n"
             f"- Add a concrete real-world example or case study — with numbers only if a search result provides them\n"
             f"- Add the persona's reasoning or a clearly hypothetical scenario (no invented tests, clients or results)\n"
             f"- Add a step-by-step breakdown if the concept has stages\n"
             f'- Add a "common mistakes" or "what NOT to do" block\n'
             f"- Add a comparison (before vs after, method A vs method B)\n\n"
-            f"TRIMMING RULE — if a draft runs over {total_max} words: cut filler, redundant transitions, and repeated points before submitting — do not pad, but do not overshoot the range either.\n\n"
+            f"TRIMMING RULE — if a draft runs over {total_max} words: it fails. Cut filler, redundant transitions and repeated points, and shorten the longest sections first, until the total is inside the range — do not pad, and do not overshoot.\n\n"
             f"Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.\n\n"
             f"Write the full article now with image and fact links included. Target length: {total_min}-{total_max} words total."
         )
@@ -1120,6 +1145,18 @@ Write the full article now. Every third-party claim must have an inline [text](u
         ]
         if ranked_list_injection:
             lines.append(ranked_list_injection.strip())
+        if not policy.get("prefers_top"):
+            # A body mention has a window (the first 30% by default). Named by section, since
+            # nobody writing can measure a percentage.
+            window = policy.get("body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION)
+            early = early_body_sections(outline, content_type, window)
+            if early:
+                named = " or ".join(f'"{heading}"' for heading in early)
+                lines.append(
+                    f"IN THIS ARTICLE'S PLAN, an early body section means: {named}. The first "
+                    f"mention of {brand_name} goes there; in any later section it fails the "
+                    f"placement check, however well it is written."
+                )
         lines.append(
             f"\nBefore submitting, verify {brand_name} actually landed in the position described above — "
             f"a correct, well-written mention in the WRONG position is still a failure."
