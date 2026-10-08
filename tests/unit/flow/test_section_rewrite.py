@@ -28,6 +28,7 @@ from src.flow.engines.content.generation.section_rewrite import (
     judge,
     keyphrase_plan,
     keyword_lines,
+    lost_lines,
     rewrite_parts,
     secondary_plan,
     split_article,
@@ -625,6 +626,26 @@ def test_no_section_is_asked_to_bring_in_more_than_two_phrases():
     )
 
 
+def test_a_part_is_told_of_the_phrases_and_mentions_a_reader_sees_in_it():
+    """Review round 3 of the rewrite: the part's message counted in the raw text, the checks
+    and the guard count what a reader sees. A phrase written with emphasis inside it was not
+    named to its part, and a one-word brand whose link's address holds its name was said to
+    be named twice."""
+    emphasised = "Keep a content **calendar** for the quarter and review it monthly."
+    brand = {"brand_name": "Acme", "brand_url": "https://acme.test/"}
+    linked = "Teams use [Acme](https://acme.test/) to map the month."
+
+    assert "Keep each of these phrases as written, at least once: content calendar." in (
+        keyword_lines(emphasised, "", ["content calendar", "style guide"])
+    )
+    told = brand_lines(linked, brand_context=brand, excluded_brand=None)
+    assert 'names "Acme" 1 time(s)' in told and "Its link (https://acme.test/) stays" in told
+    # What the part is told is what it is held to.
+    part = Part(SECTION, "## Plan", f"## Plan\n\n{_text(60)} {linked} {_text(60)}")
+    same = f"## Plan\n\n{_text(58)} Most teams map the month with [Acme](https://acme.test/). {_text(58)}"
+    assert accept(part, same, words(part.text), brand=brand) is not None
+
+
 def test_an_answer_wrapped_in_a_fence_or_sent_in_pieces_is_read_as_its_text():
     fenced = SimpleNamespace(content="```markdown\n## Fill the Calendar\n\nText.\n```")
     pieces = SimpleNamespace(
@@ -656,8 +677,8 @@ class _Model:
         return SimpleNamespace(content=reply)
 
 
-def _messages_for(part, index, low, high):
-    return {"part": part, "index": index, "low": low, "high": high}
+def _messages_for(part, index, low, high, lost=()):
+    return {"part": part, "index": index, "low": low, "high": high, "lost": lost}
 
 
 async def test_every_part_is_rewritten_at_once_and_the_article_keeps_its_length():
@@ -790,6 +811,50 @@ async def test_the_articles_range_is_held_after_every_part_is_back():
 
     assert counts["words_after"] <= round(target * 1.12)
     assert 0 < counts["kept"] < len(parts)
+
+
+async def test_a_part_that_came_back_without_a_link_is_asked_once_more_and_told_which():
+    """Replayed on real drafts: a list of products lost one of its links in round after round,
+    was kept as drafted each time, and was the part an over-long article most needed shortened.
+    Told which address it left out, the model keeps it; asked twice at most."""
+    heading = "## Fill the Calendar"
+    link = "[a planning guide](https://site.test/guides/planning/)"
+    with_link = Part(SECTION, heading, f"{heading}\n\n{_text(100)} See {link}. {_text(40)}")
+    parts = [with_link, _section(120, "## Review It on Fridays")]
+
+    def forgetful_once(messages):
+        part = messages["part"]
+        if part is with_link and not messages["lost"]:
+            return f"{heading}\n\n{_text(140)}"
+        return part.text.replace("Plan one week", "Map one week")
+
+    def forgetful_always(messages):
+        part = messages["part"]
+        return f"{heading}\n\n{_text(140)}" if part is with_link else part.text
+
+    once, always = _Model(forgetful_once), _Model(forgetful_always)
+    total = sum(words(part.text) for part in parts)
+    rewritten, counts = await rewrite_parts(
+        parts, model=once, messages_for=_messages_for, word_target=total
+    )
+    kept, _ = await rewrite_parts(
+        parts, model=always, messages_for=_messages_for, word_target=total
+    )
+
+    # Asked again with the address it left out, and the answer that kept it is used.
+    assert [m["lost"] for m in once.asked if m["part"] is with_link] == [
+        (),
+        ("https://site.test/guides/planning",),
+    ]
+    assert "Map one week" in rewritten[0].text and link in rewritten[0].text
+    assert counts["kept"] == 0
+    # Left out twice: the part stays as drafted, and is not asked a third time.
+    assert len([m for m in always.asked if m["part"] is with_link]) == 2
+    assert kept[0] is with_link
+    assert lost_lines(("https://site.test/guides/planning",)).startswith(
+        "- Your last answer to this left out: https://site.test/guides/planning."
+    )
+    assert lost_lines(()) == ""
 
 
 async def test_a_long_article_never_has_more_than_a_few_calls_running():
