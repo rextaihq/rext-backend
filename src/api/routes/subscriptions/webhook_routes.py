@@ -13,6 +13,7 @@ from src.api.database.async_database import AsyncSessionLocal
 from src.api.middleware.webhook_security import validate_lemonsqueezy_webhook_ip
 from src.services.audit_logger import audit_logger
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
+from src.services.money_events import record_money_event
 from src.services.webhook_handlers import (
     register_default_handlers,
 )
@@ -53,6 +54,11 @@ async def _process_webhook_in_background(event_id: str, event_name: str = "unkno
                 f"LemonSqueezy webhook processed in background: {result.get('event_type')}",
                 extra={"event_id": result.get("event_id")},
             )
+
+            # The books have it now: one anonymous event for product analytics. A
+            # redelivered webhook ("Nothing to process") has no event_type and sends none.
+            if result.get("event_type"):
+                await record_money_event(db, result.get("event_id"))
 
             # Handle post-commit tasks (like sending emails)
             handler_result = result.get("handler_result")

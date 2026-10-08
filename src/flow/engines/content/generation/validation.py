@@ -71,6 +71,7 @@ from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCK
 from src.flow.engines.content.generation.subheading_seo import (
     describe_keyphrase_issue,
     describe_length_issue,
+    extract_subheadings,
     subheading_report,
 )
 from src.flow.engines.content.generation.title_subject import find_subject_mismatch
@@ -1357,12 +1358,57 @@ def check_brand_placement_policy(
             "blocking",
             f"'{brand_name}' first appears at {int(first.position_fraction * 100)}% through the body, past "
             f"the first {pct}% where readers actually are. Move that first mention into an earlier body "
-            f"section — later mentions are fine, but the first one must land early.",
+            f"section — later mentions are fine, but the first one must land early."
+            f"{_where_early_is(body, max_fraction)}",
         )
 
     return _pass(
         "brand_placement_policy",
         "Brand mention sits in an early body section, out of the introduction and the closing section.",
+    )
+
+
+def _h2_positions(text: str) -> list[tuple[int, str]]:
+    """Where each H2 of ``text`` starts, and its words: the headings a reader sees, so a line
+    of a fenced example that only looks like one is none (subheading_seo's own reading)."""
+    starts, offset = [], 0
+    for line in text.splitlines(keepends=True):
+        starts.append(offset)
+        offset += len(line)
+    return [
+        (starts[heading.line_index], heading.text)
+        for heading in extract_subheadings(text)
+        if heading.level == 2
+    ]
+
+
+def _where_early_is(body: str, max_fraction: float) -> str:
+    """Which of the article's own sections sit inside the window, for the repair to act on.
+
+    "Move it earlier" left a repair to guess how far: a mention at 31% of a ten-section guide
+    stayed where it was through two attempts (rext-control#760). Positions are read on the
+    same text the mention's own position is read on. The opening section is left out when
+    another one qualifies, since several placements keep the brand out of the opening.
+    """
+    text = _normalize_for_mentions(body)
+    headings = _h2_positions(text)
+    if not text or not headings:
+        return ""
+    ends = [start for start, _ in headings[1:]] + [len(text)]
+    inside = [
+        name
+        for (_, name), end in zip(headings, ends, strict=True)
+        if end / len(text) <= max_fraction
+    ]
+    if len(inside) > 1:
+        inside = inside[1:]
+    if not inside:
+        # No section ends inside the window, so the window lies inside the first one.
+        first = headings[0][1]
+        return f' In this article that means the opening paragraphs of "{first}".'
+    named = " or ".join(f'"{heading}"' for heading in inside[:3])
+    return (
+        f" In this article that means the section {named}: move the sentence that names it there."
     )
 
 

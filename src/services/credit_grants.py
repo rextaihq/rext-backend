@@ -30,7 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import (
+    FAILED_PAYMENT_STATUSES,
+    UserSubscription,
+)
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
 
@@ -91,6 +94,63 @@ def promotion_bonus(
     month_end = add_months(paid_from, 1)
     expires_at = month_end if first_period_end is None else min(as_utc(first_period_end), month_end)
     return Bonus(amount=amount, expires_at=expires_at)
+
+
+# The credits used in the billing period at its last plan change and the balance left then,
+# kept in the subscription's metadata with the period's end (its credits_reset_date).
+_PLAN_CHANGE = "plan_change_credits"
+
+
+def change_plan_credits(
+    subscription: UserSubscription,
+    old_monthly: Optional[int],
+    new_monthly: int,
+    period_before: Optional[datetime] = None,
+) -> None:
+    """Set the balance for a plan change within a billing period (F8a, the founder's rule,
+    2026-10-07): the new plan's monthly credits minus the credits already used this period,
+    never below 0. Call it once the subscription's credits_reset_date is the period's end.
+
+    What was used is the old plan's monthly credits minus what is left. After an earlier change
+    in the same period it is what was used then plus what was spent since, so switching down to
+    a smaller plan and back gives nothing back. With the old plan's credits unknown, nothing
+    counts as used. Grants (an offer's bonus) are apart and stay.
+
+    The period's end can come from Lemon Squeezy's renews_at or from the stored reset date, so
+    a change is in the earlier change's period when that period is the end it found
+    (`period_before`, before the change moved it) or the end it leaves.
+
+    A period that had ended is refilled lazily, by the next spend or the renewal's invoice
+    (UsageTrackingService.consume_credits, not while a payment has failed). When neither has
+    come yet the balance is still last period's: the change opens the new period, in which
+    nothing was used, and an earlier change in the ended period doesn't count.
+    """
+
+    def key(moment: Optional[datetime]) -> Optional[str]:
+        return as_utc(moment).isoformat() if moment else None
+
+    period = key(subscription.credits_reset_date)
+    left = subscription.current_credits or 0
+    if (
+        period_before is not None
+        and as_utc(period_before) <= datetime.now(timezone.utc)
+        and subscription.status not in FAILED_PAYMENT_STATUSES
+        and old_monthly is not None
+    ):
+        left, period_before = old_monthly, None
+    earlier = (subscription.subscription_metadata or {}).get(_PLAN_CHANGE) or {}
+    if earlier.get("period") and earlier.get("period") in (period, key(period_before)):
+        used = max(0, earlier["used"] + earlier["left"] - left)
+    elif old_monthly is not None:
+        used = max(0, old_monthly - left)
+    else:
+        used = 0
+    subscription.current_credits = max(0, new_monthly - used)
+    # Reassigned, not mutated in place: SQLAlchemy doesn't track a plain JSONB's insides.
+    subscription.subscription_metadata = {
+        **(subscription.subscription_metadata or {}),
+        _PLAN_CHANGE: {"period": period, "used": used, "left": subscription.current_credits},
+    }
 
 
 def split_cost(
