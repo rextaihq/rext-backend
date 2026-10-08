@@ -12,10 +12,10 @@ Endpoints:
 - DELETE /admin/platform/invitations/{id}      - Revoke invitation
 - GET    /admin/platform/invitations/stats     - Invitation statistics
 
-Public Endpoints (no auth):
-- GET    /admin-invitations/{token}/validate   - Validate invitation token
-- POST   /admin-invitations/{token}/accept     - Accept invitation
-- POST   /admin-invitations/{token}/decline    - Decline invitation
+Token endpoints (the token is in the request's body, never in its path, which is logged):
+- POST   /admin-invitations/validate   - Validate invitation token (no auth)
+- POST   /admin-invitations/accept     - Accept invitation (the invited account, signed in)
+- POST   /admin-invitations/decline    - Decline invitation (no auth)
 """
 
 from datetime import datetime, timezone
@@ -25,12 +25,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.cache.decorators import invalidate_cache
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    RextAuthorizationException,
+    RextValidationException,
+)
 from src.api.middleware.rate_limiter import admin_invitation_rate_limit
 from src.api.schema.admin_invitation_schema import (
     AdminInvitationListResponse,
     AdminInvitationResponse,
+    AdminInvitationTokenRequest,
     CreateAdminInvitationRequest,
     DeclineAdminInvitationRequest,
     ResendAdminInvitationRequest,
@@ -39,6 +45,7 @@ from src.api.schema.admin_invitation_schema import (
 )
 from src.api.schema.response_schemas import GenericResponse, SuccessResponse
 from src.api.security.dependencies import get_current_user
+from src.services.admin_invitation_emails import person_name, send_admin_invitation_email
 from src.services.admin_invitation_service import AdminInvitationService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
@@ -60,7 +67,11 @@ public_router = APIRouter(prefix="/admin-invitations", tags=["Public - Admin Inv
 
 
 def _invitation_to_response(invitation) -> AdminInvitationResponse:
-    """Convert invitation model to response schema."""
+    """Convert invitation model to response schema.
+
+    The invitation is one the service read whole (its three people loaded): nothing
+    can be read from the database here.
+    """
     now = datetime.now(timezone.utc)
     days_until_expiry = None
 
@@ -78,11 +89,7 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
         invited_by_admin_id=str(invitation.invited_by_admin_id)
         if invitation.invited_by_admin_id
         else None,
-        invited_by_name=(
-            f"{invitation.invited_by.first_name} {invitation.invited_by.last_name}"
-            if invitation.invited_by
-            else None
-        ),
+        invited_by_name=person_name(invitation.invited_by),
         invited_by_email=invitation.invited_by.email if invitation.invited_by else None,
         created_at=invitation.created_at.isoformat(),
         expires_at=invitation.expires_at.isoformat(),
@@ -92,20 +99,12 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
         accepted_by_user_id=str(invitation.accepted_by_user_id)
         if invitation.accepted_by_user_id
         else None,
-        accepted_by_name=(
-            f"{invitation.accepted_by.first_name} {invitation.accepted_by.last_name}"
-            if invitation.accepted_by
-            else None
-        ),
+        accepted_by_name=person_name(invitation.accepted_by),
         declined_reason=invitation.declined_reason,
         revoked_by_admin_id=str(invitation.revoked_by_admin_id)
         if invitation.revoked_by_admin_id
         else None,
-        revoked_by_name=(
-            f"{invitation.revoked_by.first_name} {invitation.revoked_by.last_name}"
-            if invitation.revoked_by
-            else None
-        ),
+        revoked_by_name=person_name(invitation.revoked_by),
         revoked_reason=invitation.revoked_reason,
         is_expired=invitation.is_expired(),
         can_be_accepted=invitation.can_be_accepted(),
@@ -149,12 +148,13 @@ async def create_admin_invitation(
     **Requirements:**
     - Caller must be super_admin
     - Email must not have existing pending invitation
-    - Admin role must be valid (super_admin, support_admin, platform_admin)
+    - Admin role must be valid (super_admin, admin, support)
 
     **Process:**
     1. Validates caller is super_admin
     2. Creates invitation with secure token
-    3. Sends invitation email (background task)
+    3. Sends the invitation email. If it can't be sent, nothing is saved and the
+       caller is told (502), so "created" always means the person has the link
     4. Returns invitation details
 
     **Security:**
@@ -182,12 +182,8 @@ async def create_admin_invitation(
         request=request,
     )
 
-    logger.info(
-        f"Admin invitation created: {data.email} for {data.admin_role} by {current_user['email']}"
-    )
-
-    # TODO: Send invitation email in background task
-    # await send_admin_invitation_email(invitation)
+    # Before the commit: an invitation whose email didn't go out is not kept.
+    await send_admin_invitation_email(db, invitation)
 
     return created(data=_invitation_to_response(invitation), request=request)
 
@@ -217,6 +213,7 @@ async def list_admin_invitations(
     - offset: for pagination
     """
     service = AdminInvitationService(db)
+    await service.ensure_super_admin(UUID(current_user["identity"]))
 
     invitations, total_count = await service.get_all_invitations_paginated(
         status=status,
@@ -255,6 +252,7 @@ async def get_admin_invitation(
     - Invitation must exist
     """
     service = AdminInvitationService(db)
+    await service.ensure_super_admin(UUID(current_user["identity"]))
     invitation = await service.get_invitation_by_id(invitation_id)
 
     return success(data=_invitation_to_response(invitation), request=request)
@@ -283,7 +281,8 @@ async def resend_admin_invitation(
     **Process:**
     1. Generates new token
     2. Updates expiry date
-    3. Sends new invitation email
+    3. Sends the invitation email again. If it can't be sent, the old link stays
+       as it was and the caller is told (502)
     """
     service = AdminInvitationService(db)
 
@@ -303,10 +302,8 @@ async def resend_admin_invitation(
         request=request,
     )
 
-    logger.info(f"Admin invitation resent: {invitation.email} by {current_user['email']}")
-
-    # TODO: Send invitation email in background task
-    # await send_admin_invitation_email(invitation)
+    # Before the commit: a new link nobody received must not replace the old one.
+    await send_admin_invitation_email(db, invitation)
 
     return success(data=_invitation_to_response(invitation), request=request)
 
@@ -351,8 +348,6 @@ async def revoke_admin_invitation(
         request=request,
     )
 
-    logger.info(f"Admin invitation revoked: {invitation.email} by {current_user['email']}")
-
     # TODO: Optionally send revocation email
     # await send_admin_invitation_revoked_email(invitation)
 
@@ -370,19 +365,18 @@ async def revoke_admin_invitation(
 # ============================================================================
 
 
-@public_router.get(
-    "/{token}/validate", response_model=SuccessResponse[ValidateAdminInvitationResponse]
-)
+@public_router.post("/validate", response_model=SuccessResponse[ValidateAdminInvitationResponse])
 async def validate_admin_invitation_token(
     request: Request,
-    token: str,
+    data: AdminInvitationTokenRequest,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Validate an admin invitation token (public endpoint)."""
+    """Validate an admin invitation token (public endpoint). A read, sent as a POST so
+    that the token is in the body."""
     service = AdminInvitationService(db)
 
     try:
-        invitation = await service.get_invitation_by_token(token)
+        invitation = await service.get_invitation_by_token(data.token)
 
         return success(
             data=ValidateAdminInvitationResponse(
@@ -391,11 +385,7 @@ async def validate_admin_invitation_token(
                 email=invitation.email,
                 admin_role=invitation.admin_role,
                 message=invitation.message,
-                invited_by_name=(
-                    f"{invitation.invited_by.first_name} {invitation.invited_by.last_name}"
-                    if invitation.invited_by
-                    else None
-                ),
+                invited_by_name=person_name(invitation.invited_by),
                 expires_at=invitation.expires_at.isoformat(),
                 is_expired=invitation.is_expired(),
                 status=invitation.status,
@@ -419,11 +409,11 @@ async def validate_admin_invitation_token(
         return success(data=_invalid_invitation_validation_response(), request=request)
 
 
-@public_router.post("/{token}/accept", response_model=SuccessResponse[AdminInvitationResponse])
+@public_router.post("/accept", response_model=SuccessResponse[AdminInvitationResponse])
 @db_transaction_handler("accept admin invitation", auto_commit=True)
 async def accept_admin_invitation(
     request: Request,
-    token: str,
+    data: AdminInvitationTokenRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -443,16 +433,26 @@ async def accept_admin_invitation(
     4. Marks invitation as accepted
     5. Notifies inviter of acceptance
     """
-    service = AdminInvitationService(db)
+    # The role goes to the person the invitation names, in a session of their own: an
+    # admin acting as that account must not be able to take it for them, and would hold
+    # it through the session they are acting in.
+    if current_user.get("is_impersonating"):
+        raise RextAuthorizationException(
+            message=(
+                "An invitation can't be accepted while impersonating: "
+                "the invited person accepts it in their own session."
+            ),
+            required_permission="admin_invitation.accept",
+        )
 
-    invitation = await service.accept_admin_invitation(
-        token=token,
-        user_id=UUID(current_user["identity"]),
-    )
+    service = AdminInvitationService(db)
+    user_id = UUID(current_user["identity"])
+
+    invitation = await service.accept_admin_invitation(token=data.token, user_id=user_id)
 
     await create_audit_log_async(
         db=db,
-        user_id=UUID(current_user["identity"]),
+        user_id=user_id,
         action="admin_invitation.accept",
         resource_type="admin_invitation",
         resource_id=str(invitation.id),
@@ -460,19 +460,24 @@ async def accept_admin_invitation(
         request=request,
     )
 
-    logger.info(f"Admin invitation accepted: {invitation.email} is now {invitation.admin_role}")
-
     # TODO: Send acceptance notification to inviter
     # await send_admin_invitation_accepted_email(invitation)
 
-    return success(data=_invitation_to_response(invitation), request=request)
+    answer = success(data=_invitation_to_response(invitation), request=request)
+
+    # The account's cached permissions were read before it held the role, and would
+    # refuse the new admin until they run out. They go once the role is stored, not
+    # before: a request in between would cache the old set again.
+    await db.commit()
+    await invalidate_cache(f"user:permissions:{user_id}:*")
+
+    return answer
 
 
-@public_router.post("/{token}/decline", response_model=SuccessResponse[GenericResponse])
+@public_router.post("/decline", response_model=SuccessResponse[GenericResponse])
 @db_transaction_handler("decline admin invitation", auto_commit=True)
 async def decline_admin_invitation(
     request: Request,
-    token: str,
     data: DeclineAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -491,7 +496,7 @@ async def decline_admin_invitation(
     service = AdminInvitationService(db)
 
     invitation = await service.decline_admin_invitation(
-        token=token,
+        token=data.token,
         reason=data.reason,
     )
 
@@ -504,8 +509,6 @@ async def decline_admin_invitation(
         new_values={"email": invitation.email, "reason": data.reason},
         request=request,
     )
-
-    logger.info(f"Admin invitation declined: {invitation.email}")
 
     # TODO: Send decline notification to inviter
     # await send_admin_invitation_declined_email(invitation)

@@ -795,6 +795,7 @@ class WorkspacePipeline:
         url: Optional[str],
         description: Optional[str] = None,
         name: Optional[str] = None,
+        brand_name: Optional[str] = None,
         scraper: Optional[ScrapeCallable] = None,
         brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
         on_finished: Optional[FinishedCallable] = None,
@@ -808,6 +809,8 @@ class WorkspacePipeline:
         # what the workspace was called. The voice is drafted from these and no site is read.
         self.description = (description or "").strip()
         self.name = (name or "").strip()
+        # The business's name as its owner typed it, when they did: no draft replaces it.
+        self.brand_name = (brand_name or "").strip()
         self.user_id = user_id
         self._scraper = scraper or self._default_scraper
         self._brand_voice_generator = brand_voice_generator or (
@@ -1764,7 +1767,9 @@ class WorkspacePipeline:
                 # second, once the request did commit, would break every read of it. The run
                 # fails instead, and a retry drafts again from the row that is there by then.
                 raise RuntimeError("The workspace's brand voice was not there to draft into")
-            record.brand_name = data.get("brand_name") or record.brand_name
+            # The name the brand voice already holds (its owner typed it, or wrote it in the
+            # settings) stands; the draft's own finding fills an empty one only.
+            record.brand_name = record.brand_name or data.get("brand_name")
             record.about = record.about or data.get("about")
             record.customer_profile = data.get("customer_profile") or record.customer_profile
             record.selling_position = data.get("selling_position") or record.selling_position
@@ -2449,13 +2454,21 @@ Write in the language of the description."""
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(
-                    content=f"The workspace's name: {self.name or '(none given)'}\n\n"
-                    f"The owner's description of the business:\n{described}"
+                    content=(
+                        # Named by its owner: the draft is told the name and asked for no other.
+                        f"The business is called: {self.brand_name}\n\n"
+                        if self.brand_name
+                        else f"The workspace's name: {self.name or '(none given)'}\n\n"
+                    )
+                    + f"The owner's description of the business:\n{described}"
                 ),
             ],
             stage="workspace_brand",
         )
-        return drafted.model_copy(update={"about": described, "competitors": [], "personas": []})
+        kept = {"about": described, "competitors": [], "personas": []}
+        if self.brand_name:
+            kept["brand_name"] = self.brand_name
+        return drafted.model_copy(update=kept)
 
     async def _default_brand_voice_generator(self, content: str) -> Optional[BrandSchema]:
         if not content.strip():
@@ -2592,6 +2605,7 @@ async def run_workspace_pipeline(
     url: Optional[str],
     description: Optional[str] = None,
     name: Optional[str] = None,
+    brand_name: Optional[str] = None,
     scraper: Optional[ScrapeCallable] = None,
     brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
     on_finished: Optional[FinishedCallable] = None,
@@ -2604,6 +2618,7 @@ async def run_workspace_pipeline(
         url=url,
         description=description,
         name=name,
+        brand_name=brand_name,
         scraper=scraper,
         brand_voice_generator=brand_voice_generator,
         on_finished=on_finished,

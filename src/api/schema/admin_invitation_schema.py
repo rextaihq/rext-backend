@@ -11,6 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from src.api.models.enums import VALID_ADMIN_ROLES
 from src.utils.invitation_utils import MAX_EXPIRY_DAYS, MIN_EXPIRY_DAYS
 
 
@@ -22,9 +23,7 @@ class CreateAdminInvitationRequest(BaseModel):
     """
 
     email: EmailStr = Field(..., description="Email address of the person to invite as admin")
-    admin_role: str = Field(
-        ..., description="Admin role to assign: super_admin, support_admin, platform_admin"
-    )
+    admin_role: str = Field(..., description="Platform role to give: super_admin, admin, support")
     message: Optional[str] = Field(
         None,
         max_length=1000,
@@ -44,16 +43,15 @@ class CreateAdminInvitationRequest(BaseModel):
     @classmethod
     def validate_admin_role(cls, v: str) -> str:
         """Validate admin role is one of allowed values."""
-        allowed_roles = ["super_admin", "support_admin", "platform_admin"]
-        if v not in allowed_roles:
-            raise ValueError(f"admin_role must be one of: {', '.join(allowed_roles)}")
+        if v not in VALID_ADMIN_ROLES:
+            raise ValueError(f"admin_role must be one of: {', '.join(sorted(VALID_ADMIN_ROLES))}")
         return v
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "email": "newadmin@example.com",
-                "admin_role": "support_admin",
+                "admin_role": "support",
                 "message": "Welcome to the team! We're excited to have you as a support admin.",
                 "expiry_days": 7,
             }
@@ -61,7 +59,14 @@ class CreateAdminInvitationRequest(BaseModel):
     }
 
 
-class DeclineAdminInvitationRequest(BaseModel):
+class AdminInvitationTokenRequest(BaseModel):
+    """The token from an invitation's link. It travels in the request's body, never in
+    its path: a path is written to the request log and the error log as it is."""
+
+    token: str = Field(..., min_length=1, max_length=255, description="The invitation's token")
+
+
+class DeclineAdminInvitationRequest(AdminInvitationTokenRequest):
     """Schema for declining an admin invitation."""
 
     reason: Optional[str] = Field(None, max_length=500, description="Optional reason for declining")
@@ -152,7 +157,7 @@ class AdminInvitationResponse(BaseModel):
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "newadmin@example.com",
-                "admin_role": "support_admin",
+                "admin_role": "support",
                 "status": "pending",
                 "message": "Welcome to the team!",
                 "invited_by_admin_id": "987e6543-e21b-54d3-a654-426614174111",
@@ -184,7 +189,7 @@ class AdminInvitationListResponse(BaseModel):
                     {
                         "id": "123e4567-e89b-12d3-a456-426614174000",
                         "email": "newadmin@example.com",
-                        "admin_role": "support_admin",
+                        "admin_role": "support",
                         "status": "pending",
                         "created_at": "2025-10-23T10:00:00Z",
                         "expires_at": "2025-10-30T10:00:00Z",
@@ -225,7 +230,7 @@ class ValidateAdminInvitationResponse(BaseModel):
                 "valid": True,
                 "invitation_id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "newadmin@example.com",
-                "admin_role": "support_admin",
+                "admin_role": "support",
                 "message": "Welcome to the team!",
                 "invited_by_name": "Super Admin",
                 "expires_at": "2025-10-30T10:00:00Z",

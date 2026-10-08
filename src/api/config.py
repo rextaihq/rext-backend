@@ -17,6 +17,9 @@ from src.config.hidden_secrets import HidesSecrets
 # Signing secrets that are public, so never a secret: the placeholders this repository
 # has shipped, and every value .env.example holds (read where the file sits beside the app).
 _PLACEHOLDER_SECRETS = {"your-secret-key-here", "changeme", "secret", "password"}
+# The media store's stock access key and secret, the same word for both: what its settings fall
+# back to on a laptop. A deployed server sets its own (src/api/server.py says so at startup).
+STOCK_STORAGE_SIGN_IN = "minioadmin"
 _ENV_EXAMPLE = Path(__file__).resolve().parents[2] / ".env.example"
 _EXAMPLE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=(.*)$")
 
@@ -453,8 +456,14 @@ class Settings(HidesSecrets, BaseSettings):
     # MINIO / S3 STORAGE
     # ============================================================================
     MINIO_ENDPOINT: str = Field(default="localhost:9000", description="MinIO/S3 endpoint")
-    MINIO_ACCESS_KEY: str = Field(default="minioadmin", description="MinIO/S3 access key")
-    MINIO_SECRET_KEY: str = Field(default="minioadmin", description="MinIO/S3 secret key")
+    MINIO_ACCESS_KEY: str = Field(
+        default=STOCK_STORAGE_SIGN_IN,
+        description="MinIO/S3 access key; the default is the store's stock one, for a laptop only",
+    )
+    MINIO_SECRET_KEY: str = Field(
+        default=STOCK_STORAGE_SIGN_IN,
+        description="MinIO/S3 secret key; the default is the store's stock one, for a laptop only",
+    )
     MINIO_BUCKET: str = Field(default="rext-media", description="MinIO/S3 bucket name")
     MINIO_USE_SSL: bool = Field(default=False, description="Use SSL for MinIO/S3 connection")
     MINIO_PUBLIC_URL: Optional[str] = Field(

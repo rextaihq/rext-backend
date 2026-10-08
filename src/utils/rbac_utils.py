@@ -420,8 +420,11 @@ async def is_user_admin(db: AsyncSession, user_id: UUID, workspace_id: UUID | No
             or_(UserRole.workspace_id.is_(None), UserRole.workspace_id == workspace_id)
         )
 
-    result = await db.execute(query)
-    return result.scalar_one_or_none() is not None
+    # Any one such role is enough. An account can hold more than one (admin beside
+    # super admin, or the same role in two rows: nothing in the table stops a second
+    # row outside a workspace), and asking for "the one row" raised on those accounts.
+    result = await db.execute(query.limit(1))
+    return result.first() is not None
 
 
 async def is_user_super_admin(db: AsyncSession, user_id: UUID) -> bool:
@@ -437,10 +440,12 @@ async def is_user_super_admin(db: AsyncSession, user_id: UUID) -> bool:
             Role.hierarchy_level >= SUPER_ADMIN_HIERARCHY_THRESHOLD,
             UserRole.workspace_id.is_(None),
         )
+        .limit(1)
     )
 
+    # One row is enough; see is_user_admin for why "the one row" can't be asked for.
     result = await db.execute(query)
-    return result.scalar_one_or_none() is not None
+    return result.first() is not None
 
 
 async def get_user_max_hierarchy_level(
@@ -616,8 +621,10 @@ async def check_permission_or_admin(
             Permission.name == permission_name,
             UserRole.workspace_id.is_(None),
         )
+        .limit(1)
     )
-    if perm_result.scalar_one_or_none() is not None:
+    # Two of the account's roles can carry the same permission.
+    if perm_result.first() is not None:
         return True
 
     if not raise_on_deny:

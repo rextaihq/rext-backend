@@ -89,9 +89,18 @@ class WorkspaceSchema(BaseModel):
         ),
     )
 
+    brand_name: Optional[str] = Field(
+        None,
+        description=(
+            "For a workspace with no website: what the business is called, as its owner types "
+            "it. It is kept as the brand voice's brand name, and the draft does not replace it. "
+            "Ignored when `url` is sent (the site names the brand)"
+        ),
+    )
+
     _validate_url = field_validator("url")(_validate_workspace_url)
     _validate_name = field_validator("name")(validate_workspace_name)
-    _tidy_description = field_validator("description")(_tidy_description)
+    _tidy_texts = field_validator("description", "brand_name")(_tidy_description)
 
     model_config = {
         "json_schema_extra": {
@@ -228,6 +237,16 @@ class WorkspacePipelineRetryRequest(BaseModel):
             "drafted from it. This is how a workspace made from a name alone is set up"
         ),
     )
+
+    brand_name: Optional[str] = Field(
+        None,
+        description=(
+            "What the business is called, as its owner types it: kept as the brand voice's "
+            "brand name, and the draft does not replace it"
+        ),
+    )
+
+    _tidy_brand_name = field_validator("brand_name")(_tidy_description)
 
     # Trimmed only: a description sent blank is still one that was sent, and is refused as too
     # short rather than taken for none and drafted from what was kept before.

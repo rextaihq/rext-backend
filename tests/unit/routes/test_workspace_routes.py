@@ -138,6 +138,44 @@ async def test_create_from_a_name_alone_is_passed_on_with_nothing_to_read(
     reachable.assert_not_awaited()
 
 
+# The business's name the person typed, for a workspace with no site to read it from
+# (revnix/rext-control#922).
+
+
+@pytest.mark.asyncio
+async def test_create_passes_on_the_business_name_typed_with_a_description(client) -> None:
+    response, create, _ = await _create(
+        client,
+        {"name": "Ana's workspace", "description": DESCRIPTION, "brand_name": "  Crumb and Crust "},
+    )
+
+    assert response.status_code == 201
+    assert create.await_args.kwargs["brand_name"] == "Crumb and Crust"
+
+
+@pytest.mark.asyncio
+async def test_create_with_a_website_takes_the_brands_name_from_the_site(client) -> None:
+    response, create, _ = await _create(
+        client,
+        {"name": "Crumb and Crust", "url": "https://example.com", "brand_name": "Typed Name"},
+    )
+
+    assert response.status_code == 201
+    assert create.await_args.kwargs["brand_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_refuses_a_business_name_that_is_markup_beside_its_field(client) -> None:
+    response, create, _ = await _create(
+        client,
+        {"name": "Ana's workspace", "description": DESCRIPTION, "brand_name": "<b>Crumb</b>"},
+    )
+
+    assert response.status_code == 422
+    create.assert_not_awaited()
+    assert "'field': 'brand_name'" in str(response.json())
+
+
 # One request a test: the shared session's transaction ends with the request that commits it.
 
 

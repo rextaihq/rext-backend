@@ -59,6 +59,22 @@ def validate_workspace_name(name: str) -> str:
     return normalized
 
 
+def validate_brand_name(name: str) -> str:
+    """A business's name as its owner typed it: the workspace name's own rule (what it may hold,
+    how long), refused beside its own field."""
+    try:
+        return validate_workspace_name(name)
+    except RextValidationException as exc:
+        said = [detail["message"] for detail in exc.details] or [str(exc.message)]
+        said = [
+            text.replace("Workspace name", "The business's name").replace(
+                "in the name", "in the business's name"
+            )
+            for text in said
+        ]
+        raise RextValidationException(message=said[0], field_errors={"brand_name": said}) from exc
+
+
 def validate_signup_full_name(full_name: str) -> str:
     """
     Validate a full name entered at sign-up and return it normalised.

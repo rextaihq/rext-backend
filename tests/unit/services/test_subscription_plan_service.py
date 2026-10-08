@@ -28,6 +28,9 @@ class FakeResult:
     def scalar_one_or_none(self):
         return self._scalar
 
+    def first(self):
+        return self._scalar
+
     def scalars(self):
         class _Seq:
             def __init__(self, items):
