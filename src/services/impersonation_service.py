@@ -129,8 +129,6 @@ class ImpersonationService:
             extra={
                 "admin_user_id": str(admin_user_id),
                 "target_user_id": str(target_user_id),
-                "admin_email": admin_user.email,
-                "target_email": target_user.email,
             },
         )
 
@@ -147,6 +145,45 @@ class ImpersonationService:
             "roles": target_context["roles"],
             "permissions": target_context["permissions"],
         }
+
+    async def may_go_on(
+        self, admin_user_id: UUID, target_user_id: UUID, session_id: Optional[str]
+    ) -> bool:
+        """
+        Whether an impersonation already started may go on.
+
+        The rules of start_impersonation that can change once it has started: it
+        has not been stopped, and the account that started it still holds
+        user.impersonate and still outranks the account it acts as. Asked on every
+        impersonated request, so stopping it, or taking the admin's role away, ends
+        it there and then. A query that fails raises: the caller decides what an
+        answer that couldn't be read means.
+
+        Args:
+            admin_user_id: The account that started the impersonation
+            target_user_id: The account it acts as
+            session_id: The impersonation's session id from its token
+
+        Returns:
+            True if it may go on, False if it has ended
+        """
+        if session_id:
+            stopped = await self.db.execute(
+                select(ImpersonationSession.id)
+                .where(
+                    ImpersonationSession.session_id == str(session_id),
+                    ImpersonationSession.is_valid.is_(False),
+                )
+                .limit(1)
+            )
+            if stopped.first() is not None:
+                return False
+
+        if not await self._has_impersonation_permission(admin_user_id):
+            return False
+
+        admin_level = await self._get_max_hierarchy_level(admin_user_id)
+        return await self._get_max_hierarchy_level(target_user_id) < admin_level
 
     async def stop_impersonation(self, admin_user_id: UUID, target_user_id: UUID) -> Dict[str, str]:
         """
@@ -234,15 +271,20 @@ class ImpersonationService:
             True if has permission, False otherwise
         """
         result = await self.db.execute(
-            select(Permission)
+            select(Permission.id)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(Role, Role.id == RolePermission.role_id)
             .join(UserRole, UserRole.role_id == Role.id)
-            .where(UserRole.user_id == user_id, Permission.name == "user.impersonate")
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.workspace_id.is_(None),
+                Permission.name == "user.impersonate",
+            )
+            .limit(1)
         )
-        permission = result.scalar_one_or_none()
 
-        return permission is not None
+        # One row is enough: an account can hold the permission through two roles.
+        return result.first() is not None
 
     async def _get_max_hierarchy_level(self, user_id: UUID) -> int:
         """

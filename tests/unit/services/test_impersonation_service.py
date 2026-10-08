@@ -43,6 +43,9 @@ class FakeResult:
     def scalar_one_or_none(self):
         return self._scalar
 
+    def first(self):
+        return self._scalar
+
     def scalars(self):
         return FakeScalarSequence(self._scalars)
 

@@ -108,6 +108,36 @@ async def _say_which_session_was_refused(db: AsyncSession, session_id: UUID, use
     )
 
 
+async def _ensure_impersonation_may_go_on(payload: dict, db: AsyncSession) -> None:
+    """Refuse an impersonated session that could no longer be started.
+
+    The session is the admin's who started it. It ends when it is stopped, when that
+    account is suspended, banned or deleted, when it no longer holds user.impersonate,
+    and when it no longer outranks the account it acts as: on the next request, not
+    when the token runs out.
+    """
+    # Imported here: loading the services reaches back into this module for
+    # get_current_user (src.api.middleware.permissions).
+    from src.services.impersonation_service import ImpersonationService
+
+    try:
+        admin_id = UUID(str(payload.get("original_user_id")))
+        target_id = UUID(str(payload.get("id")))
+    except (TypeError, ValueError) as exc:
+        raise RextAuthenticationException(message="Authentication session is invalid") from exc
+
+    status = (
+        await db.execute(select(Users.status).where(Users.id == admin_id))
+    ).scalar_one_or_none()
+    still_allowed = (
+        status is not None
+        and status not in _BLOCKED_STATUSES
+        and await ImpersonationService(db).may_go_on(admin_id, target_id, payload.get("session_id"))
+    )
+    if not still_allowed:
+        raise RextAuthenticationException(message="This impersonation session has ended")
+
+
 async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
     """Reject already-issued access tokens whose user or session is no longer usable.
 
@@ -131,6 +161,9 @@ async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
             error_code=error_code,
             context={"status": status},
         )
+
+    if payload.get("is_impersonating") or payload.get("session_kind") == "impersonation":
+        await _ensure_impersonation_may_go_on(payload, db)
 
     if payload.get("session_kind") != "user":
         return
