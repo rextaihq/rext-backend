@@ -51,7 +51,8 @@ from src.flow.engines.content.generation.subheading_seo import (
     heading_length_issue,
     subheading_report,
 )
-from src.flow.engines.content.generation.title_articles import reads_as_english
+from src.flow.engines.content.generation.title_articles import reads_as_another_language
+from src.flow.engines.content.generation.word_count_utils import TYPED_SECTION_WORDS_KEY
 from src.flow.model.structure.content import Link
 from src.flow.model.structure.contents.base import (
     EMPTY_SCHEMA_CONTEXT,
@@ -437,7 +438,21 @@ def build_structured_content_model(
 # block's place in the approved order is known. The typed field stays in the
 # payload as it is.
 
-_STEP_NUMBER = re.compile(r"^(?:step\s*)?\d+\s*[.:)–—-]\s*", re.IGNORECASE)
+# A number the writer put before a step's title ("Step 2: Mix", "2. Mix", "2) Mix"): the list
+# numbers the steps itself. Not a number the title starts with ("10-minute bake").
+_STEP_NUMBER = re.compile(r"^(?:step\s*\d+(?:\s*[.:)–—-]\s*|\s+)|\d{1,2}[.)]\s+)", re.IGNORECASE)
+_WHOLLY_EMPHASIZED = re.compile(r"(\*{1,3}|_{1,3})(.+?)\1")
+
+
+def _step_title(title: Any) -> str:
+    """A step's title as the list sets it in bold: without emphasis around the whole of it and
+    without the writer's own numbering. An asterisk inside it is the writer's ("SELECT *") and
+    stays one."""
+    title = " ".join(str(title or "").split())
+    emphasized = _WHOLLY_EMPHASIZED.fullmatch(title)
+    if emphasized:
+        title = emphasized.group(2).strip()
+    return _STEP_NUMBER.sub("", title).strip().replace("*", "\\*")
 
 
 def _numbered_steps(steps: Any) -> str:
@@ -452,8 +467,7 @@ def _numbered_steps(steps: Any) -> str:
             step = step.model_dump()
         if not isinstance(step, dict):
             continue
-        title = " ".join(str(step.get("title") or "").replace("*", "").split())
-        title = _STEP_NUMBER.sub("", title).strip()
+        title = _step_title(step.get("title"))
         text = " ".join(str(step.get("description") or "").split())
         if not title and not text:
             continue
@@ -514,10 +528,10 @@ def _typed_heading(
     """The section's H2: the candidate that fits the heading length rule and leaves the share
     of subheadings carrying the keyphrase nearest its range, the keyphrase one first.
 
-    None for a title that doesn't read as English: these headings are English words, and the
-    section then follows the one before it without a heading of its own.
+    None for a title that is surely in another language: these headings are English words,
+    and the section then follows the one before it without a heading of its own.
     """
-    if not reads_as_english(title):
+    if reads_as_another_language(title):
         return None
     shown = display_keyphrase(keyphrase) if (keyphrase or "").strip() else ""
     candidates = ([with_keyphrase.format(keyphrase=shown)] if shown else []) + [plain]
@@ -633,6 +647,7 @@ def assemble_structured_payload(
     # A block counts as written only with prose in it: an empty one renders as
     # nothing, so it is as missing as an absent one.
     written = [k for k, b in ordered if b is not None and (b.markdown or "").strip()]
+    typed_words = 0
     if typed and written:
         try:
             placed, typed_shown = _with_typed_sections(
@@ -648,8 +663,12 @@ def assemble_structured_payload(
             typed_shown = []
         if typed_shown:
             ordered = placed
+            without = len(assembled.split())
             assembled = blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
             written = written + typed_shown
+            # What the sections add to the body, as the length check counts words: its
+            # maximum grows by exactly this (word_count_utils.typed_section_allowance).
+            typed_words = len(assembled.split()) - without
     missing_required = [b.key for b in blocks if b.required and b.key not in written]
     if missing_required:
         # Should be unreachable — these are required fields under constrained
@@ -700,6 +719,8 @@ def assemble_structured_payload(
     # rewrites body_markdown freely, block provenance no longer holds and the
     # heading-based check should apply again.
     payload[STRUCTURED_BLOCKS_KEY] = written
+    if typed_words > 0:
+        payload[TYPED_SECTION_WORDS_KEY] = typed_words
 
     logger.info(
         "assemble_structured_payload: blocks_written=%s/%s body_chars=%s",
