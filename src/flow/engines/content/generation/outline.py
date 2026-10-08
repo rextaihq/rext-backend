@@ -909,9 +909,14 @@ async def generate_outline(state: REXT) -> dict:
                     # some and still has its main sections. A model that adds H3s often folds two
                     # H2s into one, so it need not keep as many as the first, only the four an
                     # article needs (or the first one's own count, where that was fewer). The
-                    # schema sets no least number, so a second attempt can come back much shorter.
-                    fuller = gained > 0 and _main_sections(retried) >= min(
-                        _main_sections(outline_dict), MIN_MAIN_SECTIONS
+                    # schema sets no least number, so a second attempt can come back much shorter:
+                    # it must also hold more sections in all than the first, so what it folded
+                    # is still there as an H3 and nothing was dropped to make room.
+                    fuller = (
+                        gained > 0
+                        and _main_sections(retried)
+                        >= min(_main_sections(outline_dict), MIN_MAIN_SECTIONS)
+                        and len(_outline_sections(retried)) > len(_outline_sections(outline_dict))
                     )
                 else:
                     fuller = gained >= 0
