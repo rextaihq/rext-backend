@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +27,7 @@ from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
+    RextAuthenticationException,
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -74,6 +75,7 @@ class OAuthService:
         access_token: Optional[str] = None,
         refresh_token: Optional[str] = None,
         token_expires_at: Optional[datetime] = None,
+        email_verified: bool = True,
     ) -> Tuple[Users, Dict[str, Any]]:
         """
         Login or register user via OAuth provider.
@@ -141,9 +143,25 @@ class OAuthService:
             )
 
         else:
-            # OAuth account doesn't exist - check if user with email exists
-            result = await self.db.execute(select(Users).where(Users.email == provider_email))
-            user = result.scalar_one_or_none()
+            if not email_verified:
+                # Nothing is linked or opened on an address its provider has not confirmed
+                # belongs to this account: an existing user with that address is someone else
+                # until the provider says otherwise.
+                raise RextAuthenticationException(
+                    message=(
+                        "The provider has not confirmed this email address, so it can't be used "
+                        "to sign in here yet. Confirm it with the provider, or sign in with your "
+                        "email and password."
+                    )
+                )
+            # OAuth account doesn't exist - check if user with email exists. An address is the
+            # same in any case: "Ana@example.com" registered by hand is this person too.
+            result = await self.db.execute(
+                select(Users)
+                .where(func.lower(Users.email) == provider_email.lower())
+                .order_by(Users.created_at)
+            )
+            user = result.scalars().first()
 
             if user:
                 # User exists - link this OAuth account to their account
