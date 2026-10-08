@@ -160,9 +160,11 @@ def format_expertise_for_writer(voice: dict[str, Any]) -> str:
     if audiences:
         lines.append(f"- **Who it serves:** {'; '.join(audiences)}")
     lines.append(
-        "- **How to use this:** write as a practitioner at this company would: choose the "
-        "examples, the level of detail and the angle its customers need, and where the article "
-        "touches what the company does, speak from that knowledge."
+        "- **How to use this:** where the article's subject is this company's own field, write "
+        "as a practitioner at this company would: choose the examples, the level of detail and "
+        "the angle its customers need, and speak from that knowledge. Where the article's "
+        "subject lies outside it, this is background only: write for the article's own reader, "
+        "and bring in nothing of the company's customers or their work."
     )
     lines.append(
         "- **No facts from here:** this shapes how you write, it is not a source. Do not state "

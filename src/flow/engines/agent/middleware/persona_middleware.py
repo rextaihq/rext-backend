@@ -29,6 +29,10 @@ from src.flow.engines.content.generation.requirements_spec import (
     brand_named_in,
     excluded_brand_of,
 )
+from src.flow.engines.content.generation.site_subject import (
+    outside_the_sites_subject,
+    without_customers_and_expertise,
+)
 from src.flow.engines.content.generation.structured_body import (
     early_body_sections,
     planned_section_count,
@@ -667,6 +671,17 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if personas and excluded and _is_named(personas, excluded["brand_name"]):
             fits_topic = False
             print("  persona shares the excluded brand's name: written unnamed")
+        # An article whose subject is plainly not the site's keeps the brand's voice and is
+        # told nothing of whom the site serves or what the company knows: asked to write "as
+        # a practitioner at this company for its customers", an article on standing desks
+        # addressed SEO professionals (rext-control#816).
+        if outside_the_sites_subject(
+            profile,
+            keyword=content_state.get("focus_keyword") or (outline or {}).get("focus_keyphrase"),
+            title=content_state.get("selected_topic") or (outline or {}).get("title"),
+        ):
+            print("  the article's subject is outside the site's: customers and expertise left out")
+            profile = without_customers_and_expertise(profile)
         voice = article_voice(
             personas.tone_of_voice if personas else None,
             _profile_under_the_choice(profile, excluded),
