@@ -36,6 +36,7 @@ A_STRONG_PASSWORD = "Tr0ub4dor&3-horse-staple"
         "محمد",
         "علی\u200cرضا",  # Persian writes a joiner inside the word
         "\u0939\u093f\u0928\u094d\u200d\u0926\u0940",  # Hindi: a joiner after a combining mark
+        "\u0d05\u0d28\u0d3f\u0d32\u0d4d\u200d",  # Malayalam, the older spelling: a joiner ends it
         "Nguyễn Thị Minh Khai",
         "J. R. R. Tolkien",
         "Dr.Ahmed Khan",
@@ -82,6 +83,8 @@ def test_a_long_name_fits_and_one_past_the_limit_does_not():
         ("Jo\u200c\u200chn", "Full name cannot contain hidden or control characters"),
         ("Prize at http://evil.example", "Full name cannot contain a web address"),
         ("www.evil.example", "Full name cannot contain a web address"),
+        # A joiner between its letters hides nothing: the address is read without it.
+        ("ww\u200dw.evil.example", "Full name cannot contain a web address"),
         ("12345", "Full name must contain at least one letter"),
         ("- - -", "Full name must contain at least one letter"),
         ("😀😀", "Full name must contain at least one letter"),

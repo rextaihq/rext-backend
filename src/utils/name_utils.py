@@ -102,12 +102,13 @@ def validate_signup_full_name(full_name: str) -> str:
     else:
         # The joiners Persian and Indic scripts write inside a word are part of the name
         # there, and hidden characters anywhere else.
-        markup_error = find_markup(without_joiners_in_words(name), "Full name")
+        visible = without_joiners_in_words(name)
+        markup_error = find_markup(visible, "Full name")
         if markup_error:
             errors.append(markup_error)
         elif has_hidden_characters(name):
             errors.append("Full name cannot contain hidden or control characters")
-        elif _WEB_ADDRESS_RE.search(name):
+        elif _WEB_ADDRESS_RE.search(visible):
             errors.append("Full name cannot contain a web address")
         elif not any(char.isalpha() for char in name):
             errors.append("Full name must contain at least one letter")
