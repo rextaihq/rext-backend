@@ -5,7 +5,8 @@ A super admin switches it on and off without a deploy. Its state is one JSON val
 every API instance shares, stored with the banner's own end time as its expiry: a banner always
 ends (at most a day later), so one nobody switched off can't outlive its incident. There is no
 banner when the key is absent, expired or unreadable, and when Redis itself can't be reached:
-reading it never fails, it answers "none".
+reading it never fails, it answers "none". Reading touches Redis only, never PostgreSQL, so the
+banner can still be read when the database is what is failing.
 
 Does NOT:
 - Handle HTTP requests/responses (routes)
@@ -125,6 +126,38 @@ async def set_banner(
         "started_at": started_at,
         "expires_at": expires_at,
     }
+
+
+async def restore_banner(previous: Dict[str, Any]) -> None:
+    """
+    Put back what was showing before a switch that then couldn't be recorded (its audit entry
+    failed): the earlier banner for the time it had left, or none. So a switch nobody can find in
+    the audit log doesn't stay on every page. Best effort: it logs and never raises, since it runs
+    while another error is already on its way to the caller.
+    """
+    try:
+        expires_at = previous.get("expires_at")
+        if previous.get("active") and isinstance(expires_at, datetime):
+            remaining = int((expires_at - _now()).total_seconds())
+            if remaining > 0:
+                started_at = previous.get("started_at")
+                await cache.set(
+                    BANNER_KEY,
+                    {
+                        "message": previous.get("message"),
+                        "areas": list(previous.get("areas") or []),
+                        "started_at": started_at.isoformat()
+                        if isinstance(started_at, datetime)
+                        else None,
+                        "expires_at": expires_at.isoformat(),
+                    },
+                    ttl=remaining,
+                )
+                return
+        if cache.is_enabled and cache.redis is not None:
+            await cache.redis.delete(BANNER_KEY)
+    except Exception as error:
+        logger.error("Incident banner could not be put back", error=str(error))
 
 
 async def clear_banner() -> bool:
