@@ -851,10 +851,47 @@ async def test_a_part_that_came_back_without_a_link_is_asked_once_more_and_told_
     # Left out twice: the part stays as drafted, and is not asked a third time.
     assert len([m for m in always.asked if m["part"] is with_link]) == 2
     assert kept[0] is with_link
-    assert lost_lines(("https://site.test/guides/planning",)).startswith(
+    told = lost_lines(("https://site.test/guides/planning",))
+    assert told.startswith(
         "- Your last answer to this left out: https://site.test/guides/planning."
     )
+    # Review round 1: a link belongs in a sentence; an image stays where it stands.
+    assert "inside a sentence; every image stays where it stands, unchanged." in told
     assert lost_lines(()) == ""
+
+
+async def test_the_second_ask_is_one_call_and_names_what_the_guard_found_missing(monkeypatch):
+    """Review round 1: the second ask went through the watched call's own second attempt, so a
+    part could be requested a third time; and what it had left out was read from the raw
+    answer, where a link put before the part's heading still stood, so that part was asked
+    again without being told which link."""
+    import src.flow.engines.content.generation.section_rewrite as section_rewrite
+
+    heading = "## Fill the Calendar"
+    link = "[a planning guide](https://site.test/guides/planning/)"
+    part = Part(SECTION, heading, f"{heading}\n\n{_text(100)} See {link}. {_text(40)}")
+    asked = []
+
+    async def watched(model, messages, *, stage, attempts=2):
+        asked.append((messages["lost"], attempts))
+        # The link stands before the heading: the guard drops what stands there.
+        return SimpleNamespace(content=f"See {link} first.\n\n{heading}\n\n{_text(140)}")
+
+    monkeypatch.setattr(section_rewrite, "ainvoke_watched", watched)
+
+    rewritten, _ = await rewrite_parts(
+        [part, _section(60, "## Review It")],
+        model=None,
+        messages_for=_messages_for,
+        word_target=words(part.text) + 64,
+    )
+
+    # Each part once with the watched call's own two attempts; then the one part again, told
+    # the address the guard found missing, as a single attempt. Left out twice: kept as drafted.
+    assert ((), 2) in asked
+    assert (("https://site.test/guides/planning",), 1) in asked
+    assert len([call for call in asked if call[0]]) == 1
+    assert rewritten[0] is part
 
 
 async def test_a_long_article_never_has_more_than_a_few_calls_running():

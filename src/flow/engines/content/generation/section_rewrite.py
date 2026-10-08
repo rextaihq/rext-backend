@@ -108,8 +108,9 @@ def lost_lines(lost: tuple[str, ...] | list[str]) -> str:
     if not lost:
         return ""
     return (
-        "- Your last answer to this left out: " + ", ".join(lost) + ". Every link and every "
-        "image of the part stays, each at its own address, inside a sentence of the part."
+        "- Your last answer to this left out: " + ", ".join(lost) + ". Every link of the part "
+        "stays, at its own address, inside a sentence; every image stays where it stands, "
+        "unchanged."
     )
 
 
@@ -618,14 +619,20 @@ async def rewrite_parts(
         wanted = count * scale
         low, high = stated_range(wanted, cutting=scale < 1)
 
-        async def ask(*lost: str) -> tuple[Optional[str], str, str]:
+        async def ask(lost: tuple[str, ...] | None = None) -> tuple[Optional[str], str, str]:
+            # The second ask is itself a second attempt: watched, never asked for again.
+            again = lost is not None
             messages = (
                 messages_for(part, index, low, high, lost)
-                if lost
+                if again
                 else messages_for(part, index, low, high)
             )
             async with gate:
-                answer = _plain_text(await ainvoke_watched(model, messages, stage="humanize"))
+                answer = _plain_text(
+                    await ainvoke_watched(
+                        model, messages, stage="humanize", attempts=1 if again else 2
+                    )
+                )
             return (
                 *judge(part, answer, wanted, brand=brand, excluded=excluded, keep=keep),
                 answer,
@@ -637,8 +644,11 @@ async def rewrite_parts(
                 # A list of products comes back without one of its links time and again, and
                 # kept as drafted it is the part an over-long article most needs shortened.
                 # Told which link it left out, the model keeps it: asked once more, no more.
+                # What it left out is read from the answer as the guard read it (a link put
+                # before the part's heading went with what stood there).
+                read = _with_its_headings(part, answer) or ""
                 logger.info("section rewrite: part %s lost a link; asked once more", index + 1)
-                accepted, why, _ = await ask(*lost_embeds(part.text, answer))
+                accepted, why, _ = await ask(tuple(lost_embeds(part.text, read)))
         except Exception as error:  # noqa: BLE001 - one part's failure keeps that part's draft
             logger.warning(
                 "section rewrite: part %s failed (%s); kept as drafted",
