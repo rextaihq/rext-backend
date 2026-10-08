@@ -18,6 +18,7 @@ from src.flow.engines.content.generation.structured_body import (
     typed_section_blocks,
 )
 from src.flow.engines.content.generation.subheading_seo import (
+    _is_bolted_on,
     extract_subheadings,
     heading_length_issue,
     subheading_report,
@@ -97,7 +98,7 @@ def test_a_how_to_guides_steps_stand_where_the_outline_has_them_numbered_in_orde
     assert payload["body_markdown"] == (
         "Repotting gives crowded roots room to grow.\n\n"
         "## What to Check Before You Repot\n\nLook at the roots first.\n\n"
-        "## How to Repot a Houseplant: Step by Step\n\n"
+        "## How to Repot a Houseplant in 3 Steps\n\n"
         "1. **Remove the plant.** Ease it out of its pot.\n"
         "2. **Prepare the new pot.** Add fresh mix.\n"
         "3. **Water the plant!** Water it once.\n\n"
@@ -126,7 +127,7 @@ def test_a_how_to_guide_without_typed_steps_gets_no_section_and_no_empty_heading
         payload["body_markdown"]
         == (assemble_structured_payload(copy.deepcopy(content), built[1])["body_markdown"])
     )
-    assert "Step by Step" not in payload["body_markdown"]
+    assert " Steps" not in payload["body_markdown"]
     assert "steps" not in payload[STRUCTURED_BLOCKS_KEY]
 
 
@@ -163,6 +164,10 @@ def test_a_step_without_a_title_or_without_a_text_is_still_a_numbered_step():
         # An asterisk inside the title is the writer's, and is shown as one.
         ("Run SELECT * to inspect the table", "Run SELECT \\* to inspect the table."),
         ("Match *.log files", "Match \\*.log files."),
+        # So is an underscore at a word's edge; one inside a word needs nothing.
+        ("__init__", "\\_\\_init\\_\\_."),
+        ("_config_", "\\_config\\_."),
+        ("Set max_depth to 3", "Set max_depth to 3."),
     ],
 )
 def test_a_steps_title_loses_its_own_numbering_and_nothing_else(written, shown):
@@ -171,6 +176,114 @@ def test_a_steps_title_loses_its_own_numbering_and_nothing_else(written, shown):
     body = _assemble(HOW_TO_OUTLINE, "how-to-guide", _how_to_content(steps))["body_markdown"]
 
     assert f"\n1. **{shown}** Then go on.\n" in body
+
+
+def test_a_steps_text_of_several_blocks_keeps_them_under_its_number():
+    fence = "`" * 3
+    steps = [
+        {
+            "title": "Install the tools",
+            "description": f"Run this:\n\n{fence}bash\nuv sync\n{fence}",
+        },
+        {"title": "Check the pot", "description": "Look for:\n- drainage holes\n- cracks"},
+        {"title": "Water it", "description": "Water once,\nthen let it drain."},
+    ]
+
+    body = _assemble(HOW_TO_OUTLINE, "how-to-guide", _how_to_content(steps))["body_markdown"]
+
+    assert (
+        "1. **Install the tools.** Run this:\n"
+        "\n"
+        f"   {fence}bash\n"
+        "   uv sync\n"
+        f"   {fence}\n"
+        "2. **Check the pot.** Look for:\n"
+        "   - drainage holes\n"
+        "   - cracks\n"
+        "3. **Water it.** Water once, then let it drain." in body
+    )
+    # The nested list's items are no steps of their own.
+    assert "## How to Repot a Houseplant in 3 Steps\n" in body
+
+
+@pytest.mark.parametrize(
+    ("content_type", "outline", "content", "keyphrase", "heading"),
+    [
+        (
+            "how-to-guide",
+            "how-to",
+            "how-to",
+            KEYPHRASE,
+            "How to Repot a Houseplant in 3 Steps",
+        ),
+        (
+            "how-to-guide",
+            "how-to",
+            "how-to",
+            "repotting houseplants",
+            "Repotting Houseplants in 3 Steps",
+        ),
+        # A keyphrase that is a question of its own is no part of another sentence.
+        (
+            "how-to-guide",
+            "how-to",
+            "how-to",
+            "what is repotting",
+            "Follow These Steps in Order",
+        ),
+        ("how-to-guide", "how-to", "how-to", "", "Follow These Steps in Order"),
+        ("in-depth-review", "review", "review", "notion review", "The Verdict on Notion Review"),
+        ("in-depth-review", "review", "review", "is notion worth it", "The Verdict in a Few Words"),
+        (
+            "tutorial",
+            "tutorial",
+            "tutorial",
+            "python web scraping",
+            "What You Need for Python Web Scraping",
+        ),
+        (
+            "tutorial",
+            "tutorial",
+            "tutorial",
+            "how to build a web scraper",
+            "What You Need to Build a Web Scraper",
+        ),
+        (
+            "tutorial",
+            "tutorial",
+            "tutorial",
+            "why scrape the web",
+            "What You Need Before You Start",
+        ),
+    ],
+)
+def test_the_heading_says_the_keyphrase_as_a_part_of_it_never_before_a_colon(
+    content_type, outline, content, keyphrase, heading
+):
+    outline = {"how-to": HOW_TO_OUTLINE, "review": REVIEW_OUTLINE, "tutorial": TUTORIAL_OUTLINE}[
+        outline
+    ]
+    content = {
+        "how-to": _how_to_content(),
+        "review": {
+            "title": "Notion Review for Small Teams",
+            "hero": _block(None, "Notion does a lot."),
+            "pros_cons": _block("Where Notion Helps and Where It Hurts", "It is flexible."),
+            "verdict": "Notion suits small teams.",
+        },
+        "tutorial": {
+            "title": "Python Web Scraping Tutorial for Beginners",
+            "hero": _block(None, "Scrape a page in an afternoon."),
+            "modules": _block("Set Up the Scraping Project", "Create a folder."),
+            "prerequisites": ["Python 3.11"],
+        },
+    }[content]
+
+    body = _assemble(outline, content_type, content, keyphrase=keyphrase)["body_markdown"]
+
+    assert f"## {heading}\n\n" in body
+    assert not _is_bolted_on(heading, keyphrase)
+    assert heading_length_issue(2, heading, content_type) is None
 
 
 def test_assembling_a_second_time_adds_nothing():
@@ -307,7 +420,7 @@ def test_a_reviews_verdict_is_a_section_where_the_outline_has_it():
     assert payload["body_markdown"] == (
         "Notion does a lot.\n\n"
         "## Where Notion Helps and Where It Hurts\n\nIt is flexible.\n\n"
-        "## Notion Review: The Verdict\n\n"
+        "## The Verdict on Notion Review\n\n"
         "Notion suits small teams.\n\nLarger ones outgrow its permissions.\n\n"
         "## Questions About Notion, Answered\n\n### Is Notion free?\n\nPartly."
     )
@@ -328,7 +441,7 @@ def test_a_tutorials_prerequisites_are_a_section_where_the_outline_has_them():
     assert payload["body_markdown"] == (
         "Scrape a page in an afternoon.\n\n"
         "## Who This Scraping Tutorial Is For\n\nBeginners.\n\n"
-        "## Python Web Scraping: What You Need First\n\n- Python 3.11\n- A terminal\n\n"
+        "## What You Need for Python Web Scraping\n\n- Python 3.11\n- A terminal\n\n"
         "## Set Up the Scraping Project\n\nCreate a folder."
     )
 
@@ -368,7 +481,7 @@ def test_the_heading_leaves_the_keyphrase_out_when_too_many_headings_carry_it():
     body = _assemble(HOW_TO_OUTLINE, "how-to-guide", content)["body_markdown"]
 
     assert "## Follow These Steps in Order\n\n1. **Remove the plant.**" in body
-    assert "Step by Step" not in body
+    assert "in 3 Steps" not in body
 
 
 @pytest.mark.parametrize(
@@ -377,6 +490,9 @@ def test_the_heading_leaves_the_keyphrase_out_when_too_many_headings_carry_it():
         # No word proves these English, and none says otherwise: they keep their heading.
         ("Install Docker on Ubuntu", True),
         ("Python Web Scraping Tutorial", True),
+        # A name from another language in a title that says it is English.
+        ("How to Use La Roche-Posay Cleanser", True),
+        ("What Is La Liga and How Do You Follow It", True),
         ("Wie man eine Zimmerpflanze umtopft", False),
         ("観葉植物の植え替え方法", False),
         ("Как пересадить комнатное растение", False),
@@ -406,7 +522,7 @@ def test_a_title_that_is_not_english_gets_the_list_without_an_english_heading():
     ]
 
     assert "Look at the roots first.\n\n1. **Remove the plant.** Ease it out of its pot.\n" in body
-    assert "Step by Step" not in body and "Follow These Steps" not in body
+    assert "in 3 Steps" not in body and "Follow These Steps" not in body
 
 
 # ── The length check: the section's words come on top of the maximum ──────────────────────
@@ -533,7 +649,7 @@ def test_a_passing_share_of_keyphrase_headings_still_passes_with_the_sections_he
             continue
 
         heading = _typed_heading(
-            "{keyphrase}: Step by Step",
+            "How to Repot a Houseplant in 3 Steps",
             "Follow These Steps in Order",
             KEYPHRASE,
             "How to Repot a Houseplant: A Step-by-Step Guide",
