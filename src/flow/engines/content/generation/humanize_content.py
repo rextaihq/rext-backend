@@ -21,6 +21,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_brand_placement_policy,
 )
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.generation_brief import brief_for_stage
 from src.flow.engines.content.generation.keyword_density import analyze_keyword_density
 from src.flow.engines.content.generation.link_integrity import (
     normalize_url,
@@ -209,7 +210,16 @@ def _build_prompt_data(
     audience: Any = None,
     tone: Any = None,
     excluded_brand: dict[str, str] | None = None,
+    brief: str = "",
 ) -> dict[str, Any]:
+    """What the rewrite is told beside the article.
+
+    ``brief`` is the article's brief (generation_brief, stage "rewrite"): the reader, the tone,
+    the length band, the keywords, the brand choice and the call to action, each said once and
+    as the checks read them. With it, the instructions below say only what this pass has
+    measured and what to do about it; without it (the brief could not be built) they state the
+    reader, the tone and the secondary keywords themselves, as they did before the brief.
+    """
     introduction = content_payload.get("introduction") or ""
     body_markdown = content_payload.get("body_markdown") or ""
     total_words = len((introduction + " " + body_markdown).split())
@@ -223,7 +233,10 @@ def _build_prompt_data(
     total_min, total_max = compute_word_target_band(word_target)
     total_target = word_target
     section_min = max(40, round((word_target / num_sections) * SECTION_MIN_FRACTION))
-    deficit = total_target - total_words
+    # Measured against the band the article is checked against, the one the brief states. An
+    # article inside it is left at its length: asking for more whenever it was under the
+    # target itself (not the band) pushed articles that passed over the maximum.
+    deficit = total_target - total_words if total_words < total_min else 0
     excess = total_words - total_max
 
     logger.info(
@@ -251,8 +264,8 @@ def _build_prompt_data(
             expand_note = f"Add {deficit} more words spread across sections — deepen explanations with examples or anecdotes."
 
         length_instruction = (
-            f"LENGTH REQUIREMENT: Article has {total_words} words. Target range is {total_target}-{total_max}. "
-            f"While rewriting, also EXPAND the content by {deficit} words. {expand_note} "
+            f"LENGTH REQUIREMENT: Article has {total_words} words, under its range of {total_min}-{total_max}. "
+            f"While rewriting, also EXPAND the content by about {deficit} words. {expand_note} "
             "Do not pad with filler — expand with substance."
         )
     elif excess > 0:
@@ -260,9 +273,10 @@ def _build_prompt_data(
         # the excess" routinely stopped a few words above the maximum.
         trim = total_words - round((total_target + total_max) / 2)
         length_instruction = (
-            f"LENGTH REQUIREMENT: Article has {total_words} words. Target range is {total_target}-{total_max}. "
+            f"LENGTH REQUIREMENT: Article has {total_words} words, over its range of {total_min}-{total_max}. "
             f"While rewriting, also TRIM the content by roughly {trim} words — cut filler, redundant transitions, "
-            "and repeated points. Keep every fact, citation, and link intact; tighten prose, don't remove substance."
+            "and repeated points. Keep every fact, citation, and link intact; tighten prose, don't remove substance. "
+            f"A rewrite that comes back longer than {total_max} words has failed this requirement."
         )
     else:
         # A tone rewrite tends to compress. Stating the floor keeps an in-band
@@ -287,7 +301,11 @@ def _build_prompt_data(
     elif excluded_brand:
         # The user chose no mention (rext-control#700): a rewrite must not bring the brand in.
         brand_instruction = (
-            f'BRAND EXCLUSION — the user chose NO mention of "{excluded_brand["brand_name"]}": do not '
+            # The brief states the rule and where it holds; this is what the pass does about it.
+            f'BRAND EXCLUSION — the brief\'s brand line stands: if the draft names "{excluded_brand["brand_name"]}" '
+            "or links to its site, rewrite that sentence without it, and bring it in nowhere."
+            if brief
+            else f'BRAND EXCLUSION — the user chose NO mention of "{excluded_brand["brand_name"]}": do not '
             "name it, or link to its site (the article's internal links stay), anywhere in the title, "
             "the introduction, the body, a heading or a call to action. If the draft names it, "
             "rewrite that sentence without it."
@@ -300,12 +318,13 @@ def _build_prompt_data(
         "length_instruction": length_instruction,
         "voice_instruction": format_voice_for_rewrite(article_voice),
         "brand_instruction": brand_instruction,
-        "reader_instruction": _build_reader_instruction(audience=audience, tone=tone),
+        "reader_instruction": brief or _build_reader_instruction(audience=audience, tone=tone),
         "keyword_instruction": _build_keyword_instruction(
             content_payload=content_payload,
             focus_keyword=focus_keyword,
             content_type=content_type,
-            secondary_keywords=secondary_keywords,
+            # The brief lists them, once, as the check reads them.
+            secondary_keywords=None if brief else secondary_keywords,
         ),
     }
 
@@ -426,6 +445,7 @@ async def humanize_content(state: REXT) -> dict:
         audience=outline.get("target_audience"),
         tone=outline.get("tone"),
         excluded_brand=spec.get("excluded_brand"),
+        brief=brief_for_stage(spec, outline, stage="rewrite"),
     )
     model = load_humanize_model().with_structured_output(schema)
     messages = get_humanize_prompt().format_messages(**prompt_data)
@@ -512,6 +532,7 @@ async def humanize_content(state: REXT) -> dict:
             protected=protected,
             brand_policy=spec.get("brand_placement_policy"),
             excluded_brand=spec.get("excluded_brand"),
+            brief=brief_for_stage(spec, outline, stage="repair"),
         )
         if repaired is not None:
             # The repair returns every field: the brand choice's cleanup applies to it too.
