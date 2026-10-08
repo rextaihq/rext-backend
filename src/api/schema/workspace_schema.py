@@ -53,6 +53,18 @@ def _tidy_description(value: Optional[str]) -> Optional[str]:
     return (value or "").strip() or None
 
 
+def description_refusal(description: str) -> Optional[str]:
+    """Why a (trimmed) description can't be drafted from, in words for its field; None if it can."""
+    if len(description) < DESCRIPTION_MIN_LENGTH:
+        return (
+            "Your description is too short. Say in a sentence or two what the business sells, "
+            "and to whom."
+        )
+    if len(description) > DESCRIPTION_MAX_LENGTH:
+        return f"Your description is too long. Keep it to {DESCRIPTION_MAX_LENGTH:,} characters."
+    return None
+
+
 # FIXED: Removed brand voice fields - only workspace core fields
 class WorkspaceSchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Workspace title")
@@ -61,7 +73,10 @@ class WorkspaceSchema(BaseModel):
     )
     url: Optional[HttpUrl] = Field(
         None,
-        description="The website to read. Without one, `description` is required",
+        description=(
+            "The website to read. With neither a website nor a `description` the workspace is "
+            "made from its name alone and set up later (its pipeline reads `not_started`)"
+        ),
     )
     # Its length is judged by the route, on the trimmed text and only when it is used: a
     # request with a website has always been free to carry a description it doesn't need.
@@ -142,9 +157,13 @@ class WorkspaceAnalyticsSchema(BaseModel):
 class WorkspacePipelineState(BaseModel):
     """The latest run of the workspace pipeline that reads the website (creation, retry, refresh)"""
 
-    status: Literal["running", "completed", "failed", "interrupted"] = Field(
+    status: Literal["not_started", "running", "completed", "failed", "interrupted"] = Field(
         ...,
-        description="interrupted: a restart or a deploy ended the run; POST .../pipeline/retry runs it again",
+        description=(
+            "not_started: the workspace was made from a name alone and nothing has been read or "
+            "drafted yet. interrupted: a restart or a deploy ended the run; "
+            "POST .../pipeline/retry runs it again"
+        ),
     )
     operation_id: Optional[str] = Field(None, description="The run's SSE operation id")
     started_at: Optional[datetime] = Field(None, description="When the run started")
@@ -196,3 +215,18 @@ class WorkspaceUpdateSchema(BaseModel):
 
     _validate_url = field_validator("url")(_validate_workspace_url)
     _validate_name = field_validator("name")(validate_workspace_name)
+
+
+class WorkspacePipelineRetryRequest(BaseModel):
+    """The optional body of POST /workspaces/{id}/pipeline/retry."""
+
+    description: Optional[str] = Field(
+        None,
+        description=(
+            "For a workspace with no website: what the business sells and to whom, 20 to 1,000 "
+            "characters once trimmed. It is kept as the brand voice's `about` and the voice is "
+            "drafted from it. This is how a workspace made from a name alone is set up"
+        ),
+    )
+
+    _tidy_description = field_validator("description")(_tidy_description)
