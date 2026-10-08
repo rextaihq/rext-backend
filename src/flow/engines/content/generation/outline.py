@@ -9,6 +9,7 @@ from src.flow.engines.content.generation.focus_keyword import (
     pin_focus_keyword,
     resolve_focus_keyword,
 )
+from src.flow.engines.content.generation.outline_depth import hold_main_sections
 from src.flow.model.llm_manager import load_model
 from src.flow.model.provider_outage import (
     STEP_FAILED,
@@ -812,6 +813,19 @@ async def generate_outline(state: REXT) -> dict:
                     content_type, outline_dict
                 ):
                     outline_dict = retried
+
+        # A first outline is held to its main sections and their budgets (outline_depth.py). A
+        # regeneration after a person's feedback is theirs: "make it three sections" stands.
+        if not reviewed:
+            raised, lifted = hold_main_sections(outline_dict)
+            if raised or lifted:
+                logger.info(
+                    "Outline held to its main sections: %s subsection(s) raised to H2, "
+                    "%s budget(s) lifted, content_type=%s",
+                    raised,
+                    lifted,
+                    content_type,
+                )
 
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
