@@ -23,13 +23,14 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from langsmith import trace, traceable
-from sqlalchemy import and_, delete, distinct, func, select
+from sqlalchemy import and_, delete, distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.api.cache.decorators import cached, invalidate_cache, invalidate_cache_key
 from src.api.database.async_database import get_async_db_context
 from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
     RextAuthenticationException,
@@ -51,6 +52,70 @@ from src.utils.storage import resolve_avatar_url, resolve_media_url
 
 # Track background pipeline tasks to prevent garbage collection
 _background_tasks: set = set()
+
+# The workspace pipeline runs as a task inside this process, with no queue behind it, so a
+# restart or a deploy ends a run without a word. A run recorded as running is gone once it
+# started before this process did, or once it has outlived any real run (the pipeline's own
+# budget is 90 seconds).
+_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+_PIPELINE_RUN_LIMIT = timedelta(minutes=10)
+
+
+def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
+    """The workspace's latest pipeline run, as the dashboard polls it: its status ("running",
+    "completed", "failed", or "interrupted" for a running row this process no longer runs), its
+    operation id for the SSE stream, and when it started. None when no run is recorded, as for
+    a workspace created before runs were."""
+    status = workspace.pipeline_status
+    if status is None:
+        return None
+    started_at = workspace.pipeline_started_at
+    if status == "running" and (
+        started_at is None
+        or started_at < _PROCESS_STARTED_AT
+        or datetime.now(timezone.utc) - started_at > _PIPELINE_RUN_LIMIT
+    ):
+        status = "interrupted"
+    return {
+        "status": status,
+        "operation_id": workspace.pipeline_operation_id,
+        "started_at": started_at.isoformat() if started_at else None,
+    }
+
+
+def _mark_pipeline_started(workspace: WorkspaceModel, operation_id: str) -> None:
+    workspace.pipeline_status = "running"
+    workspace.pipeline_operation_id = operation_id
+    workspace.pipeline_started_at = datetime.now(timezone.utc)
+
+
+async def _record_pipeline_end(
+    db: AsyncSession, workspace_id: UUID, operation_id: str, status: str
+) -> None:
+    """Write how a run ended, unless a newer run has taken its place on the row. Never raises:
+    the run's outcome is logged already, and a row left running reads as interrupted."""
+    try:
+        await db.execute(
+            update(WorkspaceModel)
+            .where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.pipeline_operation_id == operation_id,
+            )
+            .values(pipeline_status=status)
+            .execution_options(synchronize_session=False)
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 - the status is a record, never a new failure
+        await db.rollback()
+        logger.warning(
+            "Could not record the workspace pipeline's end",
+            extra={
+                "workspace_id": str(workspace_id),
+                "operation_id": operation_id,
+                "status": status,
+                "error": repr(exc),
+            },
+        )
 
 
 class WorkspaceService:
@@ -113,6 +178,8 @@ class WorkspaceService:
             await self._assign_role_to_user(owner_role.id, user_id, workspace.id)
 
         operation_id = str(uuid4())
+        _mark_pipeline_started(workspace, operation_id)
+        await self.db.flush()
 
         # Register ownership so only this user can publish events to this operation
         await event_stream_manager.set_operation_owner(operation_id, user_id)
@@ -141,7 +208,9 @@ class WorkspaceService:
                             },
                             exc_info=True,
                         )
+                        await _record_pipeline_end(bg_db, workspace.id, operation_id, "failed")
                         raise
+                    await _record_pipeline_end(bg_db, workspace.id, operation_id, "completed")
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)
@@ -206,7 +275,21 @@ class WorkspaceService:
                 field_errors={"url": ["Workspace must have a valid URL before refreshing"]},
             )
 
+        # The row stays locked until this request commits, so a second request at the same
+        # moment waits here and then sees this run.
+        await self.db.refresh(workspace, with_for_update=True)
+        state = pipeline_state(workspace)
+        if state and state["status"] == "running":
+            # Two runs at once would race each other's writes to the brand voice.
+            raise BusinessRuleViolationException(
+                message="The workspace's website is still being read. Wait for it to finish.",
+                rule_name="workspace_pipeline_running",
+            )
+
         operation_id = str(uuid4())
+        _mark_pipeline_started(workspace, operation_id)
+        await self.db.flush()
+        workspace_id, url = workspace.id, workspace.url
 
         # Register ownership so only this user can publish events to this operation
         await event_stream_manager.set_operation_owner(operation_id, user_id)
@@ -217,25 +300,29 @@ class WorkspaceService:
                     await run_workspace_pipeline(
                         db=bg_db,
                         operation_id=operation_id,
-                        workspace_id=workspace.id,
+                        workspace_id=workspace_id,
                         user_id=user_id,
-                        url=workspace.url,
+                        url=url,
                     )
                 except Exception as exc:
                     logger.error(
                         "Workspace refresh pipeline failed",
                         extra={
                             "operation_id": operation_id,
-                            "workspace_id": str(workspace.id),
+                            "workspace_id": str(workspace_id),
                             "error": str(exc),
                         },
                         exc_info=True,
                     )
+                    await _record_pipeline_end(bg_db, workspace_id, operation_id, "failed")
                     raise
+                await _record_pipeline_end(bg_db, workspace_id, operation_id, "completed")
 
         task = create_task(run_pipeline())
+        _background_tasks.add(task)
 
         def handle_completion(pipeline_task) -> None:
+            _background_tasks.discard(pipeline_task)
             try:
                 pipeline_task.result()
             except Exception as exc:
@@ -257,6 +344,19 @@ class WorkspaceService:
         )
 
         return operation_id
+
+    async def retry_pipeline_for_user(self, workspace_id: UUID, user_id: UUID) -> str:
+        """Run the workspace pipeline again after its last run failed or was interrupted (a
+        restart or a deploy ends a run). Returns the new run's operation id."""
+        await self._ensure_active_user(user_id)
+        workspace = await self._ensure_membership(workspace_id, user_id)
+        state = pipeline_state(workspace)
+        if not state or state["status"] not in ("failed", "interrupted"):
+            raise BusinessRuleViolationException(
+                message="Only a run that failed or was interrupted can be retried.",
+                rule_name="workspace_pipeline_not_retryable",
+            )
+        return await self.refresh_brand_voice_for_user(workspace_id, user_id)
 
     async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""
@@ -1254,6 +1354,7 @@ class WorkspaceService:
             "timezone": workspace.timezone,
             "url": workspace.url,
             "favicon_url": resolve_media_url(workspace.favicon_url),
+            "pipeline": pipeline_state(workspace),
             "created_at": (workspace.created_at.isoformat() if workspace.created_at else None),
             "updated_at": (workspace.updated_at.isoformat() if workspace.updated_at else None),
         }

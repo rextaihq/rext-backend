@@ -939,6 +939,15 @@ def _extract_items(raw: Any) -> list[dict]:
 # ── public API ───────────────────────────────────────────────────────────────
 
 
+def block_items(raw: Any) -> list[dict]:
+    """One block's content as `{"label": str, "points": [str]}` items.
+
+    The same reading `normalize_outline` gives each of its blocks, for a caller
+    that shows one block of the outline by itself (the review gate's `structure`).
+    """
+    return _extract_items(raw)
+
+
 def normalize_outline(outline_dict: dict, content_type: str) -> dict:
     """
     Convert any outline dict into a generic renderable shape for frontend display.

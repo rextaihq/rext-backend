@@ -35,6 +35,16 @@ class CreditBonus(BaseModel):
     expires_at: Optional[str] = Field(None, description="ISO 8601, the earliest grant's expiry")
 
 
+class AddedCredits(BaseModel):
+    """Credits Rext support added, live (`admin_credit_summary`, src/services/credit_grants.py)."""
+
+    credits: int = Field(description="Credits left of what was added")
+    granted: int
+    expires_at: Optional[str] = Field(
+        None, description="ISO 8601, the soonest expiry; null when none expires"
+    )
+
+
 class RunCost(BaseModel):
     """What one billed button costs against the balance (`run_costs`, src/services/plan_catalog.py)."""
 
@@ -48,9 +58,12 @@ class RunCost(BaseModel):
 class CreditBalanceResponse(BaseModel):
     """GET /subscriptions/credits: the balance of the active workspace's owner, or the caller's."""
 
-    current_credits: int = Field(description="This month's credits plus the live bonus")
+    current_credits: int = Field(
+        description="This month's credits plus the live bonus and added credits"
+    )
     monthly_credits: int
     bonus: Optional[CreditBonus] = None
+    added_credits: Optional[AddedCredits] = None
     credits_per_month: Optional[int] = Field(None, description="Null for an unlimited plan")
     credits_reset_date: Optional[str] = Field(None, description="ISO 8601")
     articles_remaining: Optional[int] = Field(None, description="Null for an unlimited plan")

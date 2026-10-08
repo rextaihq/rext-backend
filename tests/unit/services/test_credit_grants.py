@@ -36,12 +36,17 @@ class FakeResult:
         return self
 
 
-def _grant(remaining, amount=None, expires_in_days=30, promotion=LAUNCH):
+def _grant(remaining, amount=None, expires_in_days=30, promotion=LAUNCH, source="promotion"):
     return SimpleNamespace(
         remaining=remaining,
         amount=amount if amount is not None else remaining,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=expires_in_days),
+        expires_at=(
+            None
+            if expires_in_days is None
+            else datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+        ),
         promotion=promotion,
+        source=source,
     )
 
 
@@ -107,18 +112,29 @@ def test_a_multiplier_on_a_plan_without_monthly_credits_gives_nothing(monthly):
     assert promotion_bonus(LAUNCH, monthly, INSIDE, None) is None
 
 
-# --- spending: grants first, then the monthly credits -----------------------
+# --- spending: expiring grants, then the monthly credits, then lasting grants -
 
 
-def test_a_cost_is_taken_from_the_grants_first_in_order():
-    assert split_cost(12, [5, 10], 100) == ([5, 7], 0)
-    assert split_cost(20, [5, 10], 100) == ([5, 10], 5)
-    assert split_cost(3, [], 100) == ([], 3)
+def test_a_cost_is_taken_from_the_expiring_grants_first_in_order():
+    assert split_cost(12, [5, 10], 100, []) == ([5, 7], 0, [])
+    assert split_cost(20, [5, 10], 100, []) == ([5, 10], 5, [])
+    assert split_cost(3, [], 100, []) == ([], 3, [])
+
+
+def test_grants_without_an_expiry_are_spent_after_the_monthly_credits():
+    assert split_cost(3, [], 100, [50]) == ([], 3, [0])
+    assert split_cost(120, [5], 100, [10, 50]) == ([5], 100, [10, 5])
+    assert split_cost(7, [], 0, [5, 50]) == ([], 0, [5, 2])
 
 
 def test_a_cost_larger_than_everything_is_refused():
-    assert split_cost(116, [5, 10], 100) is None
-    assert split_cost(1, [], 0) is None
+    assert split_cost(116, [5, 10], 100, []) is None
+    assert split_cost(1, [], 0, []) is None
+    assert split_cost(166, [5, 10], 100, [50]) is None
+
+
+def test_a_negative_monthly_balance_gives_nothing():
+    assert split_cost(5, [], -10, [5]) == ([], 0, [5])
 
 
 @pytest.mark.asyncio
@@ -174,6 +190,13 @@ def test_the_summary_names_the_bonus_and_its_end():
 
 def test_no_live_grant_means_no_summary():
     assert bonus_summary([]) is None
+
+
+def test_the_bonus_summary_leaves_out_added_credits():
+    added = _grant(50, promotion=None, expires_in_days=None, source="admin")
+
+    assert bonus_summary([added]) is None
+    assert bonus_summary([_grant(600, amount=1000), added])["credits"] == 600
 
 
 # --- refunds ----------------------------------------------------------------
