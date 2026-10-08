@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect, select
+from sqlalchemy import event, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -147,6 +147,62 @@ async def test_a_legacy_full_refund_finds_its_subscription_through_lemon_squeezy
     assert row.status == SubscriptionStatus.CANCELLED
     assert [r.refund_amount for r in await _refunds(session, "ord-legacy")] == [PRICE]
     lemon.alert.assert_not_called()
+
+
+async def _statements_of(db, payload: dict) -> list[str]:
+    """The SQL handle_order_refunded runs for this event, in order."""
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        statements.append(statement)
+
+    connection = db.bind.sync_connection
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        await module.handle_order_refunded(payload, None, db)
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+    return statements
+
+
+@pytest.mark.asyncio
+async def test_the_refunds_lock_is_taken_before_the_orders_row_is_written(session, lemon):
+    # The admin's refund takes the refund's lock and then writes the order's row. Written
+    # first here, each would hold what the other waits for, and the request the database
+    # then ends could be the admin's, after Lemon Squeezy returned the money.
+    row = await _legacy_subscription(session)
+    session.add(
+        Order(
+            user_id=row.user_id,
+            subscription_id=row.id,
+            lemonsqueezy_order_id="ord-known",
+            total=PRICE,
+        )
+    )
+    await session.flush()
+
+    statements = await _statements_of(session, _refund_event("ord-known"))
+
+    lock = next(i for i, sql in enumerate(statements) if "pg_advisory_xact_lock" in sql)
+    write = next(i for i, sql in enumerate(statements) if sql.startswith("UPDATE orders"))
+    assert lock < write
+    assert [r.refund_amount for r in await _refunds(session, "ord-known")] == [PRICE]
+
+
+@pytest.mark.asyncio
+async def test_the_refunds_lock_is_taken_before_a_legacy_subscriptions_row(session, lemon):
+    # The same for the subscription's row, which this lookup locks and the admin's refund
+    # writes after the refund's lock.
+    row = await _legacy_subscription(session)
+    lemon.provider.subscription_ids_for_order.return_value = [row.lemonsqueezy_subscription_id]
+
+    statements = await _statements_of(session, _refund_event("ord-legacy-lock"))
+
+    lock = next(i for i, sql in enumerate(statements) if "pg_advisory_xact_lock" in sql)
+    row_lock = next(
+        i for i, sql in enumerate(statements) if "user_subscriptions" in sql and "FOR UPDATE" in sql
+    )
+    assert lock < row_lock
 
 
 @pytest.mark.asyncio
