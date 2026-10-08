@@ -23,6 +23,10 @@ from src.config.cleanup_config import cleanup_config
 from src.services.plan_change_charges import PAID, REFUNDED
 from src.utils.logger import logger
 
+# The most ids one batch's delete names. The driver takes 32,767 values in a statement,
+# and CLEANUP_BATCH_SIZE can be set far above that.
+MAX_BATCH_SIZE = 10_000
+
 # The payment events the admin's refund rows are read from (plan_change_charges):
 # kept however old they are, until the invoices themselves are recorded
 # (rext-control#804). An admin's refund has no time limit.
@@ -83,7 +87,7 @@ class DataCleanupService:
             return count_result.scalar() or 0
 
         deleted_total = 0
-        batch_size = cleanup_config.CLEANUP_BATCH_SIZE
+        batch_size = min(cleanup_config.CLEANUP_BATCH_SIZE, MAX_BATCH_SIZE)
 
         while True:
             picked = (
