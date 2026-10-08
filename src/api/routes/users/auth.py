@@ -51,6 +51,7 @@ from src.api.schema.user_schema import (
 )
 from src.api.security.dependencies import get_current_user
 from src.api.security.token_utils import decode_and_verify_token, verify_refresh_token
+from src.services import account_events
 from src.services.account_creation_allowlist_service import AccountCreationAllowlistService
 from src.services.auth_service import AuthService
 from src.services.invitation_service import InvitationService
@@ -238,6 +239,9 @@ async def create_user(
     # Commit here to ensure user exists before background task
     await db.commit()
     await db.refresh(new_user)
+    background_tasks.add_task(
+        account_events.user_signed_up, new_user.id, "credentials", datetime.now(timezone.utc)
+    )
 
     # Get frontend URL from environment
     frontend_url = settings.FRONTEND_URL
@@ -525,6 +529,7 @@ async def resend_verification(
 async def oauth_login(
     oauth_data: OAuthLoginRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(oauth_rate_limit()),
 ):
@@ -560,6 +565,15 @@ async def oauth_login(
     # Guarantee notification preferences exist using service
     pref_service = NotificationPreferencesService(db)
     await pref_service.get_or_create(new_user.id)
+
+    if tokens.get("is_new_user"):
+        # A background task runs once the response is sent, so after this route's commit.
+        background_tasks.add_task(
+            account_events.user_signed_up,
+            new_user.id,
+            oauth_data.provider,
+            datetime.now(timezone.utc),
+        )
 
     return success(
         data={
@@ -691,6 +705,9 @@ async def register_with_invitation(
     )
 
     await db.commit()
+    background_tasks.add_task(
+        account_events.user_signed_up, existing_user.id, "invitation", datetime.now(timezone.utc)
+    )
 
     # Notify inviter. notify_now commits in its own session: this route has
     # auto_commit=False and already committed above, so a row added to `db`

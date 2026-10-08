@@ -8,6 +8,7 @@ because the asyncpg connection pool is bound to the main loop.
 Credit events are written to the active LangGraph run stream via get_stream_writer().
 """
 
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Optional
 from uuid import UUID
@@ -251,6 +252,7 @@ async def consume_stage_credits(
             await notify_credit_owner(
                 uid, wid, exceeded=True, balance=e.available, required=e.required
             )
+            _report_refused(uid, wid, stage)
         raise
 
     # Warn once, on the deduction that crosses the threshold.
@@ -266,6 +268,43 @@ async def consume_stage_credits(
         wid,
     )
     _emit_credit_event(balance_after, stage, cost)
+    _report_charged(uid, wid, stage, cost, balance_after)
+
+
+def _report_charged(
+    uid: UUID, wid: Optional[UUID], stage: str, cost: int, balance_after: int
+) -> None:
+    """Tell product analytics of a committed charge (task 712), without waiting for it."""
+    from src.services import account_events
+    from src.services.server_events import send_soon
+
+    if not account_events.configured():
+        return
+    send_soon(
+        account_events.credits_charged(
+            uid,
+            wid,
+            action=stage,
+            credits=cost,
+            balance_after=balance_after,
+            low_threshold=LOW_CREDITS_THRESHOLD,
+            occurred_at=datetime.now(timezone.utc),
+        )
+    )
+
+
+def _report_refused(uid: UUID, wid: Optional[UUID], stage: str) -> None:
+    """Tell product analytics a run was refused for lack of credits, without waiting for it."""
+    from src.services import account_events
+    from src.services.server_events import send_soon
+
+    if not account_events.configured():
+        return
+    send_soon(
+        account_events.credits_refused(
+            uid, wid, action=stage, occurred_at=datetime.now(timezone.utc)
+        )
+    )
 
 
 def _emit_credit_event(
@@ -370,6 +409,7 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                         await notify_credit_owner(
                             uid, wid, exceeded=True, balance=balance, required=total_cost
                         )
+                        _report_refused(uid, wid, stages[0])
                         return {
                             "content": {
                                 "error": (
