@@ -468,6 +468,21 @@ async def _trial_started(db, clock, plan, *, started):
     return user, ls_id
 
 
+async def _payment_records_begin(db, at=OPENS - timedelta(days=30)):
+    """The audit log's first payment record, another customer's, made at `at`: a month before
+    the launch unless a test says otherwise. The log vouches for subscriptions started after
+    it, and for none while it is empty."""
+    db.add(
+        AuditLog(
+            action="payment.succeeded",
+            resource_type="payment",
+            resource_id=str(uuid4()),
+            created_at=at,
+        )
+    )
+    await db.flush()
+
+
 async def _pays(db, clock, user, ls_id, *, at, billing_reason):
     clock(at + timedelta(minutes=1))
     await handle_subscription_payment_success(
@@ -483,6 +498,7 @@ async def test_a_trial_begun_before_the_offer_gets_the_bonus_when_it_first_pays_
     the app ends a trial with an invoice labelled "updated": it is the first payment all the
     same, and brings the month and the bonus."""
     await _launch_promotion(db)
+    await _payment_records_begin(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
     subscription = await _subscription_of(db, ls_id)
@@ -499,6 +515,7 @@ async def test_a_trial_begun_inside_the_offer_gets_the_bonus_when_it_pays_after_
     db, clock, billing_reason
 ):
     await _launch_promotion(db)
+    await _payment_records_begin(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user, ls_id = await _trial_started(db, clock, growth, started=CLOSES - timedelta(days=2))
 
@@ -524,6 +541,7 @@ async def test_a_trial_begun_and_first_paid_outside_the_offer_gets_no_bonus(
     db, clock, started, paid, billing_reason
 ):
     await _launch_promotion(db)
+    await _payment_records_begin(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user, ls_id = await _trial_started(db, clock, growth, started=started)
 
@@ -567,6 +585,7 @@ async def test_a_first_payment_under_another_name_gives_the_bonus_once(db, clock
     """The trial's upgrade pays ("updated"); the same event arrives again, and later invoices
     of either name follow. One bonus, and what was spent stays spent."""
     await _launch_promotion(db)
+    await _payment_records_begin(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
     paid = OPENS + timedelta(days=1)
@@ -627,17 +646,21 @@ async def test_a_renewal_recovered_inside_the_offer_is_no_first_payment(db, cloc
     assert await _grants(db, paid) == []
 
 
-async def _payment_records_begin(db, at):
-    """The audit log's first payment record, another customer's, made at `at`."""
-    db.add(
-        AuditLog(
-            action="payment.succeeded",
-            resource_type="payment",
-            resource_id=str(uuid4()),
-            created_at=at,
-        )
-    )
-    await db.flush()
+async def test_an_empty_payment_log_vouches_for_nobody(db, clock):
+    """No payment in the audit log at all: a new database, or one whose records have aged
+    out. It cannot say that a subscription never paid, so a payment that is not called
+    "initial" is not taken for a first one. One that is called "initial" still is."""
+    await _launch_promotion(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason="updated")
+    subscription = await _subscription_of(db, ls_id)
+    assert subscription.current_credits == 1000
+    assert await _grants(db, subscription) == []
+
+    other, other_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
+    await _pays(db, clock, other, other_id, at=OPENS + timedelta(days=1), billing_reason="initial")
+    assert [g.amount for g in await _grants(db, await _subscription_of(db, other_id))] == [1000]
 
 
 async def test_a_subscription_older_than_the_payment_records_is_not_taken_for_a_first_payment(
@@ -647,7 +670,7 @@ async def test_a_subscription_older_than_the_payment_records_is_not_taken_for_a_
     log holds no payment of theirs, but it could not: it began after they did. Its silence
     says nothing, so the payment is not taken for a first one."""
     await _launch_promotion(db)
-    await _payment_records_begin(db, OPENS - timedelta(days=30))
+    await _payment_records_begin(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user = await _customer(db)
     ls_id = uuid4().int % 10**9
@@ -675,7 +698,7 @@ async def test_a_first_payment_that_had_failed_gets_the_bonus_when_paid_inside_t
     first payment failed. It started after the audit log began to keep payments and the log
     holds none of its own, so the payment that comes in launch week is its first."""
     await _launch_promotion(db)
-    await _payment_records_begin(db, OPENS - timedelta(days=30))
+    await _payment_records_begin(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
     subscription = await _subscription_of(db, ls_id)
