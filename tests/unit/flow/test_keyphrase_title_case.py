@@ -47,12 +47,14 @@ async def test_the_recorded_titles_write_the_keyphrase_in_their_case():
     assert [topic.title for topic in result.topics] == [
         "Find the Best SEO Agency for Small Business in 2026",
         "How to Choose the Right SEO Agency for Small Business",
-        "Top Affordable SEO Agency for Small Business Options Today",
+        # Its filler ending is dropped since G65 (test_title_endings.py).
+        "Top Affordable SEO Agency for Small Business Options",
         "Must-Read Reviews of SEO Agency for Small Business Services",
         "SEO Agency for Small Business: Understanding Your Expenses",
     ]
     for topic, recorded in zip(result.topics, RECORDED):
-        assert len(topic.title) == len(recorded)
+        # Recasing changes no title's length.
+        assert len(topic.title) == len(recorded.removesuffix(" Today"))
         assert title_is_valid(topic.title, KEYPHRASE)
 
 
