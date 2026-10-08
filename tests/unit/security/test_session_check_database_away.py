@@ -27,6 +27,8 @@ AWAY = [
     PoolTimeout("QueuePool limit of size 20 overflow 10 reached"),
     ConnectionResetError("connection reset by peer"),
     TimeoutError("timed out"),
+    # What a stopping process's closing event loop raises: not a database error by type.
+    RuntimeError("Event loop is closed"),
 ]
 VARIANTS = [dependencies.get_current_user, dependencies.get_current_user_sse]
 
@@ -103,6 +105,23 @@ async def test_a_token_that_does_not_decode_is_still_a_401(check, monkeypatch):
 
     assert refused.value.status_code == 401
     assert refused.value.message == "Invalid authentication token"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("check", VARIANTS, ids=lambda f: f.__name__)
+async def test_a_token_whose_decoding_breaks_is_still_about_the_token(check, monkeypatch):
+    """Before the token has decoded, nothing has been read: the failure is the token's."""
+
+    def decoding_breaks(token):
+        raise ValueError("not enough segments")
+
+    monkeypatch.setattr(dependencies, "decode_and_verify_token", decoding_breaks)
+
+    with pytest.raises(RextAuthenticationException) as refused:
+        await check(authorization="Bearer token", db=_Session(lambda: None))
+
+    assert refused.value.status_code == 401
+    assert refused.value.message == "Token validation failed"
 
 
 @pytest.mark.asyncio
