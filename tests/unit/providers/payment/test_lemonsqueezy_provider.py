@@ -350,6 +350,26 @@ class TestUpdateSubscription:
         sent = str(request.call_args_list[0])
         assert "'disable_prorations': True" in sent and "invoice_immediately" not in sent
 
+    @pytest.mark.asyncio
+    async def test_a_change_that_went_through_is_not_a_failed_one(self, provider):
+        """The PATCH is accepted and reading the subscription back fails: the change stands
+        at Lemon Squeezy, so the error says so and a caller can't take it for a refusal."""
+        from src.providers.payment.base_provider import PaymentChangeUnconfirmed
+
+        accepted = MagicMock()
+        accepted.status_code = 200
+        accepted.json.return_value = {"data": {"id": "sub_123"}}
+
+        async def read_back_fails(_subscription_id):
+            raise TimeoutError("no answer")
+
+        with (
+            patch.object(provider.client, "request", side_effect=[accepted]),
+            patch.object(provider, "get_subscription", side_effect=read_back_fails),
+            pytest.raises(PaymentChangeUnconfirmed),
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
 
 class TestCreatePortalSession:
     """Test create_portal_session method."""

@@ -34,6 +34,7 @@ from src.api.lib.sentry_config import (
 from src.providers.payment.base_provider import (
     CheckoutSession,
     CustomerData,
+    PaymentChangeUnconfirmed,
     PaymentProvider,
     SubscriptionData,
 )
@@ -757,7 +758,13 @@ class LemonSqueezyProvider(PaymentProvider):
             new_variant_id=price_id,
         )
 
-        return await self.get_subscription(subscription_id)
+        try:
+            return await self.get_subscription(subscription_id)
+        except Exception as exc:
+            # The PATCH went through: a caller must not take this for a refused change.
+            raise PaymentChangeUnconfirmed(
+                f"Subscription {subscription_id} was updated, but reading it back failed"
+            ) from exc
 
     async def get_subscription_urls(self, subscription_id: str) -> Dict[str, str]:
         """
