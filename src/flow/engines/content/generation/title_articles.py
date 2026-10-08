@@ -119,6 +119,11 @@ def _is_english(words: list[str]) -> bool:
     return own >= 1 and own + len(lowered & _BORROWED) >= 2
 
 
+def reads_as_english(title: str) -> bool:
+    """Whether the title's words say it is in English, as the article pass decides it."""
+    return _is_english((title or "").split())
+
+
 def _base_letter(char: str) -> str | None:
     """The Latin letter under an accent ("É" is "E"), or None for any other character."""
     base = unicodedata.normalize("NFD", char)[0]
