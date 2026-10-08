@@ -628,6 +628,9 @@ def test_the_free_tools_structured_calls_are_made_under_the_watch():
     source = (Path(__file__).resolve().parents[3] / "src/api/tool/tools.py").read_text()
     assert len(re.findall(r"ainvoke_watched\(\s*structured_llm,\s*prompt", source)) == 5
     assert "structured_llm.ainvoke(" not in source
+    # One call each, as the tools' daily budget counts them: a runaway is stopped (and costs
+    # less than one run to its token limit), and the visitor asks again.
+    assert source.count('stage="free_tool", attempts=1') == 5
 
 
 def test_the_outline_is_asked_for_as_compact_json():
