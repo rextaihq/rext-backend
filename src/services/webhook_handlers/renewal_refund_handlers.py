@@ -31,9 +31,11 @@ late payment is then ignored), and a partial one is recorded and applied by
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.sentry_config import trigger_payment_alert
+from src.api.models.subscription_models.orders import Order
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.providers.payment.provider_factory import get_payment_provider
@@ -70,17 +72,57 @@ def _period_of(
 
     ``current``: the credited one. ``upcoming``: a newer invoice whose payment hasn't been
     credited yet (its refund arrived first). ``earlier``: an older one. A payment credited
-    before invoice ids were recorded has none to compare: it's taken as the current one,
-    since a refund comes within 14 days of its payment.
+    before invoice ids were recorded has none to compare: unless the invoice is newer than
+    that payment, it's taken as the current one, since a refund comes within 14 days of
+    its payment.
     """
     meta = subscription.subscription_metadata or {}
     paid = meta.get(PAID_INVOICE_ID)
-    if paid is None or str(paid) == str(invoice_id):
+    if paid is not None and str(paid) == str(invoice_id):
         return CURRENT
     paid_at = parse_provider_datetime(meta.get(PAID_INVOICE_AT))
     if invoice_created_at and paid_at and invoice_created_at > paid_at:
         return UPCOMING
-    return EARLIER
+    return CURRENT if paid is None else EARLIER
+
+
+async def _refund_key(
+    db: AsyncSession,
+    lemonsqueezy_subscription_id: Optional[str],
+    billing_reason: Optional[str],
+    invoice_id: Any,
+) -> str:
+    """What this invoice's refunds are recorded under, read without locking anything.
+
+    The first payment's invoice shares its order's id with ``order_refunded``. The
+    subscription's row names that order; an older row that doesn't is found through the
+    order recorded for the subscription (it has one order, the first payment's: renewals
+    are invoices). Every other invoice, and a first one whose order can't be found, has
+    its own key.
+    """
+    if billing_reason == "initial" and lemonsqueezy_subscription_id:
+        row = (
+            await db.execute(
+                select(UserSubscription.id, UserSubscription.lemonsqueezy_order_id).where(
+                    UserSubscription.lemonsqueezy_subscription_id
+                    == str(lemonsqueezy_subscription_id)
+                )
+            )
+        ).first()
+        if row is not None and row.lemonsqueezy_order_id:
+            return str(row.lemonsqueezy_order_id)
+        if row is not None:
+            order_id = (
+                await db.execute(
+                    select(Order.lemonsqueezy_order_id)
+                    .where(Order.subscription_id == row.id)
+                    .order_by(Order.created_at.asc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if order_id:
+                return str(order_id)
+    return invoice_refund_key(invoice_id)
 
 
 async def handle_subscription_payment_refunded(
@@ -98,6 +140,13 @@ async def handle_subscription_payment_refunded(
 
     billing_reason = sub_data.get("billing_reason")
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
+    refund_service = RefundService(db)
+    # The refund's lock before the subscription's row: order_refunded records first and
+    # writes the subscription after, so the two handlers of one first-payment refund take
+    # them in the same order and neither holds what the other waits for.
+    key = await _refund_key(db, lemonsqueezy_subscription_id, billing_reason, invoice_id)
+    if invoice_id:
+        await refund_service.lock_order(key)
     subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
     if subscription is None or not invoice_id:
         trigger_payment_alert(
@@ -125,13 +174,8 @@ async def handle_subscription_payment_refunded(
             )
         return
 
-    # The first payment's refund shares its order's key, so order_refunded and this event
-    # record it once between them, whichever comes first.
-    key = (
-        subscription.lemonsqueezy_order_id
-        if billing_reason == "initial" and subscription.lemonsqueezy_order_id
-        else invoice_refund_key(invoice_id)
-    )
+    # The first payment's refund shares its order's key (_refund_key), so order_refunded
+    # and this event record it once between them, whichever comes first.
     total = int(attributes.get("total") or 0)
     # Lemon Squeezy's refunded_amount is the invoice's cumulative total, not this refund.
     refunded_total = int(attributes.get("refunded_amount") or 0)
@@ -141,7 +185,6 @@ async def handle_subscription_payment_refunded(
         refunded_total = total
     refunded_at = parse_provider_datetime(attributes.get("refunded_at"))
 
-    refund_service = RefundService(db)
     new_refund = await refund_service.record_provider_refund(
         lemonsqueezy_order_id=key,
         user_id=subscription.user_id,
@@ -248,7 +291,7 @@ async def apply_early_invoice_refund(
     refunded_total = await RefundService(db).get_refunded_total(key)
     if not refunded_total or refunded_total >= total:
         return None
-    return await UsageTrackingService(db).reconcile_partial_refund_credits(
+    adjustment = await UsageTrackingService(db).reconcile_partial_refund_credits(
         user_id=subscription.user_id,
         lemonsqueezy_order_id=key,
         refunded_total=refunded_total,
@@ -256,6 +299,23 @@ async def apply_early_invoice_refund(
         latest=True,
         subscription_id=subscription.id,
     )
+    if adjustment:
+        # Nothing else records a change to the balance: the cut is audited here as it
+        # is when the refund comes after its payment.
+        await audit_logger.log_payment_refunded(
+            user_id=subscription.user_id,
+            refund_id=None,
+            subscription_id=subscription.id,
+            amount=refunded_total,
+            reason=(
+                "Partial refund of a renewal, received before its payment: "
+                "unused credit entitlement reduced"
+            ),
+            is_partial=True,
+            metadata={**adjustment, "lemonsqueezy_invoice_id": str(invoice_id)},
+            db=db,
+        )
+    return adjustment
 
 
 def _plan_change_refunded(
