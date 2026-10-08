@@ -198,7 +198,12 @@ def _drop_filler_endings(parsed: SEOTopics, keyphrase: str) -> None:
         if not title_is_valid(topic.title, keyphrase):
             continue
         shorter = without_filler_ending(topic.title, keyphrase)
-        if shorter:
+        # Not into another topic's title: two choices that differ by the filler word alone
+        # would become one. The ending then goes to the repair, which writes it anew.
+        others = {
+            other.title.casefold() for place, other in enumerate(parsed.topics) if place != index
+        }
+        if shorter and shorter.casefold() not in others:
             # The topic's place only: a title carries the customer's keyphrase.
             logger.info("Dropped the filler ending of topic %d", index)
             topic.title = shorter

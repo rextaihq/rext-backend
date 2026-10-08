@@ -88,6 +88,30 @@ KEYPHRASE = "what is compound interest"
         ("Kitchen Remodel Ideas on a Budget: Before and After", "kitchen remodel ideas", None),
         ("Email Marketing Tools Your Whole Team Can Rely On", "email marketing", None),
         ("Email Marketing in 2026: What Lies Beyond", "email marketing", None),
+        # "in", "on" and "about" need an object too, where no verb takes them.
+        (
+            "Compound Interest: Five Ways to Grow Your Savings in",
+            "compound interest",
+            "unfinished:in",
+        ),
+        ("Compound Interest: What Banks Stay Quiet About", "compound interest", None),
+        ("Email Marketing Software: Where Your Readers Sign In", "email marketing", None),
+        ("Email Marketing in 2026: What Is Really Going On", "email marketing", None),
+        # A question word licenses the preposition only in its own half of the clause.
+        (
+            "What Compound Interest Is and How Your Savings Grow With",
+            "compound interest",
+            "unfinished:with",
+        ),
+        # Common verbs that end on their preposition.
+        ("Compound Interest Tools Your Whole Team Can Work With", "compound interest", None),
+        ("Compound Interest Lessons Every Saver Can Learn From", "compound interest", None),
+        # A mark that stands alone hides no ending.
+        (
+            "Compound Interest: Why Starting Early Matters Today ?",
+            "compound interest",
+            "filler:today",
+        ),
         # A title of few words is judged like any other; one word has no ending.
         (
             "Pneumonoultramicroscopicsilicovolcanoconiosis Today",
@@ -149,6 +173,21 @@ def test_a_filler_word_is_dropped_only_where_the_title_stands_without_it(title, 
     if shorter:
         assert title_is_valid(shorter, keyphrase)
         assert title_ending_problem(shorter, keyphrase) is None
+
+
+def test_a_filler_word_that_closes_a_bracket_is_not_cut_out_of_it():
+    """Dropping "Here" would leave "(Start": the ending is written anew by the repair."""
+    title = "Compound Interest Clearly Explained for Savers (Start Here)"
+    assert title_ending_problem(title, "compound interest") == "filler:here"
+    assert without_filler_ending(title, "compound interest") is None
+
+
+def test_a_mark_set_apart_goes_with_the_dropped_word():
+    title = "What Is Compound Interest? Understanding Its Formula Now ?"
+    assert (
+        without_filler_ending(title, KEYPHRASE)
+        == "What Is Compound Interest? Understanding Its Formula?"
+    )
 
 
 GOOD = [
@@ -279,6 +318,18 @@ async def test_a_broken_title_takes_a_valid_rewrite_even_one_that_ends_weakly():
     titles = await _titles(model)
 
     assert titles == [rewritten, *GOOD[:3]]
+
+
+def test_two_topics_are_not_made_one_by_dropping_a_filler_word():
+    """Two choices that differ by the filler word alone: the longer keeps its word, and its
+    ending is left to the repair."""
+    plain = "What Is Compound Interest? Understanding Its Formula"
+    topics = _set(plain, f"{plain} Now", *GOOD[1:3])
+
+    tg._drop_filler_endings(topics, KEYPHRASE)
+
+    assert [topic.title for topic in topics.topics][:2] == [plain, f"{plain} Now"]
+    assert tg._weak_ending_indexes(topics, KEYPHRASE) == [1]
 
 
 def test_the_title_step_logs_no_title(monkeypatch):
