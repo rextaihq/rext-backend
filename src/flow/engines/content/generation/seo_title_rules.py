@@ -59,11 +59,10 @@ GUIDE_LIKE_CONTENT_TYPES = frozenset(
 
 def takes_a_guide_ending(content_type: Any, intent: Any) -> bool:
     """Whether a title for this article type and search intent may be lifted with a short
-    ending that promises a guide or an explanation."""
-    return (
-        str(content_type or "").strip().lower() in GUIDE_LIKE_CONTENT_TYPES
-        and str(intent or "").strip().lower() == "informational"
-    )
+    ending that promises a guide or an explanation. The type is read in any spelling the flow
+    accepts ("How To Guide", "how_to_guide", "Pillar Content")."""
+    kind = re.sub(r"[\s_-]+", "-", str(content_type or "").strip().lower()).strip("-")
+    return kind in GUIDE_LIKE_CONTENT_TYPES and str(intent or "").strip().lower() == "informational"
 
 
 _SHORT_NEUTRAL_SUFFIXES: tuple[str, ...] = (
@@ -651,18 +650,33 @@ def _closed_up(title: Any) -> str:
     return _SPACE_BEFORE_PUNCTUATION_RE.sub("", normalize_title(title))
 
 
+# A single quotation mark that opens (curly, or straight before a word) and one that closes
+# (after a word and not inside one, so not the apostrophe of "Beginner’s").
+_SINGLE_QUOTATION_MARK = re.compile(
+    r"(?P<opening>‘|(?:^|(?<=\s))'(?=\S))|(?P<closing>(?<=\S)[’'](?!\w))"
+)
+
+
+def _single_quotations_close(title: str) -> bool:
+    """Whether every single quotation mark that opens is closed after it. A closing mark with
+    none open before it is an apostrophe ("Beginners’ Desks"), so it closes nothing later."""
+    open_marks = 0
+    for mark in _SINGLE_QUOTATION_MARK.finditer(title):
+        if mark.group("opening"):
+            open_marks += 1
+        elif open_marks:
+            open_marks -= 1
+    return not open_marks
+
+
 def _balanced(title: str) -> bool:
     """Whether every bracket and quotation mark that opens also closes. A single closing mark
     is an apostrophe as often ("Beginner’s"), so only an opening one without its closing one
-    counts against the title."""
+    after it counts against the title."""
     pairs = (("(", ")"), ("[", "]"), ("“", "”"))
     if not all(title.count(opening) == title.count(closing) for opening, closing in pairs):
         return False
-    if title.count('"') % 2 or title.count("‘") > title.count("’"):
-        return False
-    opening_straight = len(re.findall(r"(?:^|\s)'(?=\S)", title))
-    closing_straight = len(re.findall(r"(?<=\S)'(?=$|\s|[?!.,;:])", title))
-    return opening_straight <= closing_straight
+    return not title.count('"') % 2 and _single_quotations_close(title)
 
 
 def _completes_for_you(word: str) -> bool:
