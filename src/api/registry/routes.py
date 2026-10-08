@@ -54,6 +54,10 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.notifications.notification_routes import router as notification_router
     from src.api.routes.permissions.modules import router as permissions_router
     from src.api.routes.roles.modules import router as roles_router
+    from src.api.routes.status.incident_banner_routes import (
+        admin_router as admin_incident_banner_router,
+    )
+    from src.api.routes.status.incident_banner_routes import router as incident_banner_router
 
     # ---- Shopify ----
     from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
@@ -80,6 +84,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(users_router, prefix="/api/v1", tags=["Authentication"])
     app.include_router(health_router, prefix="/api/v1", tags=["Health"])
     app.include_router(events_router, prefix="/api/v1", tags=["Events"])
+    app.include_router(incident_banner_router, prefix="/api/v1", tags=["Status"])
 
     app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])
     app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
@@ -106,6 +111,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"]
+    )
+    app.include_router(
+        admin_incident_banner_router, prefix="/api/v1/admin", tags=["Admin - Status"]
     )
     app.include_router(
         admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"]
