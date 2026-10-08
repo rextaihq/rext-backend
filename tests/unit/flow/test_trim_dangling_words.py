@@ -3,7 +3,8 @@
 The deterministic repair drops trailing words until a title fits, and could stop right after
 "in", "for" or "the": the title step offered "Innovations in ai content writing tools for
 agencies in". After a trim, trailing function words go too, never cutting into the keyphrase;
-if that leaves the title unusable, the plain trim is kept, so no title is lost for its last word.
+if that leaves the title under the minimum and no qualifier lifts it, the title is not offered:
+one that reads cut off ("...Best Recording Software for") is worse than one fewer (G65, #560).
 A preposition stays when the verb before it needs it ("Depend On", "Look For") or when it had
 no object for the trim to cut ("Fall Back On in 2026").
 """
@@ -212,15 +213,31 @@ def test_a_preposition_after_a_noun_still_goes():
     assert repaired == "SEO Tools for Agencies: How to Build a Marketing Plan"
 
 
-def test_the_plain_trim_is_kept_when_the_tidy_one_cannot_be_used():
-    """Dropping "for the" leaves 49 characters, and no qualifier fits within 59: the plain
-    trim, valid as it was, is kept rather than losing the title."""
+def test_a_title_only_a_cut_off_ending_keeps_in_range_is_not_offered():
+    """Dropping "for the" leaves 49 characters, and no qualifier fits within 59. The plain
+    trim would be valid and end "...the Right One for the": the title is dropped instead."""
     title = "Best Tools for Teams: How to Choose the Right One for the Job and"  # 65
 
-    repaired = repair_title(title, "best tools")
+    assert repair_title(title, "best tools") is None
 
-    assert repaired == "Best Tools for Teams: How to Choose the Right One for the"
-    assert title_is_valid(repaired, "best tools")
+
+def test_the_titles_seen_cut_off_on_staging_are_not_offered():
+    """One character and two over the maximum: trimmed, each stopped on its preposition
+    ("...Backed By", "...Best Recording Software for")."""
+    assert (
+        repair_title(
+            "Real Evidence: Benefits of Standing Desks Backed By Research",
+            "benefits of standing desks",
+        )
+        is None
+    )
+    assert (
+        repair_title(
+            "How to Start a Podcast: Best Recording Software for Beginners",
+            "how to start a podcast",
+        )
+        is None
+    )
 
 
 def test_a_title_that_needs_no_trim_is_left_as_written():
