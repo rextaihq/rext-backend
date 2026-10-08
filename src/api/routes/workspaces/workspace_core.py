@@ -19,6 +19,7 @@ from src.api.schema.response.workspace_responses import (
     WorkspaceDeleteResponse,
     WorkspaceListResponse,
     WorkspacePermanentDeleteResponse,
+    WorkspacePipelineRetryResponse,
     WorkspaceRestoreResponse,
     WorkspaceStatusResponse,
     WorkspaceTransferOwnershipResponse,
@@ -32,7 +33,7 @@ from src.api.schema.workspace_schema import (
 )
 from src.api.security.dependencies import get_current_user
 from src.services.email_helpers import send_workspace_email
-from src.services.workspace_service import WorkspaceService
+from src.services.workspace_service import WorkspaceService, pipeline_state
 from src.utils.auth_utils import verify_current_user
 from src.utils.fast_scraper import WebsiteUnreachableError, check_website_reachable
 from src.utils.logger import logger
@@ -190,6 +191,8 @@ async def get_workspace_by_slug(
 
     # Merge analytics into workspace data
     workspace_data["analytics"] = analytics
+    # Outside the cached brand-voice payload: the dashboard polls it while a run is going.
+    workspace_data["pipeline"] = pipeline_state(workspace)
 
     return success(
         data={"workspace": workspace_data}, request=request, message="Workspace retrieved by slug"
@@ -230,6 +233,8 @@ async def get_workspace_by_id(
 
     # Merge analytics into workspace data
     workspace_data["analytics"] = analytics
+    # Outside the cached brand-voice payload: the dashboard polls it while a run is going.
+    workspace_data["pipeline"] = pipeline_state(workspace)
 
     return success(
         data={"workspace": workspace_data},
@@ -365,8 +370,41 @@ async def get_workspace_detail(
 
     # Merge analytics into workspace data
     workspace_data["analytics"] = analytics
+    # Outside the cached brand-voice payload: the dashboard polls it while a run is going.
+    workspace_data["pipeline"] = pipeline_state(workspace)
 
     return success(data={"workspace": workspace_data}, request=request)
+
+
+# -------------------------
+# Retry the workspace pipeline
+# -------------------------
+@router.post(
+    "/{workspace_id}/pipeline/retry",
+    response_model=SuccessResponse[WorkspacePipelineRetryResponse],
+)
+@db_transaction_handler(
+    "retry workspace pipeline", "Workspace pipeline restarted", auto_commit=True
+)
+@require_permissions("brand_voice.update", workspace_scoped=True)
+async def retry_workspace_pipeline(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Read the website again after the last run failed or was interrupted (the pipeline runs
+    inside the API process, so a restart or a deploy ends it). Returns the new run's operation
+    id for the SSE stream; GET /workspaces/{id} shows its status as `pipeline`."""
+    user_id = UUID(str(user.get("identity")))
+    service = WorkspaceService(db)
+    workspace = await service.get_workspace_by_id_or_slug_for_user(workspace_id, user_id)
+    operation_id = await service.retry_pipeline_for_user(workspace.id, user_id)
+    return success(
+        data={"operation_id": operation_id},
+        request=request,
+        message="Workspace pipeline restarted",
+    )
 
 
 # -------------------------
