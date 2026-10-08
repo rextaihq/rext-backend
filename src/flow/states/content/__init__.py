@@ -298,11 +298,15 @@ class RepairAttempt(_RepairAttemptRequired, total=False):
     accepted: bool
     resolved_checks: list[str]
     unresolved_checks: list[str]
+    # Of the unresolved: those the repair as the model returned it left reporting
+    # exactly what it was asked to fix. No second attempt runs for these.
+    unchanged_checks: list[str]
     # What the repair as the model returned it broke.
     regressed_checks: list[str]
     restored_links: list[str]
     # Kept in part: {"how": "lists"} (its prose beside the lists the article had)
-    # or {"how": "blocks", "kept": n, "dropped": m}.
+    # or {"how": "blocks", "kept": n, "dropped": m}, with "fields": [...] when a
+    # field beside the prose (the call to action) was kept too.
     salvaged: dict
     # Fixed by the repair, lost with a block that broke something else.
     lost_checks: list[str]

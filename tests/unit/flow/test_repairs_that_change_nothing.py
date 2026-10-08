@@ -144,6 +144,39 @@ def test_another_stages_check_counts_neither_as_broken_nor_as_fixed():
     assert how == {"how": "lists"} and "put right" in kept["body_markdown"]
 
 
+def test_a_repaired_field_beside_the_prose_is_a_piece_of_its_own():
+    # The call to action is fixed in its own field and stated in the prose; a paragraph
+    # elsewhere broke something. The field and the sentence are kept, the damage is not.
+    def failing(content: dict) -> set[str]:
+        names = _failing(content) - {"the_issue"}
+        cta = (content.get("cta") or {}).get("text") or ""
+        if not cta or cta not in content.get("body_markdown", ""):
+            names.add("cta_presence")
+        return names
+
+    article = {**ARTICLE, "cta": {"text": ""}, "slug": "as-it-was"}
+    repaired = {
+        **_repaired(
+            **{
+                "Second paragraph.": "Second paragraph, now BROKEN.",
+                "Third paragraph.": "Third paragraph. Start a free trial.",
+            }
+        ),
+        "cta": {"text": "Start a free trial"},
+        "slug": "reworded-for-no-reason",
+    }
+
+    kept, how = salvage_repair(article, repaired, failing, {"cta_presence"})
+
+    assert how == {"how": "blocks", "kept": 1, "dropped": 1, "fields": ["cta"]}
+    assert kept["cta"] == {"text": "Start a free trial"}
+    assert kept["body_markdown"] == ARTICLE["body_markdown"].replace(
+        "Third paragraph.", "Third paragraph. Start a free trial."
+    )
+    assert kept["slug"] == "as-it-was"  # a field the fix doesn't need goes back
+    assert failing(kept) == set()
+
+
 # ── which checks get an attempt ──────────────────────────────────────────────
 
 
@@ -155,8 +188,14 @@ def _names(checks: list[dict]) -> list[str]:
     return [c["name"] for c in checks]
 
 
-def test_a_check_a_kept_repair_left_failing_has_had_its_turn():
-    history = [{"accepted": True, "unresolved_checks": ["brand_placement_policy"]}]
+def test_a_check_a_kept_repair_left_as_it_was_has_had_its_turn():
+    history = [
+        {
+            "accepted": True,
+            "unresolved_checks": ["brand_placement_policy"],
+            "unchanged_checks": ["brand_placement_policy"],
+        }
+    ]
 
     assert checks_already_tried(history) == {"brand_placement_policy"}
     assert _names(
@@ -167,16 +206,33 @@ def test_a_check_a_kept_repair_left_failing_has_had_its_turn():
 @pytest.mark.parametrize(
     "entry",
     [
-        {"accepted": False, "unresolved_checks": ["unsupported_claims"]},  # thrown away
-        {"accepted": True, "no_result": True, "unresolved_checks": ["unsupported_claims"]},
+        {  # thrown away
+            "accepted": False,
+            "unresolved_checks": ["unsupported_claims"],
+            "unchanged_checks": ["unsupported_claims"],
+        },
+        {  # the model returned nothing
+            "accepted": True,
+            "no_result": True,
+            "unresolved_checks": ["unsupported_claims"],
+            "unchanged_checks": ["unsupported_claims"],
+        },
+        {  # worked on: it still fails, but reports something else (one claim of three left)
+            "accepted": True,
+            "unresolved_checks": ["unsupported_claims"],
+            "unchanged_checks": [],
+        },
         {  # fixed by the repair, lost with a block that broke something else
             "accepted": True,
             "unresolved_checks": ["unsupported_claims"],
+            "unchanged_checks": [],
             "lost_checks": ["unsupported_claims"],
         },
+        # recorded before attempts said what they left unchanged
+        {"accepted": True, "unresolved_checks": ["unsupported_claims"]},
     ],
 )
-def test_a_check_whose_repair_was_not_kept_has_not(entry):
+def test_a_check_a_repair_did_not_leave_as_it_was_has_not(entry):
     assert checks_already_tried([entry]) == set()
     assert _names(checks_worth_an_attempt(_checks("unsupported_claims"), [entry])) == [
         "unsupported_claims"
@@ -277,9 +333,10 @@ def _replay(attempts: list[tuple], *, fixes_survive: bool) -> tuple[list[int], s
         kept = accepted or (fixes_survive and bool(set(resolved) - IN_CODE))
         got = (set(resolved) & set(failing)) if kept else set()
         fixed |= got
-        history.append(
-            {"accepted": kept, "unresolved_checks": [n for n in failing if n not in got]}
-        )
+        # The records keep the checks' names, not what each reported. A check a kept attempt
+        # did not fix is taken as left as it was: those here (the brand's placement, the
+        # brand's absence) report one thing, which is either fixed or not.
+        history.append({"accepted": kept, "unchanged_checks": [n for n in failing if n not in got]})
     return ran, fixed
 
 
@@ -354,12 +411,12 @@ def test_a_first_mention_without_a_link_gets_the_approved_one():
     "written",
     [
         "https://nextly.test/",
-        "http://www.nextly.test",
+        "https://NEXTLY.test",
         "https://nextly.test/?utm_source=x",
-        "https://nextly.test/pricing",
+        "https://nextly.test#top",
     ],
 )
-def test_a_link_to_the_brands_site_under_another_spelling_is_pointed_at_the_approved_address(
+def test_a_link_to_the_approved_address_under_another_spelling_is_given_the_approved_one(
     written,
 ):
     content = {"introduction": f"Teams like [Nextly]({written}) for its editor. It is quick."}
@@ -387,6 +444,12 @@ def test_a_mention_already_linked_right_is_left_alone():
         "Read [the Nextly review](https://reviews.test/nextly) first.",  # another link's words
         "Read [Nextly docs](https://nextly.test/docs) first.",  # a deep link of the brand's own
         "Read [Nextly](https://reviews.test/nextly) first.",  # the name, linked somewhere else
+        # Another page of the brand's site: the link lists may record it.
+        "Read [Nextly](https://nextly.test/pricing) first.",
+        "Read [Nextly](http://www.nextly.test) first.",
+        # An address with parentheses: where it ends can't be told, so the line is left.
+        "Read [Nextly](https://nextly.test/about_(company)) first.",
+        "Nextly is in [the wiki](https://wiki.test/Nextly_(company)) too.",
         "Run `nextly init` to start.",  # inline code
         "Install it:\n\n```\nNextly init\n```\n\nThen go on.",  # a code block
         "![Nextly's editor](https://img.test/e.png)",  # an image
@@ -398,6 +461,14 @@ def test_a_mention_already_linked_right_is_left_alone():
 )
 def test_a_mention_where_a_link_does_not_belong_is_left_for_the_repair(body):
     assert _fixed(body_markdown=body)["body_markdown"] == body
+
+
+def test_an_approved_address_with_parentheses_already_linked_is_left_whole():
+    address = "https://nextly.test/about_(company)"
+    content = {"introduction": "", "body_markdown": f"Teams like [Nextly]({address}) a lot."}
+    context = {"brand_name": "Nextly", "brand_url": address}
+
+    assert ensure_brand_link(content, context, stage="test") is content
 
 
 @pytest.mark.parametrize(
@@ -471,7 +542,14 @@ async def _validated_with(history: list[dict], attempts: int) -> dict:
 
 
 async def test_no_second_attempt_for_a_check_the_first_one_worked_on():
-    history = [{"attempt": 1, "accepted": True, "unresolved_checks": ["facts_and_external_links"]}]
+    history = [
+        {
+            "attempt": 1,
+            "accepted": True,
+            "unresolved_checks": ["facts_and_external_links"],
+            "unchanged_checks": ["facts_and_external_links"],
+        }
+    ]
 
     validated = await _validated_with(history, attempts=1)
 
@@ -491,10 +569,17 @@ async def test_no_second_attempt_for_a_check_the_first_one_worked_on():
             "accepted": True,
             "no_result": True,
             "unresolved_checks": ["facts_and_external_links"],
+            "unchanged_checks": ["facts_and_external_links"],
+        },
+        {  # kept, and it fixed part of what the check listed
+            "attempt": 1,
+            "accepted": True,
+            "unresolved_checks": ["facts_and_external_links"],
+            "unchanged_checks": [],
         },
     ],
 )
-async def test_a_second_attempt_still_follows_one_that_was_not_kept(first):
+async def test_a_second_attempt_still_follows_one_that_did_not_leave_the_check_as_it_was(first):
     validated = await _validated_with([first], attempts=1)
 
     validation = validated["content"]["review"]["validation"]
@@ -504,7 +589,7 @@ async def test_a_second_attempt_still_follows_one_that_was_not_kept(first):
 
 async def test_a_repair_is_asked_only_for_what_has_not_had_its_turn():
     validated = await _validated_with(
-        [{"attempt": 1, "accepted": True, "unresolved_checks": ["unsupported_claims"]}], attempts=1
+        [{"attempt": 1, "accepted": True, "unchanged_checks": ["unsupported_claims"]}], attempts=1
     )
     validated["content"]["review"]["validation"]["failed_checks"] = _failed(
         "facts_and_external_links", "unsupported_claims", "subheading_keyphrase"
@@ -520,6 +605,58 @@ async def test_a_repair_is_asked_only_for_what_has_not_had_its_turn():
     attempt = out["content"]["review"]["repair_history"][-1]
     assert attempt["targeted_checks"] == ["facts_and_external_links", "subheading_keyphrase"]
     assert "unsupported_claims" not in attempt["unresolved_checks"]
+
+
+SECOND_FABRICATED = "https://made-up.test/crm-forecasts"
+
+
+def _with_two_fabricated_citations() -> dict:
+    article = flow._with_fabricated_citation()
+    return {
+        **article,
+        "body_markdown": article["body_markdown"].replace(
+            flow._para(3),
+            f"{flow._para(3)} One [forecast]({SECOND_FABRICATED}) expects that to grow.",
+        ),
+        "outbound_links": [
+            *article["outbound_links"],
+            {"url": SECOND_FABRICATED, "anchor_text": "forecast"},
+        ],
+    }
+
+
+async def _repaired_once(article: dict, **removed: str) -> dict:
+    validated = await validate_content(flow._state(article))
+    repairer = flow._fake_model(flow._echo(**removed))
+    with patch.object(repair_module, "load_content_model", return_value=repairer):
+        return await repair_content(validated)
+
+
+async def test_a_check_a_kept_repair_fixed_in_part_gets_its_second_attempt():
+    # Two made-up citations under one check; the repair takes out one. The check still
+    # fails, but for what is left, and that has not been asked for yet.
+    survey = f" A [recent survey]({flow.FABRICATED}) says most teams agree."
+
+    out = await _repaired_once(_with_two_fabricated_citations(), **{survey: ""})
+
+    (attempt,) = out["content"]["review"]["repair_history"]
+    assert attempt["accepted"] is True
+    assert attempt["unresolved_checks"] == ["facts_and_external_links"]
+    assert attempt["unchanged_checks"] == []
+    validation = (await validate_content(out))["content"]["review"]["validation"]
+    assert validation["repair_required"] is True and validation["gave_up"] is False
+
+
+async def test_a_check_a_kept_repair_left_as_it_was_gets_none():
+    out = await _repaired_once(_with_two_fabricated_citations())  # returned as it came
+
+    (attempt,) = out["content"]["review"]["repair_history"]
+    assert attempt["accepted"] is True
+    assert attempt["unchanged_checks"] == ["facts_and_external_links"]
+    validated = await validate_content(out)
+    validation = validated["content"]["review"]["validation"]
+    assert validation["repair_required"] is False and validation["gave_up"] is True
+    assert validation_router(validated) == "humanize_content"
 
 
 async def test_a_model_that_returned_nothing_is_recorded_so_the_check_gets_another_turn():
@@ -559,6 +696,12 @@ async def test_the_brands_address_is_settled_before_the_checks_and_costs_no_atte
 # its words appear anywhere in the prose.
 FIGURE = "Zentrix Quorvex benchmarks measured 76 percent uplift."
 FIGURE_SENTENCE = f" {FIGURE} ([study]({flow.CITATION}))."
+# The figure's sentence as the unsupported-claims check reports it.
+FLAGGED = [f"{FIGURE} (study)."]
+# A sourced sentence no check has anything against, with a fact of its own (and, like the
+# figure's, in words the rest of the article does not use).
+SOUND = "Brixly archivists catalogue dormant ledgers before migrating."
+SOUND_SENTENCE = f" {SOUND} ([report]({flow.CITATION}))."
 
 
 def _with_a_cited_figure() -> dict:
@@ -573,14 +716,70 @@ def _with_a_cited_figure() -> dict:
     }
 
 
-def test_a_fact_whose_sentence_the_repair_removed_goes_with_it():
+def _with_a_sound_fact_too() -> dict:
+    article = _with_a_cited_figure()
+    return {
+        **article,
+        "body_markdown": article["body_markdown"].replace(
+            flow._para(3), f"{flow._para(3)}{SOUND_SENTENCE}"
+        ),
+        "facts": [*article["facts"], {"text": SOUND, "source_url": flow.CITATION}],
+    }
+
+
+def test_the_check_reports_the_figures_sentence_and_not_the_sound_one():
+    article = _with_a_sound_fact_too()
+    content = flow._state(article)["content"]
+    spec = v.build_requirements_spec(
+        content["outline"], "blog", flow.KW, flow.TITLE, generation_meta=content["generation_meta"]
+    )
+
+    assert v.flagged_claim_sentences(article, spec) == FLAGGED
+
+
+def test_a_fact_whose_flagged_sentence_the_repair_removed_goes_with_it():
     before = _with_a_cited_figure()
     after = {**before, "body_markdown": before["body_markdown"].replace(FIGURE_SENTENCE, "")}
 
-    kept = repair_module.without_facts_removed_with_a_claim(before, after)
+    kept = repair_module.without_facts_removed_with_a_claim(before, after, FLAGGED)
 
     assert kept["facts"] == []
     assert kept["body_markdown"] == after["body_markdown"]
+
+
+def test_a_fact_of_no_flagged_claim_stays_when_its_sentence_is_removed():
+    before = _with_a_sound_fact_too()
+    after = {
+        **before,
+        "body_markdown": before["body_markdown"]
+        .replace(FIGURE_SENTENCE, "")
+        .replace(SOUND_SENTENCE, ""),
+    }
+
+    kept = repair_module.without_facts_removed_with_a_claim(before, after, FLAGGED)
+
+    # The figure's fact went with its claim; the sound one is still listed, so the facts
+    # check reports that its sentence was lost.
+    assert kept["facts"] == [{"text": SOUND, "source_url": flow.CITATION}]
+    assert repair_module.without_facts_removed_with_a_claim(before, after, []) is after
+
+
+def test_a_fact_with_a_figure_the_flagged_sentence_does_not_give_is_another_claims():
+    # From a real article: half this fact's words are in the flagged sentence, its figure
+    # is not. It is another sentence's fact, and stays listed when that sentence goes.
+    flagged = [
+        "Reported examples include 873% ROI in five months for Med&Beauty and a 54% sales "
+        "rate from a welcome series (email marketing case studies)."
+    ]
+    theirs = "Email marketing case studies include 873% ROI in five months for Med&Beauty."
+    another = "The average open rate for email marketing campaigns is 30.41%."
+    facts = [{"text": theirs, "source_url": "a"}, {"text": another, "source_url": "b"}]
+    before = {"introduction": f"{flagged[0]} {another}", "body_markdown": "", "facts": facts}
+    after = {"introduction": "Nothing of either is left here.", "body_markdown": "", "facts": facts}
+
+    kept = repair_module.without_facts_removed_with_a_claim(before, after, flagged)
+
+    assert kept["facts"] == [{"text": another, "source_url": "b"}]
 
 
 def test_a_fact_still_stated_or_never_stated_is_left_alone():
@@ -589,27 +788,28 @@ def test_a_fact_still_stated_or_never_stated_is_left_alone():
         **before,
         "body_markdown": before["body_markdown"].replace("benchmarks measured", "benchmarks found"),
     }
-    assert repair_module.without_facts_removed_with_a_claim(before, reworded) is reworded
+    assert repair_module.without_facts_removed_with_a_claim(before, reworded, FLAGGED) is reworded
 
     # A fact the article never stated is the facts check's to report, not this one's to hide.
     never = {
         **before,
         "facts": [{"text": "Quorvex audits saw 91 percent churn.", "source_url": flow.CITATION}],
     }
-    assert repair_module.without_facts_removed_with_a_claim(never, never) is never
-    assert (
-        repair_module.without_facts_removed_with_a_claim(before, {**before, "facts": []})["facts"]
-        == []
-    )
+    assert repair_module.without_facts_removed_with_a_claim(never, never, FLAGGED) is never
+    emptied = {**before, "facts": []}
+    assert repair_module.without_facts_removed_with_a_claim(before, emptied, FLAGGED) is emptied
 
 
-async def _repair_removing_the_figure(failed: list[str]) -> dict:
-    """A repair, asked to fix `failed`, that takes the figure's sentence out."""
-    validated = await validate_content(flow._state(_with_a_cited_figure()))
+async def _repair_removing_the_figure(
+    failed: list[str], article: dict | None = None, also: str = ""
+) -> dict:
+    """A repair, asked to fix `failed`, that takes the figure's sentence out (and `also`)."""
+    validated = await validate_content(flow._state(article or _with_a_cited_figure()))
     validation = validated["content"]["review"]["validation"]
     assert "facts_and_external_links" not in [c["name"] for c in validation["failed_checks"]]
     validation["failed_checks"] = _failed(*failed)
-    repairer = flow._fake_model(flow._echo(**{FIGURE_SENTENCE: ""}))
+    removed = {FIGURE_SENTENCE: "", **({also: ""} if also else {})}
+    repairer = flow._fake_model(flow._echo(**removed))
     with patch.object(repair_module, "load_content_model", return_value=repairer):
         return await repair_content(validated)
 
@@ -624,6 +824,21 @@ async def test_removing_an_unsupported_claim_and_its_figure_is_kept():
     assert final["facts"] == []
     again = (await validate_content(out))["content"]["review"]["validation"]
     assert "facts_and_external_links" not in [c["name"] for c in again["failed_checks"]]
+
+
+async def test_a_sound_sentence_removed_beside_the_claim_is_put_back():
+    # Asked to remove the claim, the repair also takes out a sourced sentence nothing was
+    # wrong with. That loss is still reported, so only the claim's removal is kept.
+    out = await _repair_removing_the_figure(
+        ["unsupported_claims"], article=_with_a_sound_fact_too(), also=SOUND_SENTENCE
+    )
+
+    (attempt,) = out["content"]["review"]["repair_history"]
+    assert attempt["regressed_checks"] == ["facts_and_external_links"]
+    assert attempt["accepted"] is True and attempt["salvaged"]["how"] == "blocks"
+    final = out["content"]["final_content"]
+    assert FIGURE not in final["body_markdown"] and SOUND in final["body_markdown"]
+    assert final["facts"] == [{"text": SOUND, "source_url": flow.CITATION}]
 
 
 async def test_a_figure_lost_while_fixing_something_else_is_still_a_step_back():
