@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
@@ -115,6 +115,17 @@ class WorkspaceAnalyticsSchema(BaseModel):
     content_count: int = 0
 
 
+class WorkspacePipelineState(BaseModel):
+    """The latest run of the workspace pipeline that reads the website (creation, retry, refresh)"""
+
+    status: Literal["running", "completed", "failed", "interrupted"] = Field(
+        ...,
+        description="interrupted: a restart or a deploy ended the run; POST .../pipeline/retry runs it again",
+    )
+    operation_id: Optional[str] = Field(None, description="The run's SSE operation id")
+    started_at: Optional[datetime] = Field(None, description="When the run started")
+
+
 class WorkspaceResponseSchema(BaseModel):
     """Full workspace response with ID and metadata"""
 
@@ -126,6 +137,9 @@ class WorkspaceResponseSchema(BaseModel):
     url: Optional[str] = Field(None, description="Website URL")
     favicon_url: Optional[str] = Field(
         None, description="The site's favicon, fetched once and kept in the media store"
+    )
+    pipeline: Optional[WorkspacePipelineState] = Field(
+        None, description="The latest pipeline run; null when none is recorded"
     )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")

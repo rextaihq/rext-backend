@@ -28,6 +28,7 @@ def register_routes(app: FastAPI) -> None:
         router as invitation_analytics_router,
     )
     from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
+    from src.api.routes.admin.user_credit_routes import router as admin_user_credit_routes_router
     from src.api.routes.admin.webhook_monitoring_routes import (
         router as admin_webhook_monitoring_routes_router,
     )
@@ -114,6 +115,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         admin_incident_banner_router, prefix="/api/v1/admin", tags=["Admin - Status"]
+    )
+    app.include_router(
+        admin_user_credit_routes_router, prefix="/api/v1/admin", tags=["Admin - User Credits"]
     )
     app.include_router(
         admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"]

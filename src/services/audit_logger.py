@@ -77,6 +77,7 @@ class AuditEventType(str, Enum):
     ADMIN_SUBSCRIPTION_CANCELLED = "admin.subscription_cancelled"
     ADMIN_USER_MIGRATED = "admin.user_migrated"
     ADMIN_PLAN_CHANGED = "admin.plan_changed"
+    ADMIN_CREDITS_ADJUSTED = "admin.credits_adjusted"
 
     # License events
     LICENSE_CREATED = "license.created"
@@ -125,6 +126,7 @@ class AuditLogger:
         status: str = "success",
         error_message: Optional[str] = None,
         db: Optional[AsyncSession] = None,
+        private_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Any]:
         """
         Log an audit event with structured data and optional DB persistence.
@@ -142,6 +144,8 @@ class AuditLogger:
             status: Status of the action (success, failed, partial)
             error_message: Error message if failed
             db: Optional async database session for persistence to audit_logs
+            private_metadata: Metadata kept in the audit_logs row only, never in the
+                application log: free text a person typed, which may name a customer
         """
         audit_data = {
             "event_type": event_type.value,
@@ -199,7 +203,7 @@ class AuditLogger:
                 # Record customer user_id so user self-service can see their activity logs
                 log_user_id = user_id or admin_id
 
-                meta_copy = {**(metadata or {})}
+                meta_copy = {**(metadata or {}), **(private_metadata or {})}
                 if admin_id and user_id and admin_id != user_id:
                     meta_copy["admin_id"] = str(admin_id)
 
@@ -931,6 +935,52 @@ class AuditLogger:
                 **(metadata or {}),
             },
             ip_address=ip_address,
+            db=db,
+        )
+
+    async def log_admin_credits_adjusted(
+        self,
+        admin_id: UUID,
+        user_id: UUID,
+        subscription_id: UUID,
+        action: str,
+        amount: int,
+        balance_before: int,
+        balance_after: int,
+        reason: str,
+        grant_id: Optional[UUID] = None,
+        expires_at: Optional[datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[Any]:
+        """Log a super admin adding, deducting or resetting a user's credits.
+
+        Recorded against the affected user, the admin in the metadata. The reason
+        is free text and may name the customer or an incident, so it goes to the
+        audit row only, not to the application log. Returns the audit row when it
+        was written to ``db``.
+        """
+        return await self._log_event(
+            event_type=AuditEventType.ADMIN_CREDITS_ADJUSTED,
+            user_id=user_id,
+            admin_id=admin_id,
+            resource_type="subscription",
+            resource_id=subscription_id,
+            changes={
+                "old_values": {"balance": balance_before},
+                "new_values": {"balance": balance_after},
+            },
+            metadata={
+                "admin_id": str(admin_id),
+                "action": action,
+                "amount": amount,
+                "balance_before": balance_before,
+                "balance_after": balance_after,
+                "grant_id": str(grant_id) if grant_id else None,
+                "expires_at": expires_at.isoformat() if expires_at else None,
+                **(metadata or {}),
+            },
+            private_metadata={"reason": reason},
             db=db,
         )
 

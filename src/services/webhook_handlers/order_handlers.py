@@ -20,7 +20,13 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
-from src.providers.payment.provider_factory import get_payment_provider
+
+# The one shared provider and its HTTP client, under the name these handlers call (G80a): a new
+# provider per refund opened an HTTP client that nothing closed. The handlers run on the serving
+# loop, as every caller of the payment provider does.
+from src.providers.payment.provider_factory import (
+    get_payment_provider_singleton as get_payment_provider,
+)
 from src.services.audit_logger import audit_logger
 from src.services.billing_email_service import (
     send_billing_email_in_background,

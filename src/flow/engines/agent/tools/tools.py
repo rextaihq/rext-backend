@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 
 from src.api.config import settings
 from src.flow.image_generation import compose_image_prompt
+from src.utils.loop_local_http import SHARED_ASYNC_CLIENT
 
 load_dotenv()
 
@@ -57,7 +58,9 @@ async def generate_image_standalone(
 ) -> str | None:
     """Actual image generation worker. Returns permanent URL or None on failure."""
     print(f"[generate_image_standalone] starting model={model} size={size} quality={quality}")
-    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    # The shared, per-loop HTTP client (G80): a client of its own per image would open a new
+    # connection pool each time and leave it to the garbage collector.
+    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"), http_client=SHARED_ASYNC_CLIENT)
     print(f"[generate_image_standalone] prompt={repr(prompt)}...")
     try:
         response = await client.images.generate(

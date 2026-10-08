@@ -1,84 +1,110 @@
-"""Tests for the account-creation IP allowlist helper and its integration
-with the per-device account-creation cap (check_device_account_limit)."""
+"""Tests for the account-creation IP allowlist (AccountCreationAllowlistService, whose entries an
+admin manages in the database) and its integration with the per-device account-creation cap
+(check_device_account_limit)."""
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException, Request
 
 from src.api.config import get_settings
-from src.utils.ip_allowlist import is_account_creation_ip_allowlisted
+from src.services.account_creation_allowlist_service import AccountCreationAllowlistService
 
 
 @pytest.fixture
 def allowlist(monkeypatch):
-    """Set ACCOUNT_CREATION_IP_ALLOWLIST for the duration of a test."""
+    """Set the allowlist's active entries (what the service reads from the cache or the
+    database) for the duration of a test. The proxy setting is a specific one, so the
+    client address is trusted."""
+    monkeypatch.setattr(get_settings(), "TRUSTED_PROXY_IPS", "127.0.0.1,::1")
 
     def _set(value: str) -> None:
-        monkeypatch.setattr(get_settings(), "ACCOUNT_CREATION_IP_ALLOWLIST", value)
+        entries = [item.strip() for item in value.split(",") if item.strip()]
+        monkeypatch.setattr(
+            AccountCreationAllowlistService,
+            "_active_ip_values",
+            AsyncMock(return_value=entries),
+        )
 
     return _set
 
 
+async def allowlisted(client_ip) -> bool:
+    return await AccountCreationAllowlistService(None).is_ip_allowlisted(client_ip)
+
+
 # ---------------------------------------------------------------------------
-# is_account_creation_ip_allowlisted
+# AccountCreationAllowlistService.is_ip_allowlisted
 # ---------------------------------------------------------------------------
 
 
-def test_empty_allowlist_matches_nothing(allowlist):
+@pytest.mark.asyncio
+async def test_empty_allowlist_matches_nothing(allowlist):
     allowlist("")
-    assert is_account_creation_ip_allowlisted("203.0.113.10") is False
+    assert await allowlisted("203.0.113.10") is False
 
 
-def test_missing_client_ip_is_not_allowlisted(allowlist):
+@pytest.mark.asyncio
+async def test_missing_client_ip_is_not_allowlisted(allowlist):
     allowlist("203.0.113.10")
-    assert is_account_creation_ip_allowlisted(None) is False
-    assert is_account_creation_ip_allowlisted("") is False
+    assert await allowlisted(None) is False
+    assert await allowlisted("") is False
 
 
-def test_single_allowlisted_ip_matches(allowlist):
+@pytest.mark.asyncio
+async def test_single_allowlisted_ip_matches(allowlist):
     allowlist("203.0.113.10")
-    assert is_account_creation_ip_allowlisted("203.0.113.10") is True
+    assert await allowlisted("203.0.113.10") is True
 
 
-def test_non_allowlisted_ip_does_not_match(allowlist):
+@pytest.mark.asyncio
+async def test_non_allowlisted_ip_does_not_match(allowlist):
     allowlist("203.0.113.10")
-    assert is_account_creation_ip_allowlisted("203.0.113.99") is False
+    assert await allowlisted("203.0.113.99") is False
 
 
-def test_multiple_allowlisted_ips(allowlist):
+@pytest.mark.asyncio
+async def test_multiple_allowlisted_ips(allowlist):
     allowlist(" 203.0.113.10 , 203.0.113.11 ")
-    assert is_account_creation_ip_allowlisted("203.0.113.10") is True
-    assert is_account_creation_ip_allowlisted("203.0.113.11") is True
-    assert is_account_creation_ip_allowlisted("203.0.113.12") is False
+    assert await allowlisted("203.0.113.10") is True
+    assert await allowlisted("203.0.113.11") is True
+    assert await allowlisted("203.0.113.12") is False
 
 
-def test_cidr_range_is_supported(allowlist):
+@pytest.mark.asyncio
+async def test_cidr_range_is_supported(allowlist):
     allowlist("203.0.113.0/24")
-    assert is_account_creation_ip_allowlisted("203.0.113.55") is True
-    assert is_account_creation_ip_allowlisted("203.0.114.55") is False
+    assert await allowlisted("203.0.113.55") is True
+    assert await allowlisted("203.0.114.55") is False
 
 
-def test_ipv6_is_supported(allowlist):
+@pytest.mark.asyncio
+async def test_ipv6_is_supported(allowlist):
+    allowlist("2001:db8:1:2::/64")
+    assert await allowlisted("2001:db8:1:2::1") is True
+    assert await allowlisted("2001:db8:1:3::1") is False
+    # Wider than a /64 is ignored as over-broad (MIN_ALLOWLIST_PREFIXLEN).
     allowlist("2001:db8::/32")
-    assert is_account_creation_ip_allowlisted("2001:db8::1") is True
-    assert is_account_creation_ip_allowlisted("2001:dead::1") is False
+    assert await allowlisted("2001:db8::1") is False
 
 
-def test_invalid_entries_are_ignored_but_valid_ones_still_work(allowlist):
+@pytest.mark.asyncio
+async def test_invalid_entries_are_ignored_but_valid_ones_still_work(allowlist):
     allowlist("not-an-ip, 999.999.999.999, 203.0.113.10")
-    assert is_account_creation_ip_allowlisted("203.0.113.10") is True
-    assert is_account_creation_ip_allowlisted("10.0.0.1") is False
+    assert await allowlisted("203.0.113.10") is True
+    assert await allowlisted("10.0.0.1") is False
 
 
-def test_unparseable_client_ip_fails_closed(allowlist):
+@pytest.mark.asyncio
+async def test_unparseable_client_ip_fails_closed(allowlist):
     allowlist("203.0.113.10")
-    assert is_account_creation_ip_allowlisted("garbage") is False
+    assert await allowlisted("garbage") is False
 
 
-def test_fully_invalid_allowlist_matches_nothing(allowlist):
+@pytest.mark.asyncio
+async def test_fully_invalid_allowlist_matches_nothing(allowlist):
     allowlist("nonsense,,also-bad")
-    assert is_account_creation_ip_allowlisted("203.0.113.10") is False
+    assert await allowlisted("203.0.113.10") is False
 
 
 # ---------------------------------------------------------------------------
