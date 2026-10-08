@@ -7,7 +7,9 @@ except-Exception in db_transaction_handler turned into a 500. Typing the path
 parameter lets FastAPI reject it with a 422 before the handler runs.
 
 No fixtures: the router is mounted on a bare app so the check is about request
-validation only, and needs neither a database nor a token.
+validation only, and needs neither a database nor a token. The caller is stood in
+for: a request with no token is refused as not signed in (rext-control#883), which
+on this bare app would come before the validation these tests are about.
 """
 
 import inspect
@@ -16,13 +18,24 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from src.api.database.async_database import get_async_db
 from src.api.routes.workspaces import workspace_core
+from src.api.security.dependencies import get_current_user
 
 
 @pytest.fixture(scope="module")
 def client():
     app = FastAPI()
     app.include_router(workspace_core.router, prefix="/workspaces")
+    app.dependency_overrides[get_current_user] = lambda: {
+        "identity": "11111111-1111-1111-1111-111111111111"
+    }
+    # With a caller, a route's other dependencies (the workspace limit) would go on to read
+    # the database this bare app doesn't have: they are stood in for as well.
+    for route in workspace_core.router.routes:
+        for dependency in getattr(getattr(route, "dependant", None), "dependencies", []):
+            if dependency.call not in (get_current_user, get_async_db):
+                app.dependency_overrides[dependency.call] = lambda: None
     return TestClient(app, raise_server_exceptions=False)
 
 

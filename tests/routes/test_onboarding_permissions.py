@@ -103,9 +103,10 @@ async def test_complete_onboarding_authenticated_only(client):
 @pytest.mark.asyncio
 async def test_onboarding_requires_authentication(client):
     """
-    Without an authenticated caller, the onboarding routes must reject.
-    (422: the authorization header is validated before the dependency runs.)
+    Without an authenticated caller, the onboarding routes must reject: 401, the answer that
+    tells a client it is not signed in (rext-control#883; it was a 422 while the header was
+    declared required).
     """
     app.dependency_overrides.clear()
     response = await client.post("/api/v1/onboarding/complete")
-    assert response.status_code in (401, 403, 422)
+    assert response.status_code == 401
