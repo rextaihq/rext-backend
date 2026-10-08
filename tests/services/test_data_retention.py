@@ -181,7 +181,7 @@ async def test_deletes_run_in_batches_and_commit_each(db_session, monkeypatch):
     )
 
     assert deleted == 5
-    assert commits == 4  # 2, 2, the last 1, then the batch that finds nothing
+    assert commits == 3  # 2, 2, then the last 1; the pick that finds nothing commits nothing
     remaining = (
         await db_session.execute(
             select(WebhookEvent.id).where(WebhookEvent.id.in_([e.id for e in [*events, kept]]))
@@ -191,9 +191,10 @@ async def test_deletes_run_in_batches_and_commit_each(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_a_short_batch_is_not_the_end(db_session, monkeypatch):
-    """A batch deletes fewer rows than it picked when one of them was refreshed meanwhile
-    and kept, while more wait beyond its limit: the run goes on until a batch finds nothing."""
+@pytest.mark.parametrize("reported", [1, 0])
+async def test_a_batch_that_deletes_few_or_none_is_not_the_end(db_session, monkeypatch, reported):
+    """A batch deletes fewer rows than it picked, or none, when rows were refreshed meanwhile
+    and kept, while more wait beyond its limit: the run goes on until a pick finds nothing."""
     monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 2)
     events = [_webhook_event(days_old=100) for _ in range(5)]
     db_session.add_all(events)
@@ -202,16 +203,16 @@ async def test_a_short_batch_is_not_the_end(db_session, monkeypatch):
     execute = db_session.execute
     deletes = 0
 
-    async def first_batch_reports_one_row(statement, *args, **kwargs):
+    async def first_batch_reports_fewer(statement, *args, **kwargs):
         nonlocal deletes
         result = await execute(statement, *args, **kwargs)
         if getattr(statement, "is_delete", False):
             deletes += 1
             if deletes == 1:
-                return SimpleNamespace(rowcount=1)
+                return SimpleNamespace(rowcount=reported)
         return result
 
-    monkeypatch.setattr(db_session, "execute", first_batch_reports_one_row)
+    monkeypatch.setattr(db_session, "execute", first_batch_reports_fewer)
     service = DataCleanupService(db=db_session, dry_run=False)
     await service._delete_in_batches(
         WebhookEvent, WebhookEvent.id.in_([event.id for event in events])
@@ -226,8 +227,8 @@ async def test_a_short_batch_is_not_the_end(db_session, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_batch_size_of_zero_ends_at_once(db_session, monkeypatch):
-    """The setting can't be below 1, but a caller can put anything there: a batch that can
-    pick nothing deletes nothing, and that ends the run."""
+    """The setting can't be below 1, but a caller can put anything there: a pick of no rows
+    finds nothing, and that ends the run."""
     monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 0)
     event = _webhook_event(days_old=100)
     db_session.add(event)
