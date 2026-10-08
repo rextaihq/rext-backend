@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import markdown
-from sqlalchemy import func, not_, or_, select
+from sqlalchemy import and_, case, func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -139,14 +139,27 @@ def _own_site_link(hosts: List[str]) -> str:
       ("https://example.com/x", "//example.com/x"). The host must end there (a path, a port, a
       query, a closing bracket, a quote, a space or the text's end), so "example.com.au" is no
       link to "example.com";
-    - a link from the site's root ("](/pricing)", href="/pricing"), which has no host at all.
+    - a link from the site's root ("](/pricing)", href="/pricing"), which has no host at all;
+    - a link relative to the article's own address ("](pricing)", "](../plans/)",
+      href="guide.html"), which has no host either. Not one: an address with a scheme
+      ("mailto:", "tel:"), a place on the same page ("#top", "?page=2"), and a name that reads
+      as a host ("other.com/x", "www.other.com": another site's address without its scheme)
+      unless it ends as a page does ("guide.html").
     """
     names = "|".join(re.escape(host) for host in hosts)
     ends = r'[/:?#)"<>\s' + "'" + "]"
     opens = r'[("=\s' + "'" + "]"
+    link = r"(\]\(|href=[" + "\"'" + r"]?)"
     absolute = rf"(://|{opens}//)(www\.)?({names})({ends}|$)"
-    from_the_root = r"(\]\(|href=[" + "\"'" + r"])/([^/]|$)"
-    return f"({absolute})|({from_the_root})"
+    from_the_root = link + r"/([^/]|$)"
+    a_page = rf"[a-z0-9_~-]+\.(html?|php|aspx?|pdf)({ends}|$)"
+    reads_as_a_host = rf"[a-z0-9.@-]*\.[a-z]{{2,}}({ends}|$)"
+    relative = (
+        link
+        + r"(?![a-z][a-z0-9+.-]*:)"
+        + rf"((\.{{1,2}}/)+|(\.{{1,2}}/)*({a_page}|(?!{reads_as_a_host})[a-z0-9_~-]))"
+    )
+    return f"({absolute})|({from_the_root})|({relative})"
 
 
 class ContentService:
@@ -535,10 +548,24 @@ class ContentService:
         hosts = await self._own_hosts(workspace_id)
         if hosts:
             # The published article is its introduction and its body: the Markdown body, or the
-            # HTML one when there is no Markdown (as the WordPress publisher chooses). An image
-            # is no link, so image embeds are taken out before the search.
+            # HTML one when there is no Markdown (as the WordPress publisher chooses). Shopify's
+            # publisher chooses the other way round, so an article published there alone is read
+            # HTML first, and one published to both is read in both. An image is no link, so
+            # image embeds are taken out before the search.
             own_site_link = _own_site_link(hosts)
-            body = func.coalesce(func.nullif(Content.body_markdown, ""), Content.body_html, "")
+            markdown_first = func.coalesce(
+                func.nullif(Content.body_markdown, ""), Content.body_html, ""
+            )
+            html_first = func.coalesce(
+                func.nullif(Content.body_html, ""), Content.body_markdown, ""
+            )
+            on_shopify = Content.shopify_article_id.is_not(None)
+            on_wordpress = Content.wordpress_post_id.is_not(None)
+            body = case(
+                (and_(on_shopify, on_wordpress), func.concat(markdown_first, " ", html_first)),
+                (on_shopify, html_first),
+                else_=markdown_first,
+            )
             text = func.regexp_replace(
                 func.concat(func.coalesce(Content.introduction, ""), " ", body), _IMAGES, " ", "gi"
             )

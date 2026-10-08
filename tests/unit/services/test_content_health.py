@@ -80,6 +80,8 @@ async def _article(
     intro=None,
     meta=...,
     trashed=False,
+    wordpress=False,
+    shopify=False,
 ):
     """An article; `meta` left out means no SEO row at all."""
     article = Content(
@@ -92,6 +94,8 @@ async def _article(
         introduction=intro,
         body_html=html,
         deleted_at=datetime.now(timezone.utc) if trashed else None,
+        wordpress_post_id=1 if wordpress else None,
+        shopify_article_id=1 if shopify else None,
     )
     session.add(article)
     await session.flush()
@@ -179,6 +183,73 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
 
     assert health["published"] == 21
     assert health["no_internal_links"] == 11
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("article", "links"),
+    [
+        # Relative to the article's own address: no host, so the same site (rext-control #791).
+        ({"body": "See [pricing](pricing)."}, True),
+        ({"body": "Our [plans](../plans/) page."}, True),
+        ({"body": "Read [this part](./guide.html#part)."}, True),
+        ({"body": "A [page](Guide.HTML?from=article) of ours."}, True),
+        ({"body": "The [setup notes](docs/setup.md)."}, True),
+        ({"body": None, "html": '<a href="pricing">Pricing</a>'}, True),
+        ({"body": None, "html": "<a href='plans/pro'>Pro</a>"}, True),
+        # An attribute without quotes, relative or from the root.
+        ({"body": None, "html": "<a href=pricing>Pricing</a>"}, True),
+        ({"body": None, "html": "<a href=/pricing>Pricing</a>"}, True),
+        # A scheme, a place on the same page, nothing at all: no link to another page of the site.
+        ({"body": "Write to [us](mailto:hi@example.com)."}, False),
+        ({"body": "Call [us](tel:+15551234)."}, False),
+        ({"body": "Back to [the top](#top)."}, False),
+        ({"body": "The [next page](?page=2)."}, False),
+        ({"body": "An [empty link]()."}, False),
+        (
+            {"body": None, "html": '<a href="javascript:void(0)">Open</a> <a href="#">Top</a>'},
+            False,
+        ),
+        # Another site's address written without its scheme, and an email address.
+        ({"body": "From [another site](www.other.com/page)."}, False),
+        ({"body": "From [another site](other.com/x), or [this one](other.com)."}, False),
+        ({"body": "Write to [them](hi@other.com)."}, False),
+        # Round brackets that open no link, and an image beside the article.
+        ({"body": "Plain text (pricing) and [square] (pricing)."}, False),
+        ({"body": "![Hero](hero.jpg) and text."}, False),
+    ],
+)
+async def test_a_link_relative_to_the_article_is_a_link_to_the_site(session, article, links):
+    user, workspace = await _workspace(session, url="https://example.com")
+    await _article(session, user, workspace, **article)
+
+    health = await ContentService(session).content_health(workspace.id)
+
+    assert health["no_internal_links"] == (0 if links else 1)
+
+
+@pytest.mark.asyncio
+async def test_an_article_is_read_as_its_site_was_sent_it(session):
+    user, workspace = await _workspace(session, url="https://example.com")
+    linked, plain = '<a href="/pricing">Pricing</a>', "<p>No link.</p>"
+    # Shopify is sent the HTML body when there is one, and the Markdown one when there is none.
+    await _article(session, user, workspace, body="No link.", html=linked, shopify=True)
+    await _article(session, user, workspace, body="See [pricing](/pricing).", shopify=True)
+    await _article(
+        session, user, workspace, body="See [pricing](/pricing).", html=plain, shopify=True
+    )
+    # On both sites each was sent its own body: a link in either counts.
+    both = {"shopify": True, "wordpress": True}
+    await _article(session, user, workspace, body="No link.", html=linked, **both)
+    await _article(session, user, workspace, body="See [pricing](/pricing).", html=plain, **both)
+    await _article(session, user, workspace, body="No link.", html=plain, **both)
+    # On WordPress alone, as with no site recorded: Markdown first.
+    await _article(session, user, workspace, body="No link.", html=linked, wordpress=True)
+
+    health = await ContentService(session).content_health(workspace.id)
+
+    assert health["published"] == 7
+    assert health["no_internal_links"] == 3
 
 
 @pytest.mark.asyncio
