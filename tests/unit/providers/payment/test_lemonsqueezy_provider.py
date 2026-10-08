@@ -391,6 +391,23 @@ class TestUpdateSubscription:
         assert "sub_123" not in str(unknown.value)
 
     @pytest.mark.asyncio
+    async def test_too_many_requests_is_an_answer_not_an_unknown_outcome(self, provider):
+        """A 429 after every attempt says Lemon Squeezy turned the request away: nothing
+        was applied, so nobody is sent to look for a change that wasn't made."""
+        from src.providers.payment.providers.lemonsqueezy import LemonSqueezyTransientError
+
+        async def turned_away(**_request):
+            raise LemonSqueezyTransientError("rate limited", status_code=429)
+
+        with (
+            patch.object(provider, "_make_request", side_effect=turned_away),
+            pytest.raises(LemonSqueezyTransientError) as refused,
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
+        assert refused.value.status_code == 429
+
+    @pytest.mark.asyncio
     async def test_an_update_lemon_squeezy_refuses_is_still_a_refusal(self, provider):
         from src.providers.payment.providers.lemonsqueezy import LemonSqueezyAPIError
 

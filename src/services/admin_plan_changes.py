@@ -414,6 +414,30 @@ async def plan_options(
     }
 
 
+def alert_unrecorded(
+    *, user_id: UUID, admin_id: UUID, old_plan: str, new_plan: str, billing: str, failed: str
+) -> None:
+    """Tell a person that Lemon Squeezy took an admin's plan change and it is not recorded
+    here. The plan follows Lemon Squeezy's own update; who changed it and why does not, so
+    that is what the alert carries. ``failed`` says what couldn't be done."""
+    trigger_payment_alert(
+        alert_type="admin_plan_change_unrecorded",
+        message=(
+            f"An admin's plan change was accepted by Lemon Squeezy, but {failed}: the plan "
+            "here follows Lemon Squeezy's update; record who changed it and why"
+        ),
+        severity="high",
+        context={
+            "admin_id": str(admin_id),
+            "old_plan": old_plan,
+            "new_plan": new_plan,
+            "billing": billing,
+        },
+        user_id=str(user_id),
+        operation="admin_plan_change",
+    )
+
+
 def _refuse(message: str, rule: str) -> BusinessRuleViolationException:
     return BusinessRuleViolationException(message=message + _NOTHING_CHANGED, rule_name=rule)
 
@@ -476,14 +500,32 @@ async def change_plan(
     old_period = subscription.billing_period
     credits_before = subscription.current_credits or 0
     subscription_id = subscription.id
+    unrecorded = {
+        "user_id": user_id,
+        "admin_id": admin_id,
+        "old_plan": current.name,
+        "new_plan": plan.name,
+        "billing": billing,
+    }
     # The customer's own change, made by an admin: Lemon Squeezy first, the row after.
-    changed = await SubscriptionService(db).upgrade(
-        user_id,
-        plan.id,
-        billing_period,
-        prorate=billing == CHARGE_NOW,
-        by_admin=True,
-    )
+    service = SubscriptionService(db)
+    try:
+        changed = await service.upgrade(
+            user_id,
+            plan.id,
+            billing_period,
+            prorate=billing == CHARGE_NOW,
+            by_admin=True,
+        )
+    except (BusinessRuleViolationException, RextValidationException):
+        # A refusal, or an outcome upgrade() has told a person about itself.
+        raise
+    except Exception:
+        # Past Lemon Squeezy's yes, the work here failed (the row's lock, its write, the
+        # cache): the plan has changed there and nothing of it will be kept here.
+        if service.provider_change_accepted:
+            alert_unrecorded(**unrecorded, failed="the plan could not be written")
+        raise
     credits_after = changed.current_credits or 0
 
     audit = await audit_logger.log_admin_plan_changed(
@@ -507,24 +549,7 @@ async def change_plan(
         # subscription_updated brings the plan here in line, and a person is told, since
         # that update carries neither the admin nor the reason.
         if standing.billed_by_provider:
-            trigger_payment_alert(
-                alert_type="admin_plan_change_unrecorded",
-                message=(
-                    "An admin's plan change was accepted by Lemon Squeezy but could not be "
-                    "written to the audit log: the plan here follows Lemon Squeezy's update; "
-                    "record who changed it and why"
-                ),
-                severity="high",
-                context={
-                    "subscription_id": str(subscription_id),
-                    "admin_id": str(admin_id),
-                    "old_plan": current.name,
-                    "new_plan": plan.name,
-                    "billing": billing,
-                },
-                user_id=str(user_id),
-                operation="admin_plan_change",
-            )
+            alert_unrecorded(**unrecorded, failed="the audit entry could not be written")
             raise BusinessRuleViolationException(
                 message=(
                     "Lemon Squeezy has changed the plan, but the change could not be recorded "

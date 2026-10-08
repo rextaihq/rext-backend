@@ -752,6 +752,9 @@ class LemonSqueezyProvider(PaymentProvider):
                     method="PATCH", endpoint=f"/subscriptions/{subscription_id}", data=update_data
                 )
             except LemonSqueezyTransientError as exc:
+                # Too many requests is an answer: Lemon Squeezy turned this one away.
+                if exc.status_code == 429:
+                    raise
                 # No answer, or a server error: the request may have been applied all the
                 # same (and, invoiced at once, charged). Not a refusal, and a caller must
                 # not take it for one.
