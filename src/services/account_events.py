@@ -112,22 +112,41 @@ async def workspace_created(user_id: UUID, workspace_id: UUID, occurred_at: date
 
 
 def _out_mark(owner_id: UUID) -> str:
-    return f"analytics:credits_out:{owner_id}"
+    """The mark's key: derived from the account's id and not the id itself, since the
+    cache client names the key in its log lines."""
+    return f"analytics:credits_out:{_key('credits_out', owner_id)}"
+
+
+def _redis():
+    """The cache's Redis client, or None when the cache is off or not connected."""
+    return cache.redis if cache.is_enabled else None
 
 
 async def _claim_out(owner_id: UUID) -> bool:
     """Mark the account out of credits. True for the one caller that set the mark:
-    of several runs refused at once, one tells it. Without Redis there is no mark to
-    set, and every caller is told yes."""
-    if not cache.is_enabled() or cache.redis is None:
+    of several runs refused at once, one tells it. Without Redis, or when the write
+    fails, there is no mark to go by and every caller is told yes: an event told twice
+    is better than one never told."""
+    redis = _redis()
+    if redis is None:
         return True
-    return bool(await cache.redis.set(_out_mark(owner_id), "1", nx=True, ex=_OUT_MARK_SECONDS))
+    try:
+        return bool(await redis.set(_out_mark(owner_id), "1", nx=True, ex=_OUT_MARK_SECONDS))
+    except Exception as error:  # noqa: BLE001 - the mark is a nicety, the event is the point
+        logger.warning("Out-of-credits mark not written", extra={"error": type(error).__name__})
+        return True
 
 
 async def _mark_out(owner_id: UUID) -> None:
-    """Mark the account out of credits, whatever mark is there (a charge's own crossing)."""
-    if cache.is_enabled() and cache.redis is not None:
-        await cache.redis.set(_out_mark(owner_id), "1", ex=_OUT_MARK_SECONDS)
+    """Mark the account out of credits, whatever mark is there (a charge's own crossing).
+    A write that fails is logged and nothing more: the events are still sent."""
+    redis = _redis()
+    if redis is None:
+        return
+    try:
+        await redis.set(_out_mark(owner_id), "1", ex=_OUT_MARK_SECONDS)
+    except Exception as error:  # noqa: BLE001 - the mark is a nicety, the event is the point
+        logger.warning("Out-of-credits mark not written", extra={"error": type(error).__name__})
 
 
 async def _owner_of(user_id: UUID, workspace_id: Optional[UUID]) -> UUID:

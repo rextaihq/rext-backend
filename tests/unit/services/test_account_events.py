@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 
+from src.api.cache.redis_client import CacheClient
 from src.services import account_events, server_events
 from src.utils import credit_manager
 from src.utils.credit_manager import (
@@ -25,26 +26,36 @@ AT = datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc)
 
 
 class _Redis:
-    """SET with nx, as Redis does it: the first caller sets the key, the others get nothing."""
+    """Redis as the cache client uses it. SET with nx as Redis does it: the first caller sets
+    the key, the others get nothing. `broken` is an outage: every command raises."""
 
     def __init__(self, marks):
         self.marks = marks
+        self.broken = False
 
     async def set(self, key, value, nx=False, ex=None):
         await asyncio.sleep(0)  # let another caller in, as a real round trip would
+        if self.broken:
+            raise ConnectionError("redis is down")
         if nx and key in self.marks:
             return None
         self.marks[key] = value
         return True
 
+    async def delete(self, key):
+        if self.broken:
+            raise ConnectionError("redis is down")
+        return 1 if self.marks.pop(key, None) is not None else 0
+
 
 @pytest.fixture
 def world(monkeypatch):
     """Analytics on; what would be reported is kept. `creations` is how many workspaces the
-    audit log says the account made; `redis` False is a server without Redis."""
+    audit log says the account made. `cache` is the real cache client with a stand-in Redis
+    behind it, so the client's own interface is what the events meet."""
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
     state = SimpleNamespace(
-        sent=[], marks={}, creations=1, owner=uuid4(), sessions=0, owners_read=0, redis=True
+        sent=[], marks={}, creations=1, owner=uuid4(), sessions=0, owners_read=0
     )
 
     async def report(name, properties, **kwargs):
@@ -61,16 +72,14 @@ def world(monkeypatch):
         state.owners_read += 1
         return state.owner
 
-    async def delete(key):
-        return state.marks.pop(key, None) is not None
-
-    cache = SimpleNamespace(
-        is_enabled=lambda: state.redis, redis=_Redis(state.marks), delete=delete
-    )
+    state.cache = CacheClient()
+    state.cache._enabled = True
+    state.cache.redis = _Redis(state.marks)
+    monkeypatch.setattr(state.cache, "_report_unavailable", AsyncMock())
     monkeypatch.setattr(account_events, "report_event", report)
     monkeypatch.setattr(account_events, "get_async_db_context", session)
     monkeypatch.setattr(account_events, "_owner_of", owner_of)
-    monkeypatch.setattr(account_events, "cache", cache)
+    monkeypatch.setattr(account_events, "cache", state.cache)
     return state
 
 
@@ -286,12 +295,36 @@ async def test_a_charge_marks_the_account_out_before_it_sends_anything(world, mo
 
 @pytest.mark.asyncio
 async def test_without_redis_there_is_no_mark_and_every_refusal_is_told(world):
-    world.redis = False
+    world.cache._enabled = False
 
     for _ in range(2):
         await _refuse(world, owner=world.owner)
+    await _charge(balance_after=0, owner=world.owner)
 
-    assert _names(world) == ["credits_out", "credits_out"]
+    assert _names(world) == ["credits_out", "credits_out", "credits_spent", "credits_out"]
+
+
+@pytest.mark.asyncio
+async def test_a_redis_outage_loses_no_event(world):
+    """The mark is a nicety and the event is the point: when its write fails, the refusal
+    is told (perhaps twice), and a charge still sends all it has to say."""
+    world.cache.redis.broken = True
+
+    await _refuse(world, owner=world.owner)
+    await _charge(balance_after=0, credits=1, owner=world.owner)
+    await _charge(balance_after=7, credits=1, owner=world.owner)
+
+    assert _names(world) == ["credits_out", "credits_spent", "credits_out", "credits_spent"]
+
+
+@pytest.mark.asyncio
+async def test_the_marks_key_is_not_the_accounts_id(world):
+    """The cache client names the key in its log lines."""
+    await _refuse(world, owner=world.owner)
+
+    (key,) = world.marks
+    assert key.startswith("analytics:credits_out:")
+    assert str(world.owner) not in key
 
 
 @pytest.mark.asyncio
@@ -333,6 +366,59 @@ async def test_a_routes_background_task_starts_the_event_and_doesnt_wait_for_it(
     assert not done.is_set()
     release.set()
     await asyncio.wait_for(done.wait(), timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_a_charge_reaches_the_sender_through_the_real_pieces(monkeypatch):
+    """Nothing of this module or of server_events is stood in: only the request to PostHog
+    and the read of the person's standing. A stand-in with the wrong shape can't hide a
+    call that fails against the real cache client or the real report."""
+    from src.services import money_events
+    from src.services.server_events import EventContext
+
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    sent = []
+
+    async def send(event, properties, *, key, person_id=None, occurred_at=None, client=None):
+        sent.append((event, properties, person_id, occurred_at))
+        return True
+
+    async def standing(_user_id):
+        return EventContext(identified=True, plan={"plan": "growth"})
+
+    monkeypatch.setattr(money_events, "send_server_event", send)
+    monkeypatch.setattr(server_events, "event_context", standing)
+    owner, workspace_id = uuid4(), uuid4()
+
+    await account_events.credits_charged(
+        owner,
+        workspace_id,
+        action="humanization",
+        credits=5,
+        balance_after=0,
+        low_threshold=LOW_CREDITS_THRESHOLD,
+        occurred_at=AT,
+    )
+    await account_events.credits_refused(
+        uuid4(), workspace_id, action="serp_seo", occurred_at=AT, owner_id=owner
+    )
+
+    assert [event for event, *_ in sent] == [
+        "credits_spent",
+        # 5 to 0: it was low before this charge, so low isn't told again.
+        "credits_out",
+        # The global cache isn't connected in a test: no mark, so the refusal tells too.
+        "credits_out",
+    ]
+    event, properties, person_id, occurred_at = sent[0]
+    assert properties == {
+        "plan": "growth",
+        "action": "humanization",
+        "credits": 5,
+        "balance_after": 0,
+        "workspace_id": str(workspace_id),
+    }
+    assert (person_id, occurred_at) == (str(owner), AT)
 
 
 # --- the charge itself (src/utils/credit_manager.py) hands the event over and goes on
