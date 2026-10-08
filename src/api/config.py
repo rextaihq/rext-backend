@@ -7,7 +7,7 @@ Note: dotenv is loaded in src/api/server.py before importing this module.
 
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -220,6 +220,36 @@ class Settings(HidesSecrets, BaseSettings):
     TURNSTILE_SECRET_KEY: Optional[str] = Field(
         default=None,
         description="Free tools: Cloudflare Turnstile's secret key for the bot check; unset, no check",
+    )
+
+    # A sign-in with Google or GitHub: the provider is asked whose token it is.
+    PROVIDER_SIGN_IN_CHECK: Literal["enforce", "report"] = Field(
+        default="enforce",
+        description=(
+            "Google and GitHub sign-in: 'enforce' takes the account's id and email from the "
+            "provider's own answer about the token; 'report' only logs what it would refuse"
+        ),
+    )
+    GOOGLE_SIGN_IN_CLIENT_ID: Optional[str] = Field(
+        default=None,
+        description=(
+            "Google sign-in: the client id the dashboard signs in with (its AUTH_GOOGLE_ID). "
+            "Only a Google token made for it is accepted; unset, Google is not asked"
+        ),
+    )
+    GITHUB_SIGN_IN_CLIENT_ID: Optional[str] = Field(
+        default=None,
+        description=(
+            "GitHub sign-in: the client id the dashboard signs in with (its AUTH_GITHUB_ID). "
+            "Only a GitHub token made for it is accepted; unset, GitHub is not asked"
+        ),
+    )
+    GITHUB_SIGN_IN_CLIENT_SECRET: Optional[str] = Field(
+        default=None,
+        description=(
+            "GitHub sign-in: that client's secret (the dashboard's AUTH_GITHUB_SECRET), which "
+            "GitHub's token check is asked with"
+        ),
     )
 
     # Trusted reverse proxy IPs (comma-separated)

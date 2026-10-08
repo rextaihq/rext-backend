@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -21,6 +22,7 @@ from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     DuplicateResourceException,
     RextAuthenticationException,
+    RextExternalServiceException,
 )
 from src.api.middleware.rate_limiter import (
     get_device_fingerprint,
@@ -51,6 +53,13 @@ from src.api.schema.user_schema import (
 )
 from src.api.security.dashboard_server import dashboard_sign_in_gate
 from src.api.security.dependencies import get_current_user
+from src.api.security.provider_identity import (
+    CheckedSignIn,
+    ProviderRefused,
+    ProviderUnavailable,
+    checked_sign_in,
+    provider_label,
+)
 from src.api.security.token_utils import decode_and_verify_token, verify_refresh_token
 from src.services import account_events
 from src.services.account_creation_allowlist_service import AccountCreationAllowlistService
@@ -529,6 +538,40 @@ async def resend_verification(
     )
 
 
+async def _as_the_provider_says(oauth_data: OAuthLoginRequest | OAuthLinkRequest) -> CheckedSignIn:
+    """The provider account a sign-in or a link is for: its id and email from the provider's own
+    answer about the token, with what the body names compared with it
+    (src/api/security/provider_identity.py). A token the provider doesn't accept is a 401; a
+    provider that can't be asked is a 503, and nothing is decided on the body's word then."""
+    try:
+        return await checked_sign_in(
+            oauth_data.provider,
+            oauth_data.provider_account_id,
+            oauth_data.provider_email,
+            oauth_data.access_token,
+        )
+    except ProviderRefused as exc:
+        logger.warning(
+            "A provider sign-in was refused by the provider check",
+            extra={"provider": provider_label(oauth_data.provider), "reason": exc.reason},
+        )
+        # Raised with no cause attached: the asking's own frames hold the token, and an error
+        # report that follows a cause would carry them.
+        raise RextAuthenticationException(
+            message="This sign-in could not be confirmed with the provider. Please sign in again."
+        ) from None
+    except ProviderUnavailable as exc:
+        logger.warning(
+            "A provider could not be asked about a sign-in",
+            extra={"provider": provider_label(oauth_data.provider), "reason": str(exc)},
+        )
+        raise RextExternalServiceException(
+            message="The sign-in provider did not answer. Please try again in a moment.",
+            service_name=provider_label(oauth_data.provider),
+            status_code=503,
+        ) from None
+
+
 @router.post("/oauth/login", response_model=SuccessResponse[AuthTokenResponse])
 @db_transaction_handler("oauth login", auto_commit=True)
 async def oauth_login(
@@ -557,10 +600,13 @@ async def oauth_login(
         except Exception:
             pass
 
+    signed_in = await _as_the_provider_says(oauth_data)
+
     new_user, tokens = await oauth_service.oauth_login_or_register(
-        provider=oauth_data.provider,
-        provider_account_id=oauth_data.provider_account_id,
-        provider_email=oauth_data.provider_email,
+        provider=signed_in.provider,
+        provider_account_id=signed_in.account_id,
+        provider_email=signed_in.email,
+        email_verified=signed_in.email_verified,
         provider_name=oauth_data.provider_name or "",
         provider_avatar_url=oauth_data.provider_avatar_url,
         provider_username=oauth_data.provider_username,
@@ -922,6 +968,15 @@ async def verify_account_recovery(
     )
 
 
+async def _counted_as_the_signed_in_user(
+    request: Request, current_user: dict = Depends(get_current_user)
+) -> None:
+    """Names the caller for the rate limit that follows: the signed-in user, not an address. By
+    a digest of the user's id, since the limiter writes its key into a log line when it refuses."""
+    digest = hashlib.sha256(str(current_user.get("identity")).encode("utf-8")).hexdigest()[:20]
+    request.state.rate_limit_identity = f"oauth-link:{digest}"
+
+
 @router.post("/oauth/link", response_model=SuccessResponse[OAuthAccountResponse])
 @db_transaction_handler("link oauth account", auto_commit=True)
 async def link_oauth(
@@ -929,6 +984,10 @@ async def link_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    # Each call asks the provider, so it is counted like a sign-in: per signed-in user, whatever
+    # address the call comes from.
+    _counted_as: None = Depends(_counted_as_the_signed_in_user),
+    _rate_limit: None = Depends(oauth_rate_limit()),
 ):
     """
     Link OAuth account to current user.
@@ -945,11 +1004,14 @@ async def link_oauth(
         except Exception:
             pass
 
+    # The provider account linked is the one the token belongs to, not one the body names.
+    checked = await _as_the_provider_says(oauth_data)
+
     oauth_account = await oauth_service.link_oauth_account(
         user_id=user_id,
-        provider=oauth_data.provider,
-        provider_account_id=oauth_data.provider_account_id,
-        provider_email=oauth_data.provider_email,
+        provider=checked.provider,
+        provider_account_id=checked.account_id,
+        provider_email=checked.email,
         provider_username=oauth_data.provider_username,
         provider_avatar_url=oauth_data.provider_avatar_url,
         access_token=oauth_data.access_token,

@@ -64,6 +64,11 @@ async def dashboard_sign_in_gate(request: Request) -> None:
         account = await _provider_account(request)
         if account:
             request.state.rate_limit_identity = f"oauth:{account}"
+        # The positive of the lines below, so a deployment shows its dashboard sends the key.
+        logger.info(
+            "Google or GitHub sign-in call with the dashboard's key: counted %s",
+            "per account" if account else "by its address (it names no account)",
+        )
         return
 
     caller = key_for_logs(f"ip:{limiter_client_host(request)}")

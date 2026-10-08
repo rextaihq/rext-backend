@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +27,7 @@ from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
+    RextAuthenticationException,
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -40,6 +41,7 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
+from src.api.schema.response_schemas import ErrorCode
 from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
@@ -63,6 +65,47 @@ class OAuthService:
         """
         self.db = db
 
+    @staticmethod
+    def _the_one_with_this_email(users: List[Users]) -> Optional[Users]:
+        """The user a provider's email belongs to, among those whose address matches it in any
+        case: the only one. Two users whose addresses differ only by case are nobody's to pick
+        between, whichever spelling the provider used."""
+        if len(users) > 1:
+            raise RextAuthenticationException(
+                message=(
+                    "More than one account uses this email address. Sign in with your email "
+                    "and password, then connect the provider from your account settings."
+                )
+            )
+        return users[0] if users else None
+
+    @staticmethod
+    def _may_sign_in(user: Users) -> None:
+        """An account that is deleted, suspended, banned or deactivated signs in through no
+        provider either: the password sign-in's own rule, in its own words."""
+        if user.deleted_at is not None:
+            raise RextAuthenticationException(
+                message="This account has been deleted and is scheduled for permanent removal. To ask for it back, submit a recovery request at /account-recovery — an administrator will review it and email you the decision.",
+            )
+        if user.status == "suspended":
+            raise RextAuthenticationException(
+                message="Your account has been suspended. Contact support to have it reviewed.",
+                error_code=ErrorCode.ACCOUNT_SUSPENDED,
+                context={"status": user.status},
+            )
+        if user.status == "banned":
+            raise RextAuthenticationException(
+                message="Your account has been banned. Please contact support for assistance.",
+                error_code=ErrorCode.ACCOUNT_BANNED,
+                context={"status": user.status},
+            )
+        if user.status == "inactive":
+            raise RextAuthenticationException(
+                message="This account has been deactivated. Confirm the emailed link to reactivate it.",
+                error_code=ErrorCode.ACCOUNT_DEACTIVATED,
+                context={"requires_reactivation": True, "requires_email_verification": True},
+            )
+
     async def oauth_login_or_register(
         self,
         provider: str,
@@ -74,6 +117,7 @@ class OAuthService:
         access_token: Optional[str] = None,
         refresh_token: Optional[str] = None,
         token_expires_at: Optional[datetime] = None,
+        email_verified: bool = True,
     ) -> Tuple[Users, Dict[str, Any]]:
         """
         Login or register user via OAuth provider.
@@ -110,15 +154,18 @@ class OAuthService:
                 selectinload(OAuthAccount.user)
             )  # Eagerly load user to avoid async lazy loading
             .where(
-                OAuthAccount.provider == provider,
+                func.lower(func.trim(OAuthAccount.provider)) == provider.strip().lower(),
                 OAuthAccount.provider_account_id == provider_account_id,
             )
         )
-        oauth_account = result.scalar_one_or_none()
+        # The first of them, should one account ever be stored under two spellings of its
+        # provider: a second row must not turn a sign-in into an error.
+        oauth_account = result.scalars().first()
 
         if oauth_account:
             # OAuth account exists - login existing user
             user = oauth_account.user
+            self._may_sign_in(user)
 
             # Update OAuth account info
             oauth_account.provider_account_email = provider_email
@@ -141,11 +188,28 @@ class OAuthService:
             )
 
         else:
-            # OAuth account doesn't exist - check if user with email exists
-            result = await self.db.execute(select(Users).where(Users.email == provider_email))
-            user = result.scalar_one_or_none()
+            if not email_verified:
+                # Nothing is linked or opened on an address its provider has not confirmed
+                # belongs to this account: an existing user with that address is someone else
+                # until the provider says otherwise.
+                raise RextAuthenticationException(
+                    message=(
+                        "The provider has not confirmed this email address, so it can't be used "
+                        "to sign in here yet. Confirm it with the provider, or sign in with your "
+                        "email and password."
+                    )
+                )
+            # OAuth account doesn't exist - check if user with email exists. An address is the
+            # same in any case: "Ana@example.com" registered by hand is this person too.
+            result = await self.db.execute(
+                select(Users)
+                .where(func.lower(Users.email) == provider_email.lower())
+                .order_by(Users.created_at)
+            )
+            user = self._the_one_with_this_email(result.scalars().all())
 
             if user:
+                self._may_sign_in(user)
                 # User exists - link this OAuth account to their account
                 logger.info(
                     f"Linking OAuth account to existing user: {user.id}",
@@ -370,11 +434,13 @@ class OAuthService:
         # Check if this OAuth account is already linked to another user
         result = await self.db.execute(
             select(OAuthAccount).where(
-                OAuthAccount.provider == provider,
+                func.lower(func.trim(OAuthAccount.provider)) == provider.strip().lower(),
                 OAuthAccount.provider_account_id == provider_account_id,
             )
         )
-        existing_oauth = result.scalar_one_or_none()
+        # The first of them, should one account ever be stored under two spellings of its
+        # provider: a second row must not turn a sign-in into an error.
+        existing_oauth = result.scalars().first()
 
         if existing_oauth:
             if existing_oauth.user_id != user_id:
@@ -431,10 +497,13 @@ class OAuthService:
         """
         result = await self.db.execute(
             select(OAuthAccount).where(
-                OAuthAccount.user_id == user_id, OAuthAccount.provider == provider
+                OAuthAccount.user_id == user_id,
+                func.lower(func.trim(OAuthAccount.provider)) == provider.strip().lower(),
             )
         )
-        oauth_account = result.scalar_one_or_none()
+        # The first of them, should one account ever be stored under two spellings of its
+        # provider: a second row must not turn a sign-in into an error.
+        oauth_account = result.scalars().first()
 
         if not oauth_account:
             raise ResourceNotFoundException(
