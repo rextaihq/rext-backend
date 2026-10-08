@@ -24,6 +24,7 @@ only the LLM calls replaced.
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 from typing import Any, Callable
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -48,6 +49,7 @@ from src.flow.engines.content.generation.repair_content import (
     repair_content,
 )
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
+from src.flow.engines.content.generation.section_rewrite import STATED_SHARE_TO_CUT
 from src.flow.engines.content.generation.structured_body import (
     UNPLACED_LINKS_KEY,
     assemble_structured_payload,
@@ -216,7 +218,10 @@ def _state(article: dict, content_type: str = "blog", outline: dict | None = Non
 
 
 def _fake_model(responder: Callable[[dict, list], dict], schema_type: str = "blog"):
-    """A structured-output model double: responder(input_payload, messages) -> output dict."""
+    """A model double. Asked for the article's schema it answers responder(calls, messages) as
+    that schema (the repair, and the rewrite of a body with nothing to split). Asked plainly,
+    as the rewrite asks for one part of an article at a time, it answers responder.part(messages)
+    as text, or the part unchanged."""
     calls: list[list] = []
     schema = get_generated_content_model(schema_type)
 
@@ -224,12 +229,34 @@ def _fake_model(responder: Callable[[dict, list], dict], schema_type: str = "blo
         calls.append(messages)
         return schema(**responder(calls, messages))
 
+    async def _ainvoke_part(messages):
+        calls.append(messages)
+        part = getattr(responder, "part", None)
+        return SimpleNamespace(content=part(messages) if part else _part_text(messages))
+
     bound = MagicMock()
     bound.ainvoke = AsyncMock(side_effect=_ainvoke)
     model = MagicMock()
     model.with_structured_output.return_value = bound
+    model.ainvoke = AsyncMock(side_effect=_ainvoke_part)
     model.calls = calls
     return model
+
+
+# The article of these tests as the rewrite splits it: its introduction and its four sections.
+PARTS = 5
+_PART_MARK = "Return only this part's markdown, nothing before it and nothing after it."
+
+
+def _part_text(messages) -> str:
+    """The one part a rewrite call carries."""
+    return _human_text(messages).split(_PART_MARK, 1)[1].strip()
+
+
+def _asked_range(messages) -> tuple[int, int]:
+    """The words a rewrite call asks its part to come back at."""
+    low, high = re.search(r"Return between (\d+) and (\d+) words", _human_text(messages)).groups()
+    return int(low), int(high)
 
 
 def _human_text(messages) -> str:
@@ -254,6 +281,13 @@ def _echo(**replace: str) -> Callable:
             intro = intro.replace(old, new)
         return {"title": TITLE, "introduction": intro, "body_markdown": body}
 
+    def part(messages):
+        text = _part_text(messages)
+        for old, new in replace.items():
+            text = text.replace(old, new)
+        return text
+
+    responder.part = part
     return responder
 
 
@@ -540,11 +574,21 @@ async def test_valid_links_survive_validation_repair_humanization_and_final_vali
     final_validation = out["content"]["review"]["final_validation"]
     assert "links_preserved" not in _failing(final_validation["failed_checks"])
     assert repairer.calls == []  # restored deterministically, no repair call needed
-    assert len(humanizer.calls) == 1
+    assert len(humanizer.calls) == PARTS  # one rewrite: each part once
+
+
+def _one_section_body() -> str:
+    """The article's body under a single H2: nothing for the rewrite to split, so it is
+    rewritten whole."""
+    return "## How Small Teams Choose CRM Software\n\n" + _body().split("\n\n", 1)[1].replace(
+        "## ", "### "
+    )
 
 
 async def test_humanization_link_loss_that_cannot_be_reanchored_is_repaired_in_one_call():
-    article = _article()
+    """The whole-article rewrite (a body with nothing to split) can lose a link's sentence;
+    what cannot be put back in place is repaired in the same call as before."""
+    article = _article(body_markdown=_one_section_body())
     humanizer = _fake_model(_echo(**{CITATION_SENTENCE: "Habits beat features, every time."}))
 
     def repair_responder(calls, messages):
@@ -565,6 +609,25 @@ async def test_humanization_link_loss_that_cannot_be_reanchored_is_repaired_in_o
     final = out["content"]["final_content"]
     assert normalize_url(CITATION) in present_urls(final)
     assert len(repairer.calls) == 1
+
+
+async def test_a_part_whose_rewrite_loses_a_link_is_kept_as_drafted_and_needs_no_repair():
+    """Rewritten part by part, a part that comes back without a link it had is not used: the
+    link stays in the sentence it was drafted in, and nothing has to be repaired."""
+    article = _article()
+    humanizer = _fake_model(_echo(**{CITATION_SENTENCE: "Habits beat features, every time."}))
+    repairer = _fake_model(_echo())
+    with (
+        patch.object(humanize_module, "load_humanize_model", return_value=humanizer),
+        patch.object(repair_module, "load_content_model", return_value=repairer),
+    ):
+        out = await _run_pipeline(_state(article))
+
+    final = out["content"]["final_content"]
+    assert CITATION_SENTENCE in final["body_markdown"]
+    assert "Habits beat features, every time." not in final["body_markdown"]
+    assert repairer.calls == []
+    assert len(humanizer.calls) == PARTS
 
 
 async def test_link_lost_before_humanization_stays_reported_after_it():
@@ -777,6 +840,17 @@ def _in_band_body_responder(extra_paragraphs: int) -> Callable:
         out["body_markdown"] = _body(extra=extra_paragraphs)
         return out
 
+    def part(messages):
+        # A part comes back as long as it was asked to: sentences added until it is in its range.
+        text = _part_text(messages)
+        low, high = _asked_range(messages)
+        added = 0
+        while len(text.split()) < (low + high) // 2:
+            text += " " + _EXTRA_SENTENCES[added % 4]
+            added += 1
+        return text
+
+    responder.part = part
     return responder
 
 
@@ -792,7 +866,7 @@ async def test_word_count_only_failure_never_calls_repair_and_humanization_fixes
         n for n in range(1, 200) if low <= _words(_article(body_markdown=_body(extra=n))) <= high
     )
 
-    # The single humanization call carries the expand instruction and fixes length.
+    # The one rewrite asks every part for more words than it has, and that fixes the length.
     humanizer = _fake_model(_in_band_body_responder(extra), content_type)
     repairer = _fake_model(_echo(), content_type)
     with (
@@ -808,8 +882,10 @@ async def test_word_count_only_failure_never_calls_repair_and_humanization_fixes
     assert review["validation"]["repair_required"] is False
     assert _failing(review["validation"]["deferred_checks"]) == ["word_count_band"]
 
-    assert len(humanizer.calls) == 1
-    assert "also EXPAND the content" in _human_text(humanizer.calls[0])
+    assert len(humanizer.calls) == PARTS
+    for call in humanizer.calls:
+        asked_low, asked_high = _asked_range(call)
+        assert asked_low >= len(_part_text(call).split()) and asked_high > asked_low
     final = out["content"]["final_content"]
     assert low <= _words(final) <= high
     assert "word_count_band" not in _failing(review["final_validation"]["failed_checks"])
@@ -819,7 +895,7 @@ async def test_word_count_only_failure_never_calls_repair_and_humanization_fixes
 async def test_humanizer_is_called_exactly_once_even_when_length_is_still_out_of_band():
     outline = _short_article_outline()
     article = _article()
-    humanizer = _fake_model(_echo())  # the one rewrite leaves the article short
+    humanizer = _fake_model(_echo())  # the one rewrite (each part once) leaves the article short
     repairer = _fake_model(_echo())
     with (
         patch.object(humanize_module, "load_humanize_model", return_value=humanizer),
@@ -827,7 +903,7 @@ async def test_humanizer_is_called_exactly_once_even_when_length_is_still_out_of
     ):
         out = await _run_pipeline(_state(article, "blog", outline))
 
-    assert len(humanizer.calls) == 1
+    assert len(humanizer.calls) == PARTS
     assert repairer.calls == []
     review = out["content"]["review"]
     assert _failing(review["final_validation"]["failed_checks"]) == ["word_count_band"]
@@ -853,7 +929,7 @@ async def test_mixed_failures_repair_only_the_non_word_count_issue_then_humanize
         out = await _run_pipeline(_state(article, "blog", outline))
 
     review = out["content"]["review"]
-    assert len(humanizer.calls) == 1
+    assert len(humanizer.calls) == PARTS
     assert len(repairer.calls) == 1
     issues = _human_text(repairer.calls[0]).split("ISSUES TO FIX:")[1].split("Title (READ-ONLY")[0]
     assert "facts_and_external_links" in issues
@@ -889,3 +965,93 @@ async def test_run_targeted_repair_makes_no_call_for_word_count_alone():
             failed_checks=[{"name": "word_count_band", "detail": "100 words outside band"}],
         )
     assert result is None and repairer.calls == []
+
+
+# ── 7. the rewrite, one part at a time (rext-control#787) ────────────────────
+
+
+def _as_the_model_answers(messages, share: float) -> str:
+    """A part back the way the rewrite's model returns one: over the middle of the range it was
+    given by the share the rewrite allows for (section_rewrite's STATED_SHARE constants), so at
+    the length that was wanted from it. Sentences are dropped from its end, or added."""
+    text = _part_text(messages)
+    low, high = _asked_range(messages)
+    wanted = round((low + high) / 2 / share)
+    heading, _, prose = text.partition("\n\n") if text.startswith("#") else ("", "", text)
+    sentences = re.split(r"(?<=[.!?])\s+", prose.replace("\n\n", " "))
+    while len(" ".join(sentences).split()) > wanted and len(sentences) > 1:
+        sentences.pop()
+    prose = " ".join(sentences)
+    while len(prose.split()) < wanted - 12:
+        prose += " " + _EXTRA_SENTENCES[len(prose) % 4]
+    return f"{heading}\n\n{prose}" if heading else prose
+
+
+async def test_an_article_over_its_range_comes_back_inside_it_part_by_part():
+    """The whole-article rewrite was told to trim and came back longer (staging: 1,493 words
+    became 2,019). Each part is told its own length, and the article is the sum of them."""
+    article = _article()
+    outline = _outline(target_word_count=round(_words(article) / 1.2))
+    low, high = v.compute_word_target_band(outline["target_word_count"])
+    assert _words(article) > high
+    responder = _echo()
+    responder.part = lambda messages: _as_the_model_answers(messages, STATED_SHARE_TO_CUT)
+    humanizer = _fake_model(responder)
+
+    with (
+        patch.object(repair_module, "load_content_model", return_value=_fake_model(_echo())),
+        patch.object(humanize_module, "load_humanize_model", return_value=humanizer),
+    ):
+        out = await _run_pipeline(_state(article, "blog", outline))
+
+    assert len(humanizer.calls) == PARTS
+    for call in humanizer.calls:
+        assert _asked_range(call)[1] < len(_part_text(call).split())
+    final = out["content"]["final_content"]
+    assert low <= _words(final) <= high
+    assert "word_count_band" not in _failing(
+        out["content"]["review"]["final_validation"]["failed_checks"]
+    )
+    # Its sections are the ones it had, under the headings they were drafted with.
+    assert re.findall(r"(?m)^## .+$", final["body_markdown"]) == re.findall(
+        r"(?m)^## .+$", article["body_markdown"]
+    )
+
+
+async def test_a_part_that_comes_back_far_too_long_is_kept_as_it_was_drafted():
+    article = _article()
+
+    def part(messages):
+        text = _part_text(messages)
+        if text.startswith("## Reports Worth Reading Every Monday"):
+            return text + " " + " ".join(_EXTRA_SENTENCES * 6)
+        return text.replace("Most small teams", "Nearly every small team")
+
+    responder = _echo()
+    responder.part = part
+    with (
+        patch.object(repair_module, "load_content_model", return_value=_fake_model(_echo())),
+        patch.object(humanize_module, "load_humanize_model", return_value=_fake_model(responder)),
+    ):
+        out = await _run_pipeline(_state(article))
+
+    body = out["content"]["final_content"]["body_markdown"]
+    drafted = article["body_markdown"].split("## Reports Worth Reading Every Monday")[1]
+    assert body.split("## Reports Worth Reading Every Monday")[1].strip() == drafted.strip()
+    assert "Nearly every small team" in body
+    assert _EXTRA_SENTENCES[0] not in body
+
+
+async def test_a_body_with_nothing_to_split_is_rewritten_whole_as_before():
+    article = _article(body_markdown=_one_section_body())
+    humanizer = _fake_model(_echo())
+
+    with (
+        patch.object(repair_module, "load_content_model", return_value=_fake_model(_echo())),
+        patch.object(humanize_module, "load_humanize_model", return_value=humanizer),
+    ):
+        await _run_pipeline(_state(article))
+
+    humanizer.with_structured_output.assert_called_once()
+    assert len(humanizer.calls) == 1
+    assert "Body (Markdown):" in _human_text(humanizer.calls[0])
