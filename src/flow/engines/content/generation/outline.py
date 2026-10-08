@@ -17,6 +17,7 @@ from src.flow.engines.content.generation.outline_depth import (
     hold_main_sections,
     hold_plan_inside_its_range,
 )
+from src.flow.engines.content.generation.outline_structure import MAX_EXPANDED_SECTIONS
 from src.flow.model.llm_manager import load_model
 from src.flow.model.provider_outage import (
     STEP_FAILED,
@@ -719,7 +720,25 @@ def _heading_shaped(point: str) -> bool:
     )
 
 
-def _subsections_from_key_points(outline: dict) -> int:
+def _room_for_subsections(model_schema, sections: list) -> int:
+    """How many sections an outline can gain with the article's target length staying exactly
+    where it is, and the list inside what the writer takes one field per section for.
+
+    Making H3s of key points changes the outline's shape, not what the article covers: it must
+    not also ask for a longer article. The target is summed from the section entries (one
+    without a budget counts as a default section), inside the type's own range, so entries can
+    be added only while that sum stays under the range's floor."""
+    target = _summed_word_target(model_schema, sections)
+    room = 0
+    while (
+        len(sections) + room < MAX_EXPANDED_SECTIONS
+        and _summed_word_target(model_schema, [*sections, *([{}] * (room + 1))]) == target
+    ):
+        room += 1
+    return room
+
+
+def _subsections_from_key_points(outline: dict, room: int | None = None) -> int:
     """Gives a pillar outline its H3 subsections from its sections' own key points; returns how
     many were made.
 
@@ -737,6 +756,9 @@ def _subsections_from_key_points(outline: dict) -> int:
     Only an outline that already has its main sections: with fewer than four H2s the holding
     step that follows (outline_depth.py) raises H3s to H2 until there are four, and a key point
     would stand as a main section.
+
+    ``room`` is how many may be made at most (see _room_for_subsections); sections are served in
+    their order, and one that can no longer have two is left whole.
     """
     if _main_sections(outline) < MIN_MAIN_SECTIONS:
         return 0
@@ -753,9 +775,10 @@ def _subsections_from_key_points(outline: dict) -> int:
         is_main = (
             isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
         )
-        chosen = [point for point in written if _heading_shaped(point.rstrip("."))][
-            :_MAX_DERIVED_SUBSECTIONS
-        ]
+        most = (
+            _MAX_DERIVED_SUBSECTIONS if room is None else min(_MAX_DERIVED_SUBSECTIONS, room - made)
+        )
+        chosen = [point for point in written if _heading_shaped(point.rstrip("."))][: max(most, 0)]
         if not is_main or len(chosen) < 2:
             rebuilt.append(section)
             continue
@@ -984,7 +1007,10 @@ async def generate_outline(state: REXT) -> dict:
         if thin and content_type == _PILLAR:
             # Asking the model again gains nothing here (see _subsections_from_key_points): the
             # outline's own key points are its subsections, and no second call is spent on it.
-            made = _subsections_from_key_points(outline_dict)
+            made = _subsections_from_key_points(
+                outline_dict,
+                room=_room_for_subsections(model_schema, _outline_sections(outline_dict)),
+            )
             if made:
                 logger.info(
                     "Pillar outline had no H3 subsections: %s made from its sections' key points",
