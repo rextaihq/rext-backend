@@ -57,7 +57,7 @@ def test_the_brief_holds_each_fact_once():
         "brand_name": "Acme Tools",
         "call_to_action": "Start planning today",
         "call_to_action_links": False,
-        "call_to_action_reworded": False,
+        "call_to_action_without": "",
     }
 
 
@@ -161,7 +161,8 @@ def test_a_call_to_action_that_names_the_brand_is_given_as_an_intent_to_reword(p
     brief, _ = _brief(outline)
     text = render_generation_brief(brief, stage="rewrite")
 
-    assert brief["call_to_action_reworded"] is True and brief["call_to_action_links"] is False
+    assert brief["call_to_action_without"] == "Acme Tools"
+    assert brief["call_to_action_links"] is False
     assert (
         '- Call to action: the same intent as the outline\'s ("Get started with Acme Tools"), '
         "in new words without Acme Tools, and with no link"
@@ -173,3 +174,29 @@ def test_a_call_to_action_that_names_the_brand_is_given_as_an_intent_to_reword(p
     assert '- Call to action: "Get started with Acme Tools"' in (
         render_generation_brief(kept, stage="rewrite").splitlines()
     )
+
+
+def test_a_keyphrase_that_is_the_brands_own_still_gets_a_brand_free_call_to_action():
+    """ "None" with a branded keyphrase is no exclusion, so the brief has no brand line; the
+    call to action is brand-free all the same, as the spec, the cleanup and the writer hold."""
+    outline = _outline(
+        "none",
+        focus_keyphrase="acme tools login",
+        final_cta={"primary_cta": "Get started with Acme Tools"},
+    )
+    spec = build_requirements_spec(outline, "blog", focus_keyword="acme tools login")
+    brief = build_generation_brief(spec, outline)
+    text = render_generation_brief(brief, stage="writer")
+
+    assert spec["excluded_brand"] is None and spec["cta_without_link"] is True
+    assert "- Brand:" not in text
+    assert brief["call_to_action_without"] == "Acme Tools" and not brief["call_to_action_links"]
+    assert "in new words without Acme Tools, and with no link" in text
+
+
+def test_every_keyword_the_spec_checks_is_in_the_brief():
+    many = [FOCUS, *[f"keyword {index}" for index in range(30)]]
+    brief, spec = _brief(_outline("prominent", keywords_to_include=many))
+
+    assert len(spec["secondary_keywords"]) == 30
+    assert brief["secondary_keywords"] == spec["secondary_keywords"]

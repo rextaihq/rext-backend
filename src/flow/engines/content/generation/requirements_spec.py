@@ -364,10 +364,11 @@ def build_requirements_spec(
         approved_internal_links=approved_internal_links,
         brand_context=brand_context,
         excluded_brand=excluded_brand,
-        # Not for a title or keyphrase that is the brand's own: such an article is about the
-        # brand, and "None" there only means no promotion.
-        cta_without_link=bool(brand_kept_out_of_cta(outline))
-        and (excluded_brand is not None or outline.get("brand_prominence") == "subtle"),
+        # Every "None" and "Subtle", a title or keyphrase that is the brand's own included:
+        # the name stays where the keyphrase needs it, but a call to action that names or
+        # links the brand is promotion, which the choice declined. One rule, the one the
+        # writer is given (brand_kept_out_of_cta).
+        cta_without_link=bool(brand_kept_out_of_cta(outline)),
         sourced_facts=outline.get("key_facts") or [],
         target_word_count=outline.get("target_word_count") or 0,
         cta_required=outline_cta is not None,

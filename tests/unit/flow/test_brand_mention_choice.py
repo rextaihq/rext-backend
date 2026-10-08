@@ -704,9 +704,11 @@ def test_a_call_to_action_may_keep_an_approved_internal_link_or_any_link_when_pr
     promoted = {**ARTICLE, "cta": {"text": "Try Acme Tools", "url": "https://acme.test/signup"}}
     cleaned, spec = _checked(promoted, _outline("prominent"))
     assert spec["cta_without_link"] is False and cleaned is promoted
-    # And an article whose keyphrase is the brand's own keeps its links: it is about the brand.
+    # An article whose keyphrase is the brand's own keeps the name where the keyphrase needs
+    # it, but its call to action is still brand-free: that would be promotion.
     branded = _outline("none", focus_keyphrase="acme tools login")
-    assert build_requirements_spec(branded, "blog")["cta_without_link"] is False
+    branded_spec = build_requirements_spec(branded, "blog")
+    assert branded_spec["excluded_brand"] is None and branded_spec["cta_without_link"] is True
 
 
 def test_an_image_embedded_in_the_article_loses_the_name_from_its_alt_text():
