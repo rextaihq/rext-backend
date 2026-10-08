@@ -11,6 +11,7 @@ Checked on the test PostgreSQL: the tables are created inside a transaction that
 so the unique index on hand-written titles is the model's.
 """
 
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -523,14 +524,15 @@ async def test_a_save_replayed_on_a_thread_started_again_is_one_event_at_one_tim
     async def fake_db():
         yield None
 
-    async def last_saved_at(workspace_id, thread_id):
-        return on_the_row[-1]
+    async def own_earlier_save(workspace_id, thread_id, body):
+        # The row holds this run's text only once this run has saved into it.
+        return on_the_row[-1] if len(on_the_row) > 1 else None
 
     monkeypatch.setattr(service_module, "ContentService", SavingService)
     monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", fake_db)
     monkeypatch.setattr(loop_module, "run_on_main_loop", lambda coro: coro)
     monkeypatch.setattr(notification_module, "notify_now", AsyncMock())
-    monkeypatch.setattr(persist_module, "_last_saved_at", last_saved_at)
+    monkeypatch.setattr(persist_module, "_own_earlier_save", own_earlier_save)
     announced = _announced(monkeypatch)
     state = _finished_run_state()
     state["content"]["run_started_at"] = began.isoformat()
@@ -544,9 +546,12 @@ async def test_a_save_replayed_on_a_thread_started_again_is_one_event_at_one_tim
 
 
 @pytest.mark.asyncio
-async def test_the_rows_last_save_is_read_apart_from_the_save_and_never_fails_it(monkeypatch):
+async def test_the_rows_earlier_save_is_read_apart_from_the_save_and_is_never_in_its_way(
+    monkeypatch,
+):
     workspace, thread = uuid.uuid4(), uuid.uuid4()
     moment = datetime(2026, 10, 8, 7, 5, tzinfo=timezone.utc)
+    asked = []
 
     class Found:
         def scalar_one_or_none(self):
@@ -554,6 +559,7 @@ async def test_the_rows_last_save_is_read_apart_from_the_save_and_never_fails_it
 
     class Session:
         async def execute(self, statement):
+            asked.append(str(statement))
             return Found()
 
     @asynccontextmanager
@@ -565,16 +571,31 @@ async def test_the_rows_last_save_is_read_apart_from_the_save_and_never_fails_it
         raise RuntimeError("the database went away")
         yield
 
+    @asynccontextmanager
+    async def busy():
+        await asyncio.sleep(30)  # a pool with no connection to give
+        yield Session()
+
     monkeypatch.setattr(loop_module, "run_on_main_loop", lambda coro: coro)
     monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", reading)
+    read = persist_module._own_earlier_save
 
     # No event is sent without the project's key: nothing is read for it.
     monkeypatch.delenv("POSTHOG_PROJECT_KEY", raising=False)
-    assert await persist_module._last_saved_at(workspace, thread) is None
+    assert await read(workspace, thread, "## Why") is None and asked == []
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
-    assert await persist_module._last_saved_at(workspace, thread) == moment
+    assert await read(workspace, thread, "## Why") == moment
+    # Review round 1: only a row that already holds this run's own text is this run's save,
+    # so a person's edit of the earlier article meanwhile is not taken for it.
+    assert "body_markdown =" in asked[0]
     monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", broken)
-    assert await persist_module._last_saved_at(workspace, thread) is None
+    assert await read(workspace, thread, "## Why") is None
+    # Review round 1: a busy pool is not waited on before the save has even begun.
+    monkeypatch.setattr(persist_module, "_EARLIER_SAVE_WAIT_SECONDS", 0.05)
+    monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", busy)
+    began = asyncio.get_running_loop().time()
+    assert await read(workspace, thread, "## Why") is None
+    assert asyncio.get_running_loop().time() - began < 5
 
 
 @pytest.mark.asyncio

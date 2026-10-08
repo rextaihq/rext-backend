@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -105,11 +106,13 @@ def offered_content_type(content_type: Any) -> Optional[str]:
     return key if key in CONTENT_TYPE_TO_MODEL else None
 
 
-# When each run's outline was approved, by thread, kept in this process only. The article is
-# written in the one invocation that follows the approval, so the seconds from it to the save
-# need no place in the run's state. A run another process takes up after a restart has no
-# entry here, and its event goes without them.
-_WRITING_BEGAN: dict[str, float] = {}
+# The writing of each run's article, by thread, kept in this process only: when its outline was
+# approved, then, once the run has ended, the seconds it took. The article is written in the
+# one invocation that follows the approval, so the seconds from it to the save need no place
+# in the run's state. A run another process takes up after a restart has no entry here, and
+# its event goes without them.
+_WRITING: dict[str, tuple[bool, float]] = {}
+_WRITING_LOCK = threading.Lock()
 _MOST_RUNS_WRITING = 2000
 
 
@@ -119,21 +122,36 @@ def _clock() -> float:
 
 
 def writing_began(thread_id: Optional[str] = None) -> None:
-    """The outline was approved and the article's writing starts: called by the outline gate."""
-    thread = thread_id or _thread_id()
-    if not thread:
-        return
-    _WRITING_BEGAN.pop(thread, None)
-    _WRITING_BEGAN[thread] = _clock()
-    while len(_WRITING_BEGAN) > _MOST_RUNS_WRITING:
-        del _WRITING_BEGAN[next(iter(_WRITING_BEGAN))]
+    """The outline was approved and the article's writing starts: called by the outline gate.
+    Never raises: the gate's work does not depend on it."""
+    try:
+        thread = thread_id or _thread_id()
+        if not thread:
+            return
+        # Runs are on threads of their own: the note and its trimming are one step.
+        with _WRITING_LOCK:
+            _WRITING.pop(thread, None)
+            _WRITING[thread] = (False, _clock())
+            while len(_WRITING) > _MOST_RUNS_WRITING:
+                _WRITING.pop(next(iter(_WRITING)), None)
+    except Exception as error:  # noqa: BLE001 - analytics never fails the work it reports
+        logger.warning("The start of an article's writing was not noted: %s", type(error).__name__)
 
 
 def _writing_seconds(thread_id: Optional[str]) -> Optional[int]:
-    """Whole seconds since the outline's approval, or None when this process did not see it.
-    The entry is taken out: the run ends with the event that asks."""
-    began = _WRITING_BEGAN.pop(thread_id or _thread_id() or "", None)
-    return None if began is None else max(0, round(_clock() - began))
+    """Whole seconds from the outline's approval to now, or None when this process did not see
+    the approval. The first call ends the count and keeps its answer, so a save that runs
+    twice sends the same seconds both times."""
+    thread = thread_id or _thread_id() or ""
+    with _WRITING_LOCK:
+        noted = _WRITING.get(thread)
+        if noted is None:
+            return None
+        ended, value = noted
+        if not ended:
+            value = float(max(0, round(_clock() - value)))
+            _WRITING[thread] = (True, value)
+        return int(value)
 
 
 def _aware(moment: Optional[datetime]) -> Optional[datetime]:
@@ -153,8 +171,9 @@ def completion_time(
     * The row is this run's own (made after the run began): its creation time.
     * The row is an earlier run's (a thread started again): the time this run first saved
       into it. A replayed save finds that time on the row before it saves again
-      (``saved_before``, at or after the run's start); the first save has only the time it
-      leaves on the row (``saved_after``).
+      (``saved_before``: given only when the row already held this run's own text, so a
+      person's edit of the old article meanwhile is not taken for it); the first save has
+      only the time it leaves on the row (``saved_after``).
 
     None when the run has no start mark or the row no times: the caller's own clock then.
     """

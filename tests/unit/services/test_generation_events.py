@@ -272,7 +272,7 @@ async def test_the_writing_seconds_run_from_the_outlines_approval_to_the_save(se
     on a completed article and on a failed one, from the outline's approval, beside `seconds`
     (the whole run). Kept in this process by thread: nothing is added to the run's state."""
     taken, waiting = sent
-    clock = iter([100.0, 147.4, 200.0, 263.6, 300.0])
+    clock = iter([100.0, 147.4, 200.0, 263.6, 300.0, 999.0])
     monkeypatch.setattr(events, "_clock", lambda: next(clock))
 
     events.writing_began(THREAD)  # the outline gate, on approval
@@ -290,15 +290,62 @@ async def test_the_writing_seconds_run_from_the_outlines_approval_to_the_save(se
     assert "seconds" in taken[0]["properties"]
 
 
+async def test_a_save_that_runs_twice_sends_the_same_writing_seconds(sent, monkeypatch):
+    """Review round 1: the first event took the note with it, so a replay of the save sent the
+    same event without its writing seconds (or, had it counted again, with others)."""
+    taken, waiting = sent
+    clock = iter([100.0, 147.4, 180.0])
+    monkeypatch.setattr(events, "_clock", lambda: next(clock))
+
+    events.writing_began(THREAD)
+    for _ in range(2):
+        events.announce_completed(_state(), thread_id=THREAD, content_type="blog", word_count=9)
+    await _run(waiting)
+
+    assert [t["properties"]["writing_seconds"] for t in taken] == [47, 47]
+
+
+def test_noting_an_approval_never_fails_the_approval(monkeypatch):
+    """Review round 1: runs are on threads of their own, and trimming the notes was two
+    steps, so two approvals at once could trip over one entry. One step now, and whatever
+    goes wrong in it stays in it."""
+    import threading
+
+    monkeypatch.setattr(events, "_MOST_RUNS_WRITING", 5)
+    monkeypatch.setattr(events, "_WRITING", {})
+    failed = []
+
+    def approve(prefix):
+        try:
+            for n in range(400):
+                events.writing_began(f"{prefix}-{n}")
+        except Exception as error:  # noqa: BLE001 - what the test is for
+            failed.append(error)
+
+    workers = [threading.Thread(target=approve, args=(name,)) for name in "abcdef"]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+
+    assert failed == [] and len(events._WRITING) == 5
+
+    def broken():
+        raise RuntimeError("no clock")
+
+    monkeypatch.setattr(events, "_clock", broken)
+    events.writing_began("another")  # does not raise
+
+
 def test_the_approvals_kept_for_the_writing_seconds_do_not_grow_without_end(monkeypatch):
     monkeypatch.setattr(events, "_MOST_RUNS_WRITING", 3)
-    monkeypatch.setattr(events, "_WRITING_BEGAN", {})
+    monkeypatch.setattr(events, "_WRITING", {})
 
     for run in "abcde":
         events.writing_began(run)
 
     # Runs that never ended (a person who closed the tab) leave no trail longer than this.
-    assert list(events._WRITING_BEGAN) == ["c", "d", "e"]
+    assert list(events._WRITING) == ["c", "d", "e"]
     assert events._writing_seconds("a") is None
 
 
