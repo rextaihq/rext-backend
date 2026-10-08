@@ -49,6 +49,8 @@ from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.admin_credits import adjust_credits
+from src.services.credit_grants import period_admin_adjustment
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.refund_request_service import RefundRequestError, RefundRequestService
 from src.services.subscription_service import SubscriptionService
@@ -931,6 +933,45 @@ async def test_the_in_app_plan_change_follows_the_same_rule(db, monkeypatch):
     assert await usage.get_credit_balance(user.id) == 100
     await service.upgrade(user.id, growth.id)
     assert await usage.get_credit_balance(user.id) == 700
+
+
+@pytest.mark.parametrize("in_app", [False, True])
+async def test_an_admins_deduction_stands_through_a_plan_change_and_is_not_counted_as_used(
+    db, monkeypatch, in_app
+):
+    """100 of Starter's 400 spent, then support deducts 50: 250 left. The upgrade to Growth
+    keeps what was used and the deduction (1,000 - 100 - 50), by Lemon Squeezy's update and by
+    the dashboard's change alike, and the record of the deduction moves to the new plan, so
+    "credits used" still reads 100 (F8g, rext-control #849)."""
+    user, ls_id, starter, growth, now, period_end = await _starter_spent(db, 100)
+    admin = await _customer(db)
+    await adjust_credits(
+        db,
+        user_id=user.id,
+        admin_id=admin.id,
+        action="deduct",
+        amount=50,
+        reason="Credits given twice by mistake",
+    )
+    assert (await _subscription_of(db, ls_id)).current_credits == 250
+
+    if in_app:
+        monkeypatch.setattr(
+            subscription_service_module, "invalidate_cache", AsyncMock(return_value=0)
+        )
+        service = SubscriptionService(db)
+        service.payment_provider = MagicMock(update_subscription=AsyncMock())
+        service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+        await service.upgrade(user.id, growth.id)
+    else:
+        await _change_plan(
+            db, user, ls_id, growth, at=now - timedelta(hours=1), period_end=period_end
+        )
+
+    subscription = await _subscription_of(db, ls_id)
+    assert subscription.plan_id == growth.id
+    assert subscription.current_credits == 850
+    assert period_admin_adjustment(subscription) == -50
 
 
 async def test_an_in_app_change_counts_what_is_spent_while_lemon_squeezy_answers(

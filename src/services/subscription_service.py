@@ -789,6 +789,7 @@ class SubscriptionService:
                     current_plan.credits_per_month,
                     new_plan.credits_per_month,
                     period_before=period_before,
+                    old_plan_id=current_plan.id,
                 )
 
         current_subscription.updated_at = datetime.now(timezone.utc)

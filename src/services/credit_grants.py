@@ -106,6 +106,7 @@ def change_plan_credits(
     old_monthly: Optional[int],
     new_monthly: int,
     period_before: Optional[datetime] = None,
+    old_plan_id: Optional[UUID] = None,
 ) -> None:
     """Set the balance for a plan change within a billing period (F8a, the founder's rule,
     2026-10-07): the new plan's monthly credits minus the credits already used this period,
@@ -124,6 +125,13 @@ def change_plan_credits(
     (UsageTrackingService.consume_credits, not while a payment has failed). When neither has
     come yet the balance is still last period's: the change opens the new period, in which
     nothing was used, and an earlier change in the ended period doesn't count.
+
+    What a super admin deducted from the month, or reset, stands through the change: the
+    balance carries it as it carries what was used, so switching plans undoes no deduction and
+    takes back no reset. That adjustment is recorded for the plan it was made on (it is not
+    usage, and the readings of "credits used" add it back), so with `old_plan_id` the record
+    moves to the new plan with the balance. Call this once the subscription's plan_id is the
+    new plan's. A change that opens a new period carries none.
     """
 
     def key(moment: Optional[datetime]) -> Optional[str]:
@@ -131,12 +139,15 @@ def change_plan_credits(
 
     period = key(subscription.credits_reset_date)
     left = subscription.current_credits or 0
-    if (
+    # The period's ends, as they were found, before a period that had ended is put aside.
+    ends_found = (period, key(period_before))
+    opens_a_period = (
         period_before is not None
         and as_utc(period_before) <= datetime.now(timezone.utc)
         and subscription.status not in FAILED_PAYMENT_STATUSES
         and old_monthly is not None
-    ):
+    )
+    if opens_a_period:
         left, period_before = old_monthly, None
     earlier = (subscription.subscription_metadata or {}).get(_PLAN_CHANGE) or {}
     if earlier.get("period") and earlier.get("period") in (period, key(period_before)):
@@ -151,6 +162,8 @@ def change_plan_credits(
         **(subscription.subscription_metadata or {}),
         _PLAN_CHANGE: {"period": period, "used": used, "left": subscription.current_credits},
     }
+    if old_plan_id is not None and not opens_a_period:
+        _carry_admin_adjustment(subscription, old_plan_id, ends_found)
 
 
 def split_cost(
@@ -503,9 +516,10 @@ ADMIN_CREDIT_ADJUSTMENT = "admin_credit_adjustment"
 def _period_key(subscription: Any) -> Optional[str]:
     """The period an adjustment belongs to: the month, on the plan it was made on.
 
-    A plan change inside the month replaces the monthly credits with the new
-    plan's and keeps the reset date, so the plan is part of the key: what an
-    admin changed on the old plan's credits says nothing about the new plan's.
+    The plan is part of the key: an adjustment is read only on the plan it was
+    recorded for. A plan change inside the month keeps the reset date and what
+    was used, and moves the record to the new plan itself (change_plan_credits);
+    a row whose plan is set any other way starts without it.
     """
     reset_date = subscription.credits_reset_date
     if reset_date is None:
@@ -532,6 +546,26 @@ def record_period_admin_adjustment(subscription: Any, delta: int) -> None:
     meta[ADMIN_CREDIT_ADJUSTMENT] = {
         "period": _period_key(subscription),
         "delta": period_admin_adjustment(subscription) + delta,
+    }
+    subscription.subscription_metadata = meta
+
+
+def _carry_admin_adjustment(
+    subscription: Any, old_plan_id: UUID, period_ends: Sequence[Optional[str]]
+) -> None:
+    """Move the period's admin adjustment from the old plan's key to the plan the
+    subscription is on now (change_plan_credits). ``period_ends`` are the ends the period was
+    found under, as ISO strings: Lemon Squeezy's renews_at and the stored reset date can
+    differ by the time a change arrives."""
+    meta = {**(subscription.subscription_metadata or {})}
+    recorded = meta.get(ADMIN_CREDIT_ADJUSTMENT)
+    if not recorded or not recorded.get("delta"):
+        return
+    if recorded.get("period") not in {f"{end}|{old_plan_id}" for end in period_ends if end}:
+        return
+    meta[ADMIN_CREDIT_ADJUSTMENT] = {
+        "period": _period_key(subscription),
+        "delta": int(recorded["delta"]),
     }
     subscription.subscription_metadata = meta
 
