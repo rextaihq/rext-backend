@@ -16,21 +16,31 @@ from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.email_models.email_event import EmailEvent
 from src.api.models.email_models.email_log import EmailLog
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
 from src.config.cleanup_config import cleanup_config
-from src.services.plan_change_charges import PAID, REFUNDED
 from src.utils.logger import logger
 
 # The most ids one batch's delete names. The driver takes 32,767 values in a statement,
 # and CLEANUP_BATCH_SIZE can be set far above that.
 MAX_BATCH_SIZE = 10_000
 
-# The payment events the admin's refund rows are read from (plan_change_charges):
-# kept however old they are, until the invoices themselves are recorded
-# (rext-control#804). An admin's refund has no time limit.
-KEPT_WEBHOOK_EVENTS = (PAID, REFUNDED)
+# Stored webhook events are not cleaned up here. A row is also the record that its
+# event was handled (the same signed request sent again is recognised by it), and the
+# admin's refund rows are read from the payment events (plan_change_charges).
+
+
+def _days(given: Optional[int], default: int) -> int:
+    """
+    The retention to use: the one given, or the configured default.
+
+    Below one day is refused: the cutoff would be now or later, and the step would
+    take every row of its table.
+    """
+    days = default if given is None else given
+    if days < 1:
+        raise ValueError(f"A retention of {days} days is refused: it must be at least 1")
+    return days
 
 
 class DataCleanupIncomplete(Exception):
@@ -138,7 +148,7 @@ class DataCleanupService:
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
-        retention_days = retention_days or cleanup_config.AUDIT_LOG_RETENTION_DAYS
+        retention_days = _days(retention_days, cleanup_config.AUDIT_LOG_RETENTION_DAYS)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -165,7 +175,7 @@ class DataCleanupService:
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
-        retention_days = retention_days or cleanup_config.ERROR_LOG_RETENTION_DAYS
+        retention_days = _days(retention_days, cleanup_config.ERROR_LOG_RETENTION_DAYS)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -194,7 +204,7 @@ class DataCleanupService:
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
-        retention_days = retention_days or cleanup_config.EMAIL_LOG_RETENTION_DAYS
+        retention_days = _days(retention_days, cleanup_config.EMAIL_LOG_RETENTION_DAYS)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -224,7 +234,7 @@ class DataCleanupService:
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
-        retention_days = retention_days or cleanup_config.EMAIL_EVENT_RETENTION_DAYS
+        retention_days = _days(retention_days, cleanup_config.EMAIL_EVENT_RETENTION_DAYS)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -254,7 +264,7 @@ class DataCleanupService:
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
-        inactive_days = inactive_days or cleanup_config.USER_SESSION_INACTIVE_DAYS
+        inactive_days = _days(inactive_days, cleanup_config.USER_SESSION_INACTIVE_DAYS)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=inactive_days)
         now = datetime.now(timezone.utc)
 
@@ -271,37 +281,6 @@ class DataCleanupService:
             | (UserSession.revoked_at.isnot(None)),
         )
         self._log_result(deleted, "inactive/expired sessions", inactive_days=inactive_days)
-        return deleted
-
-    async def cleanup_webhook_events(self, retention_days: Optional[int] = None) -> int:
-        """
-        Clean up old webhook events (processed events older than retention period).
-
-        The payment events in KEPT_WEBHOOK_EVENTS are never deleted.
-
-        Args:
-            retention_days: Number of days to retain (default from config)
-
-        Returns:
-            Number of records deleted (or would be deleted in dry-run mode)
-        """
-
-        retention_days = retention_days or cleanup_config.WEBHOOK_EVENT_RETENTION_DAYS
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
-
-        logger.info(
-            f"{'[DRY RUN] ' if self.dry_run else ''}Cleaning processed webhook events older than {cutoff_date.isoformat()}",
-            extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()},
-        )
-
-        # Only processed events: an unprocessed one may still need attention
-        deleted = await self._delete_in_batches(
-            WebhookEvent,
-            WebhookEvent.created_at < cutoff_date,
-            WebhookEvent.processed.is_(True),
-            WebhookEvent.event_name.notin_(KEPT_WEBHOOK_EVENTS),
-        )
-        self._log_result(deleted, "processed webhook events", retention_days=retention_days)
         return deleted
 
     async def anonymize_cancelled_subscriptions(self, retention_days: Optional[int] = None) -> int:
@@ -322,7 +301,7 @@ class DataCleanupService:
         Returns:
             Number of records anonymized (or would be anonymized in dry-run mode)
         """
-        retention_days = retention_days or cleanup_config.CANCELLED_SUBSCRIPTION_RETENTION_DAYS
+        retention_days = _days(retention_days, cleanup_config.CANCELLED_SUBSCRIPTION_RETENTION_DAYS)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -405,7 +384,6 @@ class DataCleanupService:
             ),
             ("error_logs", self.cleanup_error_logs),
             ("user_sessions", self.cleanup_inactive_sessions),
-            ("webhook_events", self.cleanup_webhook_events),
             ("cleanup_expired_tokens", self.cleanup_expired_tokens),
         )
         results: Dict[str, int] = {}
