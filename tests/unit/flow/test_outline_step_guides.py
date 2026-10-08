@@ -259,6 +259,79 @@ async def test_a_pillar_outline_of_h2s_only_is_asked_for_once_more(monkeypatch):
     assert "Keep every H2 section it has" in note
 
 
+def _planned(*sections):
+    """A pillar outline as the model writes it: H2s, each with its parts as key points."""
+    return {
+        "title": "x",
+        "structure": {
+            "sections": [
+                {
+                    "heading": heading,
+                    "heading_level": "H2",
+                    "purpose": f"Why {heading}",
+                    "key_points": list(points),
+                }
+                for heading, points in sections
+            ]
+        },
+    }
+
+
+@pytest.mark.unit
+async def test_a_pillar_outlines_key_points_become_its_subsections_without_a_second_call(
+    monkeypatch,
+):
+    first = _planned(
+        ("Plan", ["Pick one goal.", "Choose who it is for"]),
+        ("Write", ["Subject lines", "The first sentence", "One call to action"]),
+        ("Send", ["When to send"]),
+        ("Measure", []),
+    )
+
+    outline, calls = await _generate(monkeypatch, "pillar-content", [first])
+
+    sections = outline["structure"]["sections"]
+    assert [(section["heading_level"], section["heading"]) for section in sections] == [
+        ("H2", "Plan"),
+        ("H3", "Pick one goal"),
+        ("H3", "Choose who it is for"),
+        ("H2", "Write"),
+        ("H3", "Subject lines"),
+        ("H3", "The first sentence"),
+        ("H3", "One call to action"),
+        ("H2", "Send"),
+        ("H2", "Measure"),
+    ]
+    # A part is planned once: it left its section's key points; one that stands alone stays.
+    assert sections[0]["key_points"] == []
+    assert sections[7]["key_points"] == ["When to send"]
+    # Each subsection serves its section's purpose, and has no parts of its own.
+    assert sections[1]["purpose"] == "Why Plan"
+    assert sections[1]["key_points"] == []
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+def test_only_the_first_key_points_become_subsections_and_the_rest_stay():
+    outline = _planned(("Plan", ["a", "b", "c", "d", "e", "f"]), ("Send", ["only one"]))
+
+    made = outline_module._subsections_from_key_points(outline)
+
+    sections = outline["structure"]["sections"]
+    assert made == 4
+    assert [section["heading"] for section in sections] == ["Plan", "a", "b", "c", "d", "Send"]
+    assert sections[0]["key_points"] == ["e", "f"]
+
+
+@pytest.mark.unit
+def test_an_outline_whose_sections_have_no_parts_is_left_as_it_is():
+    outline = _pillar("H2", "H2", "H2", "H2")
+    before = [dict(section) for section in outline["structure"]["sections"]]
+
+    assert outline_module._subsections_from_key_points(outline) == 0
+    assert outline["structure"]["sections"] == before
+
+
 @pytest.mark.unit
 async def test_a_pillar_outline_with_subsections_costs_one_call(monkeypatch):
     pillar = _pillar("H2", "H3", "H2", "H2", "H2")

@@ -702,6 +702,55 @@ def _keeps_main_sections(first: dict, retried: dict) -> bool:
     return all(key in kept for key in wanted if key)
 
 
+# A section's first key points become its H3s; any beyond these stay as its key points.
+_MAX_DERIVED_SUBSECTIONS = 4
+
+
+def _subsections_from_key_points(outline: dict) -> int:
+    """Gives a pillar outline its H3 subsections from its sections' own key points; returns how
+    many were made.
+
+    The model plans a pillar page as H2 sections with each one's parts listed as key points, and
+    does not write those parts as H3 sections however it is asked: on staging the second attempt
+    of rext-control#603, shown the first outline and asked for H3s under it, came back with the
+    same H2s and none (first_h3=0, second_h3=0, gained=0, three runs of three). The parts are
+    there under another name. Each key point of an H2 with two or more becomes an H3 directly
+    after it, in its own words, and leaves that section's key points, so it is planned once.
+    An H2 with fewer than two is left whole. Nothing is invented.
+    """
+    sections = _outline_sections(outline)
+    rebuilt: list = []
+    made = 0
+    for section in sections:
+        points = (
+            [str(point).strip().rstrip(".") for point in section.get("key_points") or []]
+            if isinstance(section, dict)
+            else []
+        )
+        points = [point for point in points if point]
+        is_main = (
+            isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
+        )
+        if not is_main or len(points) < 2:
+            rebuilt.append(section)
+            continue
+        rebuilt.append({**section, "key_points": points[_MAX_DERIVED_SUBSECTIONS:]})
+        for point in points[:_MAX_DERIVED_SUBSECTIONS]:
+            rebuilt.append(
+                {
+                    "heading": point,
+                    "heading_level": "H3",
+                    "purpose": str(section.get("purpose") or ""),
+                    "key_points": [],
+                }
+            )
+            made += 1
+    if made:
+        # In place: the list stays in whichever block of the outline holds it.
+        sections[:] = rebuilt
+    return made
+
+
 def _structure_count(content_type: str, outline: dict) -> int:
     if content_type == _PILLAR:
         return _subsections(outline)
@@ -905,6 +954,16 @@ async def generate_outline(state: REXT) -> dict:
             reviewed=reviewed,
             no_subsections_asked=no_subsections_asked,
         )
+        if thin and content_type == _PILLAR:
+            # Asking the model again gains nothing here (see _subsections_from_key_points): the
+            # outline's own key points are its subsections, and no second call is spent on it.
+            made = _subsections_from_key_points(outline_dict)
+            if made:
+                logger.info(
+                    "Pillar outline had no H3 subsections: %s made from its sections' key points",
+                    made,
+                )
+                thin = None
         if thin:
             logger.warning("Outline %s for content_type=%s; asking once more", thin, content_type)
             retry_note = HumanMessage(
