@@ -962,6 +962,22 @@ async def generate_outline(state: REXT) -> dict:
                     )
                 else:
                     fuller = gained >= 0
+                # What the second attempt held and whether it was taken: the numbers a person
+                # needs to tell "the model wrote no H3s again" from "it wrote them and was
+                # refused". Counts and yes or no only, never a heading's words.
+                logger.info(
+                    "The second outline attempt was %s: content_type=%s first_h2=%s first_h3=%s "
+                    "second_h2=%s second_h3=%s second_sections=%s gained=%s main_headings_kept=%s",
+                    "kept" if fuller else "not kept",
+                    content_type,
+                    _main_sections(outline_dict),
+                    _subsections(outline_dict),
+                    _main_sections(retried),
+                    _subsections(retried),
+                    len(_outline_sections(retried)),
+                    gained,
+                    _keeps_main_sections(outline_dict, retried),
+                )
                 if fuller:
                     outline_dict = retried
 
