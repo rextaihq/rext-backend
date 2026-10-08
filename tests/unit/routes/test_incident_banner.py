@@ -255,22 +255,37 @@ ADMIN = "/api/v1/admin/status/banner"
 
 
 @pytest.mark.asyncio
-async def test_any_signed_in_user_reads_the_banner_and_gets_none_by_default(
-    redis: FakeRedis, grant
+async def test_anyone_reads_the_banner_with_no_session_and_no_database(
+    redis: FakeRedis, monkeypatch: pytest.MonkeyPatch
 ):
-    response = await _call("GET", READ)
-    assert response.status_code == 200
-    assert response.json()["data"] == {
-        "active": False,
-        "message": None,
-        "areas": [],
-        "started_at": None,
-        "expires_at": None,
-    }
+    # No Authorization header, and a database that fails if it is touched at all: the read has
+    # to answer while PostgreSQL is what is failing.
+    async def no_database() -> AsyncGenerator[AsyncMock, None]:
+        raise AssertionError("the banner's read touched the database")
+        yield  # pragma: no cover
+
+    app.dependency_overrides[get_async_db] = no_database
+    try:
+        none = await _call("GET", READ)
+        assert none.status_code == 200
+        assert none.json()["data"] == {
+            "active": False,
+            "message": None,
+            "areas": [],
+            "started_at": None,
+            "expires_at": None,
+        }
+
+        await set_banner(MESSAGE, ["generation"], duration_minutes=60)
+        shown = await _call("GET", READ)
+        assert shown.status_code == 200
+        assert shown.json()["data"]["message"] == MESSAGE
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
-async def test_the_read_still_answers_none_when_redis_is_away(redis: FakeRedis, grant):
+async def test_the_read_still_answers_none_when_redis_is_away(redis: FakeRedis):
     redis.reachable = False
     response = await _call("GET", READ)
     assert response.status_code == 200
@@ -278,16 +293,12 @@ async def test_the_read_still_answers_none_when_redis_is_away(redis: FakeRedis, 
 
 
 @pytest.mark.asyncio
-async def test_the_banner_is_not_read_without_a_session(redis: FakeRedis):
-    await set_banner(MESSAGE, [], duration_minutes=60)
-
-    # The auth dependency's own answers: no Authorization header at all, and one that is no token.
-    missing = await _call("GET", READ)
-    assert missing.status_code == 422
-    forged = await _call("GET", READ, headers={"Authorization": "Bearer not-a-token"})
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+async def test_switching_it_needs_a_session(redis: FakeRedis, method: str):
+    body = {"message": MESSAGE} if method == "PUT" else None
+    forged = await _call(method, ADMIN, json=body, headers={"Authorization": "Bearer not-a-token"})
     assert forged.status_code == 401
-    for response in (missing, forged):
-        assert MESSAGE not in response.text
+    assert redis.values == {}
 
 
 @pytest.mark.asyncio
@@ -384,3 +395,39 @@ async def test_a_super_admin_switches_it_off(redis: FakeRedis, grant, audit):
     assert audit.await_args.kwargs["new_values"] == {"was_showing": True}
 
     assert (await _call("GET", READ)).json()["data"]["active"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_switch_on_that_cannot_be_recorded_is_undone(redis: FakeRedis, grant, audit):
+    grant("security.manage")
+    audit.side_effect = RuntimeError("the database went away")
+
+    # None was showing: none shows after the failed switch.
+    response = await _call("PUT", ADMIN, json={"message": MESSAGE})
+    assert response.status_code >= 500
+    assert (await _call("GET", READ)).json()["data"]["active"] is False
+
+    # One was showing: it is back, not the one that couldn't be recorded.
+    audit.side_effect = None
+    assert (await _call("PUT", ADMIN, json={"message": MESSAGE})).status_code == 200
+    audit.side_effect = RuntimeError("the database went away")
+    response = await _call("PUT", ADMIN, json={"message": "A different notice."})
+    assert response.status_code >= 500
+    read = (await _call("GET", READ)).json()["data"]
+    assert read["active"] is True
+    assert read["message"] == MESSAGE
+
+
+@pytest.mark.asyncio
+async def test_a_switch_off_that_cannot_be_recorded_leaves_the_banner_on(
+    redis: FakeRedis, grant, audit
+):
+    grant("security.manage")
+    assert (await _call("PUT", ADMIN, json={"message": MESSAGE})).status_code == 200
+
+    audit.side_effect = RuntimeError("the database went away")
+    response = await _call("DELETE", ADMIN)
+    assert response.status_code >= 500
+    read = (await _call("GET", READ)).json()["data"]
+    assert read["active"] is True
+    assert read["message"] == MESSAGE

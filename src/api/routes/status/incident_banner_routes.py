@@ -1,11 +1,15 @@
 """
 The incident banner API.
 
-- ``GET /api/v1/status/banner``: any signed-in user. The dashboard's shell reads it about once a
-  minute on every page, so it touches no database and never answers with an error for a banner
-  that is missing, expired or unreadable: it answers ``active: false``.
+- ``GET /api/v1/status/banner``: public, like the health routes. The dashboard's shell reads it
+  about once a minute on every signed-in page, and it has to answer when PostgreSQL is what is
+  failing: so it takes no session (the auth dependency reads the database on every call) and
+  touches Redis only. It holds nothing private: a notice written to be shown to every user. It
+  never answers with an error for a banner that is missing, expired or unreadable: it answers
+  ``active: false``. The rate limiter covers it like any other route.
 - ``PUT`` and ``DELETE /api/v1/admin/status/banner``: switch it on (or replace it) and off.
-  They require ``security.manage`` and are written to the audit log.
+  They require ``security.manage`` and are written to the audit log. A switch whose audit entry
+  can't be written is undone, so none stays in effect unrecorded.
 """
 
 from uuid import UUID
@@ -30,11 +34,12 @@ admin_router = APIRouter(prefix="/status", tags=["Admin - Status"])
 
 
 @router.get("/banner", response_model=SuccessResponse[IncidentBannerResponse])
-async def read_incident_banner(
-    request: Request,
-    current_user: dict = Depends(get_current_user),
-):
-    """The banner showing now, or ``active: false``. For any signed-in user."""
+async def read_incident_banner(request: Request):
+    """
+    The banner showing now, or ``active: false``.
+
+    **Public on purpose** (no session, no permission): see this module's note. No database.
+    """
     banner = await incident_banner_service.read_banner()
     return success(data=banner, request=request, message="Incident banner retrieved successfully")
 
@@ -58,25 +63,33 @@ async def set_incident_banner(
     - 503 if the store that holds the banner can't be reached; no banner is showing then.
     """
     admin_user_id = current_user.get("identity")
+    previous = await incident_banner_service.read_banner()
     banner = await incident_banner_service.set_banner(
         message=payload.message,
         areas=list(payload.areas),
         duration_minutes=payload.duration_minutes,
     )
 
-    await create_audit_log_async(
-        db=db,
-        user_id=UUID(admin_user_id) if admin_user_id else None,
-        action="incident_banner.set",
-        resource_type="incident_banner",
-        resource_id="current",
-        new_values={
-            "message": payload.message,
-            "areas": list(payload.areas),
-            "duration_minutes": payload.duration_minutes,
-        },
-        request=request,
-    )
+    # Redis has the banner now; the audit entry is committed here, not after the route returns,
+    # so that a switch that can't be recorded is undone before the caller hears it failed.
+    try:
+        await create_audit_log_async(
+            db=db,
+            user_id=UUID(admin_user_id) if admin_user_id else None,
+            action="incident_banner.set",
+            resource_type="incident_banner",
+            resource_id="current",
+            new_values={
+                "message": payload.message,
+                "areas": list(payload.areas),
+                "duration_minutes": payload.duration_minutes,
+            },
+            request=request,
+        )
+        await db.commit()
+    except Exception:
+        await incident_banner_service.restore_banner(previous)
+        raise
 
     return success(data=banner, request=request, message="Incident banner switched on")
 
@@ -95,17 +108,24 @@ async def clear_incident_banner(
     **Requires security.manage.** 503 if the store can't be reached: a banner may still show.
     """
     admin_user_id = current_user.get("identity")
+    previous = await incident_banner_service.read_banner()
     was_showing = await incident_banner_service.clear_banner()
 
-    await create_audit_log_async(
-        db=db,
-        user_id=UUID(admin_user_id) if admin_user_id else None,
-        action="incident_banner.clear",
-        resource_type="incident_banner",
-        resource_id="current",
-        new_values={"was_showing": was_showing},
-        request=request,
-    )
+    # As for the switch-on: recorded here, and put back if it can't be.
+    try:
+        await create_audit_log_async(
+            db=db,
+            user_id=UUID(admin_user_id) if admin_user_id else None,
+            action="incident_banner.clear",
+            resource_type="incident_banner",
+            resource_id="current",
+            new_values={"was_showing": was_showing},
+            request=request,
+        )
+        await db.commit()
+    except Exception:
+        await incident_banner_service.restore_banner(previous)
+        raise
 
     return success(
         data=dict(incident_banner_service.NO_BANNER),
