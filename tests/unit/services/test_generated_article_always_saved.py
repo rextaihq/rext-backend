@@ -445,3 +445,97 @@ async def test_a_saved_article_is_announced(monkeypatch):
 
     notify.assert_awaited_once()
     assert notify.await_args.kwargs["pref_flag"] == "gen_completed"
+
+
+# -- The analytics events of the save (revnix/rext-control#712) -------------------------------
+
+
+def _announced(monkeypatch):
+    import src.services.generation_events as events
+
+    seen = []
+    monkeypatch.setattr(
+        events,
+        "_announce",
+        lambda name, properties, state, **how: seen.append((name, properties, how)),
+    )
+    return seen
+
+
+@pytest.mark.asyncio
+async def test_a_saved_article_is_counted_with_its_numbers_and_the_rows_own_time(monkeypatch):
+    saved_at = datetime(2026, 10, 8, 7, 5, tzinfo=timezone.utc)
+
+    class SavingService:
+        def __init__(self, db):
+            pass
+
+        async def create_content(self, workspace_id, user_id, payload):
+            return SimpleNamespace(id=uuid.uuid4(), created_at=saved_at)
+
+    @asynccontextmanager
+    async def fake_db():
+        yield None
+
+    monkeypatch.setattr(service_module, "ContentService", SavingService)
+    monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", fake_db)
+    monkeypatch.setattr(loop_module, "run_on_main_loop", lambda coro: coro)
+    monkeypatch.setattr(notification_module, "notify_now", AsyncMock())
+    announced = _announced(monkeypatch)
+    state = _finished_run_state()
+    state["content"]["content_type"] = "How-To Guide"
+    state["content"]["review"] = {"repair_attempts": 1}
+    state["content"]["final_content"]["introduction"] = "Two words."
+    thread = str(uuid.uuid4())
+
+    await persist_module.persist_content(state, {"configurable": {"thread_id": thread}})
+
+    ((name, properties, how),) = announced
+    assert name == "content_generation_completed"
+    assert properties["content_type"] == "how-to-guide"
+    # "Two words." and "## Why", "Because.": the introduction and the body, as they are saved.
+    assert properties["word_count"] == 5
+    assert properties["repairs"] == 1
+    assert how == {"thread_id": thread, "occurred_at": saved_at}
+
+
+@pytest.mark.asyncio
+async def test_a_save_that_fails_is_counted_as_a_failed_article(monkeypatch):
+    class FailingService:
+        def __init__(self, db):
+            pass
+
+        async def create_content(self, workspace_id, user_id, payload):
+            raise RuntimeError("the database went away")
+
+    @asynccontextmanager
+    async def fake_db():
+        yield None
+
+    monkeypatch.setattr(service_module, "ContentService", FailingService)
+    monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", fake_db)
+    monkeypatch.setattr(loop_module, "run_on_main_loop", lambda coro: coro)
+    monkeypatch.setattr(notification_module, "notify_now", AsyncMock())
+    announced = _announced(monkeypatch)
+
+    with pytest.raises(persist_module.ArticleNotSaved):
+        await persist_module.persist_content(
+            _finished_run_state(), {"configurable": {"thread_id": str(uuid.uuid4())}}
+        )
+
+    ((name, properties, _),) = announced
+    assert name == "content_generation_failed"
+    assert (properties["stage"], properties["reason"]) == ("article", "internal")
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_reaches_the_save_with_no_article_is_counted_as_failed(monkeypatch):
+    announced = _announced(monkeypatch)
+    state = _finished_run_state()
+    state["content"]["final_content"] = {}
+
+    assert await persist_module.persist_content(state, {"configurable": {}}) == {}
+
+    ((name, properties, _),) = announced
+    assert name == "content_generation_failed"
+    assert (properties["stage"], properties["reason"]) == ("article", "internal")

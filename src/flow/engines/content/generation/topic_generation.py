@@ -138,6 +138,13 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("topics_failed stream emit failed: %s", exc)
 
+    from src.services.generation_events import INTERNAL, REFUSED, TITLES, announce_failed
+
+    # A keyword too long for any title is the person's to change; no titles from the model
+    # is ours.
+    announce_failed(
+        state, stage=TITLES, reason=REFUSED if message == KEYWORD_TOO_LONG_MESSAGE else INTERNAL
+    )
     return {}
 
 
