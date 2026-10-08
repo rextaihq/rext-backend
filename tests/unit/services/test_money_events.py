@@ -13,8 +13,8 @@ import pytest
 
 from src.services import money_events
 from src.services.money_events import (
-    _held_by,
-    _plan_queries,
+    _plan_query,
+    _plan_source,
     money_event,
     record_money_event,
     send_money_event,
@@ -31,6 +31,7 @@ def _subscription(**attributes):
             "attributes": {
                 "variant_name": "Growth",
                 "product_name": "Rext",
+                "variant_id": 77,
                 "status": "active",
                 "user_email": "mary@example.com",
                 "user_name": "Mary",
@@ -161,45 +162,59 @@ def test_a_refunded_order_names_its_product_from_its_first_item():
 @pytest.mark.parametrize(
     ("event_type", "payload", "found"),
     [
-        ("subscription_created", {"data": {"id": "ls_sub_1"}}, ("subscription", "ls_sub_1")),
+        (
+            "subscription_created",
+            {"data": {"id": "ls_sub_1", "attributes": {"variant_id": 77}}},
+            ("variant", "77"),
+        ),
+        (
+            "order_refunded",
+            {"data": {"id": 501, "attributes": {"first_order_item": {"variant_id": 78}}}},
+            ("variant", "78"),
+        ),
         (
             "subscription_payment_success",
-            {"data": {"id": "ls_inv_1", "attributes": {"subscription_id": 9}}},
+            {"data": {"attributes": {"subscription_id": 9, "billing_reason": "renewal"}}},
             ("subscription", "9"),
         ),
         (
             "subscription_payment_refunded",
-            {"data": {"id": "ls_inv_1", "attributes": {"subscription_id": 9}}},
+            {"data": {"attributes": {"subscription_id": 9, "billing_reason": "initial"}}},
             ("subscription", "9"),
         ),
-        ("order_refunded", {"data": {"id": 501}}, ("order", "501")),
-        ("subscription_payment_success", {"data": {"id": "ls_inv_1", "attributes": {}}}, None),
+        ("subscription_created", {"data": {"id": "ls_sub_1", "attributes": {}}}, None),
+        ("order_refunded", {"data": {"id": 501, "attributes": {}}}, None),
+        ("subscription_payment_success", {"data": {"attributes": {}}}, None),
         ("license_key_created", {"data": {"id": "1"}}, None),
     ],
 )
-def test_the_subscription_a_webhook_is_about_is_found_by_what_it_names(event_type, payload, found):
-    assert _held_by(event_type, payload) == found
+def test_a_webhook_s_plan_is_read_from_what_it_names(event_type, payload, found):
+    assert _plan_source(event_type, payload) == found
 
 
-def test_a_plan_change_s_invoice_names_no_plan():
-    # Its webhook can arrive before the one that moves the subscription to the new plan, so
-    # what the backend holds may be the plan being left: better none than the wrong one.
-    changed = {"data": {"attributes": {"subscription_id": 9, "billing_reason": "updated"}}}
-    renewed = {"data": {"attributes": {"subscription_id": 9, "billing_reason": "renewal"}}}
+def test_an_invoice_that_may_be_a_plan_change_s_names_no_plan():
+    # A plan change's invoice can arrive before the webhook that moves the subscription, so
+    # what the backend holds may be the plan being left: better none than the wrong one. A
+    # refund that doesn't say what its invoice was for could be such a one.
+    def invoice(**attributes):
+        return {"data": {"attributes": {"subscription_id": 9, **attributes}}}
 
-    assert _held_by("subscription_payment_success", changed) is None
-    assert _held_by("subscription_payment_success", renewed) == ("subscription", "9")
+    assert _plan_source("subscription_payment_success", invoice(billing_reason="updated")) is None
+    assert _plan_source("subscription_payment_refunded", invoice(billing_reason="updated")) is None
+    assert _plan_source("subscription_payment_refunded", invoice()) is None
+    # A paid invoice with no reason given is read as usual.
+    assert _plan_source("subscription_payment_failed", invoice()) == ("subscription", "9")
 
 
-def test_an_order_s_plan_is_looked_for_in_the_orders_table_first():
-    by_order = [str(query) for query in _plan_queries("order", "501")]
-    by_subscription = [str(query) for query in _plan_queries("subscription", "9")]
+def test_a_plan_is_found_by_the_variant_that_was_bought_or_by_the_invoice_s_subscription():
+    by_variant = str(_plan_query("variant", "78"))
+    by_subscription = str(_plan_query("subscription", "9"))
 
-    assert len(by_order) == 2 and len(by_subscription) == 1
-    assert "JOIN orders" in by_order[0] and "orders.lemonsqueezy_order_id" in by_order[0]
-    assert "orders" not in by_order[1]
-    assert "user_subscriptions.lemonsqueezy_order_id" in by_order[1]
-    assert "user_subscriptions.lemonsqueezy_subscription_id" in by_subscription[0]
+    # As it was sold: the subscription's plan today plays no part in an order's refund.
+    assert "lemonsqueezy_variant_id_monthly" in by_variant
+    assert "lemonsqueezy_variant_id_yearly" in by_variant
+    assert "user_subscriptions" not in by_variant
+    assert "user_subscriptions.lemonsqueezy_subscription_id" in by_subscription
 
 
 @pytest.mark.parametrize(
@@ -454,8 +469,8 @@ def _rows(*rows):
 async def test_recording_reads_the_stored_webhook_and_sends_its_event(monkeypatch):
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
     row = MagicMock(event_name="subscription_created", payload=_subscription(), created_at=AT)
-    # The subscription the backend holds: its plan's name and its period, as the model has it.
-    plan = MagicMock(billing_period=MagicMock(value="yearly"))
+    # The plan that sells variant 77 as its yearly one.
+    plan = MagicMock(lemonsqueezy_variant_id_yearly="77")
     plan.name = "growth"
     db = _rows(row, plan)
 
@@ -489,19 +504,35 @@ async def test_recording_sends_without_a_plan_when_none_is_held_or_the_read_fail
     failing.rollback.assert_awaited_once()
 
 
-async def test_recording_finds_a_refunded_order_s_plan_by_the_second_read(monkeypatch):
+async def test_recording_names_an_invoice_s_plan_from_the_subscription_held(monkeypatch):
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
-    payload = {"meta": {}, "data": {"id": 501, "attributes": {"total": 4900}}}
-    row = MagicMock(event_name="order_refunded", payload=payload, created_at=AT)
-    plan = MagicMock(billing_period="monthly")
-    plan.name = "starter"
-    # The orders table has no row for it; the subscription's own copy of the order's id does.
-    db = _rows(row, None, plan)
+    row = MagicMock(event_name="subscription_payment_success", payload=_invoice(), created_at=AT)
+    held = MagicMock(billing_period=MagicMock(value="monthly"))
+    held.name = "starter"
+    db = _rows(row, held)
 
     with patch.object(money_events, "send_money_event", new=AsyncMock(return_value=True)) as send:
         assert await record_money_event(db, "evt_1") is True
 
-    assert db.execute.await_count == 3
+    assert db.execute.await_count == 2
+    assert send.await_args.kwargs == {"held": {"plan": "starter", "billing_period": "monthly"}}
+
+
+async def test_recording_names_a_refunded_order_s_plan_as_it_was_sold(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    payload = {
+        "meta": {},
+        "data": {"id": 501, "attributes": {"total": 4900, "first_order_item": {"variant_id": 78}}},
+    }
+    row = MagicMock(event_name="order_refunded", payload=payload, created_at=AT)
+    # Variant 78 is the starter plan's monthly one; its yearly one is another.
+    plan = MagicMock(lemonsqueezy_variant_id_yearly="79")
+    plan.name = "starter"
+    db = _rows(row, plan)
+
+    with patch.object(money_events, "send_money_event", new=AsyncMock(return_value=True)) as send:
+        assert await record_money_event(db, "evt_1") is True
+
     assert send.await_args.kwargs == {"held": {"plan": "starter", "billing_period": "monthly"}}
 
 
