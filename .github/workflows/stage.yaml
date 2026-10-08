@@ -453,7 +453,42 @@ jobs:
           exit 1
 
   # ──────────────────────────────────────────────
-  # 📢 Stage 4 — Notification Summary
+  # ✅ Stage 4 — Smoke Test
+  # ──────────────────────────────────────────────
+  smoke:
+    name: ✅ Smoke Test
+    # After the deploy and beside it: no job needs this one, so a failure here turns
+    # the run red and names the check, and can't block or undo a deploy. Signed-out
+    # GET requests only (scripts/smoke.py): nothing is written on staging.
+    needs: [docker_job, deploy]
+    if: always() && needs.docker_job.result == 'success' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Signed-out checks on staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_URL: https://staging-api.rext.ai
+          EXPECTED: ${{ github.sha }}
+        run: |
+          # A later run's deploy can land first: a running commit that contains
+          # this run's counts, as it does for the deploy job.
+          RUNNING=$(curl -s --max-time 10 "$API_URL/health/live" | jq -r '.commit // empty' 2>/dev/null || true)
+          if [ "$RUNNING" != "$EXPECTED" ] && [[ "$RUNNING" =~ ^[0-9a-f]{40}$ ]] \
+            && [ "$(gh api "repos/${{ github.repository }}/compare/$EXPECTED...$RUNNING" --jq .status 2>/dev/null)" = "ahead" ]; then
+            echo "Staging runs $RUNNING, which contains $EXPECTED (a later run deployed first)"
+            EXPECTED=$RUNNING
+          fi
+          python3 scripts/smoke.py --api "$API_URL" --commit "$EXPECTED"
+
+  # ──────────────────────────────────────────────
+  # 📢 Stage 5 — Notification Summary
   # ──────────────────────────────────────────────
   notify:
     name: 📢 Summary
