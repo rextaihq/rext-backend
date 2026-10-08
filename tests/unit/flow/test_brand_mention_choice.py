@@ -276,7 +276,10 @@ def test_none_cannot_exclude_a_brand_the_title_or_keyphrase_names(outline_extra)
         ("Later you can review it.", False),  # sentence start: ordinary use
         ("Later, the team reviews it.", False),
         ("We scheduled it in Later last week.", True),
-        ("## Later\n\nIt helps.", False),  # a heading's first word, alone
+        # A heading, a list entry or a bold label that is only the name does name the brand.
+        ("## Later\n\nIt helps.", True),
+        ("- **Later**: a scheduler\n- Buffer", True),
+        ("## Later that day\n\nIt helps.", False),  # the word opening a longer heading
         ("Later is a social media scheduler.", True),  # a sentence start used as a name
         ("Later can help you plan the week.", True),
     ],
@@ -761,3 +764,105 @@ async def test_the_final_repairs_answer_is_cleaned_before_it_is_rechecked(monkey
     final = result["content"]["final_content"]
     assert final["tags"] == ["Gardening"]
     assert "Acme Tools" not in final["body_markdown"]
+
+
+# -- The rest of rext-control#760 -------------------------------------------------------------
+
+
+def test_a_brand_with_emphasis_inside_its_name_is_still_named():
+    article = {**ARTICLE, "body_markdown": "## Choose the spot\n\nAcme **Tools** maps the sun."}
+
+    assert _absent(article)["passed"] is False
+    assert _absent({**ARTICLE, "body_markdown": "## Choose the spot\n\nA map of the sun."})[
+        "passed"
+    ]
+
+
+def test_a_brand_kept_out_is_kept_out_of_the_sources_section_too():
+    article = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\nSun matters.\n\n## References\n\n- Acme Tools documentation",
+    }
+
+    result = _absent(article)
+
+    assert result["passed"] is False and "body" in result["detail"]
+
+
+def test_an_approved_address_that_ends_in_a_bracket_is_still_approved():
+    internal = "https://www.acme.test/wiki/Planner_(garden)"
+    outline = _outline("none", internal_links=[{"url": internal, "title": "Planner"}])
+    article = {**ARTICLE, "body_markdown": f"See [the planner]({internal}), then dig."}
+
+    cleaned, spec = _checked(article, outline)
+
+    assert cleaned is article
+    assert check_brand_absent(cleaned, spec)["passed"] is True
+    # The same address, not approved, is a brand link and is taken out whole.
+    other, other_spec = _checked(article, _outline("none"))
+    assert other["body_markdown"] == "See the planner, then dig."
+    assert check_brand_absent(other, other_spec)["passed"] is True
+
+
+@pytest.mark.parametrize("prominence", ["none", "subtle"])
+def test_a_brand_free_call_to_action_is_unlinked_where_the_article_renders_it(prominence):
+    article = {
+        **ARTICLE,
+        "body_markdown": (
+            "## Choose the spot\n\nAcme Tools maps the sun. See [a soil guide](https://soil.example/g)."
+            "\n\n[**Start planning your garden today**](https://rival.example/editor)"
+        ),
+        "cta": {"text": "Start planning your garden today", "url": None},
+    }
+
+    cleaned, _ = _checked(article, _outline(prominence))
+
+    assert "**Start planning your garden today**" in cleaned["body_markdown"]
+    assert "rival.example" not in cleaned["body_markdown"]
+    # Another link in the article is left alone.
+    assert "[a soil guide](https://soil.example/g)" in cleaned["body_markdown"]
+
+
+def test_a_subtle_call_to_action_that_names_the_brand_is_refused():
+    from src.flow.engines.content.generation.validation import check_brand_prominence
+
+    article = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\nSun matters.\n\nTry Acme Tools today",
+        "cta": {"text": "Try Acme Tools today"},
+    }
+
+    result = check_brand_prominence(article, build_requirements_spec(_outline("subtle"), "blog"))
+
+    assert result["passed"] is False
+    assert "must not be named in the call to action" in result["detail"]
+
+
+def test_a_persona_whose_name_contains_the_brand_is_recognised():
+    from types import SimpleNamespace
+
+    from src.flow.engines.agent.middleware.persona_middleware import _is_named
+
+    assert _is_named(SimpleNamespace(full_name="Acme Tools Inc.", name="acme"), "Acme Tools")
+    assert _is_named(SimpleNamespace(full_name=None, name="The Acme Tools team"), "acme tools")
+    # A longer word that merely starts with the brand's letters is someone else.
+    assert not _is_named(SimpleNamespace(full_name="Acme Toolsmith", name="smith"), "Acme Tools")
+
+
+def test_a_profile_saved_without_a_name_takes_the_outlines_brand():
+    from src.flow.engines.agent.middleware.persona_middleware import _profile_with_a_name
+    from src.flow.engines.content.generation.article_voice import (
+        article_voice,
+        format_expertise_for_writer,
+    )
+
+    profile = {"brand_name": "", "about": "Acme Tools builds garden planners."}
+
+    named = _profile_with_a_name(profile, _outline("none"))
+
+    assert named["brand_name"] == "Acme Tools"
+    assert "Acme Tools" not in format_expertise_for_writer(article_voice(None, named))
+    # A profile with its own name keeps it; no profile stays none.
+    own = {"brand_name": "Beta", "about": "Beta builds sites."}
+    assert _profile_with_a_name(own, _outline("none")) is own
+    assert _profile_with_a_name(None, _outline("none")) is None
