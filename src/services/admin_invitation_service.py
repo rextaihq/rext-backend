@@ -61,6 +61,27 @@ class AdminInvitationService:
         """
         self.db = db
 
+    async def _loaded(self, where) -> Optional[PlatformAdminInvitations]:
+        """The invitation with every column and its three people read now. A response is
+        built from it outside any database call, where nothing more can be read: not a
+        person it names, and not a column a write left unset."""
+        result = await self.db.execute(
+            select(PlatformAdminInvitations)
+            .options(
+                selectinload(PlatformAdminInvitations.invited_by),
+                selectinload(PlatformAdminInvitations.accepted_by),
+                selectinload(PlatformAdminInvitations.revoked_by),
+            )
+            .where(where)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def _saved(self, invitation: PlatformAdminInvitations) -> PlatformAdminInvitations:
+        """Write the invitation's changes and read it back whole (``_loaded``)."""
+        await self.db.flush()
+        return await self._loaded(PlatformAdminInvitations.id == invitation.id)
+
     def _generate_invitation_token(self, email: str) -> str:
         """
         Generate a secure admin invitation token.
@@ -100,6 +121,16 @@ class AdminInvitationService:
         Raises:
             RextValidationException: If role invalid
         """
+        # Only a platform role on the list can be given by an invitation, whatever other
+        # roles the table holds.
+        if admin_role not in VALID_ADMIN_ROLES:
+            raise RextValidationException(
+                message=f"'{admin_role}' is not a valid admin role",
+                field_errors={
+                    "admin_role": [f"Must be one of: {', '.join(sorted(VALID_ADMIN_ROLES))}"]
+                },
+            )
+
         # Query role
         result = await self.db.execute(select(Role).where(Role.name == admin_role))
         role = result.scalar_one_or_none()
@@ -108,15 +139,6 @@ class AdminInvitationService:
             raise RextValidationException(
                 message=f"Admin role '{admin_role}' does not exist",
                 field_errors={"admin_role": [f"Role '{admin_role}' not found"]},
-            )
-
-        # Verify it's an admin role (you may want to add a flag to Role model)
-        if admin_role not in VALID_ADMIN_ROLES:
-            raise RextValidationException(
-                message=f"'{admin_role}' is not a valid admin role",
-                field_errors={
-                    "admin_role": [f"Must be one of: {', '.join(sorted(VALID_ADMIN_ROLES))}"]
-                },
             )
 
         return role
@@ -167,7 +189,7 @@ class AdminInvitationService:
         email = normalize_email(email)
 
         # Validate admin role
-        await self._validate_admin_role(admin_role)
+        role = await self._validate_admin_role(admin_role)
 
         # Check for existing pending invitation
         result = await self.db.execute(
@@ -182,31 +204,53 @@ class AdminInvitationService:
 
         if existing_invitation:
             raise DuplicateResourceException(
-                resource_type="AdminInvitation",
-                identifier=f"email={email}",
                 message=f"Pending admin invitation already exists for {email}",
+                resource_type="AdminInvitation",
+                conflicting_field="email",
+                conflicting_value=email,
             )
 
         # Check if user with email already has admin role
         from src.utils.rbac_utils import ADMIN_HIERARCHY_THRESHOLD
 
         result = await self.db.execute(
-            select(Users)
+            select(Users.id)
             .join(UserRole, Users.id == UserRole.user_id)
             .join(Role, Role.id == UserRole.role_id)
             .where(
                 and_(
-                    Users.email == email,
+                    func.lower(Users.email) == email,
                     Role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD,
                     UserRole.workspace_id.is_(None),  # Platform-level
                 )
             )
+            .limit(1)
         )
-        existing_admin = result.scalar_one_or_none()
+        existing_admin = result.first()
 
         if existing_admin:
             raise BusinessRuleViolationException(
                 message=f"User {email} is already a platform admin", rule_name="user_already_admin"
+            )
+
+        # A role below an admin's (support) isn't caught above: an account that holds
+        # the very role invited is refused here rather than when it tries to accept.
+        result = await self.db.execute(
+            select(Users.id)
+            .join(UserRole, Users.id == UserRole.user_id)
+            .where(
+                and_(
+                    func.lower(Users.email) == email,
+                    UserRole.role_id == role.id,
+                    UserRole.workspace_id.is_(None),
+                )
+            )
+            .limit(1)
+        )
+        if result.first():
+            raise BusinessRuleViolationException(
+                message=f"User {email} already has the {admin_role} role",
+                rule_name="user_already_has_admin_role",
             )
 
         # Generate token and expiry
@@ -234,18 +278,23 @@ class AdminInvitationService:
             # Check if this is a uniqueness violation for the pending invitation index
             if "uq_admin_invitation_email_pending" in str(exc.orig):
                 raise DuplicateResourceException(
-                    resource_type="AdminInvitation",
-                    identifier=f"email={email}",
                     message=f"Pending admin invitation already exists for {email}",
+                    resource_type="AdminInvitation",
+                    conflicting_field="email",
+                    conflicting_value=email,
                 ) from exc
             raise
 
         logger.info(
-            f"Admin invitation created: {email} for role {admin_role} "
-            f"by admin {invited_by_admin_id}"
+            "Admin invitation created",
+            extra={
+                "invitation_id": str(invitation.id),
+                "admin_role": admin_role,
+                "invited_by": str(invited_by_admin_id),
+            },
         )
 
-        return invitation
+        return await self._saved(invitation)
 
     async def get_invitation_by_token(self, token: str) -> PlatformAdminInvitations:
         """
@@ -260,12 +309,7 @@ class AdminInvitationService:
         Raises:
             ResourceNotFoundException: If invitation not found
         """
-        result = await self.db.execute(
-            select(PlatformAdminInvitations)
-            .options(selectinload(PlatformAdminInvitations.invited_by))
-            .where(PlatformAdminInvitations.invitation_token == token)
-        )
-        invitation = result.scalar_one_or_none()
+        invitation = await self._loaded(PlatformAdminInvitations.invitation_token == token)
 
         if not invitation:
             raise ResourceNotFoundException(resource_type="AdminInvitation", resource_id=token)
@@ -285,12 +329,7 @@ class AdminInvitationService:
         Raises:
             ResourceNotFoundException: If invitation not found
         """
-        result = await self.db.execute(
-            select(PlatformAdminInvitations)
-            .options(selectinload(PlatformAdminInvitations.invited_by))
-            .where(PlatformAdminInvitations.id == invitation_id)
-        )
-        invitation = result.scalar_one_or_none()
+        invitation = await self._loaded(PlatformAdminInvitations.id == invitation_id)
 
         if not invitation:
             raise ResourceNotFoundException(
@@ -330,6 +369,7 @@ class AdminInvitationService:
         query = select(PlatformAdminInvitations).options(
             selectinload(PlatformAdminInvitations.invited_by),
             selectinload(PlatformAdminInvitations.accepted_by),
+            selectinload(PlatformAdminInvitations.revoked_by),
         )
 
         if base_filter:
@@ -377,7 +417,15 @@ class AdminInvitationService:
             ResourceNotFoundException: If invitation or user not found
             BusinessRuleViolationException: If invitation invalid or expired
         """
-        # Get invitation
+        # Get invitation, its row locked: a token works once, and two requests with it
+        # at the same moment must not both find it pending.
+        locked = await self.db.execute(
+            select(PlatformAdminInvitations.id)
+            .where(PlatformAdminInvitations.invitation_token == token)
+            .with_for_update()
+        )
+        if locked.first() is None:
+            raise ResourceNotFoundException(resource_type="AdminInvitation", resource_id=token)
         invitation = await self.get_invitation_by_token(token)
 
         # Check status
@@ -407,12 +455,17 @@ class AdminInvitationService:
                 message=f"This invitation is for {invitation.email}", rule_name="email_mismatch"
             )
 
-        # Get admin role
-        result = await self.db.execute(select(Role).where(Role.name == invitation.admin_role))
-        admin_role = result.scalar_one_or_none()
+        # The role goes to whoever proved the address is theirs, not to whoever typed it
+        # into a sign-up form.
+        if not user.email_verified:
+            raise BusinessRuleViolationException(
+                message="Verify your email address first, then open the invitation again.",
+                rule_name="email_not_verified",
+            )
 
-        if not admin_role:
-            raise ResourceNotFoundException(resource_type="Role", resource_id=invitation.admin_role)
+        # The role, checked again as it was when the invitation was made: on the list
+        # of roles an invitation can give, and in the table.
+        admin_role = await self._validate_admin_role(invitation.admin_role)
 
         # Check if user already has this admin role
         result = await self.db.execute(
@@ -424,7 +477,7 @@ class AdminInvitationService:
                 )
             )
         )
-        existing_role = result.scalar_one_or_none()
+        existing_role = result.scalars().first()
 
         if existing_role:
             raise BusinessRuleViolationException(
@@ -448,9 +501,16 @@ class AdminInvitationService:
         invitation.accepted_at = datetime.now(timezone.utc)
         invitation.accepted_by_user_id = user_id
 
-        logger.info(f"Admin invitation accepted: {user.email} now has {invitation.admin_role} role")
+        logger.info(
+            "Admin invitation accepted",
+            extra={
+                "invitation_id": str(invitation.id),
+                "admin_role": invitation.admin_role,
+                "user_id": str(user_id),
+            },
+        )
 
-        return invitation
+        return await self._saved(invitation)
 
     async def revoke_admin_invitation(
         self, invitation_id: UUID, revoked_by_admin_id: UUID, reason: Optional[str] = None
@@ -490,9 +550,12 @@ class AdminInvitationService:
         invitation.revoked_by_admin_id = revoked_by_admin_id
         invitation.revoked_reason = reason
 
-        logger.info(f"Admin invitation revoked: {invitation.email} by admin {revoked_by_admin_id}")
+        logger.info(
+            "Admin invitation revoked",
+            extra={"invitation_id": str(invitation.id), "revoked_by": str(revoked_by_admin_id)},
+        )
 
-        return invitation
+        return await self._saved(invitation)
 
     async def decline_admin_invitation(
         self, token: str, reason: Optional[str] = None
@@ -526,9 +589,9 @@ class AdminInvitationService:
         invitation.declined_at = datetime.now(timezone.utc)
         invitation.declined_reason = reason
 
-        logger.info(f"Admin invitation declined: {invitation.email}")
+        logger.info("Admin invitation declined", extra={"invitation_id": str(invitation.id)})
 
-        return invitation
+        return await self._saved(invitation)
 
     async def resend_admin_invitation(
         self, invitation_id: UUID, resent_by_admin_id: UUID, expiry_days: int = 7
@@ -569,11 +632,6 @@ class AdminInvitationService:
                 rule_name="invitation_cannot_be_resent",
             )
 
-        # Store old token hash for audit trail (do not log the full token)
-        old_token_prefix = (
-            invitation.invitation_token[:8] if invitation.invitation_token else "none"
-        )
-
         # Generate new token and expiry
         # This overwrites the old token in the database, effectively
         # invalidating any previously sent email links
@@ -585,13 +643,10 @@ class AdminInvitationService:
             "Admin invitation token rotated on resend",
             extra={
                 "invitation_id": str(invitation.id),
-                "email": invitation.email,
-                "old_token_prefix": old_token_prefix,
-                "new_token_prefix": invitation.invitation_token[:8],
                 "new_expires_at": invitation.expires_at.isoformat(),
                 "event_type": "admin_token_rotation",
                 "resent_by": str(resent_by_admin_id),
             },
         )
 
-        return invitation
+        return await self._saved(invitation)

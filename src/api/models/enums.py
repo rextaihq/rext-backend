@@ -28,15 +28,16 @@ VALID_RECOVERY_REQUEST_STATUSES: frozenset[str] = frozenset(s.value for s in Rec
 
 
 class AdminRole(str, enum.Enum):
-    """Valid platform-level admin roles.
+    """The platform roles an admin invitation can give, by the names the roles table
+    holds (scripts/seeds/seed_permissions.py): each is held outside any workspace.
 
     Used by AdminInvitationService for role validation and
     admin duplicate detection queries.
     """
 
     SUPER_ADMIN = "super_admin"
-    SUPPORT_ADMIN = "support_admin"
-    PLATFORM_ADMIN = "platform_admin"
+    ADMIN = "admin"
+    SUPPORT = "support"
 
 
 # Convenience frozenset for .in_() queries and membership checks
