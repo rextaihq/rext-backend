@@ -2522,11 +2522,19 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
       internal links the user approved. Told only in words, the writer sent readers to another
       product's site instead; nothing a model is told is a guarantee.
 
+    And for a brand that has no address of its own (a workspace made without a website,
+    `brand_without_address`), whatever the choice:
+
+    * a text link whose words name the brand keeps its words and loses its address: with no
+      address to link to, the writer made that one up. The call to action has none either
+      (the rule above).
+
     Internal links the user approved stay. Unchanged when nothing applies. The name in the
     article's own sentences is left to the check and the rewrite it asks for.
     """
     excluded = spec.get("excluded_brand")
-    if not final_content or not (excluded or spec.get("cta_without_link")):
+    unlinked_name = (spec.get("brand_without_address") or "").strip()
+    if not final_content or not (excluded or spec.get("cta_without_link") or unlinked_name):
         return final_content
     approved = spec.get("approved_internal_links")
     removed: list[str] = []
@@ -2571,6 +2579,40 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
             # The lists that mirror the prose's links follow it: an address left there with
             # no link in the article would be read as a link the article never placed.
             gone = unlinked - present_urls(cleaned)
+            for field in LINK_LIST_FIELDS:
+                entries = cleaned.get(field)
+                if isinstance(entries, list) and gone:
+                    cleaned[field] = [
+                        entry
+                        for entry in entries
+                        if not (
+                            isinstance(entry, dict)
+                            and normalize_url(entry.get("url") or "") in gone
+                        )
+                    ]
+    if unlinked_name:
+        # A link the article is held to stays (an approved internal link, a verified source
+        # that happens to name the brand): taken out here it would only be put back.
+        held = {
+            normalize_url(link.get("url") or "")
+            for link in [*(approved or []), *(spec.get("link_inventory") or [])]
+            if isinstance(link, dict)
+        }
+        invented: set[str] = set()
+
+        def unlink_brand_name(match: re.Match) -> str:
+            words = _EMPHASIS_MARKS_RE.sub("", match.group(1))
+            if not brand_named_in(words, unlinked_name) or normalize_url(match.group(2)) in held:
+                return match.group(0)
+            invented.add(normalize_url(match.group(2)))
+            return match.group(1)
+
+        for field in LINK_FIELDS:
+            if isinstance(cleaned.get(field), str):
+                cleaned[field] = _TEXT_LINK_RE.sub(unlink_brand_name, cleaned[field])
+        if invented:
+            removed.append("a link on the name of a brand that has no address")
+            gone = invented - present_urls(cleaned)
             for field in LINK_LIST_FIELDS:
                 entries = cleaned.get(field)
                 if isinstance(entries, list) and gone:

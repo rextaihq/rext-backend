@@ -1048,3 +1048,83 @@ def test_an_unnamed_profiles_company_sentences_stay_out_under_no_mention():
     assert _profile_under_the_choice(own, excluded) is own
     assert "Beta" not in format_expertise_for_writer(article_voice(None, own))
     assert _profile_under_the_choice(None, excluded) is None
+
+
+# -- A brand with no address of its own (rext-control#872) ----------------------------------
+#
+# A workspace can be made without a website (rext-control#853). Its brand then has a name and
+# no address, and two things were held by a sentence to the writer alone: that the name is not
+# linked, and that the call to action has no address.
+
+
+def _no_website(prominence, **extra):
+    outline = _outline(prominence, **extra)
+    outline["brand_voice_promotion"] = {"brand_name": "Acme Tools", "brand_url": ""}
+    return outline
+
+
+@pytest.mark.parametrize("prominence", ["prominent", "subtle", None])
+def test_a_brand_with_no_address_is_never_linked_whatever_the_writer_returned(prominence):
+    study = "https://research.example/beds"
+    article = {
+        **ARTICLE,
+        "body_markdown": (
+            "## Choose the spot\n\nTeams use [Acme Tools](https://acmetools.example/) to map the "
+            "sun, and [**Acme Tools** planner](https://acme-tools.example/planner) for the beds. "
+            f"See [a study of raised beds]({study})."
+        ),
+        "outbound_links": [
+            {"url": "https://acmetools.example/", "anchor": "Acme Tools"},
+            {"url": study, "anchor": "a study of raised beds"},
+        ],
+        "cta": {"text": "Try Acme Tools today", "url": "https://acmetools.example/signup"},
+    }
+
+    cleaned, spec = _checked(article, _no_website(prominence))
+
+    assert spec["brand_without_address"] == "Acme Tools" and spec["cta_without_link"] is True
+    body = cleaned["body_markdown"]
+    # The words stay, the made-up addresses go; a link that does not name the brand stays.
+    assert "Teams use Acme Tools to map the sun, and **Acme Tools** planner for the beds." in body
+    assert "acmetools.example" not in body and "acme-tools.example" not in body
+    assert f"[a study of raised beds]({study})" in body
+    assert cleaned["outbound_links"] == [{"url": study, "anchor": "a study of raised beds"}]
+    assert cleaned["cta"] == {"text": "Try Acme Tools today", "url": None}
+
+
+def test_a_brand_with_an_address_and_a_link_the_article_is_held_to_are_left_alone():
+    linked = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\nTeams use [Acme Tools](https://www.acme.test/).",
+        "cta": {"text": "Try Acme Tools", "url": "https://www.acme.test/signup"},
+    }
+    cleaned, spec = _checked(linked, _outline("prominent"))
+    assert spec["brand_without_address"] == "" and cleaned is linked
+
+    # No address of its own, and a page the user approved that names the brand in its words.
+    guide = "https://docs.example/acme-tools-guide"
+    outline = _no_website("prominent", internal_links=[{"url": guide, "title": "The guide"}])
+    held = {
+        **ARTICLE,
+        "body_markdown": f"## Choose the spot\n\nRead [the Acme Tools guide]({guide}).",
+    }
+    cleaned, _ = _checked(held, outline)
+    assert f"[the Acme Tools guide]({guide})" in cleaned["body_markdown"]
+    # No brand known at all: nothing to hold a link to.
+    unknown = _outline("prominent")
+    unknown["brand_voice_promotion"] = {}
+    assert build_requirements_spec(unknown, "blog")["brand_without_address"] == ""
+
+
+async def test_the_writer_is_told_a_call_to_action_without_an_address_has_none(writer_message):
+    from src.flow.engines.content.generation.generation_brief import brief_for_stage
+
+    outline = _no_website("prominent", final_cta={"primary_cta": "Start planning today"})
+
+    message = await writer_message(outline)
+
+    assert "Acme Tools has no website: the call to action has no address to go to." in message
+    assert "Leave the call to action's `url` empty" in message
+    # And the brief every stage reads says the same in its one line.
+    brief = brief_for_stage(build_requirements_spec(outline, "blog"), outline, stage="writer")
+    assert '- Call to action: "Start planning today" (with no link)' in brief
