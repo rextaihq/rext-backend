@@ -718,13 +718,29 @@ def test_a_draft_under_a_title_in_another_language_has_no_english_heading():
 
 def test_a_how_to_guides_steps_reach_the_writing_screen_in_their_place():
     """The whole path of one answer: the reader is set up from the approved outline, and the
-    steps, which the answer holds as a list among its first fields, are sent as section 3 of 5
-    with the list the finished article will show."""
+    steps, which the answer holds a field each (rext-control #817), are sent as section 3 of 5
+    once the last of them is written, with the list the finished article will show: the
+    approved titles over the writer's instructions."""
     built = build_structured_content_model(
         HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
     )
-    content = _how_to_content()
-    answer = json.dumps({"title": content["title"], "steps": content["steps"], **content})
+    content = _how_to_content(steps=[])
+    written = {
+        "step_1": "Ease it out of its pot.",
+        "step_2": "Add fresh mix.",
+        "step_3": "Water it once.",
+    }
+    answer = json.dumps(
+        {
+            "title": content["title"],
+            "steps": [],
+            "hero": content["hero"],
+            "prerequisites": content["prerequisites"],
+            **written,
+            "tools": content["tools"],
+            "error_prevention": content["error_prevention"],
+        }
+    )
 
     stream = article_section_stream(built[1], HOW_TO_OUTLINE, "how-to-guide", content["title"])
     sections = [
@@ -734,18 +750,29 @@ def test_a_how_to_guides_steps_reach_the_writing_screen_in_their_place():
     ]
 
     assert [(s["key"], s["index"], s["of"]) for s in sections] == [
-        ("steps", 3, 5),
         ("hero", 1, 5),
         ("prerequisites", 2, 5),
+        ("steps", 3, 5),
         ("tools", 4, 5),
         ("error_prevention", 5, 5),
     ]
-    assert sections[0]["heading"] == "Follow These Steps in Order"
-    assert sections[0]["markdown"] == (
+    assert sections[2]["heading"] == "Follow These Steps in Order"
+    assert sections[2]["markdown"] == (
         "1. **Remove the plant.** Ease it out of its pot.\n"
         "2. **Prepare the new pot.** Add fresh mix.\n"
-        "3. **Water the plant!** Water it once."
+        "3. **Water the plant.** Water it once."
     )
+
+
+def test_the_writers_fields_stand_where_the_steps_do_in_the_approved_order():
+    """The article is written in the order it is read: the step fields come after the section
+    before the steps and before the one after."""
+    model, _ = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+
+    asked = [f for f in model.model_fields if f in ("prerequisites", "tools") or "step_" in f]
+    assert asked == ["prerequisites", "step_1", "step_2", "step_3", "tools"]
 
 
 def test_an_answer_without_section_fields_has_no_reader():

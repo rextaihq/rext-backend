@@ -21,9 +21,12 @@ from collections.abc import Callable
 from typing import Any
 
 from src.flow.engines.content.generation.structured_body import (
+    STEPS_KEY,
     sections_in_article_order,
+    step_field,
     typed_section_blocks,
     typed_section_drafts,
+    written_steps,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,6 +38,9 @@ _MAX_CHARS = 400_000
 # How a section a typed field writes (a how-to guide's steps) reads as a draft: its value to
 # (heading, markdown), or None with nothing to show.
 TypedDraft = Callable[[Any], "tuple[str, str] | None"]
+# A typed section the writer writes in several fields of its own (a how-to guide's steps, one
+# each): those fields in order, and how their values make the value the draft reads.
+SectionParts = tuple[list[str], Callable[[list], Any]]
 
 
 def _value_end(text: str, start: int) -> int:
@@ -80,12 +86,22 @@ class SectionStream:
     and each is returned again as the new answer has it.
     """
 
-    def __init__(self, sections: list[tuple[str, int]], typed: dict[str, TypedDraft] | None = None):
+    def __init__(
+        self,
+        sections: list[tuple[str, int]],
+        typed: dict[str, TypedDraft] | None = None,
+        parts: dict[str, SectionParts] | None = None,
+    ):
         self._sections = list(sections)
         self._typed = dict(typed or {})
+        # Only for a section that has a draft: without one there is nothing to read it as.
+        self._parts = {key: value for key, value in (parts or {}).items() if key in self._typed}
         self._opening = [
             re.compile(
-                rf'"{re.escape(key)}"\s*:\s*(?=[{{\["])'
+                # A section written in several fields is read when the last of them closes.
+                rf'"{re.escape(self._parts[key][0][-1])}"\s*:\s*(?=")'
+                if key in self._parts
+                else rf'"{re.escape(key)}"\s*:\s*(?=[{{\["])'
                 if key in self._typed
                 else rf'"{re.escape(key)}"\s*:\s*(?={{)'
             )
@@ -143,6 +159,17 @@ class SectionStream:
                 best = (index, match.end())
         return best
 
+    def _field(self, name: str) -> Any:
+        """A text field of the answer as read so far, or None while it has not closed."""
+        match = re.search(rf'"{re.escape(name)}"\s*:\s*(?=")', self._text)
+        closes = _value_end(self._text, match.end()) if match else -1
+        if closes < 0:
+            return None
+        try:
+            return json.loads(self._text[match.end() : closes + 1])
+        except ValueError:
+            return None
+
     def _read(self, index: int, raw: str) -> dict | None:
         key, level = self._sections[index]
         try:
@@ -150,6 +177,9 @@ class SectionStream:
         except ValueError:
             return None
         draft = self._typed.get(key)
+        if key in self._parts:
+            names, gather = self._parts[key]
+            value = gather([self._field(name) for name in names[:-1]] + [value])
         if draft is not None:
             shown = draft(value)
             if not shown:
@@ -173,6 +203,24 @@ class SectionStream:
         }
 
 
+def _step_parts(outline: dict, content_type: str) -> dict[str, SectionParts]:
+    """A how-to guide's steps as the writer writes them, a field each (rext-control#817): the
+    list the page shows is those texts under the approved titles, as the article will have it."""
+    steps, _ = written_steps(outline, content_type)
+    if not steps:
+        return {}
+    titles = [str(step["title"]).strip() for step in steps]
+
+    def gather(texts: list) -> list[dict]:
+        return [
+            {"title": title, "description": text}
+            for title, text in zip(titles, texts)
+            if isinstance(text, str) and text.strip()
+        ]
+
+    return {STEPS_KEY: ([step_field(number) for number in range(1, len(steps) + 1)], gather)}
+
+
 def article_section_stream(
     blocks: list | None, outline: dict, content_type: str, title: str = ""
 ) -> SectionStream | None:
@@ -192,6 +240,7 @@ def article_section_stream(
         return SectionStream(
             [(block.key, block.level) for block in sections_in_article_order(blocks, typed)],
             typed=drafts,
+            parts=_step_parts(outline, content_type),
         )
     except Exception:
         logger.warning("section events not set up for content_type=%s", content_type, exc_info=True)
