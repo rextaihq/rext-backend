@@ -894,6 +894,56 @@ async def test_the_second_ask_is_one_call_and_names_what_the_guard_found_missing
     assert rewritten[0] is part
 
 
+async def test_an_answer_refused_for_its_length_that_also_lost_a_link_is_asked_once_more():
+    """Review round 2: the guard names the first thing wrong with an answer, its length before
+    its links, so an answer both too long and without a link was kept as drafted with no
+    second ask."""
+    heading = "## Fill the Calendar"
+    link = "[a planning guide](https://site.test/guides/planning/)"
+    part = Part(SECTION, heading, f"{heading}\n\n{_text(100)} See {link}. {_text(40)}")
+
+    def answer(messages):
+        if messages["part"] is not part:
+            return messages["part"].text
+        if messages["lost"]:
+            return f"{heading}\n\n{_text(98)} Read {link} first. {_text(40)}"
+        return f"{heading}\n\n{_text(200)}"  # a third too long, and the link is gone
+
+    model = _Model(answer)
+    rewritten, _ = await rewrite_parts(
+        [part, _section(60, "## Review It")],
+        model=model,
+        messages_for=_messages_for,
+        word_target=words(part.text) + 64,
+    )
+
+    assert [m["lost"] for m in model.asked if m["part"] is part] == [
+        (),
+        ("https://site.test/guides/planning",),
+    ]
+    assert link in rewritten[0].text and rewritten[0] is not part
+
+
+def test_a_part_that_is_the_list_of_sources_is_told_of_the_brand_named_in_it():
+    """Review round 2: the article's brand checks leave the sources out of their count, so a
+    part that is the sources and names the brand there was told it does not name it, and was
+    not held to keeping it."""
+    brand = {"brand_name": "Acme", "brand_url": "https://acme.test/"}
+    heading = "## Sources"
+    sources = (
+        f"{heading}\n\n- Acme, [The planning report](https://acme.test/report), 2026.\n"
+        "- [A study of calendars](https://research.test/calendars), 2025.\n\n" + _text(40)
+    )
+    part = Part(SECTION, heading, sources)
+
+    assert 'names "Acme" 1 time(s)' in brand_lines(
+        sources, brand_context=brand, excluded_brand=None
+    )
+    without = sources.replace("- Acme, [The planning report]", "- [The planning report]")
+    assert judge(part, without, words(sources), brand=brand)[1] == "the brand's mentions changed"
+    assert accept(part, sources.replace("2026.", "2026 edition."), words(sources), brand=brand)
+
+
 async def test_a_long_article_never_has_more_than_a_few_calls_running():
     body = "\n\n".join(f"## Section {n}\n\n{_text(60)}" for n in range(1, 25))
     model = _Model(lambda m: m["part"].text)
