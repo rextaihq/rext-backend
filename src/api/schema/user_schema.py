@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-from src.utils.input_safety import reject_script_content
+from src.utils.input_safety import reject_script_content, without_joiners_in_words
 from src.utils.role_display import resolve_display_role
 
 
@@ -13,6 +13,19 @@ def _no_script(label: str):
 
     def check(value):
         return reject_script_content(value, label)
+
+    return check
+
+
+def _no_script_in_a_name(label: str):
+    """The same for a person's name at sign-up, where the joiners Persian and Indic scripts
+    write inside a word are part of the name (name_utils.validate_signup_full_name decides the
+    rest, and refuses a joiner anywhere else)."""
+
+    def check(value):
+        if isinstance(value, str):
+            reject_script_content(without_joiners_in_words(value), label)
+        return value
 
     return check
 
@@ -91,7 +104,7 @@ class RegisterUser(BaseModel):
         None, description="Optional; when sent it must match password"
     )
 
-    _safe_full_name = field_validator("full_name", mode="before")(_no_script("Full name"))
+    _safe_full_name = field_validator("full_name", mode="before")(_no_script_in_a_name("Full name"))
     _safe_email = field_validator("email", mode="before")(_no_script("Email"))
     _safe_password = field_validator("password", mode="before")(_no_script("Password"))
     _safe_confirm = field_validator("confirm_password", mode="before")(
@@ -113,7 +126,7 @@ class RegisterWithInvitation(BaseModel):
         None, description="Optional; when sent it must match password"
     )
 
-    _safe_full_name = field_validator("full_name", mode="before")(_no_script("Full name"))
+    _safe_full_name = field_validator("full_name", mode="before")(_no_script_in_a_name("Full name"))
     _safe_email = field_validator("email", mode="before")(_no_script("Email"))
     _safe_password = field_validator("password", mode="before")(_no_script("Password"))
     _safe_confirm = field_validator("confirm_password", mode="before")(
