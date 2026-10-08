@@ -385,7 +385,17 @@ async def test_other_words_start_the_voice_over(session, monkeypatch):
     voice.brand_name, voice.selling_position, voice.target_audience = "Old Name", "Old.", ["Old"]
     await session.flush()
     given, started = _runs_given(monkeypatch, session)
-    forgotten = AsyncMock()
+    order = []
+    commit = session.commit
+
+    async def committed():
+        order.append("committed")
+        await commit()
+
+    async def forgotten(key):
+        order.append(key)
+
+    monkeypatch.setattr(session, "commit", committed)
     monkeypatch.setattr(workspace_service, "invalidate_cache_key", forgotten)
 
     await _service(session, monkeypatch).retry_pipeline_for_user(
@@ -395,11 +405,13 @@ async def test_other_words_start_the_voice_over(session, monkeypatch):
 
     assert given["description"] == DESCRIPTION
     # What was drafted from the old words goes with them: the new draft keeps what it leaves
-    # empty, and would otherwise mix the two. The detail's cached copy is dropped too.
+    # empty, and would otherwise mix the two.
     await session.refresh(voice)
     assert (voice.about, voice.brand_name, voice.selling_position) == (DESCRIPTION, None, None)
     assert voice.target_audience == []
-    forgotten.assert_awaited_once_with(f"workspace:brand_voice:{workspace.id}")
+    # The detail's cached copy is dropped once the new words are committed, not before: a read
+    # in between would only put the old ones back.
+    assert order[:2] == ["committed", f"workspace:brand_voice:{workspace.id}"]
 
 
 @pytest.mark.asyncio
