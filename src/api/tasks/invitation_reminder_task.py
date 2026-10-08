@@ -17,7 +17,7 @@ from html import escape
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from emails.templates.workspace.invitation_reminder import create_invitation_reminder_email
@@ -28,6 +28,7 @@ from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.email_preferences_service import EmailPreferencesService
 from src.services.email_service import EmailService
 from src.utils.logger import logger
 
@@ -64,8 +65,9 @@ async def _remind(
     frontend_url: str,
 ) -> bool:
     """Send one invitation's reminder and mark it. False when nothing was sent: the
-    workspace or the role is gone, or the email could not be sent (it is tried again
-    on the next run, while the invitation still stands)."""
+    workspace or the role is gone, the invited person has turned these emails off, or
+    the email could not be sent (it is tried again on the next run, while the
+    invitation still stands)."""
     workspace = await db.get(WorkspaceModel, invitation.workspace_id)
     role = await db.get(Role, invitation.role_id)
     if workspace is None or workspace.deleted_at is not None or role is None:
@@ -75,12 +77,29 @@ async def _remind(
         )
         return False
 
+    # Someone who has an account has a say in the emails they get; someone who has
+    # none yet has no preferences to ask.
+    invited = (
+        await db.execute(
+            select(Users.id).where(func.lower(Users.email) == invitation.email.lower()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if invited is not None and not await EmailPreferencesService(db).check_can_send(
+        invited, "invitation_reminder"
+    ):
+        logger.info(
+            "Invitation reminder skipped: the invited person turned these emails off",
+            extra={"invitation_id": str(invitation.id)},
+        )
+        return False
+
     inviter = None
     if invitation.invited_by_user_id:
         inviter = await db.get(Users, invitation.invited_by_user_id)
     inviter_name = (inviter.display_name if inviter else None) or "A teammate"
     description = getattr(workspace, "description", None)
-    days_left = max(1, int((invitation.expires_at - now).total_seconds() // 86400))
+    # To the nearest day: 40 hours left is "in 2 days", 30 hours is "tomorrow".
+    days_left = max(1, round((invitation.expires_at - now).total_seconds() / 86400))
 
     # The names and the description are what people typed: they go into the email's
     # HTML as text.
@@ -129,12 +148,14 @@ async def send_invitation_reminders(db: AsyncSession) -> int:
         Number of reminders sent
     """
     frontend_url = get_settings().FRONTEND_URL
-    now = datetime.now(timezone.utc)
     email_service = EmailService(db)
     reminded = 0
     passed_over: List[UUID] = []
 
     while True:
+        # Read for each one: an invitation that ran out while the others were being
+        # sent gets no reminder for a link that no longer works.
+        now = datetime.now(timezone.utc)
         invitation = await _next_invitation(db, now, passed_over)
         if invitation is None:
             break

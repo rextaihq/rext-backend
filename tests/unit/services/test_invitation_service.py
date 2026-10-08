@@ -806,6 +806,21 @@ class TestResendInvitation:
         assert result.expires_at > original_expiry
 
     @pytest.mark.asyncio
+    async def test_a_resent_invitation_is_due_its_reminder_again(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """It runs again from today with a new link: the reminder it had was for the old
+        expiry, and the daily job sends one before the new one."""
+        sample_invitation.reminder_sent = True
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
+
+        result = await invitation_service.resend_invitation(invitation_id=sample_invitation.id)
+
+        assert result.reminder_sent is False
+
+    @pytest.mark.asyncio
     async def test_resend_invitation_not_pending(
         self, invitation_service, mock_db, sample_invitation
     ):
