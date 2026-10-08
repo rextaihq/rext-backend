@@ -30,7 +30,11 @@ from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
 from src.config.cleanup_config import CleanupConfig
-from src.services.data_cleanup_service import DataCleanupIncomplete, DataCleanupService
+from src.services.data_cleanup_service import (
+    MAX_BATCH_SIZE,
+    DataCleanupIncomplete,
+    DataCleanupService,
+)
 from src.services.plan_change_charges import PAID, REFUNDED
 from tests.conftest import TEST_DATABASE_URL
 
@@ -223,6 +227,31 @@ async def test_a_batch_that_deletes_few_or_none_is_not_the_end(db_session, monke
         select(WebhookEvent.id).where(WebhookEvent.id.in_([event.id for event in events]))
     )
     assert list(remaining.scalars()) == []
+
+
+@pytest.mark.asyncio
+async def test_a_batch_never_names_more_ids_than_the_driver_takes(db_session, monkeypatch):
+    """The setting goes up to 100,000 and the driver takes 32,767 values in one statement:
+    a batch picks 10,000 ids at most, whatever the setting says."""
+    monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 100_000)
+    event = _webhook_event(days_old=100)
+    db_session.add(event)
+    await db_session.commit()
+
+    execute = db_session.execute
+    limits = []
+
+    async def noting_the_limit(statement, *args, **kwargs):
+        if getattr(statement, "is_select", False) and statement._limit is not None:
+            limits.append(statement._limit)
+        return await execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", noting_the_limit)
+    service = DataCleanupService(db=db_session, dry_run=False)
+    deleted = await service._delete_in_batches(WebhookEvent, WebhookEvent.id == event.id)
+
+    assert deleted == 1
+    assert limits and set(limits) == {MAX_BATCH_SIZE}
 
 
 @pytest.mark.asyncio
