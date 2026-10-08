@@ -45,6 +45,18 @@ _NEUTRAL_SUFFIXES: tuple[str, ...] = (
     ": A Complete Guide for Beginners",
 )
 
+# Short endings for a title left a few characters under the minimum once its filler word is
+# gone ("...Benefits Of Standing Desks Today" is 48 without it). The same rule as the suffixes
+# above: no facts, rankings or superlatives. After a title that already holds a colon only the
+# ones without one are tried.
+_SHORT_NEUTRAL_SUFFIXES: tuple[str, ...] = (
+    ": A Guide",
+    " Explained",
+    ": The Basics",
+    ": An Overview",
+    ": A Short Guide",
+)
+
 # Neutral lead-ins, tried (empty first) only when a suffix alone cannot reach
 # the minimum. Same rule as the suffixes: no facts, rankings or superlatives.
 _NEUTRAL_PREFIXES: tuple[str, ...] = (
@@ -684,8 +696,10 @@ def title_ending_problem(title: Any, keyphrase: Any = "") -> Optional[str]:
 
 def without_filler_ending(title: Any, keyphrase: Any = "") -> Optional[str]:
     """The title without its one filler word, when what is left is a valid title that ends
-    well ("...Understanding Best Practices Now"). None when it isn't: the ending then has to
-    be written anew, which is the repair's work."""
+    well ("...Understanding Best Practices Now"). Left a few characters under the minimum, it
+    is lifted with a short neutral ending where one fits ("...Standing Desks: A Guide"). None
+    when neither gives a title that stands: the ending then has to be written anew, which is
+    the repair's work."""
     cleaned = _closed_up(title)
     problem = title_ending_problem(cleaned, keyphrase) or ""
     if not problem.startswith("filler:") or " " in problem:
@@ -693,15 +707,23 @@ def without_filler_ending(title: Any, keyphrase: Any = "") -> Optional[str]:
     words = cleaned.split()
     asks = words[-1].rstrip("\"'”’)").endswith("?")
     shorter = " ".join(words[:-1]).rstrip(_TRAILING_PUNCTUATION) + ("?" if asks else "")
-    if (
-        not title_is_valid(shorter, keyphrase)
-        or title_ending_problem(shorter, keyphrase)
-        or _ends_dangling(words, len(words) - 1)
-        # The word closed a bracket or a quotation that opened before it ("(Start Here)").
-        or not _balanced(shorter)
-    ):
+    # The word closed a bracket or a quotation that opened before it ("(Start Here)").
+    if _ends_dangling(words, len(words) - 1) or not _balanced(shorter):
         return None
-    return shorter
+    candidates = [shorter]
+    # A question keeps its mark at the end, and the other scripts have padding of their own.
+    if not asks and not _local_language(shorter):
+        known = shorter.lower()
+        candidates += [
+            f"{shorter}{suffix}"
+            for suffix in _SHORT_NEUTRAL_SUFFIXES
+            if not (suffix.startswith(":") and ":" in shorter)
+            and suffix.strip(" :").split()[-1].lower()[:6] not in known
+        ]
+    for candidate in candidates:
+        if title_is_valid(candidate, keyphrase) and not title_ending_problem(candidate, keyphrase):
+            return candidate
+    return None
 
 
 def _pad_to_min(title: str, keyphrase: str = "") -> str:

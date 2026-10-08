@@ -175,6 +175,46 @@ def test_a_filler_word_is_dropped_only_where_the_title_stands_without_it(title, 
         assert title_ending_problem(shorter, keyphrase) is None
 
 
+@pytest.mark.parametrize(
+    ("title", "keyphrase", "lifted"),
+    [
+        # The two that staging still showed after the first change: 48 and 49 characters
+        # without their word, under the 50 a title needs.
+        (
+            "Exploring The Amazing Benefits Of Standing Desks Today",
+            "benefits of standing desks",
+            "Exploring The Amazing Benefits Of Standing Desks: A Guide",
+        ),
+        (
+            "How to Start a Podcast with Top Hosting Platforms Today",
+            "how to start a podcast",
+            "How to Start a Podcast with Top Hosting Platforms: A Guide",
+        ),
+        # After a colon, an ending without one.
+        (
+            "How To Start A Podcast On YouTube: Essential Tips Here",
+            "how to start a podcast",
+            "How To Start A Podcast On YouTube: Essential Tips Explained",
+        ),
+        # A question keeps its mark at the end: nothing is put after it.
+        ("What Is Compound Interest and How Does It Work Easily?", KEYPHRASE, None),
+        # A title that stands without its word is left without it, as before.
+        (
+            "A Complete Guide to Email Marketing for Small Shops Today",
+            "email marketing",
+            "A Complete Guide to Email Marketing for Small Shops",
+        ),
+    ],
+)
+def test_a_title_left_short_by_its_filler_word_is_lifted_with_a_short_neutral_ending(
+    title, keyphrase, lifted
+):
+    assert without_filler_ending(title, keyphrase) == lifted
+    if lifted:
+        assert title_is_valid(lifted, keyphrase)
+        assert title_ending_problem(lifted, keyphrase) is None
+
+
 def test_a_filler_word_that_closes_a_bracket_is_not_cut_out_of_it():
     """Dropping "Here" would leave "(Start": the ending is written anew by the repair."""
     title = "Compound Interest Clearly Explained for Savers (Start Here)"
@@ -318,6 +358,19 @@ async def test_a_broken_title_takes_a_valid_rewrite_even_one_that_ends_weakly():
     titles = await _titles(model)
 
     assert titles == [rewritten, *GOOD[:3]]
+
+
+@pytest.mark.asyncio
+async def test_a_title_left_short_is_lifted_without_a_second_call_to_the_model():
+    short_of_it = "What Is Compound Interest in Simple Terms for You Now"
+    assert without_filler_ending(short_of_it, KEYPHRASE)
+    model = _model(_set(short_of_it, *GOOD))
+
+    titles = await _titles(model)
+
+    assert titles[0] == without_filler_ending(short_of_it, KEYPHRASE)
+    assert tg._weak_ending_indexes(_set(*titles), KEYPHRASE) == []
+    assert model.ainvoke.call_count == 1
 
 
 def test_two_topics_are_not_made_one_by_dropping_a_filler_word():

@@ -74,8 +74,10 @@ async def test_the_article_before_a_recased_keyphrase_follows_its_new_case():
         model=model, messages=[], query=KEYPHRASE, keyphrase=KEYPHRASE
     )
 
+    # The filler word at the first title's end goes too: without it the title is short of
+    # the minimum, and is lifted with a short neutral ending (G65).
     assert [topic.title for topic in result.topics] == [
-        "How to Choose an SEO Agency for Small Business Today",
+        "How to Choose an SEO Agency for Small Business: A Guide",
         "Why Hiring an SEO Agency for Small Business Pays Off",
     ]
 
