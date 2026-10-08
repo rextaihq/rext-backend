@@ -61,6 +61,10 @@ REASON_MIN_LENGTH = 3
 REASON_MAX_LENGTH = 500
 # How far ahead of now one extension may put a trial's end.
 TRIAL_EXTENSION_MAX_DAYS = 30
+TRIAL_AT_ITS_LIMIT = (
+    f"This trial already ends more than {TRIAL_EXTENSION_MAX_DAYS} days from now, "
+    "the furthest a trial can be moved."
+)
 # The billing periods a plan can be changed to: lifetime is not sold this way.
 _PERIODS = (BillingPeriod.MONTHLY, BillingPeriod.YEARLY)
 
@@ -369,7 +373,12 @@ async def plan_options(
     }
     if standing.extension_refused is None:
         earliest, latest = _extension_window(subscription)
-        extension.update({"earliest_ends_at": earliest, "latest_ends_at": latest})
+        if earliest >= latest:
+            # A trial that already runs past the limit (an older or hand-set row): no
+            # later end is left to give it, and the change would refuse every one.
+            extension.update({"allowed": False, "refused_reason": TRIAL_AT_ITS_LIMIT})
+        else:
+            extension.update({"earliest_ends_at": earliest, "latest_ends_at": latest})
 
     return {
         "user_id": user_id,
@@ -586,6 +595,8 @@ async def extend_trial(
 
     ends_at = as_utc(ends_at)
     earliest, latest = _extension_window(subscription)
+    if earliest >= latest:
+        raise _refuse(TRIAL_AT_ITS_LIMIT, "admin_trial_extension")
     if ends_at <= earliest or ends_at > latest:
         raise RextValidationException(
             message="The new end must be later than the trial's and within the limit",
