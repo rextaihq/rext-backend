@@ -49,7 +49,12 @@ from src.services.content_activity import (
 )
 from src.services.content_checklist import build_checklist
 from src.services.content_embedding_service import ContentEmbeddingService
-from src.services.content_version_service import ContentVersionService, text_of, went_live
+from src.services.content_version_service import (
+    ContentVersionService,
+    record_published,
+    text_of,
+    went_live,
+)
 from src.utils.datetime_utils import resolve_scheduled_datetime
 from src.utils.image_placeholder import strip_unresolved_placeholders
 from src.utils.logger import logger
@@ -1223,9 +1228,9 @@ class ContentService:
         # The text as it went out to a site is a version of its own (the editor's history).
         # Not for a draft sent to the site or a publish only scheduled: nothing is out yet.
         if went_live(content.status, results):
-            await ContentVersionService(self.db).record(
-                content, text_of(content), user_id, ContentVersionSource.PUBLISH
-            )
+            # In a savepoint and never fatal: the post is already live on the site, and a
+            # publish that failed here would be rolled back as unpublished and sent again.
+            await record_published(self.db, content, user_id)
 
         if content.status != status_before_publish:
             await record_content_activity(
