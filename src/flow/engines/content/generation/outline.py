@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -649,6 +650,24 @@ def _subsections(outline: dict) -> int:
     return levels[first_h2:].count("H3")
 
 
+def _heading_key(section: dict) -> str:
+    """A heading as compared between two attempts: its words, whatever its case and marks."""
+    return " ".join(re.findall(r"[a-z0-9]+", str(section.get("heading") or "").lower()))
+
+
+def _keeps_main_sections(first: dict, retried: dict) -> bool:
+    """Every H2 of ``first`` is still a heading of ``retried``, at any level: a section folded
+    under another is kept as its H3; one that is gone is a topic dropped."""
+    kept = {
+        _heading_key(section) for section in _outline_sections(retried) if isinstance(section, dict)
+    }
+    return all(
+        _heading_key(section) in kept
+        for section in _outline_sections(first)
+        if isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
+    )
+
+
 def _structure_count(content_type: str, outline: dict) -> int:
     if content_type == _PILLAR:
         return _subsections(outline)
@@ -910,13 +929,13 @@ async def generate_outline(state: REXT) -> dict:
                     # H2s into one, so it need not keep as many as the first, only the four an
                     # article needs (or the first one's own count, where that was fewer). The
                     # schema sets no least number, so a second attempt can come back much shorter:
-                    # it must also hold more sections in all than the first, so what it folded
-                    # is still there as an H3 and nothing was dropped to make room.
+                    # every H2 of the first must still be one of its headings, so what it folded
+                    # is there as an H3 and no topic was dropped to make room.
                     fuller = (
                         gained > 0
                         and _main_sections(retried)
                         >= min(_main_sections(outline_dict), MIN_MAIN_SECTIONS)
-                        and len(_outline_sections(retried)) > len(_outline_sections(outline_dict))
+                        and _keeps_main_sections(outline_dict, retried)
                     )
                 else:
                     fuller = gained >= 0

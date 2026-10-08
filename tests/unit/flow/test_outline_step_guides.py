@@ -189,12 +189,22 @@ async def test_an_outage_during_the_second_attempt_is_the_runs_to_report(monkeyp
 # H2s only. Such an outline is asked for once more, the way an empty step guide is.
 
 
-def _pillar(*levels, marker="first"):
+def _pillar(*levels, marker="first", keeps=None):
+    """An outline of these levels. With ``keeps`` (the attempt before), its H2s take that one's
+    H2 headings in order, as a model asked to keep every main section would write them."""
+    kept = iter(
+        section["heading"]
+        for section in (keeps or {}).get("structure", {}).get("sections", [])
+        if section["heading_level"] == "H2"
+    )
     return {
         "title": "x",
         "structure": {
             "sections": [
-                {"heading": f"{marker} {index}", "heading_level": level}
+                {
+                    "heading": (next(kept, None) if level == "H2" else None) or f"{marker} {index}",
+                    "heading_level": level,
+                }
                 for index, level in enumerate(levels)
             ]
         },
@@ -231,7 +241,7 @@ async def test_a_pillar_outline_of_h2s_only_is_asked_for_once_more(monkeypatch):
     # Four main sections, as a pillar outline has: with fewer, the holding step that follows
     # (outline_depth.py) raises H3s to H2 until there are four, and this is about the retry.
     first = _pillar("H2", "H2", "H2", "H2")
-    second = _pillar("H2", "H3", "H3", "H2", "H2", "H2", marker="second")
+    second = _pillar("H2", "H3", "H3", "H2", "H2", "H2", marker="second", keeps=first)
 
     outline, calls = await _generate(monkeypatch, "pillar-content", [first, second])
 
@@ -264,12 +274,20 @@ async def test_a_pillar_outline_with_subsections_costs_one_call(monkeypatch):
 async def test_a_retried_pillar_outline_short_of_four_main_sections_is_still_held(monkeypatch):
     """The retry and the holding step in their order: the second attempt takes the first one's
     place for its subsections, and is then held to four main sections like any first outline."""
-    second = _pillar("H2", "H3", "H3", "H2", "H3", "H3", marker="second")
+    first = _pillar("H2", "H2")
+    second = _pillar("H2", "H3", "H3", "H2", "H3", "H3", marker="second", keeps=first)
 
-    outline, calls = await _generate(monkeypatch, "pillar-content", [_pillar("H2", "H2"), second])
+    outline, calls = await _generate(monkeypatch, "pillar-content", [first, second])
 
     sections = outline["structure"]["sections"]
-    assert [section["heading"] for section in sections] == [f"second {i}" for i in range(6)]
+    assert [section["heading"] for section in sections] == [
+        "first 0",
+        "second 1",
+        "second 2",
+        "first 1",
+        "second 4",
+        "second 5",
+    ]
     assert [section["heading_level"] for section in sections] == [
         "H2",
         "H2",
@@ -309,12 +327,13 @@ async def test_a_reviewer_who_asked_for_fewer_subsections_gets_none_without_a_re
 
 @pytest.mark.unit
 async def test_other_feedback_on_a_pillar_outline_still_expects_subsections(monkeypatch):
-    second = _pillar("H2", "H3", "H2", marker="second")
+    first = _pillar("H2", "H2")
+    second = _pillar("H2", "H3", "H2", marker="second", keeps=first)
 
     outline, calls = await _generate(
         monkeypatch,
         "pillar-content",
-        [_pillar("H2", "H2"), second],
+        [first, second],
         rejected_reason="Make the tone friendlier",
     )
 
@@ -327,14 +346,23 @@ async def test_a_second_pillar_attempt_that_folds_main_sections_but_keeps_four_i
     monkeypatch,
 ):
     """Adding H3s, a model often folds two H2s into one: four main sections are still an article."""
-    second = _pillar("H2", "H3", "H3", "H2", "H3", "H3", "H2", "H2", marker="second")
+    first = _pillar("H2", "H2", "H2", "H2", "H2", "H2")
+    # The second and the fourth H2 of the first are now H3s under the ones before them.
+    folded = ["H2", "H3", "H3", "H2", "H3", "H3", "H2", "H2"]
+    names = ["first 0", "first 1", "new 2", "first 2", "first 3", "new 5", "first 4", "first 5"]
+    second = {
+        "title": "x",
+        "structure": {
+            "sections": [
+                {"heading": name, "heading_level": level} for name, level in zip(names, folded)
+            ]
+        },
+    }
 
-    outline, calls = await _generate(
-        monkeypatch, "pillar-content", [_pillar("H2", "H2", "H2", "H2", "H2", "H2"), second]
-    )
+    outline, calls = await _generate(monkeypatch, "pillar-content", [first, second])
 
     sections = outline["structure"]["sections"]
-    assert [section["heading"] for section in sections] == [f"second {i}" for i in range(8)]
+    assert [section["heading"] for section in sections] == names
     assert [section["heading_level"] for section in sections] == [
         "H2",
         "H3",
@@ -358,6 +386,20 @@ async def test_a_second_pillar_attempt_that_drops_sections_for_one_subsection_ke
     outline, calls = await _generate(
         monkeypatch, "pillar-content", [_pillar("H2", "H2", "H2", "H2", "H2", "H2"), second]
     )
+
+    assert [section["heading"] for section in outline["structure"]["sections"]] == [
+        f"first {i}" for i in range(6)
+    ]
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_a_second_pillar_attempt_that_loses_a_main_section_keeps_the_first(monkeypatch):
+    """More entries than the first, but two of its topics are in none of them."""
+    first = _pillar("H2", "H2", "H2", "H2", "H2", "H2")
+    second = _pillar("H2", "H3", "H3", "H2", "H3", "H2", "H2", marker="second", keeps=first)
+
+    outline, calls = await _generate(monkeypatch, "pillar-content", [first, second])
 
     assert [section["heading"] for section in outline["structure"]["sections"]] == [
         f"first {i}" for i in range(6)
@@ -401,12 +443,13 @@ async def test_a_shorter_second_pillar_attempt_keeps_the_first(monkeypatch):
 @pytest.mark.unit
 async def test_feedback_about_one_subsection_leaves_the_others_expected(monkeypatch):
     """Removing the H3 under the introduction isn't removing them all."""
-    second = _pillar("H2", "H2", "H3", "H3", marker="second")
+    first = _pillar("H2", "H2")
+    second = _pillar("H2", "H2", "H3", "H3", marker="second", keeps=first)
 
     outline, calls = await _generate(
         monkeypatch,
         "pillar-content",
-        [_pillar("H2", "H2"), second],
+        [first, second],
         rejected_reason="Remove the H3 under the introduction",
         previous=_pillar("H2", "H3", "H2", "H3", "H3", marker="rejected"),
     )
@@ -431,12 +474,13 @@ async def test_feedback_that_removes_the_only_subsection_gets_none_without_a_ret
 
 @pytest.mark.unit
 async def test_feedback_about_the_subsections_of_one_section_leaves_the_others(monkeypatch):
-    second = _pillar("H2", "H2", "H3", "H3", marker="second")
+    first = _pillar("H2", "H2")
+    second = _pillar("H2", "H2", "H3", "H3", marker="second", keeps=first)
 
     outline, calls = await _generate(
         monkeypatch,
         "pillar-content",
-        [_pillar("H2", "H2"), second],
+        [first, second],
         rejected_reason="Remove the H3s under the introduction",
         previous=_pillar("H2", "H3", "H3", "H2", "H3", "H3", marker="rejected"),
     )
