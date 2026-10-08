@@ -185,6 +185,15 @@ class ContentUpdate(BaseModel):
     wordpress_published_at: Optional[datetime] = None
 
 
+class ContentPublishingResultSchema(BaseModel):
+    """One site an article was sent to, and how that went (the content list carries these)."""
+
+    site_id: UUID
+    status: str = Field(description="published, scheduled, draft, pending, failed, ...")
+    external_url: Optional[str] = Field(None, description="The article's address on the site")
+    last_synced_at: Optional[datetime] = Field(None, description="When the site was last asked")
+
+
 class ContentResponse(BaseModel):
     """Schema for content response"""
 
@@ -228,6 +237,9 @@ class ContentResponse(BaseModel):
 
     # Filled on the single-article response only (GET /content/{id})
     checklist: Optional[ContentChecklist] = None
+
+    # Where the article was sent and how that went (list responses only)
+    publishing_results: Optional[List[ContentPublishingResultSchema]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

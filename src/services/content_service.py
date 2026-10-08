@@ -6,13 +6,14 @@ Strictly separates core content from SEO metadata.
 """
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
 import markdown
-from sqlalchemy import func, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,6 +31,7 @@ from src.api.models.content_models.publishing_result import (
     PublishingStatus,
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.content_schema import (
     ContentCreate,
     ContentSEODataSchema,
@@ -114,6 +116,37 @@ async def notify_content_published(content: Content, workspace_id) -> None:
         },
         workspace_id=workspace_id,
     )
+
+
+def _host_of(address: Optional[str]) -> Optional[str]:
+    """The host of a site's address, lowercase and without "www."; None when it has none."""
+    if not address:
+        return None
+    text = address.strip()
+    parsed = urlparse(text if "://" in text else f"//{text}")
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    return host or None
+
+
+# A Markdown image embed and an HTML image tag: addresses in them are no links.
+_IMAGES = r"!\[[^]]*\]\([^)]*\)|<img[^>]*>"
+
+
+def _own_site_link(hosts: List[str]) -> str:
+    """A PostgreSQL pattern for a link to the workspace's own site, in Markdown or HTML:
+
+    - an address on one of these hosts, with or without "www." and with or without a scheme
+      ("https://example.com/x", "//example.com/x"). The host must end there (a path, a port, a
+      query, a closing bracket, a quote, a space or the text's end), so "example.com.au" is no
+      link to "example.com";
+    - a link from the site's root ("](/pricing)", href="/pricing"), which has no host at all.
+    """
+    names = "|".join(re.escape(host) for host in hosts)
+    ends = r'[/:?#)"<>\s' + "'" + "]"
+    opens = r'[("=\s' + "'" + "]"
+    absolute = rf"(://|{opens}//)(www\.)?({names})({ends}|$)"
+    from_the_root = r"(\]\(|href=[" + "\"'" + r"])/([^/]|$)"
+    return f"({absolute})|({from_the_root})"
 
 
 class ContentService:
@@ -457,12 +490,15 @@ class ContentService:
             for pr in pub_data:
                 if pr.content_id not in pub_results:
                     pub_results[pr.content_id] = []
+                # The names of ContentPublishingResultSchema, as the API's spec gives them.
                 pub_results[pr.content_id].append(
                     {
                         "site_id": str(pr.site_id),
                         "status": pr.status,
-                        "url": pr.external_url,
-                        "last_synced": pr.last_synced_at.isoformat() if pr.last_synced_at else None,
+                        "external_url": pr.external_url,
+                        "last_synced_at": (
+                            pr.last_synced_at.isoformat() if pr.last_synced_at else None
+                        ),
                     }
                 )
 
@@ -479,6 +515,72 @@ class ContentService:
             "limit": limit,
             "offset": offset,
         }
+
+    async def content_health(self, workspace_id: UUID) -> Dict[str, Any]:
+        """Counts over the workspace's published articles, for the home's content health card
+        (FB2.27a): how many have no meta description, and how many link to none of the
+        workspace's own sites. Counted in the database: no article body is read out.
+
+        `no_internal_links` is None when the workspace has no address to look for (no website
+        and no connected site): "every article" would be a count of nothing.
+        """
+        # A description of spaces, tabs or line breaks only is no description.
+        has_description = ContentSEOData.meta_description.op("~")(r"\S")
+        counts = [
+            func.count(),
+            func.count().filter(
+                or_(ContentSEOData.meta_description.is_(None), not_(has_description))
+            ),
+        ]
+        hosts = await self._own_hosts(workspace_id)
+        if hosts:
+            # The published article is its introduction and its body: the Markdown body, or the
+            # HTML one when there is no Markdown (as the WordPress publisher chooses). An image
+            # is no link, so image embeds are taken out before the search.
+            own_site_link = _own_site_link(hosts)
+            body = func.coalesce(func.nullif(Content.body_markdown, ""), Content.body_html, "")
+            text = func.regexp_replace(
+                func.concat(func.coalesce(Content.introduction, ""), " ", body), _IMAGES, " ", "gi"
+            )
+            counts.append(func.count().filter(not_(text.op("~*")(own_site_link))))
+        # One statement, so the counts are of one moment and agree with each other.
+        row = (
+            await self.db.execute(
+                select(*counts)
+                .select_from(Content)
+                .outerjoin(ContentSEOData, ContentSEOData.content_id == Content.id)
+                .where(
+                    Content.workspace_id == workspace_id,
+                    Content.deleted_at.is_(None),
+                    Content.status == "published",
+                )
+            )
+        ).one()
+        return {
+            "published": row[0] or 0,
+            "missing_meta_description": row[1] or 0,
+            "no_internal_links": (row[2] or 0) if hosts else None,
+        }
+
+    async def _own_hosts(self, workspace_id: UUID) -> List[str]:
+        """The hosts of the workspace's website and of its connected sites, without "www."."""
+        website = await self.db.scalar(
+            select(WorkspaceModel.url).where(WorkspaceModel.id == workspace_id)
+        )
+        sites = (
+            await self.db.scalars(
+                select(WorkspaceIntegration.site_url).where(
+                    WorkspaceIntegration.workspace_id == workspace_id,
+                    WorkspaceIntegration.is_active.is_(True),
+                )
+            )
+        ).all()
+        hosts = set()
+        for address in (website, *sites):
+            host = _host_of(address)
+            if host:
+                hosts.add(host)
+        return sorted(hosts)
 
     async def get_content(self, content_id: UUID, workspace_id: UUID) -> Dict[str, Any]:
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)

@@ -87,6 +87,16 @@ def persona_query(workspace_id, selected_id):
     return query.order_by(Persona.created_at.desc()).limit(1)
 
 
+def _is_named(persona: Persona, name: str) -> bool:
+    """Whether a persona goes by ``name`` (its full name or its short one), in any case."""
+    wanted = " ".join((name or "").split()).casefold()
+    names = {
+        " ".join(str(value or "").split()).casefold()
+        for value in (getattr(persona, "full_name", None), getattr(persona, "name", None))
+    }
+    return bool(wanted) and wanted in names
+
+
 class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Runs before the agent loop starts.
@@ -624,8 +634,28 @@ Write the full article now. Every third-party claim must have an inline [text](u
         fits_topic = persona_fits_outline(personas, outline) if personas else True
         print(f"  persona fits the topic: {fits_topic}")
 
+        content_state = state.get("content") or {}
+        excluded = excluded_brand_of(
+            outline or {},
+            title=content_state.get("selected_topic"),
+            keyphrase=content_state.get("focus_keyword"),
+        )
+        # A persona who carries the excluded brand's own name (a personal brand): the author's
+        # name can't open the article and stay out of it. The "no mention" choice wins, so the
+        # article keeps the persona's voice and reasoning and never states the name, the same
+        # unnamed mode a persona outside the subject writes in (rext-control#760).
+        if personas and excluded and _is_named(personas, excluded["brand_name"]):
+            fits_topic = False
+            print("  persona shares the excluded brand's name: written unnamed")
+
         full_prompt = self._build_full_content_prompt(
-            personas, outline, target_word_count, content_type, voice=voice, fits_topic=fits_topic
+            personas,
+            outline,
+            target_word_count,
+            content_type,
+            voice=voice,
+            fits_topic=fits_topic,
+            excluded_brand=excluded,
         )
 
         # The author profile is the only ground truth for first-person experience
@@ -713,11 +743,14 @@ Write the full article now. Every third-party claim must have an inline [text](u
         content_type: str = "",
         voice: Optional[dict] = None,
         fits_topic: bool = True,
+        excluded_brand: Optional[dict] = None,
     ) -> str:
         persona_block = self._build_persona_block(personas, fits_topic) if personas else ""
         outline_block = self._build_outline_block(outline, content_type) if outline else ""
         brand_placement_block = (
-            self._build_brand_placement_block(outline, content_type) if outline else ""
+            self._build_brand_placement_block(outline, content_type, excluded_brand)
+            if outline
+            else ""
         )
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
@@ -1013,7 +1046,10 @@ Write the full article now. Every third-party claim must have an inline [text](u
         return "\n".join(lines)
 
     def _build_brand_placement_block(
-        self, outline: Optional[OutlineState], content_type: str
+        self,
+        outline: Optional[OutlineState],
+        content_type: str,
+        excluded: Optional[dict] = None,
     ) -> str:
         """High-priority, system-prompt-level pointer to the brand-placement rules.
 
@@ -1029,7 +1065,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
         part — visible at the highest-priority point in the prompt too, not
         just once, buried in a much longer human message.
         """
-        excluded = excluded_brand_of(outline or {})
+        # `excluded` is decided by the caller from the run's own title and keyphrase, the same
+        # ones the human message and the checks read, so the three never disagree.
         if excluded and not (outline or {}).get("promote_brand"):
             # The user chose no mention (rext-control#700): said here too, at the top of the
             # prompt, since the outline itself may still name the brand.
@@ -1038,7 +1075,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 "## BRAND EXCLUSION — MANDATORY\n\n"
                 f"The user chose NO mention of {name}. Do not name {name}, or link to its site, "
                 "anywhere in the article, its call to action or its meta tags, even where the "
-                "outline names it. The human message below says how to handle those parts."
+                "outline names it. The one exception: the approved internal links you are given "
+                "stay, with their exact addresses. The human message below says how to handle "
+                "the parts of the outline that name it."
             )
         if not outline or not outline.get("promote_brand"):
             return ""

@@ -7,6 +7,7 @@ from langgraph.constants import TAG_NOSTREAM
 
 from src.api.config import get_settings
 from src.flow.model.provider_outage import provider_outage, report_provider_outage
+from src.flow.model.runaway import WhitespaceRunaway
 from src.utils.loop_local_http import SHARED_ASYNC_CLIENT
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,13 @@ def _alert_if_outage(service: str, error: BaseException) -> None:
             report_provider_outage(outage)
     except Exception:  # noqa: BLE001 - reporting never breaks generation
         pass
+
+
+def _stopped_on_purpose(error: BaseException) -> bool:
+    """A call the whitespace watch ended (src.flow.model.runaway): ours to stop, and answered or
+    asked for again by its caller. It is no provider failure: recording it would fill the error
+    log with stops that recovered, and spend the throttle a real failure needs."""
+    return isinstance(error, WhitespaceRunaway)
 
 
 async def _report_ai_failure(service: str, error: BaseException) -> None:
@@ -72,6 +80,8 @@ class _AsyncAIProviderFailureReporter(AsyncCallbackHandler):
         self.service = service
 
     async def on_llm_error(self, error: BaseException, **kwargs) -> None:
+        if _stopped_on_purpose(error):
+            return
         await _report_ai_failure(self.service, error)
 
 
@@ -89,6 +99,8 @@ class _SyncAIProviderFailureReporter(BaseCallbackHandler):
         self.service = service
 
     def on_llm_error(self, error: BaseException, **kwargs) -> None:
+        if _stopped_on_purpose(error):
+            return
         loop = _MAIN_LOOP
         if loop is None or loop.is_closed():
             logger.warning("AI provider call failed (no loop to record it): %s", error)

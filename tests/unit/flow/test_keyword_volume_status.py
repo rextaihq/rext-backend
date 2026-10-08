@@ -239,7 +239,12 @@ async def _payload_at_the_gate(monkeypatch, state):
     saved = await recommendation_module.save_keyword_research(state, {}, runtime=runtime)
     state = {**state, "seo_result": {**state["seo_result"], **saved["seo_result"]}}
     await recommendation_module.keyword_recommendation(state)
-    stored = runtime.store.aput.await_args.kwargs["value"]
+    # The Library item's write; its search results are kept beside it (rext-control#496).
+    stored = next(
+        call.kwargs["value"]
+        for call in runtime.store.aput.await_args_list
+        if call.kwargs["namespace"][0] == "library"
+    )
     return payloads[0]["seo_state"], stored["seo_state"]
 
 

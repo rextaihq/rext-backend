@@ -157,6 +157,14 @@ def _strip_placeholder_images(content_dict: dict) -> None:
             content_dict[field] = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
+# With the brand kept out of the call to action, the writer sent readers to another product's
+# site instead (a staging run linked "Start optimizing your content today!" to a competitor).
+_CTA_WITHOUT_A_LINK = (
+    "Leave the call to action's `url` empty (null). Do not link it to another company's product "
+    "or site instead: a call to action never sends this site's readers to someone else.\n"
+)
+
+
 def _short_text(value: object, limit: int = 700) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= limit:
@@ -822,11 +830,12 @@ async def generate_content(state: REXT) -> dict:
                 f"intent in your own words, WITHOUT naming {cta_brand} or linking to its site, and make "
                 f"sure that same text also appears verbatim as an actual call-to-action inside "
                 f"body_markdown or the introduction.\n"
+                f"{_CTA_WITHOUT_A_LINK}"
             )
         elif outline_cta:
             cta_link_rule = (
                 f"Its link must not point to {cta_brand}'s site: the user's choice keeps "
-                f"{cta_brand} out of the call to action.\n"
+                f"{cta_brand} out of the call to action.\n{_CTA_WITHOUT_A_LINK}"
                 if cta_brand
                 else ""
             )
@@ -1036,6 +1045,9 @@ async def generate_content(state: REXT) -> dict:
             "content": {
                 "outline": outline,
                 "selected_topic": topic,
+                # The run's own keyphrase (the outline's copy can be stale on a resumed run):
+                # the system prompt's brand exclusion reads it, as the human message does.
+                "focus_keyword": primary_keyword,
                 "content_type": content_type,
                 "keyword_clusters": keyword_clusters,
                 "cluster_heading_map": cluster_heading_map,

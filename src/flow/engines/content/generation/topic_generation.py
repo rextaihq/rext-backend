@@ -49,6 +49,7 @@ from src.flow.engines.content.generation.seo_title_rules import (
 from src.flow.engines.content.generation.title_articles import fix_title_articles
 from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.llm_manager import topic_generation_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.topics import SEOTopic, SEOTopics
 from src.flow.states.rext import REXT
 
@@ -69,6 +70,11 @@ KEYWORD_TOO_LONG_MESSAGE = (
     f"This keyword is longer than a title can be ({TITLE_MAX_CHARS_CEILING} characters), "
     "so no title can contain it. Try a shorter keyword."
 )
+
+
+# Endings a model reaches for to fill a title to its minimum length (staging, 2026-10-07:
+# "How to start a podcast on YouTube: Essential Tips Here"). Named in both title prompts (G65).
+_FILLER_EXAMPLES = '"Essential Tips Here", "Read This Now", "All You Need", "Learn More Today"'
 
 
 def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
@@ -266,7 +272,9 @@ async def _repair_invalid_titles(
                 "- Keep the title natural and readable.\n"
                 "- Do not add unsupported facts, statistics, dates, products, "
                 "companies, people, rankings, or claims.\n"
-                "- Do not use generic filler merely to increase character count.\n"
+                "- Do not use generic filler merely to increase character count: no ending "
+                f"that would fit any title ({_FILLER_EXAMPLES}). Add who it is for, a number "
+                "of steps or items, or the outcome instead (no year: none is given here).\n"
                 "- Do not change the subject just to satisfy the character count.\n\n"
                 "Only repair the supplied invalid titles. "
                 "Do not modify titles that are already valid.\n\n"
@@ -286,7 +294,9 @@ async def _repair_invalid_titles(
     ]
 
     try:
-        repaired: SEOTopics = await model.ainvoke(repair_messages)
+        repaired: SEOTopics = await ainvoke_watched(
+            model, repair_messages, stage="titles", schema=SEOTopics
+        )
 
         repaired = fix_title_articles(_validate_topic_structure(repaired), keyphrase)
 
@@ -397,7 +407,9 @@ async def _generate_and_validate_topics(
       preserve the previously valid topics.
     """
     try:
-        results: SEOTopics = await model.ainvoke(messages)
+        results: SEOTopics = await ainvoke_watched(
+            model, messages, stage="titles", schema=SEOTopics
+        )
 
         # The keyphrase in each title's case first (G49), so the article is judged by the word as
         # the title will show it ("an SEO agency", where the model copied "seo"). Then "a" or "an"
@@ -518,7 +530,10 @@ def _build_system_prompt(
         "- Count the final title before returning it.\n"
         "- If the first draft is outside the range, rewrite it before returning "
         "the final answer.\n\n"
-        f"Do NOT add meaningless filler just to reach {TITLE_MIN_CHARS} characters.\n"
+        f"Do NOT add meaningless filler just to reach {TITLE_MIN_CHARS} characters. Filler is "
+        "an ending that says nothing about the article and would fit any title: "
+        f"{_FILLER_EXAMPLES}. To lengthen a title, add something specific to the "
+        "topic instead: who it is for, a number of steps or items, the outcome, or the year.\n"
         f"Do NOT remove important meaning just to stay below {title_max_chars(keyphrase)} characters.\n"
         "The final title must be natural, readable, and useful.\n\n"
         "==================================================\n"

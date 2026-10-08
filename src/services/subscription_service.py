@@ -144,8 +144,10 @@ def trial_has_ended(
         return False
     if latest.status == SubscriptionStatus.EXPIRED:
         return True
+    # A trial cancelled before its end is CANCELLED, and the job never expires it; it
+    # ends on its date all the same, as `subscription_grants_access` has it (F16a).
     return (
-        latest.status == SubscriptionStatus.TRIAL
+        latest.status in (SubscriptionStatus.TRIAL, SubscriptionStatus.CANCELLED)
         and latest.trial_end_date is not None
         and latest.trial_end_date <= now
     )

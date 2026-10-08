@@ -53,6 +53,22 @@ class ContentListResponse(BaseModel):
     offset: int
 
 
+class ContentHealthResponse(BaseModel):
+    """
+    Response for GET /content/health: counts over the workspace's published articles.
+    """
+
+    published: int
+    missing_meta_description: int = Field(description="Published articles with no meta description")
+    no_internal_links: Optional[int] = Field(
+        None,
+        description=(
+            "Published articles that link to none of the workspace's own sites; "
+            "null when the workspace has no website and no connected site"
+        ),
+    )
+
+
 class ContentDetailResponse(BaseModel):
     """
     Response for GET /content/{content_id}.

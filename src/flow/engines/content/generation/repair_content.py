@@ -39,6 +39,7 @@ from src.flow.engines.content.generation.requirements_spec import (
 )
 from src.flow.engines.content.generation.subheading_seo import enforce_subheading_seo
 from src.flow.model.llm_manager import load_content_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.prompts.human.repair import get_repair_prompt
 from src.flow.states.rext import REXT
@@ -205,6 +206,30 @@ def _build_brand_block(
     return f"BRAND CONTEXT — Brand: {brand_name}. {url_line}{structural}{approved_facts}"
 
 
+def _build_exclusion_block(
+    failed_checks: list[dict], excluded_brand: Optional[dict], final_content: dict
+) -> str:
+    """What the repair needs to take an excluded brand out: its name, and the call to action's
+    text, which the article fields below don't show (rext-control#760). The call to action's
+    link and any link to the brand's site are removed in code, not here."""
+    if not excluded_brand or not any(c.get("name") == "brand_absent" for c in failed_checks):
+        return ""
+    name = excluded_brand.get("brand_name") or ""
+    cta = final_content.get("cta") if isinstance(final_content.get("cta"), dict) else {}
+    cta_text = (cta.get("text") or "").strip()
+    cta_line = (
+        f' The call to action reads "{cta_text}". If it names {name}, return `cta.text` reworded '
+        "without it, and use that same wording where the article states the call to action."
+        if cta_text
+        else ""
+    )
+    return (
+        f"BRAND EXCLUSION — the user chose NO mention of {name}. Rewrite every sentence, heading "
+        f"or list entry that names it so it says the same without the name: name another real "
+        f"product where a list needs one, or none. Do not add a link to its site.{cta_line}"
+    )
+
+
 def _build_keyword_block(failed_checks: list[dict], focus_keyword: str) -> str:
     """Exact-phrase instruction for a keyword presence/density repair.
 
@@ -313,6 +338,7 @@ async def run_targeted_repair(
     protected: Optional[list[LinkRecord]] = None,
     previous_attempt: Optional[dict] = None,
     brand_policy: Optional[BrandPlacementPolicy] = None,
+    excluded_brand: Optional[dict] = None,
 ) -> dict | None:
     """Core repair LLM call: fix exactly the listed issues, minimally.
 
@@ -351,6 +377,7 @@ async def run_targeted_repair(
             [
                 _build_sources_block(failed_checks, searched_results or []),
                 _build_brand_block(failed_checks, brand_context, content_type, brand_policy),
+                _build_exclusion_block(failed_checks, excluded_brand, final_content),
                 _build_keyword_block(failed_checks, focus_keyword),
             ],
         )
@@ -370,7 +397,7 @@ async def run_targeted_repair(
     try:
         model = load_content_model().with_structured_output(schema)
         messages = get_repair_prompt().format_messages(**prompt_data)
-        repaired_obj = await model.ainvoke(messages)
+        repaired_obj = await ainvoke_watched(model, messages, stage="repair")
         repaired_payload = (
             repaired_obj.model_dump() if hasattr(repaired_obj, "model_dump") else dict(repaired_obj)
         )
@@ -446,6 +473,7 @@ async def repair_content(state: REXT) -> dict:
     else:
         # Imported here: validation imports this module at load time.
         from src.flow.engines.content.generation.validation import (
+            apply_brand_exclusion,
             apply_density_report,
             merge_link_inventory,
             protected_links,
@@ -477,9 +505,11 @@ async def repair_content(state: REXT) -> dict:
                 protected=protected,
                 previous_attempt=repair_history[-1] if repair_history else None,
                 brand_policy=spec.get("brand_placement_policy"),
+                excluded_brand=spec.get("excluded_brand"),
             )
             if repaired is not None:
-                candidate = repaired
+                # The repair returns every field: the brand choice's cleanup applies to it too.
+                candidate = apply_brand_exclusion(repaired, spec, stage="repair_content")
             else:
                 logger.warning(
                     "repair_content: attempt %d model call failed — keeping pre-repair content; "

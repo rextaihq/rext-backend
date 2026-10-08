@@ -18,7 +18,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Optional
-from urllib.parse import urlparse
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
@@ -36,6 +35,8 @@ from src.flow.engines.content.generation.keyword_density import (
     strip_link_destinations,
 )
 from src.flow.engines.content.generation.link_integrity import (
+    LINK_FIELDS,
+    LINK_LIST_FIELDS,
     LinkRecord,
     dedupe_records,
     describe_link,
@@ -57,6 +58,9 @@ from src.flow.engines.content.generation.repair_content import (
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
     build_requirements_spec,
+    is_excluded_brand_link,
+    on_site,
+    site_host,
 )
 from src.flow.engines.content.generation.seo_title_rules import contains_keyphrase
 from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCKS_KEY
@@ -851,14 +855,20 @@ def _planned_section_problems(
     approved order, which also keeps each planned subsection under the section
     it was planned under.
     """
-    planned = [p for p in (spec.get("planned_sections") or []) if p.get("required")]
+    # A planned section that is only the excluded brand (its own entry in a list) is not
+    # asked for: the writer names another product there, or none.
+    planned = [
+        p
+        for p in (spec.get("planned_sections") or [])
+        if p.get("required") and _without_excluded_brand(p.get("heading") or "", spec).strip()
+    ]
     if not planned:
         return [], []
     sections = _article_sections(final_content.get("body_markdown") or "")
     free = list(range(len(sections)))
     found: dict[int, int] = {}
     for i, plan in enumerate(planned):
-        label = (plan.get("heading") or "").strip().lower()
+        label = _without_excluded_brand(plan.get("heading") or "", spec).strip().lower()
         for j in free:
             level, heading, _ = sections[j]
             if level == plan.get("level", 2) and _heading_matches(label, heading.strip().lower()):
@@ -870,7 +880,12 @@ def _planned_section_problems(
         if i in found:
             continue
         scored = [
-            (_coverage_ratio(plan.get("plan") or "", sections[j][2]), j)
+            (
+                _coverage_ratio(
+                    _without_excluded_brand(plan.get("plan") or "", spec), sections[j][2]
+                ),
+                j,
+            )
             for j in free
             if sections[j][0] == plan.get("level", 2)
         ]
@@ -937,6 +952,12 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
                 + "; ".join(_describe_missing_section(p, all_planned) for p in misplaced)
                 + ". Move each to that position."
             )
+        excluded = spec.get("excluded_brand")
+        if excluded:
+            parts.append(
+                f"Where a planned heading names {excluded['brand_name']}, keep the section and "
+                "write its heading without that name."
+            )
         return _fail("required_sections", "blocking", " ".join(parts))
 
     # Required planned sections were matched above, rewordings included;
@@ -948,9 +969,10 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
         if p.get("required")
     }
     expected = [
-        label
+        _without_excluded_brand(label, spec)
         for label in spec.get("expected_sections") or []
         if label.strip().lower() not in planned_labels
+        and _without_excluded_brand(label, spec).strip()
     ]
     if not expected:
         return _pass(
@@ -1053,7 +1075,9 @@ def check_hero_presence(final_content: dict, spec: RequirementsSpec) -> Validati
             "Hero was generated as a required section of the structured content schema.",
         )
 
-    hero_text = f"{hero.get('headline', '')} {hero.get('subheadline', '')}".strip()
+    hero_text = _without_excluded_brand(
+        f"{hero.get('headline', '')} {hero.get('subheadline', '')}".strip(), spec
+    )
     if not _tokenize(hero_text):
         return _pass("hero_presence", "Approved hero carries no distinctive wording to verify.")
 
@@ -1411,18 +1435,45 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
     )
 
 
-def _host(url: str) -> str:
-    try:
-        host = (urlparse(url or "").hostname or "").lower()
-    except ValueError:
-        # A malformed address ("https://[bad") names no host: the check reports, never raises.
-        return ""
-    return host[4:] if host.startswith("www.") else host
+_host = site_host
+_is_brand_host = on_site
 
 
-def _is_brand_host(host: str, brand_host: str) -> bool:
-    """The brand's own host or one of its subdomains (app., shop., …)."""
-    return bool(brand_host) and (host == brand_host or host.endswith("." + brand_host))
+def _without_excluded_brand(text: str, spec: RequirementsSpec) -> str:
+    """``text`` without the name of a brand the user excluded.
+
+    The outline is written before that choice, so a planned heading or the hero may name the
+    brand while the article must not. Matching the article against the plan with the name left
+    out lets "Acme Tools pricing" be met by "Pricing"; with the name in, the section check asked
+    for the very words the brand check refuses.
+
+    A one-word name that is also an ordinary word ("Later", "Buffer") is taken out only where
+    it is used as the name, by the same reading the brand check uses: "What to do later" stays.
+    """
+    excluded = spec.get("excluded_brand")
+    name = ((excluded or {}).get("brand_name") or "").strip()
+    if not name or not text:
+        return text or ""
+    possessive = r"(?:['’]s?)?(?![0-9A-Za-z])"
+    if " " in name:
+        pattern = r"(?<![0-9A-Za-z])" + re.escape(name) + possessive
+        return " ".join(re.sub(pattern, " ", text, flags=re.IGNORECASE).split())
+    mentions = _excluded_mentions(text, name)
+    if not mentions:
+        return text
+    for match in reversed(mentions):
+        end = match.end() + re.match(possessive, text[match.end() :]).end()
+        text = text[: match.start()] + " " + text[end:]
+    return " ".join(text.split())
+
+
+def _names_excluded_brand(text: str, name: str) -> bool:
+    """Whether a short label (a tag, an alt text) names the excluded brand: the label is the
+    name itself, or uses it as the brand check reads a sentence."""
+    label = " ".join((text or "").split())
+    if not label or not name:
+        return False
+    return label.casefold() == name.casefold() or bool(_excluded_mentions(label, name))
 
 
 def _excluded_mentions(text: str, brand_name: str) -> list:
@@ -1448,11 +1499,17 @@ def _excluded_mentions(text: str, brand_name: str) -> list:
     ]
 
 
+# An image embed: "![alt](address)". Its address is where the picture is stored, not a link a
+# reader follows, so it is no link to anyone's site (a generated image can be stored on a host
+# that shares the workspace's own domain).
+_IMAGE_EMBED_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
 def _links_to_host(text: str, host: str, approved: set[str]) -> bool:
     """Whether ``text`` links to ``host`` other than through an approved internal link."""
-    for url in _BARE_URL_RE.findall(text or ""):
+    for url in _BARE_URL_RE.findall(_IMAGE_EMBED_RE.sub(" ", text or "")):
         url = url.rstrip(").,;:!?\"'")
-        if _is_brand_host(_host(url), host) and url.rstrip("/") not in approved:
+        if _is_brand_host(_host(url), host) and normalize_url(url) not in approved:
             return True
     return False
 
@@ -1473,8 +1530,10 @@ def check_brand_absent(final_content: dict, spec: RequirementsSpec) -> Validatio
         )
     brand_name = excluded["brand_name"]
     host = _host(excluded.get("brand_url") or "")
+    # Compared by the link pipeline's own key, so an approved page linked with a "#section"
+    # is still that approved page (as apply_brand_exclusion reads it).
     approved = {
-        (link.get("url") or "").rstrip("/")
+        normalize_url(link.get("url") or "")
         for link in spec.get("approved_internal_links") or []
         if isinstance(link, dict)
     }
@@ -1495,7 +1554,7 @@ def check_brand_absent(final_content: dict, spec: RequirementsSpec) -> Validatio
             _excluded_mentions(text, brand_name) or (host and _links_to_host(text, host, approved))
         )
     ]
-    if host and isinstance(cta.get("url"), str) and _links_to_host(cta["url"], host, set()):
+    if host and isinstance(cta.get("url"), str) and _links_to_host(cta["url"], host, approved):
         found.append("call to action's link")
     if not found:
         return _pass("brand_absent", f"'{brand_name}' is not mentioned, as the user chose.")
@@ -1827,6 +1886,11 @@ def protected_links(
     records: list[LinkRecord] = []
     source = candidates if candidates is not None else extract_content_links(final_content)
     for record in dedupe_records(source):
+        if is_excluded_brand_link(
+            record["url"], spec.get("excluded_brand"), spec.get("approved_internal_links")
+        ):
+            # A search result on the excluded brand's own site is no citation to keep.
+            continue
         key = normalize_url(record["url"])
         if key in internal:
             kind = "internal"
@@ -2276,20 +2340,127 @@ def apply_density_report(final_content: dict, spec: RequirementsSpec) -> dict:
     }
 
 
-def restore_links_for_spec(final_content: dict, spec: RequirementsSpec, *, stage: str) -> dict:
-    """``final_content`` with every re-anchorable lost protected link put back in place."""
-    inventory = spec.get("link_inventory") or []
-    if not inventory or not final_content:
+# An image embed with its parts: "![alt](address)".
+_IMAGE_ALT_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
+# A markdown link, not an image: "[anchor](https://…)".
+_TEXT_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^)\s]+)\)")
+
+
+def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage: str) -> dict:
+    """``final_content`` without what code can take out for a brand the user excluded.
+
+    A rewrite can take a name out of a sentence. It cannot be trusted to take a link out, and
+    the repair prompt never sees the call to action's address, the tags or an image's alt text.
+    So those go here, in code, before every check:
+
+    * a text link to the brand's site keeps its words and loses its address;
+    * a tag that names the brand is dropped;
+    * an image's alt text loses the name, in the image list and in the article's own markup.
+
+    And, for "None" and for "Subtle" alike (the brand is kept out of the call to action):
+
+    * the call to action keeps its text and carries no link, unless the link is one of the
+      internal links the user approved. Told only in words, the writer sent readers to another
+      product's site instead; nothing a model is told is a guarantee.
+
+    Internal links the user approved stay. Unchanged when nothing applies. The name in the
+    article's own sentences is left to the check and the rewrite it asks for.
+    """
+    excluded = spec.get("excluded_brand")
+    if not final_content or not (excluded or spec.get("cta_without_link")):
         return final_content
-    restored_content, restored, missing = restore_lost_links(final_content, inventory)
-    if restored or missing:
-        logger.info(
-            "%s: link restoration restored=%s still_missing=%s",
-            stage,
-            [r.get("url") for r in restored],
-            [r.get("url") for r in missing],
-        )
-    return restored_content
+    approved = spec.get("approved_internal_links")
+    removed: list[str] = []
+    cleaned = dict(final_content)
+    cta = cleaned.get("cta")
+    if spec.get("cta_without_link") and isinstance(cta, dict) and cta.get("url"):
+        approved_keys = {
+            normalize_url(link.get("url") or "")
+            for link in approved or []
+            if isinstance(link, dict)
+        }
+        if normalize_url(str(cta["url"])) not in approved_keys:
+            removed.append("the call to action's link")
+            cleaned["cta"] = {**cta, "url": None}
+    if not excluded:
+        if removed:
+            logger.info("%s: brand choice applied in code to %s", stage, removed)
+        return cleaned if removed else final_content
+    name = (excluded.get("brand_name") or "").strip()
+
+    def unlink(match: re.Match) -> str:
+        if not is_excluded_brand_link(match.group(2), excluded, approved):
+            return match.group(0)
+        removed.append(match.group(2))
+        return match.group(1)
+
+    def rename(match: re.Match) -> str:
+        alt = match.group(1)
+        if not _names_excluded_brand(alt, name):
+            return match.group(0)
+        removed.append("an image's alt text")
+        return f"![{_without_excluded_brand(alt, spec)}]({match.group(2)})"
+
+    for field in LINK_FIELDS:
+        if isinstance(cleaned.get(field), str):
+            text = _TEXT_LINK_RE.sub(unlink, cleaned[field])
+            cleaned[field] = _IMAGE_ALT_RE.sub(rename, text)
+    # The lists that mirror the prose's links: an entry left behind would be read as a link
+    # the article lost, and a repair would try to put the excluded link back.
+    for field in LINK_LIST_FIELDS:
+        entries = cleaned.get(field)
+        if not isinstance(entries, list):
+            continue
+        kept = [
+            entry
+            for entry in entries
+            if not (
+                isinstance(entry, dict)
+                and is_excluded_brand_link(entry.get("url") or "", excluded, approved)
+            )
+        ]
+        if len(kept) != len(entries):
+            removed.append(field)
+            cleaned[field] = kept
+    tags = cleaned.get("tags")
+    if isinstance(tags, list):
+        kept_tags = [tag for tag in tags if not _names_excluded_brand(str(tag), name)]
+        if len(kept_tags) != len(tags):
+            removed.append("tags")
+            cleaned["tags"] = kept_tags
+    images = cleaned.get("images")
+    if isinstance(images, list):
+        renamed = [
+            {**image, "alt_text": _without_excluded_brand(image["alt_text"], spec)}
+            if isinstance(image, dict)
+            and isinstance(image.get("alt_text"), str)
+            and _names_excluded_brand(image["alt_text"], name)
+            else image
+            for image in images
+        ]
+        if renamed != images:
+            removed.append("alt text")
+            cleaned["images"] = renamed
+    if not removed:
+        return final_content
+    logger.info("%s: brand exclusion applied in code to %s", stage, removed)
+    return cleaned
+
+
+def restore_links_for_spec(final_content: dict, spec: RequirementsSpec, *, stage: str) -> dict:
+    """``final_content`` with every re-anchorable lost protected link put back in place, and
+    without links to an excluded brand's site (never in the inventory, see the spec)."""
+    inventory = spec.get("link_inventory") or []
+    if inventory and final_content:
+        final_content, restored, missing = restore_lost_links(final_content, inventory)
+        if restored or missing:
+            logger.info(
+                "%s: link restoration restored=%s still_missing=%s",
+                stage,
+                [r.get("url") for r in restored],
+                [r.get("url") for r in missing],
+            )
+    return apply_brand_exclusion(final_content, spec, stage=stage)
 
 
 def run_checks(
@@ -2469,12 +2640,16 @@ async def final_validate_content(state: REXT) -> dict:
                 protected_links(final_content, spec, generation_meta.get("searched_results") or []),
             ),
             brand_policy=spec.get("brand_placement_policy"),
+            excluded_brand=spec.get("excluded_brand"),
         )
         if repaired is not None:
             repaired = apply_density_report(repaired, spec)
             # The repair writes a new body: a label line it brings back is dropped
             # before the recheck, so the CTA check never counts it as the CTA.
             repaired = strip_cta_labels(repaired, outline, stage="final_validate_content repair")
+            # The repair returns every field, tags and alt texts included: what code takes out
+            # for the brand choice is taken out of its answer too, before the recheck.
+            repaired = apply_brand_exclusion(repaired, spec, stage="final_validate_content repair")
             recheck = [fn(repaired, spec) for fn in FINAL_VALIDATE_CHECKS]
             # Only accept the repair when it did not make things worse overall.
             # A post-humanize repair has no loop behind it to catch a regression,

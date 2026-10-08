@@ -35,6 +35,11 @@ def test_voice_keeps_the_traits_and_the_customer_profile():
         "persona_tone": "Calm, plain-spoken.",
         "brand_traits": ["Technical", "Informative", "Community-driven"],
         "customer_profile": "Developers and marketing teams at small software companies.",
+        "brand_name": "",
+        "about": "",
+        "selling_position": "",
+        "target_audience": [],
+        "content_pillars": [],
     }
 
 
@@ -77,7 +82,17 @@ async def test_profile_read_returns_traits_and_customer_profile(monkeypatch):
     async def fake_db():
         yield SimpleNamespace(
             execute=AsyncMock(
-                return_value=SimpleNamespace(first=lambda: (["Technical"], "Developers."))
+                return_value=SimpleNamespace(
+                    first=lambda: (
+                        ["Technical"],
+                        "Developers.",
+                        "Acme CMS",
+                        "Acme CMS is a headless CMS.",
+                        "Fast to set up.",
+                        ["Developers"],
+                        "not a list",
+                    )
+                )
             )
         )
 
@@ -86,7 +101,15 @@ async def test_profile_read_returns_traits_and_customer_profile(monkeypatch):
 
     profile = await fetch_brand_voice_profile("9eda8ec9-f71c-480a-8226-8d8361a31391")
 
-    assert profile == {"traits": ["Technical"], "customer_profile": "Developers."}
+    assert profile == {
+        "traits": ["Technical"],
+        "customer_profile": "Developers.",
+        "brand_name": "Acme CMS",
+        "about": "Acme CMS is a headless CMS.",
+        "selling_position": "Fast to set up.",
+        "target_audience": ["Developers"],
+        "content_pillars": [],
+    }
 
 
 async def test_profile_read_never_raises(monkeypatch):
@@ -214,3 +237,108 @@ def test_the_rhythm_rules_stay():
 def test_the_style_defaults_defer_to_the_voice():
     assert "unless the article's voice at the end of this prompt" in HUMANIZE_SYSTEM_PROMPT
     assert HUMANIZE_SYSTEM_PROMPT.count("unless the article's voice") == 2
+
+
+# --- what the company knows and offers (FB2.21, rext-control#702) ------------------
+
+FULL_PROFILE = {
+    **PROFILE,
+    "brand_name": "Acme CMS",
+    "about": "Acme CMS is a headless CMS for small software teams. acme cms ships with previews.",
+    "selling_position": "The quickest way to move a marketing site off a monolith.",
+    "target_audience": ["Developers", "Marketing leads", ""],
+    "content_pillars": ["Headless CMS", "Content operations"],
+}
+
+
+def test_the_writer_gets_what_the_company_knows_and_offers():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    block = format_expertise_for_writer(article_voice(None, FULL_PROFILE))
+
+    assert block.startswith("## WHAT THE COMPANY BEHIND THIS SITE KNOWS AND OFFERS")
+    assert "**What it offers:** The quickest way to move a marketing site off a monolith." in block
+    assert "**What it writes about:** Headless CMS; Content operations" in block
+    assert "**Who it serves:** Developers; Marketing leads" in block
+    assert "write as a practitioner at this company would" in block
+
+
+def test_the_companys_own_name_is_not_put_in_front_of_the_writer():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    block = format_expertise_for_writer(article_voice(None, FULL_PROFILE))
+
+    assert "Acme CMS" not in block and "acme cms" not in block
+    assert (
+        "**What it does:** The company is a headless CMS for small software teams. the company ships"
+        in block
+    )
+    # Knowing the company is never permission to name it: the mention has its own rules.
+    assert "permission to name the company or its product" in block
+    # A title or keyphrase that is the brand's own name must still carry it.
+    assert "name it only where the article's own title or focus keyphrase already does" in block
+
+
+def test_a_long_name_and_the_lists_are_cleared_of_it_too():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    long_name = "Acme Content Management Systems and Publishing Tools for Small Software Teams Ltd"
+    assert len(long_name) > 80
+    profile = {
+        "brand_name": long_name,
+        "about": f"{long_name} builds a headless CMS.",
+        "target_audience": [f"{long_name} customers", "Developers"],
+        "content_pillars": [f"{long_name} tutorials", "Content operations"],
+    }
+
+    block = format_expertise_for_writer(article_voice(None, profile))
+
+    assert "Acme Content Management" not in block
+    assert "**What it does:** The company builds a headless CMS." in block
+    assert "**What it writes about:** The company tutorials; Content operations" in block
+    assert "**Who it serves:** The company customers; Developers" in block
+
+
+def test_the_profile_shapes_the_writing_and_is_not_a_source_of_facts():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+    from src.flow.engines.content.generation.claim_integrity import build_claim_evidence
+
+    voice = article_voice(None, {**FULL_PROFILE, "about": "Acme CMS has served 500 stores."})
+    block = format_expertise_for_writer(voice)
+
+    assert "**No facts from here:** this shapes how you write, it is not a source." in block
+    assert "Do not state the company's own numbers, clients, results or history" in block
+    # So it is not claim evidence either: a figure from it is as unsupported as any other,
+    # and what may be said about the brand stays with the approved mention's own facts.
+    evidence = build_claim_evidence(
+        outline={}, brand_context=None, generation_meta={"article_voice": voice}
+    )
+    assert evidence["brand_documents"] == []
+
+
+def test_the_name_is_matched_whatever_the_spacing_in_the_profile():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    profile = {"brand_name": "Acme  CMS", "about": "Acme   CMS builds sites.\nAcme CMS ships."}
+
+    block = format_expertise_for_writer(article_voice(None, profile))
+
+    assert "Acme" not in block
+    assert "**What it does:** The company builds sites. the company ships." in block
+
+
+def test_only_a_text_that_opened_with_the_name_gets_a_new_capital():
+    from src.flow.engines.content.generation.article_voice import format_expertise_for_writer
+
+    profile = {
+        "brand_name": "Acme CMS",
+        "about": "iOS teams ship faster with Acme CMS.",
+        "target_audience": ["iOS developers", "Acme CMS customers"],
+        "content_pillars": ["macOS tutorials"],
+    }
+
+    block = format_expertise_for_writer(article_voice(None, profile))
+
+    assert "**What it does:** iOS teams ship faster with the company." in block
+    assert "**Who it serves:** iOS developers; The company customers" in block
+    assert "**What it writes about:** macOS tutorials" in block

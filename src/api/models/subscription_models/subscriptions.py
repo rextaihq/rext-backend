@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, and_, or_
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, and_, not_, or_
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
@@ -196,12 +196,27 @@ def subscription_grants_access(now: Optional[datetime] = None):
     immediately (so the UI/re-cancel checks reflect it right away), but the
     user keeps their plan's credits and limits until `end_date`.
 
+    A trial grants access until its own end date. An unpaid trial (no Lemon
+    Squeezy subscription) whose `trial_end_date` has passed grants nothing, even
+    before the daily expiry job sets it EXPIRED, so it can't spend its credits for
+    up to a day after it ended (F16a, rext-control #480). That holds after it is
+    cancelled too: a deferred cancel turns it CANCELLED with an `end_date` that can
+    lie past the trial's end, and the trial's end still wins. A paid plan's trial
+    days at Lemon Squeezy are left to Lemon Squeezy, which converts or ends them,
+    and keep their paid-through access when cancelled.
+
     A known duplicate never grants anything: one settled here (`duplicate_of`), or
     found and left to a person (`duplicate_found_of`). The customer's kept
     subscription gives the plan, and a refunded duplicate's paid-through end
     must not give it back (duplicate_subscriptions.py).
     """
     now = now or datetime.now(timezone.utc)
+    unpaid_trial_over = and_(
+        UserSubscription.status.in_((SubscriptionStatus.TRIAL, SubscriptionStatus.CANCELLED)),
+        UserSubscription.trial_end_date.isnot(None),
+        UserSubscription.trial_end_date <= now,
+        UserSubscription.lemonsqueezy_subscription_id.is_(None),
+    )
     return and_(
         or_(
             UserSubscription.status.in_(ACCESS_STATUSES),
@@ -211,6 +226,7 @@ def subscription_grants_access(now: Optional[datetime] = None):
                 UserSubscription.end_date > now,
             ),
         ),
+        not_(unpaid_trial_over),
         not_a_known_duplicate(),
     )
 

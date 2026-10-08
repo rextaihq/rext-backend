@@ -36,6 +36,11 @@ RATE_LIMITED = "rate_limited"
 SERVER_ERROR = "server_error"
 UNREACHABLE = "unreachable"
 KEY_REJECTED = "key_rejected"
+# Said by a step itself (ProviderUnavailable), not read from a provider's error: the model's
+# answer couldn't be used after a second attempt (a runaway or a cut-off, src.flow.model.runaway),
+# or the step failed with nothing to hand on. The run ends with the notice; nobody is alerted.
+UNREADABLE_ANSWER = "unreadable_answer"
+STEP_FAILED = "step_failed"
 
 
 @dataclass(frozen=True)

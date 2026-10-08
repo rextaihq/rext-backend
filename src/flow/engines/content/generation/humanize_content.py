@@ -32,6 +32,7 @@ from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
 from src.flow.engines.content.generation.validation import (
+    apply_brand_exclusion,
     check_brand_placement_policy,
     check_links_preserved,
     merge_link_inventory,
@@ -39,6 +40,7 @@ from src.flow.engines.content.generation.validation import (
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.model.llm_manager import load_humanize_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.prompts.human.humanize import get_humanize_prompt
 from src.flow.states.rext import REXT
@@ -430,7 +432,7 @@ async def humanize_content(state: REXT) -> dict:
 
     logger.info("humanize_content: invoking humanization model.")
     try:
-        humanized_obj = await model.ainvoke(messages)
+        humanized_obj = await ainvoke_watched(model, messages, stage="humanize")
     except Exception:
         logger.exception(
             "humanize_content: humanization model failed; keeping pre-humanize content."
@@ -509,7 +511,11 @@ async def humanize_content(state: REXT) -> dict:
             article_stage="post-humanization (tone finalized — preserve it)",
             protected=protected,
             brand_policy=spec.get("brand_placement_policy"),
+            excluded_brand=spec.get("excluded_brand"),
         )
+        if repaired is not None:
+            # The repair returns every field: the brand choice's cleanup applies to it too.
+            repaired = apply_brand_exclusion(repaired, spec, stage="humanize_content repair")
         if repaired is not None and _repair_fixed(
             repaired, merged_payload, brand_failed, brand_context, spec, protected
         ):
