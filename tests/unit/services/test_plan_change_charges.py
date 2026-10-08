@@ -34,6 +34,7 @@ from src.services.plan_change_charges import (
     in_its_period,
     plan_change_charges,
     plan_change_charges_for_orders,
+    renewals_from_events,
 )
 from tests.conftest import TEST_DATABASE_URL
 
@@ -305,6 +306,18 @@ async def test_a_plan_change_belongs_to_the_order_whose_period_it_was_paid_in(db
     user = Users(email=f"{uuid4().hex[:12]}@example.com")
     db.add(user)
     await db.flush()
+    # The renewal's own invoice, stamped moments after its order: the same payment.
+    await _store(
+        db,
+        PAID,
+        _invoice(
+            int(subscription),
+            invoice_id="inv-renewal",
+            reason="renewal",
+            total=8900,
+            at=renewed + timedelta(seconds=20),
+        ),
+    )
     for order_id, at in (("ord-first", bought), ("ord-renewal", renewed)):
         db.add(
             Order(
@@ -330,6 +343,68 @@ async def test_a_plan_change_belongs_to_the_order_whose_period_it_was_paid_in(db
         f"ord-first-{subscription}": ["inv-first-month"],
         f"ord-renewal-{subscription}": ["inv-second-month"],
     }
+
+
+@pytest.mark.asyncio
+async def test_a_renewal_ends_the_first_orders_period_with_no_order_of_its_own(db):
+    # As the webhooks record it: one order, kept without the subscription's id, and the
+    # renewal a month later as an invoice only. A plan change in each month.
+    subscription = str(uuid4().int % 10**9)
+    bought = UPGRADED_AT - timedelta(hours=1)
+    renewed = bought + timedelta(days=30)
+    await _store(db, PAID, _invoice(int(subscription), invoice_id="inv-first-month"))
+    await _store(
+        db,
+        PAID,
+        _invoice(
+            int(subscription), invoice_id="inv-renewal", reason="renewal", total=8900, at=renewed
+        ),
+    )
+    await _store(
+        db,
+        PAID,
+        _invoice(
+            int(subscription),
+            invoice_id="inv-second-month",
+            total=4000,
+            at=renewed + timedelta(days=2),
+        ),
+    )
+    user = Users(email=f"{uuid4().hex[:12]}@example.com")
+    plan = SubscriptionPlan(name=f"growth-{uuid4().hex[:8]}", display_name="Growth")
+    db.add_all([user, plan])
+    await db.flush()
+    order_id = f"ord-first-{subscription}"
+    db.add(
+        UserSubscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            lemonsqueezy_subscription_id=subscription,
+            lemonsqueezy_order_id=order_id,
+        )
+    )
+    await db.flush()
+
+    charges = await plan_change_charges_for_orders(db, [_order(order_id, None, at=bought)])
+
+    assert {k: [c.invoice_id for c in v] for k, v in charges.items()} == {
+        order_id: ["inv-first-month"]
+    }
+
+
+def test_renewals_are_read_from_their_paid_invoices_oldest_first():
+    first, second = UPGRADED_AT + timedelta(days=30), UPGRADED_AT + timedelta(days=60)
+    events = [
+        (PAID, _invoice(7, invoice_id="inv-start", reason="initial")),
+        (PAID, _invoice(7, invoice_id="inv-change")),
+        (PAID, _invoice(7, invoice_id="inv-r2", reason="renewal", at=second)),
+        (PAID, _invoice(7, invoice_id="inv-r1", reason="renewal", at=first)),
+        (PAID, _invoice(7, invoice_id="inv-r1", reason="renewal", at=first)),  # sent twice
+        (REFUNDED, _invoice(7, invoice_id="inv-r3", reason="renewal", status="refunded")),
+        (PAID, _invoice(9, invoice_id="inv-other", reason="renewal", at=first)),
+    ]
+
+    assert renewals_from_events(events) == {"7": [first, second], "9": [first]}
 
 
 def _charge(invoice_id, paid_at):
