@@ -5,9 +5,19 @@ build/
 dist/
 wheels/
 *.egg-info
-.env.dev
-.env.stage
-.env.production
+# Settings files: every copy, backup and variant of one stays out of git. Only the examples,
+# which hold placeholders, are tracked.
+.env
+.env.*
+.env-*
+*.env
+*.env.*
+!.env.example
+!*.env.example
+.envrc
+*.bak
+*.backup
+*.orig
 
 # Virtual environments
 test2/
