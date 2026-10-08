@@ -349,6 +349,23 @@ async def test_a_second_pillar_attempt_that_folds_main_sections_but_keeps_four_i
 
 
 @pytest.mark.unit
+async def test_a_second_pillar_attempt_that_drops_sections_for_one_subsection_keeps_the_first(
+    monkeypatch,
+):
+    """Four H2s and one H3 where there were six H2s: topics were dropped, not folded."""
+    second = _pillar("H2", "H3", "H2", "H2", "H2", marker="second")
+
+    outline, calls = await _generate(
+        monkeypatch, "pillar-content", [_pillar("H2", "H2", "H2", "H2", "H2", "H2"), second]
+    )
+
+    assert [section["heading"] for section in outline["structure"]["sections"]] == [
+        f"first {i}" for i in range(6)
+    ]
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
 async def test_a_second_pillar_attempt_with_fewer_than_four_main_sections_keeps_the_first(
     monkeypatch,
 ):
