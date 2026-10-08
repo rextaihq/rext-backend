@@ -444,12 +444,22 @@ async def test_googles_other_shape_of_answer_is_read_too(providers):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("header", [{"x-ratelimit-remaining": "0"}, {"retry-after": "30"}])
-async def test_githubs_spent_rate_limit_is_not_a_word_on_the_token(providers, monkeypatch, header):
+@pytest.mark.parametrize(
+    ("header", "said"),
+    [
+        ({"x-ratelimit-remaining": "0"}, "API limit"),
+        ({"retry-after": "30"}, "slow down"),
+        # Its second kind of limit can come with neither header, only its words.
+        ({}, "You have exceeded a secondary rate limit."),
+    ],
+)
+async def test_githubs_spent_rate_limit_is_not_a_word_on_the_token(
+    providers, monkeypatch, header, said
+):
     def respond(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/token"):
             return httpx.Response(200, json={"user": providers.github_user})
-        return httpx.Response(403, headers=header, json={"message": "rate limit"})
+        return httpx.Response(403, headers=header, json={"message": said})
 
     monkeypatch.setattr(
         provider_identity,
@@ -517,7 +527,45 @@ async def test_linking_is_counted_per_signed_in_user():
 
     await routes._counted_as_the_signed_in_user(request, current_user={"identity": "user-1"})
 
-    assert request.state.rate_limit_identity == "oauth-link:user-1"
+    # One name per user, and not the user's id itself: the limiter logs its key when it refuses.
+    named = request.state.rate_limit_identity
+    assert named.startswith("oauth-link:") and "user-1" not in named
+    again = SimpleNamespace(state=SimpleNamespace())
+    await routes._counted_as_the_signed_in_user(again, current_user={"identity": "user-1"})
+    assert again.state.rate_limit_identity == named
+
+
+def test_a_requests_tokens_are_in_no_repr():
+    from src.api.schema.user_schema import OAuthLinkRequest, OAuthLoginRequest
+
+    for model in (OAuthLoginRequest, OAuthLinkRequest):
+        asked = model(
+            provider="google",
+            provider_account_id="1",
+            provider_email="ana@example.com",
+            access_token=TOKEN,
+            refresh_token="the-refresh-token",
+        )
+        assert TOKEN not in repr(asked) and "the-refresh-token" not in repr(asked)
+        assert asked.access_token == TOKEN
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_carries_no_frame_of_the_asking(monkeypatch):
+    from src.api.routes.users import auth as routes
+
+    monkeypatch.setattr(
+        routes, "checked_sign_in", AsyncMock(side_effect=ProviderUnavailable("timeout"))
+    )
+    asked = SimpleNamespace(
+        provider="google", provider_account_id="1", provider_email="a@example.com", access_token="t"
+    )
+
+    with pytest.raises(Exception) as refused:
+        await routes._as_the_provider_says(asked)
+
+    # No cause is attached: an error report that follows causes finds none to follow.
+    assert refused.value.__cause__ is None and refused.value.__suppress_context__ is True
 
 
 @pytest.mark.asyncio

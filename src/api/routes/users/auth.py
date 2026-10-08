@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -554,15 +555,21 @@ async def _as_the_provider_says(oauth_data: OAuthLoginRequest | OAuthLinkRequest
             "A provider sign-in was refused by the provider check",
             extra={"provider": provider_label(oauth_data.provider), "reason": exc.reason},
         )
+        # Raised with no cause attached: the asking's own frames hold the token, and an error
+        # report that follows a cause would carry them.
         raise RextAuthenticationException(
             message="This sign-in could not be confirmed with the provider. Please sign in again."
-        ) from exc
+        ) from None
     except ProviderUnavailable as exc:
+        logger.warning(
+            "A provider could not be asked about a sign-in",
+            extra={"provider": provider_label(oauth_data.provider), "reason": str(exc)},
+        )
         raise RextExternalServiceException(
             message="The sign-in provider did not answer. Please try again in a moment.",
             service_name=provider_label(oauth_data.provider),
             status_code=503,
-        ) from exc
+        ) from None
 
 
 @router.post("/oauth/login", response_model=SuccessResponse[AuthTokenResponse])
@@ -964,8 +971,10 @@ async def verify_account_recovery(
 async def _counted_as_the_signed_in_user(
     request: Request, current_user: dict = Depends(get_current_user)
 ) -> None:
-    """Names the caller for the rate limit that follows: the signed-in user, not an address."""
-    request.state.rate_limit_identity = f"oauth-link:{current_user.get('identity')}"
+    """Names the caller for the rate limit that follows: the signed-in user, not an address. By
+    a digest of the user's id, since the limiter writes its key into a log line when it refuses."""
+    digest = hashlib.sha256(str(current_user.get("identity")).encode("utf-8")).hexdigest()[:20]
+    request.state.rate_limit_identity = f"oauth-link:{digest}"
 
 
 @router.post("/oauth/link", response_model=SuccessResponse[OAuthAccountResponse])

@@ -236,8 +236,9 @@ class OAuthLoginRequest(BaseModel):
     provider_name: str = Field(default="", description="User's name from provider")
     provider_avatar_url: Optional[str] = Field(None, description="Avatar URL from provider")
     provider_username: Optional[str] = Field(None, description="Username from provider")
-    access_token: Optional[str] = Field(None, description="OAuth access token")
-    refresh_token: Optional[str] = Field(None, description="OAuth refresh token")
+    # Out of the model's repr: an error report that shows a request's variables shows no token.
+    access_token: Optional[str] = Field(None, description="OAuth access token", repr=False)
+    refresh_token: Optional[str] = Field(None, description="OAuth refresh token", repr=False)
     token_expires_at: Optional[str] = Field(
         None, description="Token expiration timestamp (ISO format)"
     )
@@ -251,8 +252,8 @@ class OAuthLinkRequest(BaseModel):
     provider_email: EmailStr = Field(..., description="Email from OAuth provider")
     provider_username: Optional[str] = Field(None, description="Username from provider")
     provider_avatar_url: Optional[str] = Field(None, description="Avatar URL from provider")
-    access_token: Optional[str] = Field(None, description="OAuth access token")
-    refresh_token: Optional[str] = Field(None, description="OAuth refresh token")
+    access_token: Optional[str] = Field(None, description="OAuth access token", repr=False)
+    refresh_token: Optional[str] = Field(None, description="OAuth refresh token", repr=False)
     token_expires_at: Optional[str] = Field(
         None, description="Token expiration timestamp (ISO format)"
     )

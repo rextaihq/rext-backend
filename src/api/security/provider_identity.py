@@ -85,9 +85,12 @@ async def _ask(client: httpx.AsyncClient, method: str, url: str, **kwargs: Any) 
     if response.status_code >= 500 or response.status_code == 429:
         raise ProviderUnavailable(f"status {response.status_code}")
     if response.status_code == 403 and (
-        response.headers.get("x-ratelimit-remaining") == "0" or "retry-after" in response.headers
+        response.headers.get("x-ratelimit-remaining") == "0"
+        or "retry-after" in response.headers
+        or "rate limit" in response.text.lower()
     ):
-        # GitHub answers a spent rate limit with 403 as well as 429: not a word on the token.
+        # GitHub answers a spent rate limit with 403 as well as 429, and its second kind of
+        # limit with neither header, only its words: not a word on the token.
         raise ProviderUnavailable("the provider's rate limit")
     return response
 
