@@ -4,8 +4,9 @@ Two rules are non-negotiable and are enforced deterministically after the
 model, never by trusting the prompt alone:
 
 * Every title contains the EXACT focus keyphrase the user entered.
-* Every title is 50-59 characters inclusive, or up to the keyphrase plus 20 for a long
-  keyphrase, never over 75 (``seo_title_rules.title_max_chars``).
+* Every title is in its script's range: 50-59 characters for Latin and other narrow scripts
+  (up to the keyphrase plus 20, never over 75), 20-30 Chinese, Japanese or Korean characters,
+  or 38-55 Thai ones (``seo_title_rules.title_range``, measured by ``title_width``).
 * Every title reads as the selected content type, for the selected intent.
 
 The enforcement ladder is: strong system prompt + schema guidance -> LLM
@@ -35,7 +36,6 @@ from src.flow.engines.content.generation.focus_keyword import (
 )
 from src.flow.engines.content.generation.seo_title_rules import (
     TITLE_MAX_CHARS_CEILING,
-    TITLE_MIN_CHARS,
     keyphrase_fits_a_title,
     keyphrase_spellings,
     keyphrase_title,
@@ -43,7 +43,7 @@ from src.flow.engines.content.generation.seo_title_rules import (
     recase_keyphrase,
     repair_title,
     title_is_valid,
-    title_max_chars,
+    title_length_terms,
     title_violations,
 )
 from src.flow.engines.content.generation.title_articles import fix_title_articles
@@ -252,14 +252,15 @@ async def _repair_invalid_titles(
         len(invalid_indexes),
     )
 
+    low, high, how = title_length_terms(keyphrase)
     repair_messages = [
         SystemMessage(
             content=(
                 "You are repairing article titles for SEO.\n\n"
                 "STRICT TITLE LENGTH REQUIREMENT:\n"
-                f"Every repaired title MUST contain between {TITLE_MIN_CHARS} and "
-                f"{title_max_chars(keyphrase)} characters inclusive.\n"
-                "Count spaces and punctuation as characters.\n\n"
+                f"Every repaired title MUST contain between {low} and "
+                f"{high} characters inclusive.\n"
+                f"{how}\n\n"
                 "STRICT FOCUS KEYPHRASE REQUIREMENT:\n"
                 f'Every repaired title MUST contain the exact focus keyphrase "{keyphrase}" '
                 "word-for-word, in that order.\n"
@@ -279,7 +280,7 @@ async def _repair_invalid_titles(
                 "Only repair the supplied invalid titles. "
                 "Do not modify titles that are already valid.\n\n"
                 "Before returning each repaired title, internally count its "
-                f"characters and verify the result is {TITLE_MIN_CHARS}-{title_max_chars(keyphrase)} "
+                f"characters and verify the result is {low}-{high} "
                 "characters and still contains the exact focus keyphrase."
             )
         ),
@@ -498,6 +499,7 @@ def _build_system_prompt(
     intent, and stating that where the rules are read is what makes the
     generated topic specific to the selection instead of generic.
     """
+    low, high, how = title_length_terms(keyphrase)
     return (
         "You are helping someone with ZERO SEO or content-marketing "
         "background choose what to write next.\n\n"
@@ -520,21 +522,20 @@ def _build_system_prompt(
         "==================================================\n"
         "STRICT SEO TITLE LENGTH REQUIREMENT\n"
         "==================================================\n"
-        f"EVERY TITLE MUST BE BETWEEN {TITLE_MIN_CHARS} AND {title_max_chars(keyphrase)} "
+        f"EVERY TITLE MUST BE BETWEEN {low} AND {high} "
         "CHARACTERS INCLUSIVE.\n\n"
         "This is a strict requirement.\n"
-        f"- Minimum: {TITLE_MIN_CHARS} characters.\n"
-        f"- Maximum: {title_max_chars(keyphrase)} characters.\n"
-        "- Count spaces as characters.\n"
-        "- Count punctuation as characters.\n"
+        f"- Minimum: {low} characters.\n"
+        f"- Maximum: {high} characters.\n"
+        f"- {how}\n"
         "- Count the final title before returning it.\n"
         "- If the first draft is outside the range, rewrite it before returning "
         "the final answer.\n\n"
-        f"Do NOT add meaningless filler just to reach {TITLE_MIN_CHARS} characters. Filler is "
+        f"Do NOT add meaningless filler just to reach {low} characters. Filler is "
         "an ending that says nothing about the article and would fit any title: "
         f"{_FILLER_EXAMPLES}. To lengthen a title, add something specific to the "
         "topic instead: who it is for, a number of steps or items, the outcome, or the year.\n"
-        f"Do NOT remove important meaning just to stay below {title_max_chars(keyphrase)} characters.\n"
+        f"Do NOT remove important meaning just to stay below {high} characters.\n"
         "The final title must be natural, readable, and useful.\n\n"
         "==================================================\n"
         "CONTENT TYPE AND SEARCH INTENT\n"
@@ -598,8 +599,8 @@ def _build_system_prompt(
         "==================================================\n"
         "Before returning the structured result, verify EVERY title:\n"
         f'1. Does it contain the exact phrase "{keyphrase}"?\n'
-        f"2. Is it at least {TITLE_MIN_CHARS} characters?\n"
-        f"3. Is it at most {title_max_chars(keyphrase)} characters?\n"
+        f"2. Is it at least {low} characters?\n"
+        f"3. Is it at most {high} characters?\n"
         f"4. Does it read like a {selected_content_type} for {selected_intent} intent?\n"
         "5. Is it readable and natural?\n"
         "6. Does it avoid keyword stuffing?\n"
@@ -761,6 +762,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
 
     if feedback:
         logger.info("Adding user feedback to model prompt: %s", feedback)
+        low, high, how = title_length_terms(keyphrase)
 
         messages.append(
             HumanMessage(
@@ -769,8 +771,8 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
                     f"{feedback}\n\n"
                     "Keep ALL strict requirements from the system prompt. In "
                     f"particular, every title must still contain the exact phrase "
-                    f'"{keyphrase}" and be {TITLE_MIN_CHARS}-{title_max_chars(keyphrase)} '
-                    "characters, and the anti-hallucination rules still apply. "
+                    f'"{keyphrase}" and be {low}-{high} '
+                    f"characters ({how}), and the anti-hallucination rules still apply. "
                     "User feedback can change the angle, wording or emphasis of a "
                     "title -- it can NEVER change or remove the focus keyphrase."
                 )
