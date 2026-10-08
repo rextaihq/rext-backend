@@ -77,6 +77,17 @@ class AdminInvitationService:
         )
         return result.scalar_one_or_none()
 
+    async def _locked(self, where) -> Optional[PlatformAdminInvitations]:
+        """The invitation, read whole with its row locked until the transaction ends.
+        Every change of its state starts here (accept, decline, revoke, resend): two of
+        them at the same moment take turns, and the second finds what the first left."""
+        held = await self.db.execute(
+            select(PlatformAdminInvitations.id).where(where).with_for_update()
+        )
+        if held.first() is None:
+            return None
+        return await self._loaded(where)
+
     async def _saved(self, invitation: PlatformAdminInvitations) -> PlatformAdminInvitations:
         """Write the invitation's changes and read it back whole (``_loaded``)."""
         await self.db.flush()
@@ -95,6 +106,12 @@ class AdminInvitationService:
         from src.utils.invitation_utils import generate_invitation_token
 
         return generate_invitation_token(nbytes=48)
+
+    async def ensure_super_admin(self, user_id: UUID) -> None:
+        """For the routes that only read: invitations name people and carry their
+        inviter's words, and are a super admin's to see. The permission the routes ask
+        for (user.invite) is also an admin's."""
+        await self._verify_super_admin(user_id)
 
     async def _verify_super_admin(self, user_id: UUID) -> None:
         """
@@ -296,7 +313,9 @@ class AdminInvitationService:
 
         return await self._saved(invitation)
 
-    async def get_invitation_by_token(self, token: str) -> PlatformAdminInvitations:
+    async def get_invitation_by_token(
+        self, token: str, for_update: bool = False
+    ) -> PlatformAdminInvitations:
         """
         Get admin invitation by token.
 
@@ -309,14 +328,18 @@ class AdminInvitationService:
         Raises:
             ResourceNotFoundException: If invitation not found
         """
-        invitation = await self._loaded(PlatformAdminInvitations.invitation_token == token)
+        read = self._locked if for_update else self._loaded
+        invitation = await read(PlatformAdminInvitations.invitation_token == token)
 
         if not invitation:
-            raise ResourceNotFoundException(resource_type="AdminInvitation", resource_id=token)
+            # Never the token itself: an error's text is logged.
+            raise ResourceNotFoundException(resource_type="AdminInvitation", resource_id="token")
 
         return invitation
 
-    async def get_invitation_by_id(self, invitation_id: UUID) -> PlatformAdminInvitations:
+    async def get_invitation_by_id(
+        self, invitation_id: UUID, for_update: bool = False
+    ) -> PlatformAdminInvitations:
         """
         Get admin invitation by ID.
 
@@ -329,7 +352,8 @@ class AdminInvitationService:
         Raises:
             ResourceNotFoundException: If invitation not found
         """
-        invitation = await self._loaded(PlatformAdminInvitations.id == invitation_id)
+        read = self._locked if for_update else self._loaded
+        invitation = await read(PlatformAdminInvitations.id == invitation_id)
 
         if not invitation:
             raise ResourceNotFoundException(
@@ -419,14 +443,7 @@ class AdminInvitationService:
         """
         # Get invitation, its row locked: a token works once, and two requests with it
         # at the same moment must not both find it pending.
-        locked = await self.db.execute(
-            select(PlatformAdminInvitations.id)
-            .where(PlatformAdminInvitations.invitation_token == token)
-            .with_for_update()
-        )
-        if locked.first() is None:
-            raise ResourceNotFoundException(resource_type="AdminInvitation", resource_id=token)
-        invitation = await self.get_invitation_by_token(token)
+        invitation = await self.get_invitation_by_token(token, for_update=True)
 
         # Check status
         if invitation.status != InvitationStatus.PENDING:
@@ -466,6 +483,16 @@ class AdminInvitationService:
         # The role, checked again as it was when the invitation was made: on the list
         # of roles an invitation can give, and in the table.
         admin_role = await self._validate_admin_role(invitation.admin_role)
+
+        # The rule that held when the invitation was made, asked again now: an account
+        # that has since become a platform admin isn't raised further by an old link.
+        from src.utils.rbac_utils import is_user_admin
+
+        if await is_user_admin(self.db, user_id):
+            raise BusinessRuleViolationException(
+                message="This account is already a platform admin",
+                rule_name="user_already_admin",
+            )
 
         # Check if user already has this admin role
         result = await self.db.execute(
@@ -535,7 +562,7 @@ class AdminInvitationService:
         await self._verify_super_admin(revoked_by_admin_id)
 
         # Get invitation
-        invitation = await self.get_invitation_by_id(invitation_id)
+        invitation = await self.get_invitation_by_id(invitation_id, for_update=True)
 
         # Check if already processed
         if invitation.status != InvitationStatus.PENDING:
@@ -575,7 +602,7 @@ class AdminInvitationService:
             BusinessRuleViolationException: If invitation already processed
         """
         # Get invitation
-        invitation = await self.get_invitation_by_token(token)
+        invitation = await self.get_invitation_by_token(token, for_update=True)
 
         # Check if already processed
         if invitation.status != InvitationStatus.PENDING:
@@ -623,7 +650,7 @@ class AdminInvitationService:
         validate_expiry_days(expiry_days)
 
         # Get invitation
-        invitation = await self.get_invitation_by_id(invitation_id)
+        invitation = await self.get_invitation_by_id(invitation_id, for_update=True)
 
         # Can only resend pending or expired invitations
         if invitation.status not in [InvitationStatus.PENDING, InvitationStatus.EXPIRED]:

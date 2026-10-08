@@ -142,9 +142,10 @@ async def _person(db, *roles: str, email=None, verified=True, name="Ada Admin"):
 
 @pytest.fixture
 def call(connection, monkeypatch):
-    """call(caller, method, url, json=None) -> response, as that signed-in account (or as
-    nobody, with caller None). Each request has a session of its own, as in production.
-    The roles and the super-admin check are the real ones."""
+    """call(caller, method, url, json=None, *, impersonating=False, permissions=()) ->
+    response, as that signed-in account (or as nobody, with caller None). Each request
+    has a session of its own, as in production. The roles and the super-admin check are
+    the real ones; ``permissions`` are what the caller's roles give it."""
     from src.api.server import app
 
     async def override_db():
@@ -154,20 +155,19 @@ def call(connection, monkeypatch):
     async def no_limit(self, request: Request):
         return None
 
-    async def no_permissions(*_args, **_kwargs):
-        return []
-
     monkeypatch.setattr(EndpointRateLimiter, "__call__", no_limit)
-    # Only a super admin passes the routes' permission check here: nobody else is
-    # given the permission, so the service's own check is the one under test.
-    monkeypatch.setattr("src.utils.rbac_utils.get_user_permissions", no_permissions)
 
-    async def _call(caller, method, url, json=None):
+    async def _call(caller, method, url, json=None, *, impersonating=False, permissions=()):
+        async def held(*_args, **_kwargs):
+            return list(permissions)
+
+        monkeypatch.setattr("src.utils.rbac_utils.get_user_permissions", held)
         app.dependency_overrides[get_async_db] = override_db
         if caller is not None:
             app.dependency_overrides[get_current_user] = lambda: {
                 "identity": str(caller.id),
                 "roles": [],
+                "is_impersonating": impersonating,
             }
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -198,6 +198,18 @@ async def _platform_roles(db, user) -> set[str]:
         .where(UserRole.user_id == user.id, UserRole.workspace_id.is_(None))
     )
     return set(found.scalars())
+
+
+async def _validate(call, token: str):
+    return await call(None, "POST", f"{PUBLIC_URL}/validate", {"token": token})
+
+
+async def _accept(call, account, token: str, **session):
+    return await call(account, "POST", f"{PUBLIC_URL}/accept", {"token": token}, **session)
+
+
+async def _decline(call, token: str, reason: str = "No"):
+    return await call(None, "POST", f"{PUBLIC_URL}/decline", {"token": token, "reason": reason})
 
 
 def _token_in(email: dict) -> str:
@@ -398,10 +410,8 @@ async def test_a_resend_sends_a_new_link_and_the_old_one_stops_working(session, 
     assert resent.status_code == 200, resent.text
     new = _token_in(outbox.sent[1])
     assert new != old and len(outbox.sent) == 2
-    assert (await call(None, "GET", f"{PUBLIC_URL}/{old}/validate")).json()["data"][
-        "valid"
-    ] is False
-    assert (await call(None, "GET", f"{PUBLIC_URL}/{new}/validate")).json()["data"]["valid"] is True
+    assert (await _validate(call, old)).json()["data"]["valid"] is False
+    assert (await _validate(call, new)).json()["data"]["valid"] is True
 
 
 async def test_a_resend_whose_email_cant_be_sent_leaves_the_old_link(session, call, outbox):
@@ -428,7 +438,7 @@ async def test_the_link_says_who_invited_whom_to_what(session, call, outbox):
     invited = f"{uuid4().hex[:10]}@example.com"
     await call(founder, "POST", ADMIN_URL, _invite(invited, "support", message="Welcome."))
 
-    opened = await call(None, "GET", f"{PUBLIC_URL}/{_token_in(outbox.sent[0])}/validate")
+    opened = await _validate(call, _token_in(outbox.sent[0]))
 
     seen = opened.json()["data"]
     assert (seen["valid"], seen["email"], seen["admin_role"]) == (True, invited, "support")
@@ -436,7 +446,7 @@ async def test_the_link_says_who_invited_whom_to_what(session, call, outbox):
 
 
 async def test_a_link_that_was_never_sent_says_nothing(session, call):
-    opened = await call(None, "GET", f"{PUBLIC_URL}/{uuid4().hex}/validate")
+    opened = await _validate(call, uuid4().hex)
 
     seen = opened.json()["data"]
     assert (seen["valid"], seen["email"], seen["admin_role"]) == (False, "", "")
@@ -458,7 +468,7 @@ async def _invited(session, call, outbox, role="admin", **person):
 async def test_accepting_gives_the_invited_account_the_role_once(session, call, outbox, role):
     _, account, token, _ = await _invited(session, call, outbox, role, name="Grace")
 
-    accepted = await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")
+    accepted = await _accept(call, account, token)
 
     assert accepted.status_code == 200, accepted.text
     answer = accepted.json()["data"]
@@ -466,31 +476,29 @@ async def test_accepting_gives_the_invited_account_the_role_once(session, call, 
     assert await _platform_roles(session, account) == {role}
 
     # The token is used up: a second try changes nothing.
-    again = await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")
+    again = await _accept(call, account, token)
     assert again.status_code == 400
     assert await _platform_roles(session, account) == {role}
-    assert (await call(None, "GET", f"{PUBLIC_URL}/{token}/validate")).json()["data"][
-        "valid"
-    ] is False
+    assert (await _validate(call, token)).json()["data"]["valid"] is False
 
 
 async def test_an_account_with_another_address_cant_accept(session, call, outbox):
     _, account, token, _ = await _invited(session, call, outbox, "super_admin")
     someone_else = await _person(session)
 
-    refused = await call(someone_else, "POST", f"{PUBLIC_URL}/{token}/accept")
+    refused = await _accept(call, someone_else, token)
 
     assert refused.status_code == 400
     assert await _platform_roles(session, someone_else) == set()
     assert await _platform_roles(session, account) == set()
     # The invitation still stands for the account it names.
-    assert (await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")).status_code == 200
+    assert (await _accept(call, account, token)).status_code == 200
 
 
 async def test_nobody_signed_out_can_accept(session, call, outbox):
     _, account, token, _ = await _invited(session, call, outbox)
 
-    refused = await call(None, "POST", f"{PUBLIC_URL}/{token}/accept")
+    refused = await _accept(call, None, token)
 
     assert 400 <= refused.status_code < 500
     assert await _platform_roles(session, account) == set()
@@ -500,7 +508,7 @@ async def test_an_address_that_isnt_verified_cant_accept(session, call, outbox):
     """The role goes to whoever proved the address is theirs."""
     _, account, token, _ = await _invited(session, call, outbox, verified=False)
 
-    refused = await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")
+    refused = await _accept(call, account, token)
 
     assert refused.status_code == 400
     assert "Verify your email" in refused.json()["message"]
@@ -513,7 +521,7 @@ async def test_an_expired_invitation_cant_be_accepted(session, call, outbox):
     row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     await session.commit()
 
-    refused = await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")
+    refused = await _accept(call, account, token)
 
     assert refused.status_code == 400
     assert await _platform_roles(session, account) == set()
@@ -524,7 +532,7 @@ async def test_a_revoked_invitation_cant_be_accepted(session, call, outbox):
     revoked = await call(founder, "DELETE", f"{ADMIN_URL}/{invitation_id}", {"reason": "No"})
     assert revoked.status_code == 200
 
-    refused = await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")
+    refused = await _accept(call, account, token)
 
     assert refused.status_code == 400
     assert await _platform_roles(session, account) == set()
@@ -532,13 +540,89 @@ async def test_a_revoked_invitation_cant_be_accepted(session, call, outbox):
 
 async def test_a_declined_invitation_cant_be_accepted(session, call, outbox):
     _, account, token, _ = await _invited(session, call, outbox)
-    declined = await call(None, "POST", f"{PUBLIC_URL}/{token}/decline", {"reason": "Not me"})
+    declined = await _decline(call, token, "Not me")
     assert declined.status_code == 200
 
-    refused = await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")
+    refused = await _accept(call, account, token)
 
     assert refused.status_code == 400
     assert await _platform_roles(session, account) == set()
+
+
+async def test_an_admin_acting_as_the_invited_account_cant_accept_for_it(session, call, outbox):
+    """An impersonated session has the invited account's identity and address. The role
+    is given only in that person's own session."""
+    _, account, token, _ = await _invited(session, call, outbox, "super_admin")
+
+    refused = await _accept(call, account, token, impersonating=True)
+
+    assert refused.status_code == 403
+    assert await _platform_roles(session, account) == set()
+    # The invitation isn't spent by the attempt.
+    assert (await _accept(call, account, token)).status_code == 200
+
+
+async def test_an_account_made_an_admin_since_isnt_raised_by_an_old_link(session, call, outbox):
+    """Inviting an admin to a higher role is refused when the invitation is made. The same
+    holds when the account became an admin after it: the old link doesn't raise it."""
+    _, account, token, _ = await _invited(session, call, outbox, "super_admin")
+    session.add(UserRole(user_id=account.id, role_id=(await _role(session, "admin")).id))
+    await session.commit()
+
+    refused = await _accept(call, account, token)
+
+    assert refused.status_code == 400
+    assert await _platform_roles(session, account) == {"admin"}
+
+
+async def test_an_accepted_invitation_cant_be_declined_revoked_or_sent_again(session, call, outbox):
+    founder, account, token, invitation_id = await _invited(session, call, outbox)
+    assert (await _accept(call, account, token)).status_code == 200
+
+    declined = await _decline(call, token)
+    revoked = await call(founder, "DELETE", f"{ADMIN_URL}/{invitation_id}", {"reason": "Late"})
+    resent = await call(founder, "POST", f"{ADMIN_URL}/{invitation_id}/resend", {})
+
+    assert (declined.status_code, revoked.status_code, resent.status_code) == (400, 400, 400)
+    (row,) = await _rows(session, account.email)
+    assert row.status == "accepted" and row.invitation_token == token
+    assert await _platform_roles(session, account) == {"admin"}
+    assert len(outbox.sent) == 1
+
+
+async def test_reading_invitations_is_a_super_admins_even_with_the_permission(
+    session, call, outbox
+):
+    """An admin's role holds the permission these routes ask for (user.invite). The
+    invitations name people and carry their inviter's words: only a super admin reads them."""
+    _, account, token, invitation_id = await _invited(session, call, outbox)
+    an_admin = await _person(session, "admin")
+    may = {"permissions": ["user.invite"]}
+
+    listed = await call(an_admin, "GET", ADMIN_URL, **may)
+    one = await call(an_admin, "GET", f"{ADMIN_URL}/{invitation_id}", **may)
+    made = await call(an_admin, "POST", ADMIN_URL, _invite("new@example.com"), **may)
+
+    assert (listed.status_code, one.status_code, made.status_code) == (403, 403, 403)
+    assert account.email not in listed.text and account.email not in one.text
+
+
+async def test_a_token_is_never_part_of_a_routes_path(session, call, outbox):
+    """A path is written to the request log and the error log as it is, so the token
+    travels in the body. The older forms with the token in the path are gone."""
+    _, account, token, _ = await _invited(session, call, outbox)
+
+    old_validate = await call(None, "GET", f"{PUBLIC_URL}/{token}/validate")
+    old_accept = await call(account, "POST", f"{PUBLIC_URL}/{token}/accept")
+    old_decline = await call(None, "POST", f"{PUBLIC_URL}/{token}/decline", {"reason": "x"})
+
+    assert {old_validate.status_code, old_accept.status_code, old_decline.status_code} <= {
+        404,
+        405,
+    }
+    assert await _platform_roles(session, account) == set()
+    (row,) = await _rows(session, account.email)
+    assert row.status == "pending"
 
 
 async def test_only_a_super_admin_can_revoke_or_resend(session, call, outbox):

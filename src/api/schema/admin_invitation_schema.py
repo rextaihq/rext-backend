@@ -59,7 +59,14 @@ class CreateAdminInvitationRequest(BaseModel):
     }
 
 
-class DeclineAdminInvitationRequest(BaseModel):
+class AdminInvitationTokenRequest(BaseModel):
+    """The token from an invitation's link. It travels in the request's body, never in
+    its path: a path is written to the request log and the error log as it is."""
+
+    token: str = Field(..., min_length=1, max_length=255, description="The invitation's token")
+
+
+class DeclineAdminInvitationRequest(AdminInvitationTokenRequest):
     """Schema for declining an admin invitation."""
 
     reason: Optional[str] = Field(None, max_length=500, description="Optional reason for declining")

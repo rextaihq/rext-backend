@@ -12,10 +12,10 @@ Endpoints:
 - DELETE /admin/platform/invitations/{id}      - Revoke invitation
 - GET    /admin/platform/invitations/stats     - Invitation statistics
 
-Public Endpoints (no auth):
-- GET    /admin-invitations/{token}/validate   - Validate invitation token
-- POST   /admin-invitations/{token}/accept     - Accept invitation
-- POST   /admin-invitations/{token}/decline    - Decline invitation
+Token endpoints (the token is in the request's body, never in its path, which is logged):
+- POST   /admin-invitations/validate   - Validate invitation token (no auth)
+- POST   /admin-invitations/accept     - Accept invitation (the invited account, signed in)
+- POST   /admin-invitations/decline    - Decline invitation (no auth)
 """
 
 from datetime import datetime, timezone
@@ -26,11 +26,16 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    RextAuthorizationException,
+    RextValidationException,
+)
 from src.api.middleware.rate_limiter import admin_invitation_rate_limit
 from src.api.schema.admin_invitation_schema import (
     AdminInvitationListResponse,
     AdminInvitationResponse,
+    AdminInvitationTokenRequest,
     CreateAdminInvitationRequest,
     DeclineAdminInvitationRequest,
     ResendAdminInvitationRequest,
@@ -207,6 +212,7 @@ async def list_admin_invitations(
     - offset: for pagination
     """
     service = AdminInvitationService(db)
+    await service.ensure_super_admin(UUID(current_user["identity"]))
 
     invitations, total_count = await service.get_all_invitations_paginated(
         status=status,
@@ -245,6 +251,7 @@ async def get_admin_invitation(
     - Invitation must exist
     """
     service = AdminInvitationService(db)
+    await service.ensure_super_admin(UUID(current_user["identity"]))
     invitation = await service.get_invitation_by_id(invitation_id)
 
     return success(data=_invitation_to_response(invitation), request=request)
@@ -357,19 +364,18 @@ async def revoke_admin_invitation(
 # ============================================================================
 
 
-@public_router.get(
-    "/{token}/validate", response_model=SuccessResponse[ValidateAdminInvitationResponse]
-)
+@public_router.post("/validate", response_model=SuccessResponse[ValidateAdminInvitationResponse])
 async def validate_admin_invitation_token(
     request: Request,
-    token: str,
+    data: AdminInvitationTokenRequest,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Validate an admin invitation token (public endpoint)."""
+    """Validate an admin invitation token (public endpoint). A read, sent as a POST so
+    that the token is in the body."""
     service = AdminInvitationService(db)
 
     try:
-        invitation = await service.get_invitation_by_token(token)
+        invitation = await service.get_invitation_by_token(data.token)
 
         return success(
             data=ValidateAdminInvitationResponse(
@@ -402,11 +408,11 @@ async def validate_admin_invitation_token(
         return success(data=_invalid_invitation_validation_response(), request=request)
 
 
-@public_router.post("/{token}/accept", response_model=SuccessResponse[AdminInvitationResponse])
+@public_router.post("/accept", response_model=SuccessResponse[AdminInvitationResponse])
 @db_transaction_handler("accept admin invitation", auto_commit=True)
 async def accept_admin_invitation(
     request: Request,
-    token: str,
+    data: AdminInvitationTokenRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -426,10 +432,22 @@ async def accept_admin_invitation(
     4. Marks invitation as accepted
     5. Notifies inviter of acceptance
     """
+    # The role goes to the person the invitation names, in a session of their own: an
+    # admin acting as that account must not be able to take it for them, and would hold
+    # it through the session they are acting in.
+    if current_user.get("is_impersonating"):
+        raise RextAuthorizationException(
+            message=(
+                "An invitation can't be accepted while impersonating: "
+                "the invited person accepts it in their own session."
+            ),
+            required_permission="admin_invitation.accept",
+        )
+
     service = AdminInvitationService(db)
 
     invitation = await service.accept_admin_invitation(
-        token=token,
+        token=data.token,
         user_id=UUID(current_user["identity"]),
     )
 
@@ -449,11 +467,10 @@ async def accept_admin_invitation(
     return success(data=_invitation_to_response(invitation), request=request)
 
 
-@public_router.post("/{token}/decline", response_model=SuccessResponse[GenericResponse])
+@public_router.post("/decline", response_model=SuccessResponse[GenericResponse])
 @db_transaction_handler("decline admin invitation", auto_commit=True)
 async def decline_admin_invitation(
     request: Request,
-    token: str,
     data: DeclineAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -472,7 +489,7 @@ async def decline_admin_invitation(
     service = AdminInvitationService(db)
 
     invitation = await service.decline_admin_invitation(
-        token=token,
+        token=data.token,
         reason=data.reason,
     )
 
