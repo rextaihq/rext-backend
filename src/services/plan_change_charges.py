@@ -11,7 +11,7 @@ Read from the webhook events already stored: `subscription_payment_success` says
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from sqlalchemy import select
@@ -52,6 +52,13 @@ class PlanChangeCharge:
         }
 
 
+def _utc(moment: Optional[datetime]) -> Optional[datetime]:
+    """The same moment with its zone said: the parsed provider times and some columns carry none."""
+    if moment is None or moment.tzinfo is not None:
+        return moment
+    return moment.replace(tzinfo=timezone.utc)
+
+
 def _cents(value: Any) -> int:
     try:
         return max(int(value or 0), 0)
@@ -84,8 +91,10 @@ def charges_from_events(events: Iterable[tuple[str, dict]]) -> Dict[str, List[Pl
             invoice["paid"] = True
             invoice["amount"] = _cents(attributes.get("total"))
             invoice["currency"] = attributes.get("currency") or "USD"
-            invoice["paid_at"] = parse_provider_datetime(
-                attributes.get("created_at") or attributes.get("updated_at")
+            invoice["paid_at"] = _utc(
+                parse_provider_datetime(
+                    attributes.get("created_at") or attributes.get("updated_at")
+                )
             )
         refunded = _cents(attributes.get("refunded_amount"))
         if name == REFUNDED and not refunded and attributes.get("status") == "refunded":
@@ -125,19 +134,43 @@ async def plan_change_charges(
     return charges_from_events((row[0], row[1]) for row in result.all())
 
 
+def in_its_period(
+    charges: Sequence[PlanChangeCharge],
+    paid_at: Optional[datetime],
+    other_payments: Sequence[datetime],
+) -> List[PlanChangeCharge]:
+    """The charges that belong to the payment made at `paid_at`: those paid from then until the
+    subscription's next payment (`other_payments`: the times of the subscription's other orders).
+
+    A plan change paid in an earlier period is that period's order's to answer for, not a later
+    renewal's. A charge whose day is unknown goes with the newest payment; an order whose own
+    time is unknown (none is, the column is required) can't be placed, so nothing is held back.
+    """
+    start = _utc(paid_at)
+    after = sorted(t for t in (_utc(t) for t in other_payments) if start and t and t > start)
+    end = after[0] if after else None
+    kept = []
+    for charge in charges:
+        if charge.paid_at is None or start is None:
+            if end is None:
+                kept.append(charge)
+        elif charge.paid_at >= start and (end is None or charge.paid_at < end):
+            kept.append(charge)
+    return kept
+
+
 async def plan_change_charges_for_orders(
     db: AsyncSession, orders: Sequence[Optional[Order]]
 ) -> Dict[str, List[PlanChangeCharge]]:
-    """Per Lemon Squeezy order id: the plan-change charges of the subscription it started.
+    """Per Lemon Squeezy order id: the plan changes paid in the period that order paid for.
 
     An order made before the subscription's id was stored on it is matched through the
     subscription that names it as its first order.
     """
-    by_order = {
-        o.lemonsqueezy_order_id: o.lemonsqueezy_subscription_id
-        for o in orders
-        if o is not None and o.lemonsqueezy_order_id
+    asked = {
+        o.lemonsqueezy_order_id: o for o in orders if o is not None and o.lemonsqueezy_order_id
     }
+    by_order = {order_id: o.lemonsqueezy_subscription_id for order_id, o in asked.items()}
     unlinked = [order_id for order_id, subscription_id in by_order.items() if not subscription_id]
     if unlinked:
         result = await db.execute(
@@ -152,8 +185,39 @@ async def plan_change_charges_for_orders(
         by_order.update({row[0]: row[1] for row in result.all()})
 
     charges = await plan_change_charges(db, list(by_order.values()))
-    return {
-        order_id: charges[str(subscription_id)]
-        for order_id, subscription_id in by_order.items()
-        if subscription_id and str(subscription_id) in charges
-    }
+    if not charges:
+        return {}
+
+    # When each of those subscriptions was paid for, to tell one period from the next.
+    payments: Dict[str, Dict[str, Optional[datetime]]] = {}
+    result = await db.execute(
+        select(
+            Order.lemonsqueezy_subscription_id,
+            Order.lemonsqueezy_order_id,
+            Order.ordered_at,
+            Order.created_at,
+        ).where(Order.lemonsqueezy_subscription_id.in_(list(charges)))
+    )
+    for subscription_id, order_id, ordered_at, created_at in result.all():
+        payments.setdefault(str(subscription_id), {})[order_id] = ordered_at or created_at
+    for order_id, subscription_id in by_order.items():
+        if subscription_id:
+            order = asked[order_id]
+            payments.setdefault(str(subscription_id), {}).setdefault(
+                order_id, order.ordered_at or order.created_at
+            )
+
+    found: Dict[str, List[PlanChangeCharge]] = {}
+    for order_id, subscription_id in by_order.items():
+        key = str(subscription_id) if subscription_id else ""
+        if key not in charges:
+            continue
+        times = payments[key]
+        own = in_its_period(
+            charges[key],
+            times[order_id],
+            [t for other, t in times.items() if other != order_id and t is not None],
+        )
+        if own:
+            found[order_id] = own
+    return found
