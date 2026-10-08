@@ -102,42 +102,57 @@ def money_event(event_type: str, payload: Dict[str, Any]) -> Optional[Dict[str, 
     return {"event": name, "properties": properties}
 
 
-def _event_uuid(event_id: str) -> str:
-    """The same webhook is the same event, however often it is sent."""
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"rext-money-event:{event_id}"))
+def _event_uuid(key: str) -> str:
+    """The same thing that happened is the same event, however often it is sent."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"rext-server-event:{key}"))
 
 
-async def send_money_event(
-    event_id: str,
-    event_type: str,
-    payload: Dict[str, Any],
+def _environment() -> str:
+    """Which deploy this is, as every event says it: production, staging or development."""
+    return (os.getenv("ENVIRONMENT") or "development").lower()
+
+
+async def send_server_event(
+    event: str,
+    properties: Dict[str, Any],
+    *,
+    key: str,
+    person_id: Optional[str] = None,
     occurred_at: Optional[datetime] = None,
     client: Optional[httpx.AsyncClient] = None,
 ) -> bool:
-    """Send one webhook's event. True when PostHog took it; never raises."""
-    key = os.getenv("POSTHOG_PROJECT_KEY")
-    if not key:
+    """
+    Send one event from the backend to PostHog. True when it was taken; never raises.
+
+    For every server-side event, not only the money ones. Call it after the work is
+    committed. `key` names the thing that happened (a webhook's id, a run's id, a
+    ledger row's id): the event's own id is made from it, so a retry is the same event
+    again. `person_id` is the account's id, and is given only when that person's answer
+    on usage analytics allows it; without it the event is anonymous and no person is
+    made for it. Every event says it is the app's, from the server, and which deploy.
+    Never put an email, a name, a keyword, a title or any typed or generated text in
+    `properties`.
+    """
+    api_key = os.getenv("POSTHOG_PROJECT_KEY")
+    if not api_key:
         return False
     try:
-        event = money_event(event_type, payload)
-        if event is None:
-            return False
-        anonymous_id = _event_uuid(event_id)
-        body = {
-            "api_key": key,
-            "event": event["event"],
-            "distinct_id": anonymous_id,
-            "uuid": anonymous_id,
+        event_uuid = _event_uuid(f"{event}:{key}")
+        body: Dict[str, Any] = {
+            "api_key": api_key,
+            "event": event,
+            "distinct_id": person_id or event_uuid,
+            "uuid": event_uuid,
             "properties": {
-                **event["properties"],
-                # The app's events say where they are from, so its numbers can be laid beside
-                # the website's (which sends "website" to its own project).
+                **properties,
                 "surface": "app",
-                "source": "backend",
-                # No person is made or updated for it.
-                "$process_person_profile": False,
+                "source": "server",
+                "environment": _environment(),
             },
         }
+        if not person_id:
+            # No person is made or updated for it.
+            body["properties"]["$process_person_profile"] = False
         if occurred_at is not None:
             body["timestamp"] = occurred_at.isoformat()
         host = (os.getenv("POSTHOG_HOST") or DEFAULT_HOST).rstrip("/")
@@ -148,17 +163,46 @@ async def send_money_event(
                 response = await own.post(f"{host}/i/v0/e/", json=body)
         if response.status_code >= 400:
             logger.warning(
-                "Money event not accepted",
-                extra={"event_id": event_id, "status": response.status_code},
+                "Server event not accepted",
+                extra={"event": event, "key": key, "status": response.status_code},
             )
             return False
         return True
+    except Exception as error:  # noqa: BLE001 - analytics never fails the work it reports
+        logger.warning(
+            "Server event not sent",
+            extra={"event": event, "key": key, "error": type(error).__name__},
+        )
+        return False
+
+
+async def send_money_event(
+    event_id: str,
+    event_type: str,
+    payload: Dict[str, Any],
+    occurred_at: Optional[datetime] = None,
+    client: Optional[httpx.AsyncClient] = None,
+) -> bool:
+    """Send one webhook's event, anonymous. True when PostHog took it; never raises."""
+    if not os.getenv("POSTHOG_PROJECT_KEY"):
+        return False
+    try:
+        event = money_event(event_type, payload)
     except Exception as error:  # noqa: BLE001 - analytics never fails a webhook
         logger.warning(
-            "Money event not sent",
+            "Money event not read",
             extra={"event_id": event_id, "error": type(error).__name__},
         )
         return False
+    if event is None:
+        return False
+    return await send_server_event(
+        event["event"],
+        event["properties"],
+        key=event_id,
+        occurred_at=occurred_at,
+        client=client,
+    )
 
 
 async def record_money_event(db: AsyncSession, event_id: Optional[str]) -> bool:
