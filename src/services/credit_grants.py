@@ -130,8 +130,9 @@ def change_plan_credits(
     balance carries it as it carries what was used, so switching plans undoes no deduction and
     takes back no reset. That adjustment is recorded for the plan it was made on (it is not
     usage, and the readings of "credits used" add it back), so with `old_plan_id` the record
-    moves to the new plan with the balance. Call this once the subscription's plan_id is the
-    new plan's. A change that opens a new period carries none.
+    moves to the new plan with the balance, as much of it as the new balance still shows
+    (_carry_admin_adjustment). Call this once the subscription's plan_id is the new plan's. A
+    change that opens a new period carries none.
     """
 
     def key(moment: Optional[datetime]) -> Optional[str]:
@@ -163,7 +164,7 @@ def change_plan_credits(
         _PLAN_CHANGE: {"period": period, "used": used, "left": subscription.current_credits},
     }
     if old_plan_id is not None and not opens_a_period:
-        _carry_admin_adjustment(subscription, old_plan_id, ends_found)
+        _carry_admin_adjustment(subscription, old_plan_id, ends_found, used, new_monthly)
 
 
 def split_cost(
@@ -551,22 +552,40 @@ def record_period_admin_adjustment(subscription: Any, delta: int) -> None:
 
 
 def _carry_admin_adjustment(
-    subscription: Any, old_plan_id: UUID, period_ends: Sequence[Optional[str]]
+    subscription: Any,
+    old_plan_id: UUID,
+    period_ends: Sequence[Optional[str]],
+    used: int,
+    new_monthly: int,
 ) -> None:
     """Move the period's admin adjustment from the old plan's key to the plan the
-    subscription is on now (change_plan_credits). ``period_ends`` are the ends the period was
-    found under, as ISO strings: Lemon Squeezy's renews_at and the stored reset date can
-    differ by the time a change arrives."""
+    subscription is on now (change_plan_credits).
+
+    ``period_ends`` are the ends the period was found under, as ISO strings: Lemon Squeezy's
+    renews_at and the stored reset date can differ by the time a change arrives. A row that
+    had no reset date recorded its adjustment without a period, and is found by that.
+
+    What moves is what the admin's change still adds to or takes from the balance on the new
+    plan: the balance as it is now, against what it would be had the admin changed nothing.
+    ``used`` is what the change counted as used, the admin's change included, so the credits
+    really used are ``used`` plus the recorded change. On most changes that is the recorded
+    change whole. On a downgrade whose balance stops at 0 it is less: a deduction the smaller
+    plan has swallowed is no longer in the balance, and carried whole it would make credits
+    that were used read as unused.
+    """
     meta = {**(subscription.subscription_metadata or {})}
     recorded = meta.get(ADMIN_CREDIT_ADJUSTMENT)
     if not recorded or not recorded.get("delta"):
         return
-    if recorded.get("period") not in {f"{end}|{old_plan_id}" for end in period_ends if end}:
+    old_keys = {f"{end}|{old_plan_id}" if end else None for end in period_ends}
+    if recorded.get("period") not in old_keys:
         return
-    meta[ADMIN_CREDIT_ADJUSTMENT] = {
-        "period": _period_key(subscription),
-        "delta": int(recorded["delta"]),
-    }
+    without = max(0, new_monthly - max(0, used + int(recorded["delta"])))
+    carried = (subscription.current_credits or 0) - without
+    if carried:
+        meta[ADMIN_CREDIT_ADJUSTMENT] = {"period": _period_key(subscription), "delta": carried}
+    else:
+        meta.pop(ADMIN_CREDIT_ADJUSTMENT)
     subscription.subscription_metadata = meta
 
 
