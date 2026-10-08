@@ -121,17 +121,25 @@ def _stamp_provider_state(subscription: UserSubscription, sub_data: Dict[str, An
 # subscription's metadata: invoice events don't stamp provider_updated_at, so this
 # orders them among themselves.
 _PAID_INVOICE_AT = "paid_invoice_at"
+# When that payment was credited, read by renewal_refund_handlers too.
+PAID_INVOICE_AT = _PAID_INVOICE_AT
+# The subscription invoice that paid for the current period (renewal_refund_handlers).
+PAID_INVOICE_ID = "paid_invoice_id"
 
 
 def _last_paid_invoice_at(subscription: UserSubscription) -> Optional[datetime]:
     return _provider_time((subscription.subscription_metadata or {}).get(_PAID_INVOICE_AT))
 
 
-def _record_paid_invoice(subscription: UserSubscription, paid_at: datetime) -> None:
+def _record_paid_invoice(
+    subscription: UserSubscription, paid_at: datetime, invoice_id: Optional[str] = None
+) -> None:
     # Reassigned, not mutated in place: SQLAlchemy doesn't track a plain JSONB's insides.
+    # The invoice's id tells a refund of this period's payment from an earlier one's.
     subscription.subscription_metadata = {
         **(subscription.subscription_metadata or {}),
         _PAID_INVOICE_AT: paid_at.isoformat(),
+        **({PAID_INVOICE_ID: str(invoice_id)} if invoice_id else {}),
     }
 
 
@@ -1737,7 +1745,32 @@ async def handle_subscription_payment_success(
                 order_id=subscription.lemonsqueezy_order_id,
             )
     if paid_at:
-        _record_paid_invoice(subscription, paid_at)
+        # A plan change's prorated invoice ("updated") pays a difference inside the
+        # period: the invoice that opened the period stays the one its refund is
+        # measured against (renewal_refund_handlers._period_of). Its time still
+        # orders the payments.
+        opens_period = sub_data.get("billing_reason") != "updated"
+        _record_paid_invoice(
+            subscription,
+            paid_at,
+            (webhook_data.get("data") or {}).get("id") if opens_period else None,
+        )
+
+    # A partial refund of this invoice that arrived before this payment (Lemon Squeezy
+    # doesn't promise order): the month just granted shrinks by it now.
+    from src.services.webhook_handlers.renewal_refund_handlers import apply_early_invoice_refund
+
+    early = await apply_early_invoice_refund(
+        db,
+        subscription,
+        (webhook_data.get("data") or {}).get("id"),
+        int(((webhook_data.get("data") or {}).get("attributes") or {}).get("total") or 0),
+    )
+    if early:
+        logger.info(
+            "subscription_payment_success: an earlier-delivered partial refund applied",
+            extra={"subscription_id": str(subscription.id), "adjustment": early},
+        )
 
     subscription.updated_at = datetime.now(timezone.utc)
     _stamp_card_details(subscription, sub_data)

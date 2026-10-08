@@ -1409,12 +1409,14 @@ def refund_fakes(monkeypatch):
 
     import src.providers.payment.provider_factory as provider_factory
     import src.services.webhook_handlers.order_handlers as order_handlers
+    import src.services.webhook_handlers.renewal_refund_handlers as renewal_refund_handlers
 
     provider = MagicMock()
     provider.cancel_subscription = AsyncMock(return_value={"success": True})
     monkeypatch.setattr(provider_factory, "get_payment_provider", lambda: provider)
-    monkeypatch.setattr(order_handlers, "get_payment_provider", lambda: provider)
-    monkeypatch.setattr(order_handlers, "send_billing_email_in_background", AsyncMock())
+    for handlers in (order_handlers, renewal_refund_handlers):
+        monkeypatch.setattr(handlers, "get_payment_provider", lambda: provider)
+        monkeypatch.setattr(handlers, "send_billing_email_in_background", AsyncMock())
     return provider
 
 
@@ -1433,29 +1435,41 @@ async def test_a_full_refund_of_the_first_payment_ends_access(db, refund_fakes):
     assert await usage.consume_credits(user.id, 15) is False
 
 
-@pytest.mark.xfail(strict=True, reason="F8b rext-control#537: a renewal order is not linked")
 async def test_a_full_refund_of_a_renewal_ends_that_months_credits(db, refund_fakes):
-    """The refund rule covers any payment: refunding a renewal takes back that month."""
-    from src.services.webhook_handlers.order_handlers import handle_order_refunded
+    """The refund rule covers any payment: refunding a renewal takes back that month.
 
-    user, ls_id, growth = await _active_growth(db)
-    variant = growth.lemonsqueezy_variant_id_monthly
+    Lemon Squeezy bills a renewal as a subscription invoice, not an order, and its refund
+    arrives as subscription_payment_refunded for that invoice (F8b, rext-control#537).
+    """
+    from src.services.webhook_handlers.renewal_refund_handlers import (
+        handle_subscription_payment_refunded,
+    )
+
+    user, ls_id, _ = await _active_growth(db)
     now = datetime.now(timezone.utc)
-    renewal_order = f"ord-renewal-{uuid4().hex[:6]}"
-    await handle_order_created(
-        _order_event(user, renewal_order, variant, at=now - timedelta(days=1)), None, db
-    )
-    await handle_subscription_payment_success(
-        _invoice_event(user, ls_id, at=now - timedelta(days=1), billing_reason="renewal"),
-        None,
-        db,
-    )
+    renewal = _invoice_event(user, ls_id, at=now - timedelta(days=1), billing_reason="renewal")
+    await handle_subscription_payment_success(renewal, None, db)
     usage = UsageTrackingService(db)
     assert await usage.get_credit_balance(user.id) == 1000
 
-    await handle_order_refunded(_refund_event(user, renewal_order, variant), None, db)
+    refund = _invoice_event(
+        user,
+        ls_id,
+        at=now - timedelta(days=1),
+        billing_reason="renewal",
+        status="refunded",
+        name="subscription_payment_refunded",
+    )
+    refund["data"]["id"] = renewal["data"]["id"]
+    refund["data"]["attributes"].update(
+        {"refunded": True, "refunded_amount": 8900, "refunded_at": _iso(now)}
+    )
+    await handle_subscription_payment_refunded(refund, None, db)
 
+    assert await usage.get_credit_balance(user.id) == 0
     assert await usage.consume_credits(user.id, 15) is False
+    # Lemon Squeezy's subscription ends too, or it charges the refunded customer next month.
+    refund_fakes.cancel_subscription.assert_awaited()
 
 
 async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(db, refund_fakes):

@@ -33,6 +33,7 @@ EXPECTED_HANDLERS = {
     "subscription_payment_success",
     "subscription_payment_failed",
     "subscription_payment_recovered",
+    "subscription_payment_refunded",
     "order_created",
     "order_refunded",
 }
