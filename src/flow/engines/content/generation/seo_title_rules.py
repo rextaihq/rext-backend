@@ -548,6 +548,77 @@ def _local_language(title: str) -> Optional[str]:
     return "zh-Hans" if simplified > traditional else "han"
 
 
+# ── How a title ends (G65, rext-control #560) ──────────────────────────────────────────────
+#
+# No part of validity: a title the customer wrote or picked is never refused for how it ends.
+# The title step asks these of what the model wrote, and sends a weak ending to the repair.
+
+# Last words that would fit any title: what a model reaches the minimum length with
+# ("...Best Practices Now", "...at Work Today", "...How Does It Work Easily?").
+_FILLER_END_WORDS = frozenset(
+    {"now", "today", "here", "easily", "effectively", "efficiently", "successfully"}
+)
+_FILLER_END_PHRASES = frozenset({("for", "you"), ("right", "now")})
+# Words "for you" completes ("Which Plan Is Right for You"): no filler after them.
+_COMPLETED_BY_FOR_YOU = frozenset(
+    {
+        "right", "best", "good", "better", "enough", "work", "works", "working", "fit", "fits",
+        "mean", "means", "matter", "matters",
+    }
+)  # fmt: skip
+# Words a whole title doesn't end on ("...Examples to Enhance Your"): the trim's list without
+# the modals, which close a clause in a title nobody cut ("Yes, You Can").
+_UNFINISHED_END_WORDS = _DANGLING_END_WORDS - {
+    "can", "could", "would", "should", "might", "must", "shall",
+}  # fmt: skip
+_WORD_EDGES = _TRAILING_PUNCTUATION + "?!.\"'“”‘’()"
+
+
+def _plain_words(title: str) -> list[str]:
+    return [word.lower().strip(_WORD_EDGES) for word in title.split()]
+
+
+def title_ending_problem(title: Any, keyphrase: Any = "") -> Optional[str]:
+    """Why the title's ending is weak: "unfinished:your" for a word left hanging, "filler:now"
+    for words that would fit any title. None for an ending that is fine, for one that is the
+    keyphrase's own last words, and for a title too short to judge."""
+    words = _plain_words(normalize_title(title))
+    if len(words) < 4:
+        return None
+    own = _plain_words(normalize_title(keyphrase))
+    if own and words[-len(own) :] == own:
+        return None
+    last = words[-1]
+    if last in _UNFINISHED_END_WORDS:
+        return f"unfinished:{last}"
+    pair = (words[-2], last)
+    if pair in _FILLER_END_PHRASES:
+        if pair == ("for", "you") and words[-3] in _COMPLETED_BY_FOR_YOU:
+            return None
+        return f"filler:{' '.join(pair)}"
+    return f"filler:{last}" if last in _FILLER_END_WORDS else None
+
+
+def without_filler_ending(title: Any, keyphrase: Any = "") -> Optional[str]:
+    """The title without its one filler word, when what is left is a valid title that ends
+    well ("...Understanding Best Practices Now"). None when it isn't: the ending then has to
+    be written anew, which is the repair's work."""
+    cleaned = normalize_title(title)
+    problem = title_ending_problem(cleaned, keyphrase) or ""
+    if not problem.startswith("filler:") or " " in problem:
+        return None
+    words = cleaned.split()
+    asks = words[-1].rstrip("\"'”’)").endswith("?")
+    shorter = " ".join(words[:-1]).rstrip(_TRAILING_PUNCTUATION) + ("?" if asks else "")
+    if (
+        not title_is_valid(shorter, keyphrase)
+        or title_ending_problem(shorter, keyphrase)
+        or _ends_dangling(words, len(words) - 1)
+    ):
+        return None
+    return shorter
+
+
 def _pad_to_min(title: str, keyphrase: str = "") -> str:
     """Lift a too-short title into range with claim-free qualifiers.
 

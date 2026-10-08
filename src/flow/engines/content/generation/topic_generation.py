@@ -42,9 +42,11 @@ from src.flow.engines.content.generation.seo_title_rules import (
     normalize_title,
     recase_keyphrase,
     repair_title,
+    title_ending_problem,
     title_is_valid,
     title_length_terms,
     title_violations,
+    without_filler_ending,
 )
 from src.flow.engines.content.generation.title_articles import fix_title_articles
 from src.flow.engines.serp.serp_evidence import build_serp_titles
@@ -180,6 +182,27 @@ def _invalid_title_indexes(parsed: SEOTopics, keyphrase: str) -> List[int]:
     ]
 
 
+def _weak_ending_indexes(parsed: SEOTopics, keyphrase: str) -> List[int]:
+    """Indexes of valid titles that end on filler or on a word left hanging (G65)."""
+    return [
+        index
+        for index, topic in enumerate(parsed.topics)
+        if title_is_valid(topic.title, keyphrase) and title_ending_problem(topic.title, keyphrase)
+    ]
+
+
+def _drop_filler_endings(parsed: SEOTopics, keyphrase: str) -> None:
+    """A valid title that ends on one filler word loses it, when what is left is still a valid
+    title that ends well ("...Understanding Best Practices Now"): no model call for that."""
+    for topic in parsed.topics:
+        if not title_is_valid(topic.title, keyphrase):
+            continue
+        shorter = without_filler_ending(topic.title, keyphrase)
+        if shorter:
+            logger.info("Dropped the filler ending of %r -> %r", topic.title, shorter)
+            topic.title = shorter
+
+
 def _validate_topic_structure(parsed: SEOTopics) -> SEOTopics:
     """
     Normalize safe structural properties without rejecting the complete result.
@@ -225,31 +248,39 @@ async def _repair_invalid_titles(
     keyphrase: str,
 ) -> SEOTopics:
     """
-    Ask the LLM to repair only titles that violate the title contract.
+    Ask the LLM to repair only titles that violate the title contract, or that keep the
+    contract and end weakly (on filler, or on a word left hanging: G65).
 
     No generic suffix is added by application code at this stage. The repair
     prompt explicitly tells the model not to introduce unsupported information.
     If repair fails or comes back still invalid, the original parsed response is
-    returned unchanged and the deterministic net in the caller takes over.
+    returned unchanged and the deterministic net in the caller takes over. A title
+    that only ended weakly is replaced only by one that ends well: else it stays.
     """
-    invalid_indexes = _invalid_title_indexes(parsed, keyphrase)
+    weak_indexes = _weak_ending_indexes(parsed, keyphrase)
+    invalid_indexes = sorted({*_invalid_title_indexes(parsed, keyphrase), *weak_indexes})
 
     if not invalid_indexes:
         return parsed
+
+    def problems(title: str) -> List[str]:
+        ending = title_ending_problem(title, keyphrase)
+        return title_violations(title, keyphrase) + ([f"ending_{ending}"] if ending else [])
 
     invalid_titles = [
         {
             "index": index,
             "title": parsed.topics[index].title,
             "length": len(parsed.topics[index].title),
-            "problems": title_violations(parsed.topics[index].title, keyphrase),
+            "problems": problems(parsed.topics[index].title),
         }
         for index in invalid_indexes
     ]
 
     logger.warning(
-        "Found %d title(s) violating the SEO title contract.",
+        "Found %d title(s) violating the SEO title contract or ending weakly (%d).",
         len(invalid_indexes),
+        len(weak_indexes),
     )
 
     low, high, how = title_length_terms(keyphrase)
@@ -277,8 +308,13 @@ async def _repair_invalid_titles(
                 f"that would fit any title ({_FILLER_EXAMPLES}). Add who it is for, a number "
                 "of steps or items, or the outcome instead (no year: none is given here).\n"
                 "- Do not change the subject just to satisfy the character count.\n\n"
-                "Only repair the supplied invalid titles. "
-                "Do not modify titles that are already valid.\n\n"
+                "TITLE ENDINGS:\n"
+                'A title listed with the problem "ending_filler" ends on words that would fit '
+                'any title; one listed with "ending_unfinished" stops in the middle of a '
+                "phrase. Rewrite the end of such a title so that it finishes its thought with "
+                "something specific to the topic. The length and keyphrase requirements above "
+                "hold for it too.\n\n"
+                "Only repair the supplied titles. Do not modify the others.\n\n"
                 "Before returning each repaired title, internally count its "
                 f"characters and verify the result is {low}-{high} "
                 "characters and still contains the exact focus keyphrase."
@@ -310,9 +346,14 @@ async def _repair_invalid_titles(
             if index >= len(repaired.topics):
                 continue
             candidate = repaired.topics[index].title
-            if title_is_valid(candidate, keyphrase):
-                parsed.topics[index].title = candidate
-                repaired_count += 1
+            if not title_is_valid(candidate, keyphrase):
+                continue
+            # A valid title that only ended weakly is given up for one that ends well, never
+            # for another weak ending.
+            if index in weak_indexes and title_ending_problem(candidate, keyphrase):
+                continue
+            parsed.topics[index].title = candidate
+            repaired_count += 1
 
         logger.info(
             "LLM title repair fixed %d of %d invalid title(s).",
@@ -424,7 +465,11 @@ async def _generate_and_validate_topics(
             logger.warning("Model returned no topics for query=%r.", query)
             return None
 
-        if _invalid_title_indexes(results, keyphrase):
+        # A filler word at the end goes where the title stands without it; an ending that has
+        # to be written anew goes to the repair with the invalid titles (G65).
+        _drop_filler_endings(results, keyphrase)
+
+        if _invalid_title_indexes(results, keyphrase) or _weak_ending_indexes(results, keyphrase):
             results = await _repair_invalid_titles(
                 model=model,
                 parsed=results,
@@ -433,6 +478,7 @@ async def _generate_and_validate_topics(
             )
 
         results = _apply_deterministic_title_repair(results, keyphrase)
+        _drop_filler_endings(results, keyphrase)
 
         if not results.topics and not regenerating:
             # Every title was dropped: the keyphrase itself is offered as the one title
