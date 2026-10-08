@@ -940,12 +940,11 @@ def _steps_from_fields(
     steps: list[dict] = []
     own_words = 0
     for number, step in enumerate(approved, 1):
-        text = content_dict.get(step_field(number))
-        text = text.strip() if isinstance(text, str) else ""
-        if text:
+        written = content_dict.get(step_field(number))
+        text = step_text_or_plan(step, written)
+        if isinstance(written, str) and written.strip():
             own_words += len(text.split())
         else:
-            text = str(step.get("description") or "").strip()
             logger.warning(
                 "assemble_structured_payload: step %s of the approved outline was not written; %s",
                 number,
@@ -962,12 +961,23 @@ def _steps_from_fields(
     return steps, own_words
 
 
+def step_text_or_plan(step: dict, written: Any) -> str:
+    """A step's text: what the writer wrote for it, or, written empty, what the outline
+    planned for it. One rule for the finished article and for the draft the page shows."""
+    text = written.strip() if isinstance(written, str) else ""
+    return text or str(step.get("description") or "").strip()
+
+
 def _tools_named_in(text: str, tools: Any) -> list[str]:
     """The article's tools that a step's text names, as the typed list keeps a step's own:
-    the writer lists the tools once (`tools_needed`), and a step that uses one says so."""
-    said = text.lower()
+    the writer lists the tools once (`tools_needed`), and a step that uses one says so. A
+    name is matched whole, so "Go" is not found in "going" nor "Pan" in "company"."""
     names = [str(tool).strip() for tool in (tools if isinstance(tools, list) else [])]
-    return [name for name in names if name and name.lower() in said]
+    return [
+        name
+        for name in names
+        if name and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text, re.IGNORECASE)
+    ]
 
 
 def _is_step_field(key: str) -> bool:

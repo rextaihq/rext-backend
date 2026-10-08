@@ -160,6 +160,15 @@ def test_a_step_keeps_the_tools_its_text_names():
     assert [step["tools"] for step in payload["steps"]] == [[], ["Trowel"], []]
 
 
+def test_a_tools_name_is_matched_whole():
+    payload = _assembled(
+        {**WRITTEN, "step_1": "Keep going until the company of roots loosens; use the pan."},
+        tools_needed=["Go", "Pan", "R"],
+    )
+
+    assert payload["steps"][0]["tools"] == ["Pan"]
+
+
 def test_a_step_that_opens_with_a_list_or_a_code_block_keeps_it_one():
     """Set after the title on the same line, a fence is no fence and a first bullet is text."""
     body = _assembled(

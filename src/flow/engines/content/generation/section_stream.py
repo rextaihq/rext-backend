@@ -24,6 +24,7 @@ from src.flow.engines.content.generation.structured_body import (
     STEPS_KEY,
     sections_in_article_order,
     step_field,
+    step_text_or_plan,
     typed_section_blocks,
     typed_section_drafts,
     written_steps,
@@ -218,13 +219,15 @@ def _step_parts(outline: dict, content_type: str) -> dict[str, SectionParts]:
     steps, _ = written_steps(outline, content_type)
     if not steps:
         return {}
-    titles = [str(step["title"]).strip() for step in steps]
 
     def gather(texts: list) -> list[dict]:
+        # As assembly builds the list (_steps_from_fields): a step written empty stands with
+        # what the outline planned for it, so the draft is the list the article will show.
+        drafted = [(step, step_text_or_plan(step, text)) for step, text in zip(steps, texts)]
         return [
-            {"title": title, "description": text}
-            for title, text in zip(titles, texts)
-            if isinstance(text, str) and text.strip()
+            {"title": str(step["title"]).strip(), "description": text}
+            for step, text in drafted
+            if text
         ]
 
     return {STEPS_KEY: ([step_field(number) for number in range(1, len(steps) + 1)], gather)}

@@ -790,6 +790,23 @@ def test_the_steps_are_sent_only_when_every_step_field_has_closed():
     )
 
 
+def test_the_draft_of_a_step_written_empty_is_what_the_article_will_show():
+    """Assembly lets the outline's description stand in for a step written empty; the draft
+    the page shows says the same, in the same place."""
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    stream = article_section_stream(built[1], HOW_TO_OUTLINE, "how-to-guide", "How to Repot")
+
+    sent = stream.feed(json.dumps({"step_1": "Ease it out.", "step_2": "", "step_3": "Water."}))
+
+    assert sent[0]["markdown"] == (
+        "1. **Remove the plant.** Ease it out.\n"
+        "2. **Prepare the new pot.** Add fresh mix.\n"
+        "3. **Water the plant.** Water."
+    )
+
+
 def test_the_writers_fields_stand_where_the_steps_do_in_the_approved_order():
     """The article is written in the order it is read: the step fields come after the section
     before the steps and before the one after."""
