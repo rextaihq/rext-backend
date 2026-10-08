@@ -989,8 +989,15 @@ class LemonSqueezyProvider(PaymentProvider):
             logger.error("No webhook secret configured", operation="webhook_verification")
             return False
 
-        # LemonSqueezy uses HMAC SHA-256. The setting may hold two secrets while it is changed.
-        is_valid = signed_with_one_of(payload, signature, signing_secrets(webhook_secret))
+        # LemonSqueezy uses HMAC SHA-256. While the secret is being changed, the one it replaces
+        # is accepted too.
+        from src.config.payment_config import payment_settings
+
+        is_valid = signed_with_one_of(
+            payload,
+            signature,
+            signing_secrets(webhook_secret, payment_settings.lemonsqueezy_webhook_secret_previous),
+        )
 
         if is_valid:
             logger.info("Webhook signature verified successfully", operation="webhook_verification")

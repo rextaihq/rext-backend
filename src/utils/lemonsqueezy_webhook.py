@@ -30,19 +30,16 @@ class WebhookParsingError(Exception):
     pass
 
 
-def signing_secrets(secret: Optional[str]) -> list[str]:
+def signing_secrets(secret: Optional[str], previous: Optional[str] = None) -> list[str]:
     """The values a webhook's signature may have been made with.
 
-    One value is the usual setting. While the secret is being changed, the setting holds the new
-    one and the old one, comma-separated: an event signed with either is accepted, so none is
-    refused in the minutes between changing it here and at the provider. The setting as a whole
-    is tried too, for a secret that itself holds a comma.
+    The secret is the usual and only one. While it is being changed, the one it replaces is kept
+    in a setting of its own (LEMONSQUEEZY_WEBHOOK_SECRET_PREVIOUS): an event signed with either
+    is accepted, so none is refused in the minutes between changing the secret here and at the
+    provider. Each value is taken whole, whatever characters it holds.
     """
-    whole = (secret or "").strip()
-    parts = [part.strip() for part in whole.split(",") if part.strip()]
-    if not parts:
-        return []
-    return list(dict.fromkeys([whole, *parts]))
+    values = [(value or "").strip() for value in (secret, previous)]
+    return list(dict.fromkeys(value for value in values if value))
 
 
 def signed_with_one_of(payload: bytes, signature: str, secrets: list[str]) -> bool:
@@ -56,7 +53,9 @@ def signed_with_one_of(payload: bytes, signature: str, secrets: list[str]) -> bo
     return matched
 
 
-def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
+def verify_webhook_signature(
+    payload: bytes, signature: str, secret: str, previous: Optional[str] = None
+) -> bool:
     """
     Verify webhook signature from LemonSqueezy using HMAC SHA-256.
 
@@ -66,8 +65,8 @@ def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> boo
     Args:
         payload: Raw webhook payload bytes (must be raw, not parsed)
         signature: Signature from X-Signature header
-        secret: Webhook signing secret from LemonSqueezy settings; two, comma-separated,
-            while it is being changed (see signing_secrets)
+        secret: Webhook signing secret from LemonSqueezy settings
+        previous: The secret it replaces, while the secret is being changed (signing_secrets)
 
     Returns:
         bool: True if signature is valid, False otherwise
@@ -89,7 +88,7 @@ def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> boo
     Reference:
         https://docs.lemonsqueezy.com/guides/developer-guide/webhooks#signing-requests
     """
-    candidates = signing_secrets(secret)
+    candidates = signing_secrets(secret, previous)
     if not candidates:
         logger.error("LemonSqueezy webhook secret is not configured")
         return False
