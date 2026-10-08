@@ -1795,8 +1795,10 @@ async def handle_subscription_payment_success(
         # A plan change's prorated invoice ("updated") pays a difference inside the
         # period: the invoice that opened the period stays the one its refund is
         # measured against (renewal_refund_handlers._period_of). Its time still
-        # orders the payments.
-        opens_period = sub_data.get("billing_reason") != "updated"
+        # orders the payments. One "updated" invoice does open the period: the one a
+        # trial ended by a plan change pays, which is the first payment under another
+        # name and brought the month above; a refund of it is a refund of that month.
+        opens_period = sub_data.get("billing_reason") != "updated" or not start_month_given
         _record_paid_invoice(
             subscription,
             paid_at,
