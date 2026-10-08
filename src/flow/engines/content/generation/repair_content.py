@@ -33,6 +33,7 @@ from src.flow.engines.content.generation.onpage_seo import (
     enforce_onpage_seo,
     merge_preserving_existing,
 )
+from src.flow.engines.content.generation.repair_salvage import salvage_repair
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
     build_requirements_spec,
@@ -105,6 +106,41 @@ _LINK_RELATED_CHECKS = (
     "internal_links_integration",
     "facts_and_external_links",
 )
+
+
+def checks_already_tried(repair_history: Optional[list[dict]]) -> set[str]:
+    """The checks a repair has worked on, with its result kept, that still fail.
+
+    Asking for the same thing again in the same words has not fixed one yet: on seven real
+    runs every second attempt at such a check changed nothing (rext-control#818). A check
+    counts only when the repair really had its turn: not when the attempt was thrown away,
+    not when the model returned nothing, and not when the repair did fix it but the fix was
+    lost with a block that broke something else (`lost_checks`).
+    """
+    tried: set[str] = set()
+    for entry in repair_history or []:
+        if not entry.get("accepted") or entry.get("no_result"):
+            continue
+        tried |= set(entry.get("unresolved_checks") or []) - set(entry.get("lost_checks") or [])
+    return tried
+
+
+def checks_worth_an_attempt(
+    repairable: list[dict], repair_history: Optional[list[dict]]
+) -> list[dict]:
+    """The failed checks another repair attempt is run for.
+
+    Not those already tried (above), and not the headings' own (`SUBHEADING_CHECKS`): the
+    headings-only pass runs inside any attempt and again after the rewrite, which rewords
+    headings anyway, so an attempt for them alone is half a minute for nothing.
+    """
+    tried = checks_already_tried(repair_history)
+    return [
+        c
+        for c in repairable
+        if c.get("name") not in tried and c.get("name") not in SUBHEADING_CHECKS
+    ]
+
 
 # How far a repair may move the article's length. Repair fixes named issues; a
 # rewrite that shrinks the body is how unrelated checks (density, links, word
@@ -490,8 +526,26 @@ async def repair_content(state: REXT) -> dict:
         protected = merge_link_inventory(
             spec.get("link_inventory"), protected_links(final_content, spec, searched_results)
         )
-        article_checks = [c for c in repair_targets if c.get("name") not in SUBHEADING_CHECKS]
+        # What the model is asked for: not the headings' own checks (their pass follows),
+        # and not what an earlier attempt already worked on and left failing.
+        article_checks = checks_worth_an_attempt(repair_targets, repair_history)
+        asked = {c.get("name") for c in article_checks}
+        targeted_checks = [
+            name for name in targeted_checks if name in asked or name in SUBHEADING_CHECKS
+        ]
+        # The note about the attempt before names only what is asked for again.
+        previous_attempt = None
+        if repair_history:
+            previous_attempt = {
+                **repair_history[-1],
+                "unresolved_checks": [
+                    name
+                    for name in repair_history[-1].get("unresolved_checks") or []
+                    if name in asked
+                ],
+            }
         candidate = final_content
+        no_result = False
         if article_checks:
             repaired = await run_targeted_repair(
                 final_content=final_content,
@@ -503,7 +557,7 @@ async def repair_content(state: REXT) -> dict:
                 selected_title=spec.get("selected_title") or "",
                 article_stage="pre-humanization (raw draft — tone not yet finalized)",
                 protected=protected,
-                previous_attempt=repair_history[-1] if repair_history else None,
+                previous_attempt=previous_attempt,
                 brand_policy=spec.get("brand_placement_policy"),
                 excluded_brand=spec.get("excluded_brand"),
             )
@@ -511,6 +565,7 @@ async def repair_content(state: REXT) -> dict:
                 # The repair returns every field: the brand choice's cleanup applies to it too.
                 candidate = apply_brand_exclusion(repaired, spec, stage="repair_content")
             else:
+                no_result = True
                 logger.warning(
                     "repair_content: attempt %d model call failed — keeping pre-repair content; "
                     "attempt counter still increments to bound the loop.",
@@ -525,25 +580,49 @@ async def repair_content(state: REXT) -> dict:
         # Verify before accepting. A repair that fixes the named issue while
         # breaking a check that was passing is the loop this node used to create:
         # the next validation failed on the new breakage, a second repair ran, and
-        # the article could end up worse than before either. Such a repair is
-        # discarded — the pre-repair content stands — and the next attempt is told
-        # exactly what the discarded one broke. Humanization-owned checks are
-        # excluded from "regressed": length is corrected after this loop.
-        after_blocking, _ = run_checks(
-            apply_density_report(candidate, spec), spec, searched_results
-        )
+        # the article could end up worse than before either. Such a repair is not
+        # accepted as it stands, but it is not thrown away whole either: what of it
+        # fixes an issue and breaks nothing is kept (repair_salvage), and only when
+        # no such part exists does the pre-repair content stand. The next attempt is told exactly what
+        # the repair broke. Humanization-owned checks are excluded from "regressed":
+        # length is corrected after this loop.
         failed_before = {c.get("name") for c in failed_checks}
-        failed_after = {c["name"] for c in after_blocking}
+
+        def failing(content: dict) -> set[str]:
+            blocking, _ = run_checks(apply_density_report(content, spec), spec, searched_results)
+            return {c["name"] for c in blocking}
+
+        failed_after = failing(candidate)
         regressed = sorted(failed_after - failed_before - set(HUMANIZATION_OWNED_CHECKS))
+        fixed_by_the_repair = [name for name in targeted_checks if name not in failed_after]
+        salvaged = None
+        if regressed:
+            kept, how = salvage_repair(
+                final_content,
+                candidate,
+                failing,
+                failed_before,
+                ignore=HUMANIZATION_OWNED_CHECKS,
+            )
+            if kept is not None:
+                candidate, salvaged = kept, how
+                failed_after = failing(candidate)
         unresolved = [name for name in targeted_checks if name in failed_after]
         resolved = [name for name in targeted_checks if name not in failed_after]
-        accepted = not regressed
+        accepted = not regressed or salvaged is not None
         history_entry = {
             "accepted": accepted,
             "resolved_checks": resolved,
             "unresolved_checks": unresolved,
             "regressed_checks": regressed,
         }
+        if salvaged is not None:
+            # Kept in part: how, and which fixes went with the blocks that broke something
+            # (those have not had their turn; see checks_already_tried).
+            history_entry["salvaged"] = salvaged
+            history_entry["lost_checks"] = [n for n in fixed_by_the_repair if n in failed_after]
+        if no_result:
+            history_entry["no_result"] = True
         if accepted:
             updated_final_content = candidate
             generation_meta = {
@@ -553,10 +632,13 @@ async def repair_content(state: REXT) -> dict:
                 ),
             }
             logger.info(
-                "repair_content: attempt %d accepted — resolved=%s unresolved=%s",
+                "repair_content: attempt %d accepted — resolved=%s unresolved=%s kept_in_part=%s "
+                "broke=%s",
                 attempt_number,
                 resolved,
                 unresolved,
+                salvaged,
+                regressed,
             )
         else:
             logger.warning(

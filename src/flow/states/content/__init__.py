@@ -291,13 +291,23 @@ class _RepairAttemptRequired(TypedDict):
 class RepairAttempt(_RepairAttemptRequired, total=False):
     """One targeted repair pass, logged for observability and loop bounding."""
 
-    # Whether the repaired content replaced the pre-repair content. A repair
-    # that breaks a check that was passing is rejected rather than accepted.
+    # Whether the repair's result, whole or in part, replaced the pre-repair
+    # content. A repair that breaks a check that was passing is not accepted as
+    # it stands: what of it breaks nothing is kept (`salvaged`), and it is
+    # rejected only when no part can stay.
     accepted: bool
     resolved_checks: list[str]
     unresolved_checks: list[str]
+    # What the repair as the model returned it broke.
     regressed_checks: list[str]
     restored_links: list[str]
+    # Kept in part: {"how": "lists"} (its prose beside the lists the article had)
+    # or {"how": "blocks", "kept": n, "dropped": m}.
+    salvaged: dict
+    # Fixed by the repair, lost with a block that broke something else.
+    lost_checks: list[str]
+    # The model returned nothing for this attempt.
+    no_result: bool
 
 
 class SearchedResult(TypedDict):
