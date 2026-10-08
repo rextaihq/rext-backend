@@ -55,7 +55,6 @@ from src.flow.engines.content.generation.structured_body import (
     UNPLACED_LINKS_KEY,
     assemble_structured_payload,
     build_structured_content_model,
-    typed_section_blocks,
     uses_structured_body,
 )
 from src.flow.engines.content.generation.subheading_seo import (
@@ -1283,13 +1282,7 @@ async def generate_content(state: REXT) -> dict:
         # publisher are all unchanged by structured generation.
         unplaced_links: list[dict] = []
         if structured_blocks:
-            content_dict = assemble_structured_payload(
-                content_dict,
-                structured_blocks,
-                typed=typed_section_blocks(outline, content_type),
-                keyphrase=focus_keyword or "",
-                content_type=content_type,
-            )
+            content_dict = assemble_structured_payload(content_dict, structured_blocks)
             unplaced_links = content_dict.pop(UNPLACED_LINKS_KEY, None) or []
 
         # The outline's CTA fields steer the text; a line that only prints one as a

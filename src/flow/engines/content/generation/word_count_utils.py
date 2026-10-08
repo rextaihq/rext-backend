@@ -27,23 +27,3 @@ def compute_word_target_band(
         return 0, 0
     buffer = max(min_buffer, round(target_word_count * ratio))
     return max(0, target_word_count - buffer), target_word_count + buffer
-
-
-# Where assembly records the words of the sections it rendered from typed fields (a how-to
-# guide's steps, a review's verdict, a tutorial's prerequisites; G98, revnix/rext-control#812).
-TYPED_SECTION_WORDS_KEY = "_typed_section_words"
-
-
-def typed_section_allowance(final_content: dict) -> int:
-    """The words the band's maximum grows by for this article: those of the sections rendered
-    from typed fields, as counted when they were rendered.
-
-    The target was set for what the writer was asked to write; these sections come on top of
-    it. The count is the one recorded at assembly and never more, so a later rewrite that
-    rewords the section keeps its room and one that pads it gets no extra. Nothing recorded,
-    no allowance.
-    """
-    words = final_content.get(TYPED_SECTION_WORDS_KEY)
-    if isinstance(words, bool) or not isinstance(words, int):
-        return 0
-    return max(0, words)
