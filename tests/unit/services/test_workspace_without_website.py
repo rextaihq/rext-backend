@@ -36,6 +36,7 @@ from src.api.schema.workspace_schema import (
 from src.services import workspace_pipeline, workspace_service
 from src.services.workspace_pipeline import WorkspacePipeline
 from src.services.workspace_service import WorkspaceService, pipeline_state
+from src.utils.name_utils import validate_brand_name
 from tests.conftest import TEST_DATABASE_URL
 
 DESCRIPTION = "We bake sourdough bread and pastries for cafés and restaurants in Leeds."
@@ -506,6 +507,104 @@ async def test_a_refresh_before_any_website_is_still_refused(session, started_ru
     assert started_runs == []
 
 
+# The business's name, as its owner typed it (revnix/rext-control#922)
+
+
+def test_a_typed_business_name_follows_the_workspace_names_rule():
+    assert validate_brand_name("  Tom’s Bakery (Leeds) ") == "Tom’s Bakery (Leeds)"
+    asked = WorkspaceSchema(name="Ana's workspace", description=DESCRIPTION, brand_name="  ")
+    assert asked.brand_name is None
+
+    with pytest.raises(RextValidationException) as refused:
+        validate_brand_name("<b>Crumb</b>")
+    (detail,) = refused.value.details
+    assert detail["field"] == "brand_name"
+    assert "Workspace name" not in detail["message"]
+
+
+@pytest.mark.asyncio
+async def test_a_name_typed_at_creation_is_the_brands_name(session, monkeypatch):
+    user = await _user(session)
+    given, started = _runs_given(monkeypatch, session)
+    service = _service(session, monkeypatch)
+    monkeypatch.setattr(service, "create_workspace_member", AsyncMock())
+    monkeypatch.setattr(service, "_get_workspace_owner_role", AsyncMock(return_value=Mock()))
+    monkeypatch.setattr(service, "_assign_role_to_user", AsyncMock())
+
+    created = await service.create_workspace_for_user(
+        user_id=user.id,
+        name="Ana's workspace",
+        timezone=None,
+        url=None,
+        description=DESCRIPTION,
+        brand_name="Crumb and Crust",
+    )
+    await started[0]
+
+    voice = (
+        await session.execute(
+            select(BrandVoice).where(BrandVoice.workspace_id == created["workspace"]["id"])
+        )
+    ).scalar_one()
+    assert (voice.about, voice.brand_name) == (DESCRIPTION, "Crumb and Crust")
+    assert given["brand_name"] == "Crumb and Crust"
+
+
+@pytest.mark.asyncio
+async def test_a_name_typed_on_the_set_up_page_is_kept_with_the_description(session, monkeypatch):
+    user, workspace = await _workspace_without_a_site(session, status="not_started", about=None)
+    given, started = _runs_given(monkeypatch, session)
+    monkeypatch.setattr(workspace_service, "invalidate_cache_key", AsyncMock())
+
+    await _service(session, monkeypatch).retry_pipeline_for_user(
+        workspace.id, user.id, description=DESCRIPTION, brand_name="Crumb and Crust"
+    )
+    await started[0]
+
+    voice = (
+        await session.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace.id))
+    ).scalar_one()
+    assert (voice.about, voice.brand_name) == (DESCRIPTION, "Crumb and Crust")
+    assert (given["description"], given["brand_name"]) == (DESCRIPTION, "Crumb and Crust")
+
+
+@pytest.mark.asyncio
+async def test_other_words_with_a_name_keep_the_name_typed_now(session, monkeypatch):
+    user, workspace = await _workspace_without_a_site(session, status="failed", about="Old words.")
+    voice = (
+        await session.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace.id))
+    ).scalar_one()
+    voice.brand_name = "Old Name"
+    await session.flush()
+    given, started = _runs_given(monkeypatch, session)
+    monkeypatch.setattr(workspace_service, "invalidate_cache_key", AsyncMock())
+
+    await _service(session, monkeypatch).retry_pipeline_for_user(
+        workspace.id, user.id, description=DESCRIPTION, brand_name="Crumb and Crust"
+    )
+    await started[0]
+
+    await session.refresh(voice)
+    assert voice.brand_name == "Crumb and Crust"
+    assert given["brand_name"] == "Crumb and Crust"
+
+
+@pytest.mark.asyncio
+async def test_a_run_again_is_given_the_name_the_voice_holds(session, monkeypatch):
+    user, workspace = await _workspace_without_a_site(session, status="failed")
+    voice = (
+        await session.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace.id))
+    ).scalar_one()
+    voice.brand_name = "Crumb and Crust"
+    await session.flush()
+    given, started = _runs_given(monkeypatch, session)
+
+    await _service(session, monkeypatch).retry_pipeline_for_user(workspace.id, user.id)
+    await started[0]
+
+    assert (given["description"], given["brand_name"]) == (DESCRIPTION, "Crumb and Crust")
+
+
 # The run
 
 
@@ -692,6 +791,20 @@ async def test_the_workspaces_label_is_not_embedded_as_the_brand_without_a_site(
     assert embedded["workspace_name"] == label
 
 
+@pytest.mark.asyncio
+async def test_the_name_the_voice_holds_stands_over_the_drafts_finding(monkeypatch):
+    _events(monkeypatch)
+    voice = BrandVoice(workspace_id=uuid4(), about=DESCRIPTION, brand_name="Crumb and Crust")
+
+    async def renamed(content: str) -> BrandSchema:
+        return BrandSchema(brand_name="Leeds Bakery Co", customer_profile="Cafés.")
+
+    await _pipeline(_session_with(voice), generator=renamed).run()
+
+    assert voice.brand_name == "Crumb and Crust"
+    assert voice.customer_profile == "Cafés."
+
+
 # The draft itself
 
 
@@ -751,3 +864,33 @@ async def test_the_draft_keeps_the_description_and_names_no_one(monkeypatch):
     asked.clear()
     assert await pipeline._description_voice_generator("   ") is None
     assert asked == {}
+
+
+@pytest.mark.asyncio
+async def test_the_draft_is_told_the_typed_name_and_asked_for_no_other(monkeypatch):
+    asked = {}
+
+    async def answered(model, messages, **kwargs):
+        asked["messages"] = messages
+        return BrandSchema(brand_name="Leeds Sourdough House", customer_profile="Cafés.")
+
+    monkeypatch.setattr(workspace_pipeline, "load_model", lambda **_: Mock())
+    monkeypatch.setattr(workspace_pipeline, "ainvoke_watched", answered)
+    pipeline = WorkspacePipeline(
+        db=AsyncMock(spec=AsyncSession),
+        operation_id="op",
+        workspace_id=uuid4(),
+        user_id=uuid4(),
+        url=None,
+        description=DESCRIPTION,
+        name="Ana's workspace",
+        brand_name="Crumb and Crust",
+    )
+
+    drafted = await pipeline._description_voice_generator(DESCRIPTION)
+
+    assert drafted.brand_name == "Crumb and Crust"
+    given = asked["messages"][1].content
+    # The workspace's own name is a label ("Ana's workspace"): it is not offered as the brand's.
+    assert "The business is called: Crumb and Crust" in given
+    assert "Ana's workspace" not in given
