@@ -233,3 +233,55 @@ def test_the_real_route_runs_the_gate_before_its_limit():
 
     assert "dashboard_sign_in_gate" in names
     assert names.index("dashboard_sign_in_gate") < names.index("EndpointRateLimiter")
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"X-Rext-Dashboard-Key": KEY, "user-agent": "node"},
+        {"x-rext-dashboard-key": KEY, "user-agent": "node"},
+        [["X-Rext-Dashboard-Key", KEY], ["user-agent", "node"]],
+    ],
+)
+def test_an_error_report_never_carries_the_key(headers):
+    """Error reports attach the request's headers; this one is not on the reporter's own list."""
+    from src.api.lib.sentry_config import before_send_filter, without_secret_headers
+
+    def event():
+        copy = dict(headers) if isinstance(headers, dict) else [list(pair) for pair in headers]
+        return {"request": {"url": "https://api.example.test" + ROUTE, "headers": copy}}
+
+    for sent in (before_send_filter(event(), {}), without_secret_headers(event())):
+        assert KEY not in str(sent)
+        assert "node" in str(sent)  # the other headers are left as they were
+        assert "dashboard-key" in str(sent).lower()  # and it can be seen that one was sent
+
+
+def test_traces_go_through_the_same_filter():
+    import inspect
+
+    from src.api.lib import sentry_config
+
+    assert "before_send_transaction=without_secret_headers" in inspect.getsource(sentry_config)
+
+
+@pytest.mark.asyncio
+async def test_only_a_string_the_gate_set_is_an_identity_for_the_limiter(monkeypatch):
+    """A request state that answers every attribute (a test double) names nobody."""
+    from unittest.mock import MagicMock
+
+    from src.api.middleware.rate_limiter import EndpointRateLimiter
+
+    monkeypatch.setattr(rate_limiter_module, "cache", SimpleNamespace(redis=None))
+    limiter = EndpointRateLimiter(requests=1, window_minutes=1, description="test")
+
+    def request(user_id: str) -> MagicMock:
+        made = MagicMock()
+        made.method = "GET"
+        made.state.user_id = user_id
+        return made
+
+    await limiter(request("user-1"))
+    await limiter(request("user-2"))  # another user: their own allowance, not a shared one
+
+    assert set(limiter.storage) == {"user:user-1", "user:user-2"}
