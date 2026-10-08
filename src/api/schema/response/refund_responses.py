@@ -77,6 +77,21 @@ RefundResponse = RefundAdminRow
 RefundListResponse = RefundAdminListResponse
 
 
+class PlanChangeChargeRow(BaseModel):
+    """A plan change the customer paid for, which a refund of their order doesn't give back.
+
+    Lemon Squeezy charges it as a subscription invoice, not as an order. Amounts in cents.
+    """
+
+    invoice_id: str
+    amount: int
+    refunded_amount: int = 0
+    # What Lemon Squeezy still holds of it: the amount to give back in its dashboard.
+    outstanding_amount: int
+    currency: str
+    paid_at: Optional[datetime] = None
+
+
 class RefundableOrderRow(BaseModel):
     """An order an admin can pick to refund against.
 
@@ -106,6 +121,8 @@ class RefundableOrderRow(BaseModel):
     # server-side so the UI never re-derives them from what it happens to have.
     refunded_amount: int = 0
     refundable_amount: int = 0
+    # Paid plan changes on the subscription this order started (admin only).
+    plan_change_charges: List[PlanChangeChargeRow] = []
 
 
 class RefundableOrderListResponse(BaseModel):
@@ -143,6 +160,9 @@ class RefundRequestRow(BaseModel):
     refundable_amount: int = 0
     # Approved, but no refund issued against it yet. Drives "Process refund".
     awaiting_processing: bool = False
+    # Paid plan changes on the subscription this order started: filled for the
+    # admin queue only, where the person refunding has to give them back too.
+    plan_change_charges: List[PlanChangeChargeRow] = []
 
 
 class RefundRequestListResponse(BaseModel):
