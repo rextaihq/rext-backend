@@ -279,6 +279,10 @@ def test_none_cannot_exclude_a_brand_the_title_or_keyphrase_names(outline_extra)
         # A heading, a list entry or a bold label that is only the name does name the brand.
         ("## Later\n\nIt helps.", True),
         ("- **Later**: a scheduler\n- Buffer", True),
+        ("**Later**\n\nIt helps.", True),
+        ("1. Later\n2. Buffer", True),
+        # The bare word on a line of its own is a terse sentence, not a label.
+        ("We plan the week now.\n\nLater", False),
         ("## Later that day\n\nIt helps.", False),  # the word opening a longer heading
         ("Later is a social media scheduler.", True),  # a sentence start used as a name
         ("Later can help you plan the week.", True),
@@ -821,6 +825,62 @@ def test_a_brand_free_call_to_action_is_unlinked_where_the_article_renders_it(pr
     assert "rival.example" not in cleaned["body_markdown"]
     # Another link in the article is left alone.
     assert "[a soil guide](https://soil.example/g)" in cleaned["body_markdown"]
+
+
+def test_a_citation_that_carries_the_call_to_actions_words_keeps_its_link():
+    """A link the article is held to is not the call to action, whatever its words: taken out
+    here it would be put back and taken out again, with the link check failing each time."""
+    from src.flow.engines.content.generation.validation import check_links_preserved
+
+    article = {
+        **ARTICLE,
+        "body_markdown": (
+            "## Choose the spot\n\nSun hours decide the yield. "
+            "[Learn more](https://source.example/study)."
+            "\n\n[Learn more](https://rival.example/editor)"
+        ),
+        "cta": {"text": "Learn more", "url": None},
+    }
+    citation = {
+        "url": "https://source.example/study",
+        "anchor_text": "Learn more",
+        "kind": "citation",
+    }
+
+    cleaned, spec = _checked(article, _outline("none"), {"link_inventory": [citation]})
+
+    assert "[Learn more](https://source.example/study)" in cleaned["body_markdown"]
+    assert "rival.example" not in cleaned["body_markdown"]
+    assert check_links_preserved(cleaned, spec)["passed"] is True
+
+
+def test_the_link_lists_follow_an_unlinked_call_to_action():
+    article = {
+        **ARTICLE,
+        "body_markdown": (
+            "## Choose the spot\n\nSee [a soil guide](https://soil.example/g)."
+            "\n\n[Start planning your garden today](https://rival.example/editor)"
+        ),
+        "cta": {"text": "Start planning your garden today", "url": None},
+        "outbound_links": [
+            {"url": "https://soil.example/g", "anchor_text": "a soil guide"},
+            {"url": "https://rival.example/editor", "anchor_text": "Start planning"},
+        ],
+    }
+
+    cleaned, _ = _checked(article, _outline("subtle"))
+
+    assert cleaned["outbound_links"] == [
+        {"url": "https://soil.example/g", "anchor_text": "a soil guide"}
+    ]
+    # An address the article still links elsewhere keeps its entry.
+    twice = {
+        **article,
+        "body_markdown": article["body_markdown"]
+        + "\n\nThe [rival editor](https://rival.example/editor) works differently.",
+    }
+    kept, _ = _checked(twice, _outline("subtle"))
+    assert len(kept["outbound_links"]) == 2
 
 
 def test_a_subtle_call_to_action_that_names_the_brand_is_refused():

@@ -1530,8 +1530,16 @@ def _is_whole_label(text: str, match: re.Match) -> bool:
     start = text.rfind("\n", 0, match.start()) + 1
     end = text.find("\n", match.end())
     line = text[start : len(text) if end == -1 else end]
+    # Only a line that is marked up as one: the bare word on a line of its own ("Later") is a
+    # terse sentence, and stays prose.
+    if not _LABEL_MARKUP_RE.match(line):
+        return False
     label = re.sub(r"^[\s#>*_\-+\d.)]+|[\s*_:.]+$", "", line)
     return label == match.group(0)
+
+
+# What opens a heading, a list entry, a quote or a bold label.
+_LABEL_MARKUP_RE = re.compile(r"\s*(?:#{1,6}\s|[-*+>]\s|\d+[.)]\s|\*\*|__)")
 
 
 # Inline emphasis and code marks, which can sit inside a name: "Acme **Tools**".
@@ -2432,24 +2440,45 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
             cleaned["cta"] = {**cta, "url": None}
     cta_text = " ".join(str((cta or {}).get("text") or "").split()).casefold()
     if spec.get("cta_without_link") and isinstance(cta, dict) and cta_text:
-        approved_keys = {
+        # A link the article is held to stays: an approved internal link, and any link in the
+        # inventory check_links_preserved reads (a verified citation that happens to carry the
+        # call to action's words, "Learn more"). Taking one of those out here would only have
+        # it put back and taken out again, with the check failing each time.
+        kept_keys = {
             normalize_url(link.get("url") or "")
-            for link in approved or []
+            for link in [*(approved or []), *(spec.get("link_inventory") or [])]
             if isinstance(link, dict)
         }
+        unlinked: set[str] = set()
 
         def unlink_call_to_action(match: re.Match) -> str:
             # The same call to action as the reader meets it: a link in the article whose
             # words are the call to action's.
             anchor = " ".join(_EMPHASIS_MARKS_RE.sub("", match.group(1)).split()).casefold()
-            if anchor != cta_text or normalize_url(match.group(2)) in approved_keys:
+            if anchor != cta_text or normalize_url(match.group(2)) in kept_keys:
                 return match.group(0)
-            removed.append("the call to action's link in the article")
+            unlinked.add(normalize_url(match.group(2)))
             return match.group(1)
 
         for field in LINK_FIELDS:
             if isinstance(cleaned.get(field), str):
                 cleaned[field] = _TEXT_LINK_RE.sub(unlink_call_to_action, cleaned[field])
+        if unlinked:
+            removed.append("the call to action's link in the article")
+            # The lists that mirror the prose's links follow it: an address left there with
+            # no link in the article would be read as a link the article never placed.
+            gone = unlinked - present_urls(cleaned)
+            for field in LINK_LIST_FIELDS:
+                entries = cleaned.get(field)
+                if isinstance(entries, list) and gone:
+                    cleaned[field] = [
+                        entry
+                        for entry in entries
+                        if not (
+                            isinstance(entry, dict)
+                            and normalize_url(entry.get("url") or "") in gone
+                        )
+                    ]
     if not excluded:
         if removed:
             logger.info("%s: brand choice applied in code to %s", stage, removed)
