@@ -17,7 +17,7 @@ Does NOT:
 """
 
 import re
-from asyncio import create_task, sleep, wait_for
+from asyncio import create_task, ensure_future, sleep, wait
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -45,7 +45,7 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.services.sse_service import event_stream_manager
+from src.services.sse_service import emit_step_failure, event_stream_manager
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
 from src.utils.storage import resolve_avatar_url, resolve_media_url
@@ -71,7 +71,8 @@ def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
     """The workspace's latest pipeline run, as the dashboard polls it: its status ("running",
     "completed", "failed", or "interrupted" for a running row this process no longer runs), its
     operation id for the SSE stream, and when it started. None when no run is recorded, as for
-    a workspace created before runs were."""
+    a workspace created before runs were: nothing on the row says whether that setup finished
+    (a setup can complete and leave no brand voice), so nothing is claimed about it."""
     status = workspace.pipeline_status
     if status is None:
         return None
@@ -101,11 +102,15 @@ def _mark_pipeline_started(workspace: WorkspaceModel, operation_id: str) -> None
 
 async def _record_pipeline_end(
     db: AsyncSession, workspace_id: UUID, operation_id: str, status: str
-) -> None:
+) -> bool:
     """Write how a run ended, unless a newer run has taken its place on the row. A creation run
     can end before the request that created its row has committed it, so while the row isn't
     there yet this waits for it (up to about half a minute). Never raises: the run's outcome is
-    logged already, and a row left running reads as interrupted."""
+    logged already, and a row left running reads as interrupted.
+
+    True when the row now says how this run ended, or a newer run holds it. False when the
+    outcome isn't on record (the row never appeared, or the write failed): the run's terminal
+    event is then withheld, so nobody reads "running" on an event that says the run is over."""
     try:
         for _ in range(_RECORD_ATTEMPTS):
             result = await db.execute(
@@ -119,7 +124,7 @@ async def _record_pipeline_end(
             )
             await db.commit()
             if result.rowcount:
-                return
+                return True
             current = await db.scalar(
                 select(WorkspaceModel.pipeline_operation_id).where(
                     WorkspaceModel.id == workspace_id
@@ -127,12 +132,13 @@ async def _record_pipeline_end(
             )
             await db.commit()
             if current is not None:
-                return  # a newer run has the row: its own end will be recorded
+                return True  # a newer run has the row: its own end will be recorded
             await sleep(_RECORD_RETRY_SECONDS)
         logger.warning(
             "The workspace pipeline's row never appeared to record its end",
             extra={"workspace_id": str(workspace_id), "operation_id": operation_id},
         )
+        return False
     except Exception as exc:  # noqa: BLE001 - the status is a record, never a new failure
         await db.rollback()
         logger.warning(
@@ -144,6 +150,7 @@ async def _record_pipeline_end(
                 "error": repr(exc),
             },
         )
+        return False
 
 
 async def _run_pipeline_recorded(
@@ -151,29 +158,55 @@ async def _run_pipeline_recorded(
 ) -> None:
     """One pipeline run with its outcome on the workspace's row: written as the run settles, before
     its terminal event goes out (so a read on that event sees it), and "failed" for a run cut off at
-    _PIPELINE_RUN_LIMIT. Live in _live_operations meanwhile, so it never reads as interrupted."""
+    _PIPELINE_RUN_LIMIT. Live in _live_operations meanwhile, so it never reads as interrupted.
 
-    async def record(status: str) -> None:
-        await _record_pipeline_end(db, workspace_id, operation_id, status)
+    The limit is on the work up to the run's commit (or its failure). Past that point the run is
+    left to finish what follows by itself: recording the outcome, then its own terminal event with
+    its own payload, so nothing here has to guess whether the record landed or rebuild the event.
+    A run cut off before that point is cancelled, which passes the pipeline's `except Exception`
+    without a word, so its failure is recorded and its failure event sent from here, the event
+    only once the row says "failed"."""
+    settled = False
+
+    async def record(status: str) -> bool:
+        nonlocal settled
+        settled = True
+        return await _record_pipeline_end(db, workspace_id, operation_id, status)
 
     _live_operations.add(operation_id)
-    try:
-        await wait_for(
-            run_workspace_pipeline(
-                db=db,
-                operation_id=operation_id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                url=url,
-                on_finished=record,
-            ),
-            timeout=_PIPELINE_RUN_LIMIT.total_seconds(),
+    run = ensure_future(
+        run_workspace_pipeline(
+            db=db,
+            operation_id=operation_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            url=url,
+            on_finished=record,
         )
-    except TimeoutError:
+    )
+    try:
+        await wait({run}, timeout=_PIPELINE_RUN_LIMIT.total_seconds())
+        if run.done() or settled:
+            # Finished, or past its commit and finishing: its own outcome, event and exception.
+            await run
+            return
+        run.cancel()
+        await wait({run})
         await db.rollback()
-        await record("failed")
-        raise
+        if await _record_pipeline_end(db, workspace_id, operation_id, "failed"):
+            await emit_step_failure(
+                operation_id=operation_id,
+                scope="workspace",
+                step="pipeline",
+                message="Workspace creation pipeline encountered an error.",
+                error=None,
+                user_id=user_id,
+            )
+        raise TimeoutError(f"The workspace pipeline ran past {_PIPELINE_RUN_LIMIT}")
     finally:
+        if not run.done():
+            # This task was cancelled itself (a shutdown): the run goes with it.
+            run.cancel()
         _live_operations.discard(operation_id)
 
 
