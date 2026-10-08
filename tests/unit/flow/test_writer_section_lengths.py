@@ -23,6 +23,7 @@ from src.flow.engines.content.generation.requirements_spec import build_requirem
 from src.flow.engines.content.generation.structured_body import (
     early_body_sections,
     planned_section_count,
+    planned_step_count,
 )
 from src.flow.engines.content.generation.validation import check_brand_placement_policy
 from src.flow.engines.content.generation.word_count_utils import (
@@ -233,6 +234,49 @@ def test_a_block_a_typed_field_owns_is_no_section_of_the_body():
 
     assert planned_section_count(outline, "how-to-guide") == 4
     assert early_body_sections(outline, "how-to-guide", 0.3) == ["User Context"]
+
+
+def _how_to(steps):
+    return {
+        "title": "How to plan a vegetable garden",
+        "hero": {"headline": "How to plan a vegetable garden", "subheadline": "Before you dig."},
+        "user_context": {"who_this_is_for": "First-time gardeners"},
+        "prerequisites": {"items": ["A patch of ground"]},
+        "steps": {
+            "steps": [
+                {"title": f"Do part {number} of the plan", "description": "How."}
+                for number in range(1, steps + 1)
+            ]
+        },
+        "summary": {"recap": "Plan, then dig."},
+    }
+
+
+def test_a_how_to_guides_steps_are_planned_inside_the_target_not_on_top_of_it():
+    """Ten steps written in full are a thousand words nobody planned unless they have a share
+    of the target: each weighs a third of a section (rext-control #817)."""
+    outline = _how_to(10)
+    assert planned_section_count(outline, "how-to-guide") == 4
+    assert planned_step_count(outline, "how-to-guide") == 10
+
+    prompt = PersonaInjectionMiddleware()._build_full_content_prompt(
+        None, outline, target_word_count=1500, content_type="how-to-guide"
+    )
+
+    plan = plan_section_lengths(1500, 4 + 4)  # ten steps weigh as four sections (rounded up)
+    assert f"about {plan.average_low}-{plan.average_high} words" in prompt
+    per_step = f"about {plan.average_low // 3}-{plan.average_high // 3} words each ON AVERAGE"
+    assert "Its 10 steps (the `step_1` to `step_10` fields)" in prompt and per_step in prompt
+    # Every section and every step at its average keeps the body inside its range.
+    assert 4 * plan.average_high + 10 * (plan.average_high // 3) <= plan.body_max
+    # And a step still has room for several sentences: 47 to 62 words here.
+    assert (plan.average_low // 3, plan.average_high // 3) == (47, 62)
+
+
+def test_an_article_without_step_fields_is_told_nothing_about_steps():
+    assert planned_step_count(_outline(), "blog") == 0
+    assert "steps (the `step_1`" not in _prompt(_outline(), 1500)
+    assert planned_step_count(_how_to(0), "how-to-guide") == 0
 
 
 @pytest.mark.parametrize("content_type", ["documentation", "contact-us"])
