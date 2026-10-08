@@ -135,17 +135,26 @@ def _claims_to_verify(state: REXT, content_state: dict) -> list[dict]:
         return []
 
 
-async def _last_saved_at(workspace_id: UUID, thread_id: UUID) -> Optional[datetime]:
-    """When this thread's article row was last saved, read before the save moves it: a save
-    replayed after its row was written finds its own first save there, and its event keeps
-    that time (generation_events.completion_time).
+# The read of the row's earlier save waits this long at most for a connection and its answer.
+_EARLIER_SAVE_WAIT_SECONDS = 2.0
 
-    In a session of its own, so nothing here can reach the save's transaction, and None on
-    any failure: the event's time never fails the save. Not read when no event is sent.
+
+async def _own_earlier_save(workspace_id: UUID, thread_id: UUID, body: str) -> Optional[datetime]:
+    """When this run already saved this article into its thread's row, or None: read before the
+    save, which moves the row's time. A save replayed after its row was written finds its own
+    text there, and its event keeps that first time (generation_events.completion_time). A
+    row that holds other text (the earlier run's article, a person's edit of it) is not this
+    run's save.
+
+    Never in the way of the save: a session of its own, so nothing here can reach the save's
+    transaction; two seconds at most, so a busy pool is not waited on twice; None on any
+    failure; and not read at all when no event is sent.
     """
     if not events_are_sent():
         return None
     try:
+        import asyncio
+
         from sqlalchemy import select
 
         from src.api.database.async_database import get_pooled_langgraph_db_context
@@ -159,14 +168,18 @@ async def _last_saved_at(workspace_id: UUID, thread_id: UUID) -> Optional[dateti
                         Content.workspace_id == workspace_id,
                         Content.langgraph_thread_id == thread_id,
                         Content.deleted_at.is_(None),
+                        Content.body_markdown == body,
                     )
                 )
                 return found.scalar_one_or_none()
 
-        return await run_on_main_loop(read())
+        async def bounded():
+            return await asyncio.wait_for(read(), _EARLIER_SAVE_WAIT_SECONDS)
+
+        return await run_on_main_loop(bounded())
     except Exception as error:  # noqa: BLE001 - analytics never fails the work it reports
         logger.warning(
-            "persist_content: the row's last save was not read: %s", type(error).__name__
+            "persist_content: the row's earlier save was not read: %s", type(error).__name__
         )
         return None
 
@@ -314,7 +327,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
                 service = ContentService(db)
                 return await service.create_content(workspace_uuid, user_uuid, payload)
 
-        saved_before = await _last_saved_at(workspace_uuid, thread_uuid)
+        saved_before = await _own_earlier_save(workspace_uuid, thread_uuid, body_markdown)
         content = await run_on_main_loop(_persist())
         logger.info("persist_content: saved article %s for thread %s", content.id, thread_id)
     except Exception as exc:
