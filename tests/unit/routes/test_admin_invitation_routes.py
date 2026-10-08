@@ -483,7 +483,7 @@ async def test_accepting_gives_the_invited_account_the_role_once(session, call, 
 
 
 async def test_accepting_drops_the_accounts_cached_permissions_once_the_role_is_stored(
-    session, call, outbox, monkeypatch
+    connection, session, call, outbox, monkeypatch
 ):
     """Or the new admin is refused until the cache runs out. Dropped before the role is
     stored, a request in between would cache the old set again."""
@@ -494,7 +494,10 @@ async def test_accepting_drops_the_accounts_cached_permissions_once_the_role_is_
 
     async def stored(self):
         await commit(self)
-        steps.append("stored")
+        # The request's own session only: a refused request's error is recorded by a
+        # session of the error handler's, where the database has that table.
+        if self.bind is connection:
+            steps.append("stored")
 
     async def dropped(pattern):
         steps.append(pattern)
