@@ -7,15 +7,19 @@ steps. They are rendered at assembly, where the block stands in the approved ord
 """
 
 import copy
+import json
 
 import pytest
 
+from src.flow.engines.content.generation.section_stream import article_section_stream
 from src.flow.engines.content.generation.structured_body import (
     STRUCTURED_BLOCKS_KEY,
     _typed_heading,
     assemble_structured_payload,
     build_structured_content_model,
+    sections_in_article_order,
     typed_section_blocks,
+    typed_section_drafts,
 )
 from src.flow.engines.content.generation.subheading_seo import (
     _is_bolted_on,
@@ -660,3 +664,90 @@ def test_a_passing_share_of_keyphrase_headings_still_passes_with_the_sections_he
         after = subheading_report(f"{body}\n\n## {heading}\n", KEYPHRASE, "how-to-guide")
         assert after["keyphrase"]["status"] == "ok", (total, matching, heading)
         assert after["length_violations"] == []
+
+
+# -- While the article is still being written (rext-control #773) ----------------------------
+
+
+def test_the_writing_screens_sections_are_the_articles_in_the_articles_order():
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    typed = typed_section_blocks(HOW_TO_OUTLINE, "how-to-guide")
+
+    keys = [block.key for block in sections_in_article_order(built[1], typed)]
+
+    # As the assembled body has them (the first test of this file).
+    assert keys == ["hero", "prerequisites", "steps", "tools", "error_prevention"]
+    assert [block.key for block in sections_in_article_order(built[1], [])] == [
+        "hero",
+        "prerequisites",
+        "tools",
+        "error_prevention",
+    ]
+
+
+def test_a_typed_section_reads_as_its_draft_with_the_plain_heading():
+    steps = _how_to_content()["steps"]
+
+    drafts = typed_section_drafts("how-to-guide", title="How to Repot a Houseplant")
+
+    assert set(drafts) == {"steps"}
+    assert drafts["steps"](steps) == (
+        "Follow These Steps in Order",
+        "1. **Remove the plant.** Ease it out of its pot.\n"
+        "2. **Prepare the new pot.** Add fresh mix.\n"
+        "3. **Water the plant!** Water it once.",
+    )
+    assert drafts["steps"]([]) is None and drafts["steps"](None) is None
+    assert typed_section_drafts("blog") == {}
+    assert set(typed_section_drafts("tutorial")) == {"prerequisites"}
+    assert set(typed_section_drafts("in-depth-review")) == {"verdict"}
+
+
+def test_a_draft_under_a_title_in_another_language_has_no_english_heading():
+    """As in the finished article: the section then follows the one before it."""
+    steps = _how_to_content()["steps"]
+
+    drafts = typed_section_drafts("how-to-guide", title="Wie man eine Zimmerpflanze umtopft")
+
+    heading, markdown = drafts["steps"](steps)
+    assert heading == ""
+    assert markdown.startswith("1. **Remove the plant.**")
+
+
+def test_a_how_to_guides_steps_reach_the_writing_screen_in_their_place():
+    """The whole path of one answer: the reader is set up from the approved outline, and the
+    steps, which the answer holds as a list among its first fields, are sent as section 3 of 5
+    with the list the finished article will show."""
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    content = _how_to_content()
+    answer = json.dumps({"title": content["title"], "steps": content["steps"], **content})
+
+    stream = article_section_stream(built[1], HOW_TO_OUTLINE, "how-to-guide", content["title"])
+    sections = [
+        section
+        for start in range(0, len(answer), 17)
+        for section in stream.feed(answer[start : start + 17])
+    ]
+
+    assert [(s["key"], s["index"], s["of"]) for s in sections] == [
+        ("steps", 3, 5),
+        ("hero", 1, 5),
+        ("prerequisites", 2, 5),
+        ("tools", 4, 5),
+        ("error_prevention", 5, 5),
+    ]
+    assert sections[0]["heading"] == "Follow These Steps in Order"
+    assert sections[0]["markdown"] == (
+        "1. **Remove the plant.** Ease it out of its pot.\n"
+        "2. **Prepare the new pot.** Add fresh mix.\n"
+        "3. **Water the plant!** Water it once."
+    )
+
+
+def test_an_answer_without_section_fields_has_no_reader():
+    assert article_section_stream(None, HOW_TO_OUTLINE, "how-to-guide") is None
+    assert article_section_stream([], HOW_TO_OUTLINE, "how-to-guide") is None

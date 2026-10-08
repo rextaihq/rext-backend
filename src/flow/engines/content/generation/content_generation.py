@@ -51,7 +51,7 @@ from src.flow.engines.content.generation.requirements_spec import (
     excluded_brand_of,
     resolve_outline_cta,
 )
-from src.flow.engines.content.generation.section_stream import SectionStream
+from src.flow.engines.content.generation.section_stream import article_section_stream
 from src.flow.engines.content.generation.structured_body import (
     UNPLACED_LINKS_KEY,
     assemble_structured_payload,
@@ -1061,10 +1061,8 @@ async def generate_content(state: REXT) -> dict:
         # Each section is sent to the page the moment its part of the answer closes, so the
         # writing screen fills section by section (rext-control#773; the dashboard's half is
         # that task's part A and B). Events only: nothing here is stored or changes the answer.
-        section_stream = (
-            SectionStream([(block.key, block.level) for block in structured_blocks])
-            if structured_blocks
-            else None
+        section_stream = article_section_stream(
+            structured_blocks, outline, content_type, title=str(topic or "")
         )
         final_messages = []
         # Typed Pydantic model instance if the agent returns one.
@@ -1093,6 +1091,12 @@ async def generate_content(state: REXT) -> dict:
             # Capture the root run_id from the very first chain-start event
             if kind == "on_chain_start" and agent_root_run_id is None:
                 agent_root_run_id = event_run_id
+
+            # The writer is asked for an answer (again, when its last one was refused): the
+            # sections are read from this answer's start, so a refused one's are replaced.
+            elif kind == "on_chat_model_start":
+                if section_stream is not None:
+                    section_stream.restart()
 
             # Token-by-token LLM output
             elif kind == "on_chat_model_stream":
