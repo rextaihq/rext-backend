@@ -17,6 +17,7 @@ Does NOT:
 """
 
 import re
+import unicodedata
 from asyncio import create_task, ensure_future, sleep, wait
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -1494,11 +1495,14 @@ class WorkspaceService:
         Returns:
             URL-safe slug
         """
+        # Accented letters keep their base letter ("Café" is "cafe"), as an address needs.
+        text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
         text = text.lower()
         text = re.sub(r"[\s_]+", "-", text)
         text = re.sub(r"[^a-z0-9-]", "", text)
         text = re.sub(r"-+", "-", text)
-        text = text.strip("-")
+        # A name with no Latin letter or digit ("茶屋") leaves nothing, and still needs an address.
+        text = text.strip("-") or "workspace"
         return text
 
     async def _generate_unique_slug(
