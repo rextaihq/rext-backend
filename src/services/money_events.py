@@ -38,7 +38,10 @@ _EVENT_NAMES = {
     "subscription_cancelled": "subscription_cancelled",
     "subscription_expired": "subscription_expired",
     "subscription_payment_failed": "subscription_payment_failed",
+    # Two kinds of refund, under two names: of an order (the first payment), and of a later
+    # invoice (a renewal). A dashboard counts each kind by its own name.
     "order_refunded": "subscription_refunded",
+    "subscription_payment_refunded": "subscription_payment_refunded",
 }
 # A payment that went through is a renewal only when Lemon Squeezy says so: the first
 # payment is the start, and a charge for a plan change is neither.
@@ -88,9 +91,14 @@ def money_event(event_type: str, payload: Dict[str, Any]) -> Optional[Dict[str, 
     amount = _amount(attributes.get("total"))
     if amount is not None and "total" in attributes:
         properties["amount"] = amount
+    # Lemon Squeezy gives what has been refunded so far, not what this refund returned: a
+    # second partial refund repeats the first one's amount inside its own. Sent under a name
+    # that says so, with whether everything is back; never to be added up across events.
     refunded = _amount(attributes.get("refunded_amount"))
     if refunded is not None and attributes.get("refunded_amount"):
-        properties["refunded_amount"] = refunded
+        properties["refunded_total"] = refunded
+        if amount is not None and "total" in attributes:
+            properties["full_refund"] = refunded >= amount
     return {"event": name, "properties": properties}
 
 
