@@ -15,6 +15,7 @@ import hmac
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -33,6 +34,7 @@ import src.services.usage_tracking_service as usage_module
 import src.services.webhook_handlers.subscription_handlers as subscription_handlers_module
 from scripts.seeds.seed_promotions import LAUNCH_PROMOTION
 from src.api.database.base import Base
+from src.api.middleware.exceptions import BusinessRuleViolationException
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.credit_grants import CreditGrant
 from src.api.models.subscription_models.discount_usage import DiscountUsage
@@ -42,6 +44,7 @@ from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.refund_requests import RefundRequest
 from src.api.models.subscription_models.refunds import Refund
 from src.api.models.subscription_models.subscriptions import (
+    BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
 )
@@ -49,6 +52,7 @@ from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed, PaymentChangeUnknown
 from src.services.admin_credits import adjust_credits
 from src.services.credit_grants import period_admin_adjustment
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
@@ -1041,6 +1045,19 @@ async def test_switching_plans_down_and_up_does_not_refill_spent_credits(db):
     assert await usage.get_credit_balance(user.id) == 100
 
 
+def _lemon_squeezy(left_on=None, error=None):
+    """Lemon Squeezy's stand-in for a plan change from the dashboard: its update answers with
+    the subscription on the variant asked for, or on ``left_on`` (one paid through PayPal stays
+    on its own), or raises ``error``."""
+
+    async def update_subscription(**sent):
+        if error:
+            raise error
+        return SimpleNamespace(plan_id=left_on or sent["price_id"])
+
+    return MagicMock(update_subscription=AsyncMock(side_effect=update_subscription))
+
+
 async def _starter_spent(db, spend):
     """A Starter subscriber (400 a month) three days into the period, who has spent some."""
     starter = await _plan(db, "starter", price=39, credits=400)
@@ -1183,7 +1200,7 @@ async def test_the_in_app_plan_change_follows_the_same_rule(db, monkeypatch):
     user, ls_id, starter, growth, now, period_end = await _starter_spent(db, 300)
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
     service = SubscriptionService(db)
-    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.payment_provider = _lemon_squeezy()
     # A downgrade checks the workspaces and members against the plan's limits: none here.
     service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
     usage = UsageTrackingService(db)
@@ -1197,6 +1214,75 @@ async def test_the_in_app_plan_change_follows_the_same_rule(db, monkeypatch):
     assert await usage.get_credit_balance(user.id) == 100
     await service.upgrade(user.id, growth.id)
     assert await usage.get_credit_balance(user.id) == 700
+
+
+async def test_a_plan_lemon_squeezy_left_as_it_was_is_not_changed_here(db, monkeypatch):
+    """Lemon Squeezy answers 200 for a subscription paid through PayPal and leaves it on its
+    variant. The dashboard's change then changes nothing here: the higher plan and its credits
+    would be free (rext-control #829). The customer is sent to the billing portal."""
+    user, ls_id, starter, growth, _, _ = await _starter_spent(db, 300)
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = _lemon_squeezy(left_on=starter.lemonsqueezy_variant_id_monthly)
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+    before = dict((await _subscription_of(db, ls_id)).subscription_metadata or {})
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await service.upgrade(user.id, growth.id)
+
+    assert refused.value.context["rule_name"] == "plan_unchanged_at_provider"
+    assert "billing portal" in refused.value.message
+    service.payment_provider.update_subscription.assert_awaited_once()
+    subscription = await _subscription_of(db, ls_id)
+    assert subscription.plan_id == starter.id
+    assert subscription.current_credits == 100
+    assert dict(subscription.subscription_metadata or {}) == before
+    assert not service.provider_change_accepted
+
+
+@pytest.mark.parametrize(
+    "error",
+    [PaymentChangeUnknown("The update got no answer"), PaymentChangeUnconfirmed("read back")],
+)
+async def test_a_plan_change_lemon_squeezy_never_confirmed_changes_nothing_here(
+    db, monkeypatch, error
+):
+    """No answer, or none that says which plan the subscription is on now: the plan stays as
+    it is here (Lemon Squeezy's update brings it if it changed there), and the customer is not
+    told that it failed."""
+    user, ls_id, starter, growth, _, _ = await _starter_spent(db, 300)
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    monkeypatch.setattr(subscription_service_module.payment_settings, "payment_sandbox_mode", False)
+    monkeypatch.setattr(subscription_service_module, "capture_payment_exception", MagicMock())
+    service = SubscriptionService(db)
+    service.payment_provider = _lemon_squeezy(error=error)
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await service.upgrade(user.id, growth.id)
+
+    assert refused.value.context["rule_name"] == "plan_change_unconfirmed"
+    assert "check before trying again" in refused.value.message
+    subscription = await _subscription_of(db, ls_id)
+    assert subscription.plan_id == starter.id
+    assert subscription.current_credits == 100
+
+
+async def test_a_billing_period_is_not_changed_here_alone_for_a_plan_lemon_squeezy_bills(db):
+    """The same plan with another billing period: Lemon Squeezy bills the period it holds, so
+    set here alone the customer would read "yearly" and go on paying monthly."""
+    user, ls_id, starter, _, _, _ = await _starter_spent(db, 100)
+    service = SubscriptionService(db)
+    service.payment_provider = _lemon_squeezy()
+    was = (await _subscription_of(db, ls_id)).billing_period
+    other = BillingPeriod.YEARLY if was != BillingPeriod.YEARLY else BillingPeriod.MONTHLY
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await service.upgrade(user.id, starter.id, billing_period=other)
+
+    assert refused.value.context["rule_name"] == "billing_period_unchanged_at_provider"
+    service.payment_provider.update_subscription.assert_not_awaited()
+    assert (await _subscription_of(db, ls_id)).billing_period == was
 
 
 @pytest.mark.parametrize("in_app", [False, True])
@@ -1224,7 +1310,7 @@ async def test_an_admins_deduction_stands_through_a_plan_change_and_is_not_count
             subscription_service_module, "invalidate_cache", AsyncMock(return_value=0)
         )
         service = SubscriptionService(db)
-        service.payment_provider = MagicMock(update_subscription=AsyncMock())
+        service.payment_provider = _lemon_squeezy()
         service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
         await service.upgrade(user.id, growth.id)
     else:
@@ -1246,10 +1332,11 @@ async def test_an_in_app_change_counts_what_is_spent_while_lemon_squeezy_answers
     user, ls_id, _, growth, now, period_end = await _starter_spent(db, 300)
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
 
-    async def spend_meanwhile(**_):
+    async def spend_meanwhile(**sent):
         async with _session(connection) as other:
             assert await UsageTrackingService(other).consume_credits(user.id, 50)
             await other.commit()
+        return SimpleNamespace(plan_id=sent["price_id"])
 
     service = SubscriptionService(db)
     service.payment_provider = MagicMock(update_subscription=AsyncMock(side_effect=spend_meanwhile))
@@ -1327,7 +1414,7 @@ async def test_an_in_app_change_keeps_the_period_when_renews_at_lags(db, monkeyp
     await db.flush()
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
     service = SubscriptionService(db)
-    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.payment_provider = _lemon_squeezy()
     service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
     usage = UsageTrackingService(db)
 
@@ -1417,7 +1504,7 @@ async def test_an_in_app_change_after_the_period_ended_starts_from_a_full_month(
     await db.flush()
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
     service = SubscriptionService(db)
-    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.payment_provider = _lemon_squeezy()
     service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
     usage = UsageTrackingService(db)
 
@@ -1481,7 +1568,7 @@ async def test_a_trial_from_before_the_marker_upgraded_in_the_app_gets_its_month
     user, ls_id = await _trial_from_before_the_marker(db, starter, now)
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
     service = SubscriptionService(db)
-    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.payment_provider = _lemon_squeezy()
     service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
 
     await service.upgrade(user.id, growth.id)
@@ -1640,7 +1727,7 @@ async def test_an_in_app_change_then_lemon_squeezys_change_back_stay_in_one_peri
     assert await usage.consume_credits(user.id, 900)
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
     service = SubscriptionService(db)
-    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.payment_provider = _lemon_squeezy()
     service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
 
     await service.upgrade(user.id, starter.id)
