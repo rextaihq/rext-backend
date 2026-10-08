@@ -11,11 +11,11 @@ On the test PostgreSQL, with a pool of one so the next request gets the same con
 
 import uuid
 
-import asyncpg
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import Column, MetaData, Table, Text, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from src.api.database.async_database import (
     _inside_a_transaction,
@@ -23,25 +23,40 @@ from src.api.database.async_database import (
 )
 from tests.conftest import TEST_DATABASE_URL
 
-ACTIVITY = (
+ACTIVITY = text(
     "select state from pg_stat_activity "
-    "where datname = current_database() and pid <> pg_backend_pid() and application_name = $1"
+    "where datname = current_database() and pid <> pg_backend_pid() and application_name = :name"
 )
 
 
 @pytest_asyncio.fixture
 async def scratch():
     """A scratch table, an onlooker's connection, and a name to find this test's connections by."""
-    onlooker = await asyncpg.connect(
-        TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    tag = uuid.uuid4().hex[:10]
+    table = Table(f"zz_pool_guard_{tag}", MetaData(), Column("note", Text))
+    # Each of the onlooker's statements stands alone, so it always reads what is committed now.
+    looking = create_async_engine(
+        TEST_DATABASE_URL, isolation_level="AUTOCOMMIT", poolclass=NullPool
     )
-    table = f"zz_pool_guard_{uuid.uuid4().hex[:10]}"
-    await onlooker.execute(f"create table {table} (note text)")
     try:
-        yield onlooker, table, f"pool-guard-{table[-10:]}"
+        async with looking.connect() as onlooker:
+            await onlooker.run_sync(table.create)
+            try:
+                yield onlooker, table, f"pool-guard-{tag}"
+            finally:
+                await onlooker.run_sync(table.drop, checkfirst=True)
     finally:
-        await onlooker.execute(f"drop table if exists {table}")
-        await onlooker.close()
+        await looking.dispose()
+
+
+async def _states(onlooker, name: str) -> list[str]:
+    """The states of this test's connections, as the server sees them."""
+    return list((await onlooker.execute(ACTIVITY, {"name": name})).scalars())
+
+
+async def _rows(onlooker, table: Table) -> int:
+    """The rows another connection can see."""
+    return (await onlooker.execute(select(func.count()).select_from(table))).scalar_one()
 
 
 def _engine(name: str):
@@ -62,10 +77,10 @@ async def _leave_the_pooled_connection_inside_a_transaction(engine) -> None:
         await driver.transaction().start()
 
 
-async def _a_request_that_commits(engine, table: str, note: str) -> None:
+async def _a_request_that_commits(engine, table: Table, note: str) -> None:
     sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with sessions() as session:
-        await session.execute(text(f"insert into {table} values (:note)"), {"note": note})
+        await session.execute(table.insert().values(note=note))
         await session.commit()
 
 
@@ -76,14 +91,14 @@ async def test_without_the_guard_a_commit_on_such_a_connection_saves_nothing(scr
     engine = _engine(name)
     try:
         await _leave_the_pooled_connection_inside_a_transaction(engine)
-        assert [r["state"] for r in await onlooker.fetch(ACTIVITY, name)] == ["idle in transaction"]
+        assert await _states(onlooker, name) == ["idle in transaction"]
 
         await _a_request_that_commits(engine, table, "answered as done")
 
-        assert await onlooker.fetchval(f"select count(*) from {table}") == 0
+        assert await _rows(onlooker, table) == 0
     finally:
         await engine.dispose()
-    assert await onlooker.fetchval(f"select count(*) from {table}") == 0  # and gone for good
+    assert await _rows(onlooker, table) == 0  # and gone for good
 
 
 @pytest.mark.asyncio
@@ -98,13 +113,11 @@ async def test_a_connection_returned_inside_a_transaction_is_dropped(scratch, ca
         assert any(
             "went back to the pool inside a transaction" in r.getMessage() for r in caplog.records
         )
-        assert "idle in transaction" not in [
-            r["state"] for r in await onlooker.fetch(ACTIVITY, name)
-        ]
+        assert "idle in transaction" not in await _states(onlooker, name)
 
         await _a_request_that_commits(engine, table, "saved")
 
-        assert await onlooker.fetchval(f"select count(*) from {table}") == 1
+        assert await _rows(onlooker, table) == 1
     finally:
         await engine.dispose()
 
@@ -122,7 +135,7 @@ async def test_a_connection_found_inside_a_transaction_is_not_handed_out(scratch
             await _a_request_that_commits(engine, table, "saved")
 
         assert any("inside a transaction when asked for" in r.getMessage() for r in caplog.records)
-        assert await onlooker.fetchval(f"select count(*) from {table}") == 1
+        assert await _rows(onlooker, table) == 1
     finally:
         await engine.dispose()
 
@@ -137,9 +150,9 @@ async def test_an_idle_connection_is_left_alone(scratch, caplog):
             for n in range(3):
                 await _a_request_that_commits(engine, table, f"request {n}")
         assert not [r for r in caplog.records if "DB_GUARD" in r.getMessage()]
-        assert await onlooker.fetchval(f"select count(*) from {table}") == 3
+        assert await _rows(onlooker, table) == 3
         # One connection served all three: nothing was dropped.
-        assert len(await onlooker.fetch(ACTIVITY, name)) == 1
+        assert len(await _states(onlooker, name)) == 1
     finally:
         await engine.dispose()
 
