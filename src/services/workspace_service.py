@@ -518,11 +518,6 @@ class WorkspaceService:
             voice.brand_voice = []
             voice.content_pillar = []
         await self.db.flush()
-        # The detail's cached brand voice (ten minutes) would go on saying what it said before.
-        try:
-            await invalidate_cache_key(f"workspace:brand_voice:{workspace.id}")
-        except Exception as exc:  # noqa: BLE001 - the cache is a convenience, never a refusal
-            logger.warning("Failed to invalidate brand voice cache: %r", exc)
 
     async def retry_pipeline_for_user(
         self, workspace_id: UUID, user_id: UUID, description: Optional[str] = None
@@ -543,7 +538,19 @@ class WorkspaceService:
             await self._keep_description(workspace, description)
         # A voice that was drafted has been the owner's to edit since, so only this path (a run
         # that left nothing, or not all of it) drafts a workspace with no website again.
-        return await self.refresh_brand_voice_for_user(workspace_id, user_id, draft_again=True)
+        operation_id = await self.refresh_brand_voice_for_user(
+            workspace_id, user_id, draft_again=True
+        )
+        if description is not None:
+            # The detail's cached brand voice (ten minutes) would go on saying what it said
+            # before. It is dropped once the new words are committed, not before: a read in
+            # between would only put the old ones back.
+            await self.db.commit()
+            try:
+                await invalidate_cache_key(f"workspace:brand_voice:{workspace_id}")
+            except Exception as exc:  # noqa: BLE001 - the cache is a convenience, never a refusal
+                logger.warning("Failed to invalidate brand voice cache: %r", exc)
+        return operation_id
 
     async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""
