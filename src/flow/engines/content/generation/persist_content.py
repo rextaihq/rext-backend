@@ -6,7 +6,6 @@ from langchain_core.runnables import RunnableConfig
 
 from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.engines.content.generation.requirements_spec import approved_secondary_keywords
-from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.states.rext import REXT
 from src.services.check_wording import user_detail
 from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
@@ -283,7 +282,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     announce_completed(
         state,
         thread_id=str(thread_uuid),
-        content_type=normalize_content_type(content_state.get("content_type")) or None,
+        content_type=content_state.get("content_type"),
         word_count=len(f"{final.get('introduction') or ''} {body_markdown}".split()),
         saved_at=getattr(content, "created_at", None),
     )

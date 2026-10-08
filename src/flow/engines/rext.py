@@ -142,12 +142,16 @@ async def _insufficient_credits(state: REXT) -> dict:
     except Exception:  # noqa: BLE001 - reporting never breaks the flow
         pass
 
+    from src.flow.engines.seo.library_item import research_reused
     from src.services.generation_events import ANALYSIS, REFUSED, TITLES, announce_failed
 
     keyword_recs = (state.get("seo_result") or {}).get("keyword_recommendations") or {}
-    announce_failed(
-        state, stage=TITLES if keyword_recs.get("titles_unpaid") else ANALYSIS, reason=REFUSED
+    # A Library start that reuses its analysis is charged for its titles only: a refusal there
+    # is the titles' as much as a typed keyword's refused title charge is.
+    at_titles = keyword_recs.get("titles_unpaid") or (
+        bool((state.get("serp_payload") or {}).get("is_library")) and research_reused(state)
     )
+    announce_failed(state, stage=TITLES if at_titles else ANALYSIS, reason=REFUSED)
     return {
         "content": {
             "error": "Insufficient credits to generate content. Please upgrade your plan.",
