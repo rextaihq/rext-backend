@@ -2508,6 +2508,21 @@ _ANY_TEXT_LINK_RE = re.compile(
     r"(?<!!)\[([^\]]*)\]\(\s*<?((?:[^()\s<>]|\([^()\s]*\))+)>?"
     r"(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^()]*\)))?\s*\)"
 )
+# A fenced block or an inline code span: what stands there is shown as written, never a link.
+_CODE_RE = re.compile(r"(```.*?```|~~~.*?~~~|`[^`\n]*`)", re.DOTALL)
+
+
+def _unlink_outside_code(text: str, unlink: Callable[[re.Match], str]) -> str:
+    """``text`` with ``unlink`` applied to every text link in it, of any written form, and
+    nothing touched inside a code span or a fenced block (a tutorial's example of a link is
+    the example, not a link)."""
+    pieces = _CODE_RE.split(text)
+    return "".join(
+        piece if index % 2 else _ANY_TEXT_LINK_RE.sub(unlink, piece)
+        for index, piece in enumerate(pieces)
+    )
+
+
 _TEXT_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)")
 
 
@@ -2577,9 +2592,11 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
             unlinked.add(normalize_url(match.group(2)))
             return match.group(1)
 
+        # Whatever the link points to and however it is written (a path, a mail address,
+        # capitals, a title after it): a call to action with no link has none of them.
         for field in LINK_FIELDS:
             if isinstance(cleaned.get(field), str):
-                cleaned[field] = _TEXT_LINK_RE.sub(unlink_call_to_action, cleaned[field])
+                cleaned[field] = _unlink_outside_code(cleaned[field], unlink_call_to_action)
         if unlinked:
             removed.append("the call to action's link in the article")
             # The lists that mirror the prose's links follow it: an address left there with
@@ -2617,7 +2634,7 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
         # address in capitals, one with a title after it.
         for field in LINK_FIELDS:
             if isinstance(cleaned.get(field), str):
-                cleaned[field] = _ANY_TEXT_LINK_RE.sub(unlink_brand_name, cleaned[field])
+                cleaned[field] = _unlink_outside_code(cleaned[field], unlink_brand_name)
         if invented:
             removed.append("a link on the name of a brand that has no address")
             gone = invented - present_urls(cleaned)
