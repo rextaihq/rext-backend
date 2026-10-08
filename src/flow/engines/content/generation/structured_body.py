@@ -634,10 +634,20 @@ def assemble_structured_payload(
     # nothing, so it is as missing as an absent one.
     written = [k for k, b in ordered if b is not None and (b.markdown or "").strip()]
     if typed and written:
-        ordered, typed_shown = _with_typed_sections(
-            ordered, blocks, typed, content_dict, assembled, keyphrase, content_type
-        )
+        try:
+            placed, typed_shown = _with_typed_sections(
+                ordered, blocks, typed, content_dict, assembled, keyphrase, content_type
+            )
+        except Exception:
+            # As everywhere in this module: what can't be rendered degrades to the body
+            # without it, it does not take a run down.
+            logger.exception(
+                "assemble_structured_payload: typed sections not rendered for content_type=%s",
+                content_type,
+            )
+            typed_shown = []
         if typed_shown:
+            ordered = placed
             assembled = blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
             written = written + typed_shown
     missing_required = [b.key for b in blocks if b.required and b.key not in written]
