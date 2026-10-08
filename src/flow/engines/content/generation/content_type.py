@@ -77,8 +77,36 @@ def _recommend_content_type(
 CONTENT_TYPE_PICK_KEY = "content_type_pick"
 
 
+# The article types any keyword can become, offered after the intent's own types whatever the
+# intent was read as (rext-control#815). The intent is the search provider's label for the
+# keyword, and one wrong label left a customer with no article type at all: "remote team
+# onboarding" was read as navigational and offered only a brand's own pages.
+ARTICLE_TYPES_FOR_ANY_INTENT = ("blog", "how-to-guide", "explainer")
+
+
+def offered_content_types(intent_types: list[str]) -> list[str]:
+    """The types the gate offers: the intent's own, in their order, then the article types
+    that are not among them. The dashboard leads with the recommended type and the intent's
+    common ones and folds the rest under "more", so a keyword read rightly looks as before."""
+    return [*intent_types, *(t for t in ARTICLE_TYPES_FOR_ANY_INTENT if t not in intent_types)]
+
+
+def recommended_among(intent_types: list[str], serp_evidence: dict | None) -> list[str]:
+    """The types the recommendation is made among: the intent's own, and an article type the
+    search results themselves lead with. A keyword read as navigational whose results are
+    mostly how-to guides is not a brand's page, and the pick should be free to say so. With
+    no leading format, or one that is not an article's (home pages, list posts), the intent's
+    own alone, as before: a brand's own name keeps its site pages."""
+    leading = ((serp_evidence or {}).get("dominant_format") or {}).get("content_types") or []
+    return [
+        *intent_types,
+        *(t for t in ARTICLE_TYPES_FOR_ANY_INTENT if t in leading and t not in intent_types),
+    ]
+
+
 def _gate_inputs(state: REXT) -> tuple[str, list[str], str]:
-    """The search intent, the formats it allows and the query, from the state."""
+    """The search intent, the formats that intent is written as (the recommendation is made
+    among these) and the query, from the state."""
     seo_result = state.get("seo_result", {})
     serp_backlinks = seo_result.get("serp_backlinks", {})
     logger.info(f"serp_backlinks: {serp_backlinks}")
@@ -103,7 +131,11 @@ def recommend_content_type(state: REXT) -> REXT:
 
     search_intent, candidate_content_types, query = _gate_inputs(state)
     recommended_content_type, recommendation_reason = _recommend_content_type(
-        query, search_intent, candidate_content_types
+        query,
+        search_intent,
+        recommended_among(
+            candidate_content_types, build_serp_evidence(state.get("serp_normalized"))
+        ),
     )
     return {
         "content": {
@@ -127,7 +159,8 @@ def content_type(state: REXT) -> REXT:
         {
             "instruction": "Select a content type",
             "search_intent": search_intent,
-            "content_types": candidate_content_types,
+            # The intent's own types first, then the article types any keyword can become.
+            "content_types": offered_content_types(candidate_content_types),
             # Additive fields — existing "content_types" list is unchanged so current
             # frontend handling keeps working; UI can optionally highlight this pick.
             "recommended_content_type": pick.get("recommended_content_type"),
