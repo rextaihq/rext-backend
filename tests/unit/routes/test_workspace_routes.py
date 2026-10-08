@@ -122,20 +122,28 @@ async def test_create_with_a_website_reads_the_website(client) -> None:
     reachable.assert_awaited_once()
 
 
+# One request a test: the shared session's transaction ends with the request that commits it.
+
+
 @pytest.mark.asyncio
-async def test_create_judges_the_description_trimmed_and_only_when_it_is_used(client) -> None:
+async def test_create_judges_the_description_once_trimmed(client) -> None:
     full = "x" * 1000
     response, create, _ = await _create(
         client, {"name": "Crumb and Crust", "description": f"   {full}\n\n"}
     )
+
     assert response.status_code == 201
     assert create.await_args.kwargs["description"] == full
 
+
+@pytest.mark.asyncio
+async def test_create_is_not_refused_for_a_description_it_does_not_use(client) -> None:
     # Sent with a website it is not used, so its length refuses nothing.
     response, create, _ = await _create(
         client,
         {"name": "Crumb and Crust", "url": "https://example.com", "description": "x" * 5000},
     )
+
     assert response.status_code == 201
     assert create.await_args.kwargs["description"] is None
 
