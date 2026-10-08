@@ -276,15 +276,18 @@ class TestSendWorkspaceEmail:
         assert sent["user_id"] == sample_user_id
 
     @pytest.mark.asyncio
-    async def test_send_workspace_email_uses_the_workspaces_own_template(
+    async def test_send_workspace_email_comes_from_the_built_in_template_alone(
         self, mock_db, sample_workspace_id, email_service
     ):
-        """A workspace's own (admin-made) template wins over the built-in one."""
+        """Custom templates went with the old product (rext-control#369): a row that would
+        once have been a workspace's own template is not looked for, and changes nothing."""
         own = SimpleNamespace(
             subject="Welcome to {{workspace_name}}", body="<p>Hi from {{workspace_name}}</p>"
         )
         mock_db.execute.return_value.scalar_one_or_none.return_value = own
-        with patch(f"{WORKSPACE}.create_workspace_invitation_email") as built_in:
+        with patch(
+            f"{WORKSPACE}.create_workspace_invitation_email", return_value="<p>built in</p>"
+        ) as built_in:
             result = await send_workspace_email(
                 db=mock_db,
                 email_type="invitation",
@@ -294,10 +297,11 @@ class TestSendWorkspaceEmail:
             )
 
         assert result is True
-        built_in.assert_not_called()
+        built_in.assert_called_once()
+        mock_db.execute.assert_not_called()
         sent = email_service.send_email.call_args.kwargs
-        assert sent["subject"] == "Welcome to Acme"
-        assert "Hi from Acme" in sent["html"]
+        assert sent["subject"] == "You're invited to join Acme"
+        assert sent["html"] == "<p>built in</p>"
 
     @pytest.mark.asyncio
     async def test_send_workspace_email_fallback_to_python_template(

@@ -78,11 +78,14 @@ class SubscriptionPlanService:
             "message": f"Subscription plan '{plan.display_name}' created successfully",
         }
 
+    # The key carries the list's shape (`v2`: plans without the API-call quota). Workers of
+    # two releases share the cache while a deploy rolls, and the release before this one
+    # requires that field of every plan it answers with: it must not read this list.
     @cached(
         key_prefix="subscription:plans",
         ttl=900,
         key_builder=lambda self, include_inactive, include_private, is_admin: (
-            f"{is_admin}:{include_inactive}:{include_private}"
+            f"v2:{is_admin}:{include_inactive}:{include_private}"
         ),
     )
     async def list_plans(

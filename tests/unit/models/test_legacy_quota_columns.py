@@ -2,11 +2,15 @@
 mapped and still written, so the release before this one works on a rollback, and no longer
 part of what the API answers with."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from scripts.seeds.seed_subscription_plans import PLANS
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.services.subscription_plan_service import SubscriptionPlanService
+from tests.unit.services.test_plan_catalog import FakeResult, InMemoryCache
 
 pytestmark = pytest.mark.unit
 
@@ -28,6 +32,25 @@ def test_neither_is_part_of_an_answer():
     assert "current_api_calls" not in subscription.to_dict(include_nulls=True)
     assert "max_api_calls_per_month" not in plan.to_dict(include_nulls=True)
     assert plan.to_dict(exclude=["name"]).get("name") is None
+
+
+async def test_the_cached_plan_list_is_kept_apart_from_the_release_befores(monkeypatch):
+    # While a deploy rolls, both releases' workers share the cache, and the one before this
+    # requires the quota of every plan it answers with. The list without it gets a key of its
+    # own, still under the prefix a plan's change clears.
+    fake_cache = InMemoryCache()
+    monkeypatch.setattr("src.api.cache.decorators.cache", fake_cache)
+    db = AsyncMock()
+    db.execute.return_value = FakeResult(
+        [SubscriptionPlan(name="starter", max_api_calls_per_month=5000)]
+    )
+
+    listed = await SubscriptionPlanService(db).list_plans(
+        include_inactive=False, include_private=False, is_admin=False
+    )
+
+    assert list(fake_cache.store) == ["subscription:plans:v2:False:False:False"]
+    assert "max_api_calls_per_month" not in listed["plans"][0]
 
 
 def test_the_legacy_counter_is_still_zeroed_wherever_its_anchor_advances():
