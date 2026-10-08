@@ -392,20 +392,26 @@ def approved_steps(block: Optional[OutlineBlock]) -> list[dict]:
     return titled if len(titled) == len(items) else []
 
 
-def _steps_block(outline: dict, content_type: str, base_model: type[BaseModel]) -> list[dict]:
-    """The approved steps the writer gets a field each for: a how-to guide's, when its content
-    model writes steps at all."""
+def written_steps(
+    outline: dict, content_type: str, base_model: Optional[type[BaseModel]] = None
+) -> tuple[list[dict], int]:
+    """The approved steps the writer gets a field each for, and where the steps block stands
+    in the approved order: a how-to guide's, when its content model writes steps at all.
+    No steps for any other article, and for an outline whose steps are no usable list."""
+    from src.flow.model.structure.contents import get_generated_content_model
     from src.flow.model.structure.outlines import normalize_content_type
 
     if normalize_content_type(content_type) != "how-to-guide":
-        return []
-    if STEPS_KEY not in base_model.model_fields:
-        return []
+        return [], 0
+    base_model = base_model or get_generated_content_model(content_type)
+    if base_model is None or STEPS_KEY not in base_model.model_fields:
+        return [], 0
     block = next(
         (b for b in resolve_outline_structure(outline or {}, content_type) if b.key == STEPS_KEY),
         None,
     )
-    return approved_steps(block)
+    steps = approved_steps(block)
+    return (steps, block.order) if steps else ([], 0)
 
 
 def _step_description(step: dict, number: int, of: int) -> str:
@@ -531,14 +537,14 @@ def build_structured_content_model(
         + context.signature
     )
     try:
-        steps = _steps_block(outline, content_type, base_model)
+        steps, steps_order = written_steps(outline, content_type, base_model)
     except Exception:
         logger.exception(
             "build_structured_content_model: could not read the approved steps for "
             "content_type=%s; they stay with the typed list.",
             content_type,
         )
-        steps = []
+        steps, steps_order = [], 0
     # A model with a field per approved step is this article's own, as one with expanded
     # sections is.
     per_article = _is_per_article(resolved) or bool(steps)
@@ -547,7 +553,19 @@ def build_structured_content_model(
         return cached, resolved
 
     fields: dict[str, tuple] = {}
+    step_fields = {
+        step_field(number): (
+            str,
+            Field(description=_step_description(step, number, len(steps))),
+        )
+        for number, step in enumerate(steps, 1)
+    }
     for block in resolved:
+        if step_fields and block.order > steps_order:
+            # Where the steps stand in the approved order, so the article is written in
+            # the order it is read.
+            fields.update(step_fields)
+            step_fields = {}
         description = context.describe_field(block.key, _field_description(block))
         if block.required:
             fields[block.key] = (ContentBlock, Field(description=description))
@@ -557,11 +575,7 @@ def build_structured_content_model(
                 Field(default=None, description=description),
             )
 
-    for number, step in enumerate(steps, 1):
-        fields[step_field(number)] = (
-            str,
-            Field(description=_step_description(step, number, len(steps))),
-        )
+    fields.update(step_fields)
     if steps:
         fields[STEPS_KEY] = (
             base_model.model_fields[STEPS_KEY].annotation,
