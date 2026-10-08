@@ -90,13 +90,16 @@ def test_a_first_payment_or_a_plan_change_s_charge_is_not_a_renewal(reason):
         ("subscription_expired", "subscription_expired"),
         ("subscription_payment_failed", "subscription_payment_failed"),
         ("order_refunded", "subscription_refunded"),
+        ("subscription_payment_refunded", "subscription_payment_refunded"),
     ],
 )
 def test_the_other_money_events_have_a_name_of_ours(theirs, ours):
     assert money_event(theirs, _subscription())["event"] == ours
 
 
-def test_a_refund_says_how_much_came_back():
+def test_a_refund_gives_the_running_total_under_a_name_that_says_so():
+    # Lemon Squeezy's refunded_amount is what has come back so far: after 10 and then
+    # another 9, the second webhook says 19. It is never sent as this refund's amount.
     payload = {
         "meta": {},
         "data": {"attributes": {"total": 4900, "refunded_amount": 1900, "currency": "EUR"}},
@@ -105,8 +108,25 @@ def test_a_refund_says_how_much_came_back():
     assert money_event("order_refunded", payload)["properties"] == {
         "currency": "EUR",
         "amount": 49.0,
-        "refunded_amount": 19.0,
+        "refunded_total": 19.0,
+        "full_refund": False,
     }
+
+
+def test_a_refund_of_everything_says_so():
+    payload = {"meta": {}, "data": {"attributes": {"total": 4900, "refunded_amount": 4900}}}
+
+    properties = money_event("order_refunded", payload)["properties"]
+
+    assert properties["full_refund"] is True
+    assert "refunded_amount" not in properties
+
+
+def test_a_refunded_renewal_is_counted_under_its_own_name():
+    event = money_event("subscription_payment_refunded", _invoice(status="refunded"))
+
+    assert event["event"] == "subscription_payment_refunded"
+    assert event["properties"]["billing_reason"] == "renewal"
 
 
 @pytest.mark.parametrize("event_type", ["subscription_updated", "order_created", "unknown"])
