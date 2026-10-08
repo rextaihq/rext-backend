@@ -266,6 +266,35 @@ def test_a_sections_sub_headings_are_the_drafted_ones_whatever_came_back():
     assert accept(introduction, f"{_text(30)}\n\n### A Detail\n\n{_text(36)}", 70) is None
 
 
+def test_a_heading_of_any_level_is_held_down_to_a_pillar_pages_h4s():
+    """Review round 2: a pillar page's outline has H4 entries, and only H2 and H3 were read:
+    an H4 could be reworded or dropped unseen. Every heading line is held, of any level."""
+    heading = "## Plan the Month"
+    part = Part(
+        SECTION,
+        heading,
+        f"{heading}\n\n{_text(50)}\n\n### Pick the Themes\n\n{_text(40)}\n\n"
+        f"#### For a Small Team\n\n{_text(40)}",
+    )
+
+    def back(*under):
+        return "\n\n".join([f"{heading}\n\n{_text(48)}"] + [f"{h}\n\n{_text(38)}" for h in under])
+
+    reworded = accept(part, back("### Pick the Themes", "#### When the Team Is Small"), 140)
+
+    assert "#### For a Small Team" in reworded and "When the Team Is Small" not in reworded
+    assert judge(part, back("### Pick the Themes"), 140)[1] == "its headings changed"
+    assert judge(part, back("### Pick the Themes", "### For a Small Team"), 140)[1] == (
+        "its headings changed"
+    )
+    # A title line put on top of a part is a heading too.
+    introduction = Part(INTRODUCTION, "", _text(70))
+    assert accept(introduction, f"# The Article\n\n{_text(66)}", 70) is None
+    # A line of a fenced example that looks like a heading is not one.
+    fenced = f"{heading}\n\n{_text(40)}\n\n```markdown\n## Not a Section\n```\n\n{_text(40)}"
+    assert accept(Part(SECTION, heading, fenced), fenced, 90) is not None
+
+
 def test_an_image_stays_an_image_as_often_as_it_stood():
     """Review round 1: an image turned into a link still points where it did, and one of two
     alike is gone without its address being; the links' own check does not read images."""
@@ -448,6 +477,27 @@ def test_the_plan_reaches_the_count_wanted_however_the_uses_are_spread():
     none_at_all = _planned_article([0, 0, 0, 0, 0])
     plan = keyphrase_plan(none_at_all, KEYPHRASE, "blog", 1.0)
     assert sum(plan.values()) == min(least + 1, most)
+
+
+def test_the_plan_counts_the_keyphrase_where_the_check_does():
+    """Review round 2: the density check also counts the title and the meta fields, where the
+    keyphrase always stands. Planned from the body alone, an article at the top of its range
+    was still given one more, and failed by what the title and the meta add."""
+    least, most = _range_for(_planned_article([0, 0, 0, 0, 0]))
+    elsewhere = f"A {KEYPHRASE} for your team\nA {KEYPHRASE} for your team\nUse a {KEYPHRASE}."
+    in_the_body = most - 3
+    spread = [0, in_the_body // 2, in_the_body - in_the_body // 2, 0, 0]
+    parts = _planned_article(spread)
+
+    with_them = keyphrase_plan(parts, KEYPHRASE, "blog", 1.0, elsewhere=elsewhere)
+    over = keyphrase_plan(
+        _planned_article([0, in_the_body, 2, 0, 0]), KEYPHRASE, "blog", 1.0, elsewhere=elsewhere
+    )
+
+    # At the most the article may have, title and meta counted: every use stays where it is.
+    assert with_them == dict(enumerate(spread))
+    # Two over, title and meta counted: two come out of the body, where it has the most.
+    assert sum(over.values()) + 3 == most
 
 
 def test_a_part_is_told_plainly_when_its_uses_are_to_change():

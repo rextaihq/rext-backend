@@ -1055,3 +1055,27 @@ async def test_a_body_with_nothing_to_split_is_rewritten_whole_as_before():
     humanizer.with_structured_output.assert_called_once()
     assert len(humanizer.calls) == 1
     assert "Body (Markdown):" in _human_text(humanizer.calls[0])
+
+
+async def test_a_page_whose_every_part_is_too_short_to_send_is_rewritten_whole():
+    """Review round 2: several two-line sections under a one-line introduction. By section no
+    part of it is long enough to be sent, so nothing was rewritten at all; the whole-article
+    rewrite takes it, as it did before."""
+    article = _article(
+        introduction="Sign in or reset your password in under a minute.",
+        body_markdown=(
+            "## Sign In\n\nOpen the app and enter your email address.\n\n"
+            "## Reset a Password\n\nUse the link under the sign-in button."
+        ),
+    )
+    humanizer = _fake_model(_echo())
+
+    with (
+        patch.object(repair_module, "load_content_model", return_value=_fake_model(_echo())),
+        patch.object(humanize_module, "load_humanize_model", return_value=humanizer),
+    ):
+        await _run_pipeline(_state(article))
+
+    humanizer.with_structured_output.assert_called_once()
+    assert len(humanizer.calls) == 1
+    assert "Body (Markdown):" in _human_text(humanizer.calls[0])
