@@ -1,5 +1,7 @@
 import json
 import logging
+from datetime import datetime
+from typing import Optional
 from uuid import UUID
 
 from langchain_core.runnables import RunnableConfig
@@ -14,6 +16,8 @@ from src.services.generation_events import (
     INTERNAL,
     announce_completed,
     announce_failed,
+    completion_time,
+    events_are_sent,
 )
 
 logger = logging.getLogger(__name__)
@@ -129,6 +133,42 @@ def _claims_to_verify(state: REXT, content_state: dict) -> list[dict]:
     except Exception:  # noqa: BLE001 - the checklist never breaks a save
         logger.exception("persist_content: could not list the claims to verify")
         return []
+
+
+async def _last_saved_at(workspace_id: UUID, thread_id: UUID) -> Optional[datetime]:
+    """When this thread's article row was last saved, read before the save moves it: a save
+    replayed after its row was written finds its own first save there, and its event keeps
+    that time (generation_events.completion_time).
+
+    In a session of its own, so nothing here can reach the save's transaction, and None on
+    any failure: the event's time never fails the save. Not read when no event is sent.
+    """
+    if not events_are_sent():
+        return None
+    try:
+        from sqlalchemy import select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.content_models.content import Content
+        from src.utils.loop_bridge import run_on_main_loop
+
+        async def read():
+            async with get_pooled_langgraph_db_context() as db:
+                found = await db.execute(
+                    select(Content.updated_at).where(
+                        Content.workspace_id == workspace_id,
+                        Content.langgraph_thread_id == thread_id,
+                        Content.deleted_at.is_(None),
+                    )
+                )
+                return found.scalar_one_or_none()
+
+        return await run_on_main_loop(read())
+    except Exception as error:  # noqa: BLE001 - analytics never fails the work it reports
+        logger.warning(
+            "persist_content: the row's last save was not read: %s", type(error).__name__
+        )
+        return None
 
 
 async def persist_content(state: REXT, config: RunnableConfig) -> dict:
@@ -274,6 +314,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
                 service = ContentService(db)
                 return await service.create_content(workspace_uuid, user_uuid, payload)
 
+        saved_before = await _last_saved_at(workspace_uuid, thread_uuid)
         content = await run_on_main_loop(_persist())
         logger.info("persist_content: saved article %s for thread %s", content.id, thread_id)
     except Exception as exc:
@@ -286,7 +327,12 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         thread_id=str(thread_uuid),
         content_type=content_state.get("content_type"),
         word_count=len(f"{final.get('introduction') or ''} {body_markdown}".split()),
-        saved_at=getattr(content, "created_at", None),
+        saved_at=completion_time(
+            state,
+            created_at=getattr(content, "created_at", None),
+            saved_before=saved_before,
+            saved_after=getattr(content, "updated_at", None),
+        ),
     )
 
     from src.services.notification_helper import notify_now

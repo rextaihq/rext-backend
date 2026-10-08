@@ -370,6 +370,10 @@ def review_outline(state: REXT):
         if promote_brand and brand_prominence != "subtle":
             outline_update = apply_brand_slot_to_outline(outline_update, content_type)
 
+        # The article's writing starts here, for the analytics events' `writing_seconds`.
+        from src.services.generation_events import writing_began
+
+        writing_began()
         return {
             "content": {
                 **content_state,
