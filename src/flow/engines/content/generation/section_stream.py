@@ -76,7 +76,8 @@ class SectionStream:
     The answer's fields may come in any order: a section is returned when it closes, whichever
     closed before it. One the writer leaves out (an optional one, written as null) is never
     returned. When the writer is asked for its answer again, ``restart`` reads the new one
-    from its start, and a section returned before is returned again as the new answer has it.
+    from its start: the page is told to drop the sections it was sent (``phase: "reset"``),
+    and each is returned again as the new answer has it.
     """
 
     def __init__(self, sections: list[tuple[str, int]], typed: dict[str, TypedDraft] | None = None):
@@ -92,12 +93,19 @@ class SectionStream:
         ]
         self.restart()
 
-    def restart(self) -> None:
-        """A new answer begins: nothing of the one before it is kept."""
+    def restart(self) -> list[dict]:
+        """A new answer begins: nothing of the one before it is kept.
+
+        Returns what the page must be told: a reset, when sections of the answer before were
+        returned. The new answer may leave one of them out (an optional section), and the page
+        would keep showing it until the whole draft arrives. Nothing when none was returned,
+        which is every call the writer makes before its answer (its searches)."""
+        had_returned = bool(getattr(self, "_returned", None))
         self._returned: set[int] = set()
         self._text = ""
         self._from = 0
         self._stopped = False
+        return [{"type": "section", "phase": "reset"}] if had_returned else []
 
     def feed(self, piece: Any) -> list[dict]:
         if not isinstance(piece, str) or not piece or self._stopped:
