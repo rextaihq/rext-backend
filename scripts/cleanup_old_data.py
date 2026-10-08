@@ -89,6 +89,11 @@ Retention Periods (defaults):
     )
 
     args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("--batch-size must be at least 1")
+    # Below one day the cutoff is now or later: the run would take every row of the table.
+    if args.retention_days is not None and args.retention_days < 1:
+        parser.error("--retention-days must be at least 1")
 
     # Print configuration
     print("=" * 70)

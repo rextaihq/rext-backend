@@ -14,6 +14,7 @@ bcrypt hashes, and output is escaped where it is rendered.
 """
 
 import re
+import unicodedata
 
 # "<", ">", C0 controls and DEL, zero-width spaces/joiners and directional
 # marks (U+200B-U+200F), bidi overrides (U+202A-U+202E), word joiner and
@@ -31,6 +32,38 @@ def find_script_content(value: str, label: str) -> str | None:
     if _SCRIPT_SCHEME_RE.search(value):
         return f"{label} cannot contain script code such as 'javascript:'"
     return None
+
+
+# The joiners some scripts write inside a word (Persian, Hindi, Sinhala): U+200C and U+200D.
+_JOINERS = "\u200c\u200d"
+
+
+def without_joiners_in_words(value: str) -> str:
+    """The value without the joiners that belong to a word: between two letters or combining
+    marks of any script, where Persian and Indic writing puts them ("علی‌رضا", and after a
+    virama in Hindi), and straight after a combining mark at a word's end, where the older
+    Malayalam spelling of a final consonant puts one. A joiner anywhere else stays, and is a
+    hidden character to every check here."""
+    if not any(joiner in value for joiner in _JOINERS):
+        return value
+    kept = []
+    for index, char in enumerate(value):
+        if char in _JOINERS and index > 0:
+            before = unicodedata.category(value[index - 1])[0]
+            after = unicodedata.category(value[index + 1])[0] if index + 1 < len(value) else ""
+            if before == "M" and after not in ("C",):
+                continue
+            if before == "L" and after in ("L", "M"):
+                continue
+        kept.append(char)
+    return "".join(kept)
+
+
+def has_hidden_characters(value: str) -> bool:
+    """Whether the value holds a character nobody sees, the joiners inside words aside: any
+    control or format character (a C1 control, a soft hyphen, a bidi mark), a private-use or
+    an unassigned one. Unicode's own categories, not a list of ranges."""
+    return any(unicodedata.category(char)[0] == "C" for char in without_joiners_in_words(value))
 
 
 def reject_script_content(value, label: str):

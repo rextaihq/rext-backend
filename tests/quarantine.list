@@ -34,13 +34,9 @@ tests/routes/test_user_workspaces.py::test_get_user_workspaces_includes_statisti
 tests/routes/test_user_workspaces.py::test_get_user_workspaces_with_multiple_workspaces
 tests/routes/test_user_workspaces.py::test_get_user_workspaces_with_no_workspaces
 tests/routes/test_user_workspaces.py::test_workspace_ordering
-tests/services/test_data_retention.py::TestCleanupAll::test_cleanup_all_includes_payment_data  # G44.13 #504: the data cleanup's own bug
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_cancelled_subscriptions  # G44.13 #504: the data cleanup's own bug
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_expired_subscriptions  # G44.13 #504: the data cleanup's own bug
-tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_skip_already_anonymized_subscriptions  # G44.13 #504: the data cleanup's own bug
-tests/services/test_data_retention.py::TestWebhookEventCleanup::test_cleanup_old_processed_webhook_events  # G44.13 #504: the data cleanup's own bug
-tests/services/test_data_retention.py::test_anonymize_subscriptions_uses_config_default  # G44.13 #504: the data cleanup's own bug
-tests/services/test_data_retention.py::test_cleanup_webhook_events_uses_config_default  # G44.13 #504: the data cleanup's own bug
+tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_cancelled_subscriptions  # G44.15 #540: anonymization can't be stored until it's designed
+tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_anonymize_old_expired_subscriptions  # G44.15 #540: anonymization can't be stored until it's designed
+tests/services/test_data_retention.py::TestSubscriptionAnonymization::test_skip_already_anonymized_subscriptions  # G44.15 #540: anonymization can't be stored until it's designed
 tests/unit/flow/test_subheading_and_meta_seo.py::test_long_meta_description_drops_a_whole_sentence_and_keeps_the_cta
 tests/unit/flow/test_subheading_and_meta_seo.py::test_meta_description_within_limit_passes_and_is_untouched[155]
 tests/unit/flow/test_subheading_and_meta_seo.py::test_schema_and_system_prompt_state_the_156_limit

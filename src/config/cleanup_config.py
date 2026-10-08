@@ -20,6 +20,8 @@ class CleanupConfig(HidesSecrets, BaseSettings):
     # record, and a dependency outage can write them in volume.
     ERROR_LOG_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
     USER_SESSION_INACTIVE_DAYS: int = Field(default=7, ge=1, le=3650)
+    # Read by anonymize_cancelled_subscriptions, which cleanup_all doesn't run yet.
+    CANCELLED_SUBSCRIPTION_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
 
     # Scheduler toggles
     SCHEDULER_ENABLED: bool = True
@@ -49,7 +51,10 @@ class CleanupConfig(HidesSecrets, BaseSettings):
 
     # Operational controls
     CLEANUP_BATCH_SIZE: int = Field(default=1000, ge=1, le=100000)
-    CLEANUP_DRY_RUN: bool = False
+    # The nightly cleanup only counts and logs what it would delete, per table,
+    # until this is turned off: its deletes never ran before, so the first runs
+    # show how much is past each period before anything is removed.
+    CLEANUP_DRY_RUN: bool = True
 
     # Scheduled publish retry
     # Fixed (non-exponential) interval so a transient failure doesn't drift the

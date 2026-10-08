@@ -1,28 +1,69 @@
 """
-Tests for data retention cleanup service (payment-related features).
+Tests for the data retention cleanup service.
 
-Tests the new cleanup methods added for Phase 4.3.3:
-- cleanup_webhook_events()
-- anonymize_cancelled_subscriptions()
+- cleanup_all() on old and recent rows in every table it cleans, and with a step that fails
+- the batched deletes, and the dry run the nightly job starts in (its counts)
+- webhook events, which the cleanup leaves alone, and a retention below one day, which it refuses
+- anonymize_cancelled_subscriptions(), which cleanup_all() doesn't run yet
 """
 
+import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from src.api.database.base import Base
+from src.api.models.admin_models.error_log import ErrorLog, ErrorLogSeverity
+from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.email_models.email_event import EmailEvent
+from src.api.models.email_models.email_log import EmailLog
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
+from src.api.models.user_models.token_blacklist import TokenBlacklist
+from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
-from src.services.data_cleanup_service import DataCleanupService
+from src.config.cleanup_config import CleanupConfig
+from src.services.data_cleanup_service import (
+    MAX_BATCH_SIZE,
+    DataCleanupIncomplete,
+    DataCleanupService,
+)
+from src.services.plan_change_charges import PAID, REFUNDED
 from tests.conftest import TEST_DATABASE_URL
 
 Subscription = UserSubscription
+
+
+def _with_parents(*tables):
+    """The tables, and every table their foreign keys reach."""
+    found = []
+
+    def visit(table):
+        if table in found:
+            return
+        found.append(table)
+        for key in table.foreign_keys:
+            visit(key.column.table)
+
+    for table in tables:
+        visit(table)
+    return found
+
+
+def _tables_for_an_unmigrated_database(sync, tables) -> None:
+    """Make the tables on an empty test database only. A migrated one (CI's) is tested as
+    its migrations built it, so a table a migration lacks fails here instead of being made
+    from the models."""
+    if inspect(sync).has_table("alembic_version"):
+        return
+    Base.metadata.create_all(sync, tables=tables, checkfirst=True)
 
 
 @pytest_asyncio.fixture
@@ -32,21 +73,22 @@ async def db_session():
     The service and the tests commit: each commit only releases a savepoint, so
     nothing is left behind, on an empty test database or a migrated one.
     """
+    tables = _with_parents(
+        Users.__table__,
+        SubscriptionPlan.__table__,
+        UserSubscription.__table__,
+        WebhookEvent.__table__,
+        AuditLog.__table__,
+        EmailLog.__table__,
+        EmailEvent.__table__,
+        ErrorLog.__table__,
+        UserSession.__table__,
+        TokenBlacklist.__table__,
+    )
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.connect() as connection:
         transaction = await connection.begin()
-        await connection.run_sync(
-            lambda sync: Base.metadata.create_all(
-                sync,
-                tables=[
-                    Users.__table__,
-                    SubscriptionPlan.__table__,
-                    UserSubscription.__table__,
-                    WebhookEvent.__table__,
-                ],
-                checkfirst=True,
-            )
-        )
+        await connection.run_sync(lambda sync: _tables_for_an_unmigrated_database(sync, tables))
         async with AsyncSession(
             bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
         ) as db:
@@ -73,136 +115,189 @@ async def plan(db_session):
     return plan
 
 
-@pytest.mark.asyncio
-async def test_cleanup_webhook_events_uses_config_default(db_session, monkeypatch):
-    monkeypatch.setattr(
-        "src.config.cleanup_config.cleanup_config.WEBHOOK_EVENT_RETENTION_DAYS",
-        45,
-        raising=False,
+def _days_ago(days: int) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _webhook_event(
+    days_old: int, processed: bool = True, name: str = "subscription_updated"
+) -> WebhookEvent:
+    return WebhookEvent(
+        id=uuid4(),
+        event_id=f"evt_{uuid4().hex[:12]}",
+        event_name=name,
+        payload={"test": "data"},
+        processed=processed,
+        created_at=_days_ago(days_old),
     )
-    service = DataCleanupService(db=db_session, dry_run=True)
-    result = await service.cleanup_webhook_events(retention_days=None)
-    assert isinstance(result, int)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("days", [0, -1, -400])
+@pytest.mark.parametrize(
+    "step,argument",
+    [
+        ("cleanup_audit_logs", "retention_days"),
+        ("cleanup_error_logs", "retention_days"),
+        ("cleanup_email_logs", "retention_days"),
+        ("cleanup_email_events", "retention_days"),
+        ("cleanup_inactive_sessions", "inactive_days"),
+        ("anonymize_cancelled_subscriptions", "retention_days"),
+    ],
+)
+async def test_a_retention_below_one_day_is_refused(db_session, step, argument, days):
+    """Below one day the cutoff is now or later, and the step would take every row of its
+    table: yesterday's audit entry is still there after the refusal."""
+    entry = AuditLog(action="test", resource_type="test", created_at=_days_ago(1))
+    db_session.add(entry)
+    await db_session.commit()
+    service = DataCleanupService(db=db_session, dry_run=False)
+
+    with pytest.raises(ValueError, match="at least 1"):
+        await getattr(service, step)(**{argument: days})
+
+    assert await db_session.get(AuditLog, entry.id) is not None
+
+
+@pytest.mark.parametrize("days", ["0", "-30"])
+def test_the_manual_script_refuses_a_retention_below_one_day(monkeypatch, capsys, days):
+    import scripts.cleanup_old_data as script
+
+    monkeypatch.setattr(
+        "sys.argv", ["cleanup_old_data.py", "--table", "audit_logs", "--retention-days", days]
+    )
+
+    with pytest.raises(SystemExit) as refused:
+        asyncio.run(script.main())
+
+    assert refused.value.code == 2
+    assert "--retention-days must be at least 1" in capsys.readouterr().err
 
 
 @pytest.mark.asyncio
 async def test_anonymize_subscriptions_uses_config_default(db_session, monkeypatch):
     monkeypatch.setattr(
-        "src.config.cleanup_config.cleanup_config.CANCELLED_SUBSCRIPTION_RETENTION_DAYS",
-        60,
-        raising=False,
+        "src.config.cleanup_config.cleanup_config.CANCELLED_SUBSCRIPTION_RETENTION_DAYS", 60
     )
     service = DataCleanupService(db=db_session, dry_run=True)
     result = await service.anonymize_cancelled_subscriptions(retention_days=None)
     assert isinstance(result, int)
 
 
+def test_the_nightly_cleanup_starts_as_a_dry_run():
+    """Its deletes never ran before, so the first nights count and log only."""
+    assert CleanupConfig.model_fields["CLEANUP_DRY_RUN"].default is True
+
+
 @pytest.mark.asyncio
-class TestWebhookEventCleanup:
-    """Test webhook event cleanup functionality."""
+async def test_deletes_run_in_batches_and_commit_each(db_session, monkeypatch):
+    """PostgreSQL has no DELETE ... LIMIT: each batch deletes the ids a limited select picks."""
+    monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 2)
+    events = [_webhook_event(days_old=100) for _ in range(5)]
+    kept = _webhook_event(days_old=100)
+    db_session.add_all([*events, kept])
+    await db_session.commit()
 
-    async def test_cleanup_old_processed_webhook_events(self, db_session):
-        """Should delete processed webhook events older than retention period."""
-        # Create old processed event (100 days old)
-        old_event = WebhookEvent(
-            id=uuid4(),
-            event_id="evt_old_processed_123",
-            event_name="subscription_created",
-            payload={"test": "data"},
-            processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=100),
+    commits = 0
+    commit = db_session.commit
+
+    async def counted_commit():
+        nonlocal commits
+        commits += 1
+        await commit()
+
+    monkeypatch.setattr(db_session, "commit", counted_commit)
+    service = DataCleanupService(db=db_session, dry_run=False)
+    deleted = await service._delete_in_batches(
+        WebhookEvent, WebhookEvent.id.in_([event.id for event in events])
+    )
+
+    assert deleted == 5
+    assert commits == 3  # 2, 2, then the last 1; the pick that finds nothing commits nothing
+    remaining = (
+        await db_session.execute(
+            select(WebhookEvent.id).where(WebhookEvent.id.in_([e.id for e in [*events, kept]]))
         )
-        db_session.add(old_event)
+    ).scalars()
+    assert list(remaining) == [kept.id]
 
-        # Create recent processed event (30 days old)
-        recent_event = WebhookEvent(
-            id=uuid4(),
-            event_id="evt_recent_processed_456",
-            event_name="subscription_updated",
-            payload={"test": "data"},
-            processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=30),
-        )
-        db_session.add(recent_event)
 
-        await db_session.commit()
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reported", [1, 0])
+async def test_a_batch_that_deletes_few_or_none_is_not_the_end(db_session, monkeypatch, reported):
+    """A batch deletes fewer rows than it picked, or none, when rows were refreshed meanwhile
+    and kept, while more wait beyond its limit: the run goes on until a pick finds nothing."""
+    monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 2)
+    events = [_webhook_event(days_old=100) for _ in range(5)]
+    db_session.add_all(events)
+    await db_session.commit()
 
-        # Run cleanup with 90-day retention
-        cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        deleted_count = await cleanup_service.cleanup_webhook_events(retention_days=90)
+    execute = db_session.execute
+    deletes = 0
 
-        # Should delete only old event
-        assert deleted_count == 1
+    async def first_batch_reports_fewer(statement, *args, **kwargs):
+        nonlocal deletes
+        result = await execute(statement, *args, **kwargs)
+        if getattr(statement, "is_delete", False):
+            deletes += 1
+            if deletes == 1:
+                return SimpleNamespace(rowcount=reported)
+        return result
 
-        # Verify old event deleted
-        old_event_check = await db_session.get(WebhookEvent, old_event.id)
-        assert old_event_check is None
+    monkeypatch.setattr(db_session, "execute", first_batch_reports_fewer)
+    service = DataCleanupService(db=db_session, dry_run=False)
+    await service._delete_in_batches(
+        WebhookEvent, WebhookEvent.id.in_([event.id for event in events])
+    )
+    monkeypatch.undo()
 
-        # Verify recent event kept
-        recent_event_check = await db_session.get(WebhookEvent, recent_event.id)
-        assert recent_event_check is not None
-        assert recent_event_check.event_id == "evt_recent_processed_456"
+    remaining = await db_session.execute(
+        select(WebhookEvent.id).where(WebhookEvent.id.in_([event.id for event in events]))
+    )
+    assert list(remaining.scalars()) == []
 
-    async def test_keep_unprocessed_webhook_events(self, db_session):
-        """Should NOT delete unprocessed webhook events (may indicate issues)."""
-        # Create old UNPROCESSED event (100 days old)
-        unprocessed_event = WebhookEvent(
-            id=uuid4(),
-            event_id="evt_old_unprocessed_789",
-            event_name="subscription_payment_failed",
-            payload={"test": "data"},
-            processed=False,  # Not processed
-            created_at=datetime.now(timezone.utc) - timedelta(days=100),
-        )
-        db_session.add(unprocessed_event)
-        await db_session.commit()
 
-        # Run cleanup
-        cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        deleted_count = await cleanup_service.cleanup_webhook_events(retention_days=90)
+@pytest.mark.asyncio
+async def test_a_batch_never_names_more_ids_than_the_driver_takes(db_session, monkeypatch):
+    """The setting goes up to 100,000 and the driver takes 32,767 values in one statement:
+    a batch picks 10,000 ids at most, whatever the setting says."""
+    monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 100_000)
+    event = _webhook_event(days_old=100)
+    db_session.add(event)
+    await db_session.commit()
 
-        # Should NOT delete unprocessed event
-        assert deleted_count == 0
+    execute = db_session.execute
+    limits = []
 
-        # Verify event still exists
-        event_check = await db_session.get(WebhookEvent, unprocessed_event.id)
-        assert event_check is not None
-        assert event_check.processed is False
+    async def noting_the_limit(statement, *args, **kwargs):
+        if getattr(statement, "is_select", False) and statement._limit is not None:
+            limits.append(statement._limit)
+        return await execute(statement, *args, **kwargs)
 
-    async def test_dry_run_mode_webhook_cleanup(self, db_session):
-        """Should count but not delete in dry-run mode."""
-        # Create old processed event
-        old_event = WebhookEvent(
-            id=uuid4(),
-            event_id="evt_dryrun_123",
-            event_name="subscription_created",
-            payload={"test": "data"},
-            processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=100),
-        )
-        db_session.add(old_event)
-        await db_session.commit()
+    monkeypatch.setattr(db_session, "execute", noting_the_limit)
+    service = DataCleanupService(db=db_session, dry_run=False)
+    deleted = await service._delete_in_batches(WebhookEvent, WebhookEvent.id == event.id)
 
-        # Run cleanup in dry-run mode
-        cleanup_service = DataCleanupService(db=db_session, dry_run=True)
-        would_delete_count = await cleanup_service.cleanup_webhook_events(retention_days=90)
+    assert deleted == 1
+    assert limits and set(limits) == {MAX_BATCH_SIZE}
 
-        # Should report 1 event would be deleted
-        assert would_delete_count == 1
 
-        # Verify event still exists (not actually deleted)
-        event_check = await db_session.get(WebhookEvent, old_event.id)
-        assert event_check is not None
+@pytest.mark.asyncio
+async def test_a_batch_size_of_zero_ends_at_once(db_session, monkeypatch):
+    """The setting can't be below 1, but a caller can put anything there: a pick of no rows
+    finds nothing, and that ends the run."""
+    monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 0)
+    event = _webhook_event(days_old=100)
+    db_session.add(event)
+    await db_session.commit()
 
-    async def test_no_webhook_events_to_cleanup(self, db_session):
-        """Should handle case when no events need cleanup."""
-        # No events in database
+    service = DataCleanupService(db=db_session, dry_run=False)
+    deleted = await asyncio.wait_for(
+        service._delete_in_batches(WebhookEvent, WebhookEvent.id == event.id), timeout=10
+    )
 
-        cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        deleted_count = await cleanup_service.cleanup_webhook_events(retention_days=90)
-
-        # Should return 0
-        assert deleted_count == 0
+    assert deleted == 0
+    assert await _exists(db_session, event)
 
 
 @pytest.mark.asyncio
@@ -382,24 +477,221 @@ class TestSubscriptionAnonymization:
         assert anonymized_count == 0
 
 
+async def _old_and_recent_rows(db: AsyncSession, user: Users) -> dict:
+    """One row past each default retention period and one inside it, in every table
+    cleanup_all() cleans. Returns the rows by whether they should be deleted."""
+    old_log = EmailLog(
+        provider="resend", to_email="a@example.com", from_email="b@example.com", subject="old"
+    )
+    old_log.created_at = _days_ago(40)
+    recent_log = EmailLog(
+        provider="resend", to_email="a@example.com", from_email="b@example.com", subject="new"
+    )
+    recent_log.created_at = _days_ago(20)
+    db.add_all([old_log, recent_log])
+    await db.flush()
+
+    def email_event(days_old: int, log: EmailLog | None) -> EmailEvent:
+        return EmailEvent(
+            email_log_id=log.id if log else None,
+            provider="resend",
+            provider_event_id=f"evt_{uuid4().hex}",
+            provider_message_id=f"msg_{uuid4().hex}",
+            event_type="delivered",
+            created_at=_days_ago(days_old),
+        )
+
+    def session(**dates) -> UserSession:
+        return UserSession(
+            user_id=user.id,
+            jti=uuid4().hex,
+            last_activity_at=dates.get("last_activity_at", _days_ago(1)),
+            expires_at=dates.get("expires_at", datetime.now(timezone.utc) + timedelta(days=7)),
+            revoked_at=dates.get("revoked_at"),
+        )
+
+    def token(expires_at: datetime) -> TokenBlacklist:
+        return TokenBlacklist(
+            jti=uuid4().hex, token_type="refresh", user_id=user.id, expires_at=expires_at
+        )
+
+    def audit(days_old: int) -> AuditLog:
+        return AuditLog(action="test", resource_type="test", created_at=_days_ago(days_old))
+
+    def error(days_old: int) -> ErrorLog:
+        return ErrorLog(
+            severity=ErrorLogSeverity.ERROR, message="test", timestamp=_days_ago(days_old)
+        )
+
+    now = datetime.now(timezone.utc)
+    rows = {
+        "deleted": {
+            "audit_logs": [audit(400)],
+            "email_logs": [old_log],
+            # an old orphan, and an old event whose log is deleted in the same run
+            "email_events": [email_event(40, None), email_event(40, old_log)],
+            "error_logs": [error(100)],
+            "user_sessions": [
+                session(last_activity_at=_days_ago(10)),
+                session(expires_at=now - timedelta(hours=1)),
+                session(revoked_at=now - timedelta(hours=1)),
+            ],
+            "cleanup_expired_tokens": [token(now - timedelta(hours=1))],
+        },
+        "kept": {
+            "audit_logs": [audit(300)],
+            "email_logs": [recent_log],
+            "email_events": [email_event(20, None), email_event(40, recent_log)],
+            "error_logs": [error(60)],
+            "user_sessions": [session()],
+            # No webhook event is deleted: its row is the record that the event was handled.
+            "webhook_events": [
+                _webhook_event(days_old=30),
+                _webhook_event(days_old=100),
+                _webhook_event(days_old=100, processed=False),
+                # what a customer paid and was refunded: the admin's refund rows read these
+                _webhook_event(days_old=400, name=PAID),
+                _webhook_event(days_old=400, name=REFUNDED),
+            ],
+            "cleanup_expired_tokens": [token(now + timedelta(hours=1))],
+        },
+    }
+    for group in rows.values():
+        for table_rows in group.values():
+            db.add_all([row for row in table_rows if row not in (old_log, recent_log)])
+    await db.commit()
+    return rows
+
+
+async def _exists(db: AsyncSession, row) -> bool:
+    model = type(row)
+    found = await db.execute(select(model.id).where(model.id == row.id))
+    return found.scalar_one_or_none() is not None
+
+
 @pytest.mark.asyncio
 class TestCleanupAll:
-    """Test cleanup_all() method with new payment features."""
+    """cleanup_all() over every table it cleans."""
 
-    async def test_cleanup_all_includes_payment_data(self, db_session, test_user, plan):
-        """Should run all cleanup tasks including new payment-related ones."""
-        # Create old webhook event
-        old_webhook = WebhookEvent(
-            id=uuid4(),
-            event_id="evt_cleanup_all",
-            event_name="subscription_created",
-            payload={"test": "data"},
-            processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=100),
+    async def test_cleanup_all_deletes_exactly_what_is_past_each_period(
+        self, db_session, test_user
+    ):
+        rows = await _old_and_recent_rows(db_session, test_user)
+
+        results = await DataCleanupService(db=db_session, dry_run=False).cleanup_all()
+
+        for table, deleted in rows["deleted"].items():
+            assert results[table] >= len(deleted), table
+            for row in deleted:
+                assert not await _exists(db_session, row), table
+        for table, kept in rows["kept"].items():
+            for row in kept:
+                assert await _exists(db_session, row), table
+
+    async def test_dry_run_counts_what_the_real_run_deletes(self, db_session, test_user):
+        """The dry run is the preview the nightly job starts with: it deletes nothing, and
+        its count for every table is what the real run then deletes. That includes the old
+        events of email logs the real run deletes first."""
+        rows = await _old_and_recent_rows(db_session, test_user)
+
+        preview = await DataCleanupService(db=db_session, dry_run=True).cleanup_all()
+
+        for group in rows.values():
+            for table, table_rows in group.items():
+                for row in table_rows:
+                    assert await _exists(db_session, row), table
+
+        results = await DataCleanupService(db=db_session, dry_run=False).cleanup_all()
+
+        assert preview == results
+        for table, deleted in rows["deleted"].items():
+            assert preview[table] >= len(deleted), table
+
+    async def test_a_step_that_fails_does_not_stop_the_steps_after_it(
+        self, db_session, test_user, monkeypatch
+    ):
+        """The nightly run once stopped at one step, every night, and the steps after it
+        never ran. Now each step runs whatever the one before it did, and the run says at
+        its end which steps failed."""
+        rows = await _old_and_recent_rows(db_session, test_user)
+        # Read now: the rollback after the failed step expires every loaded row.
+        old = {
+            table: [(type(row), row.id) for row in table_rows]
+            for table, table_rows in rows["deleted"].items()
+        }
+        service = DataCleanupService(db=db_session, dry_run=False)
+
+        async def there(model, row_id) -> bool:
+            found = await db_session.execute(select(model.id).where(model.id == row_id))
+            return found.scalar_one_or_none() is not None
+
+        async def a_statement_that_fails() -> int:
+            # A failed statement leaves the transaction unusable until it is rolled back.
+            await db_session.execute(text("SELECT 1 / 0"))
+            return 0
+
+        monkeypatch.setattr(service, "cleanup_error_logs", a_statement_that_fails)
+
+        with pytest.raises(DataCleanupIncomplete) as incomplete:
+            await service.cleanup_all()
+
+        assert incomplete.value.failed == ["error_logs"]
+        assert "error_logs" not in incomplete.value.results
+        for table in ("audit_logs", "user_sessions", "cleanup_expired_tokens"):
+            assert incomplete.value.results[table] >= len(old[table]), table
+            for model, row_id in old[table]:
+                assert not await there(model, row_id), table
+        for model, row_id in old["error_logs"]:
+            assert await there(model, row_id)
+
+    async def test_events_of_logs_that_could_not_be_deleted_are_kept(
+        self, db_session, test_user, monkeypatch
+    ):
+        """An event goes when its log has gone. When the logs' step fails, its logs are still
+        there, and so are their events; an old event with no log is deleted as before."""
+        rows = await _old_and_recent_rows(db_session, test_user)
+        orphan, of_the_old_log = rows["deleted"]["email_events"]
+        orphan_id, linked_id = orphan.id, of_the_old_log.id
+        service = DataCleanupService(db=db_session, dry_run=False)
+
+        async def the_logs_step_fails() -> int:
+            await db_session.execute(text("SELECT 1 / 0"))
+            return 0
+
+        monkeypatch.setattr(service, "cleanup_email_logs", the_logs_step_fails)
+
+        with pytest.raises(DataCleanupIncomplete) as incomplete:
+            await service.cleanup_all()
+
+        assert incomplete.value.failed == ["email_logs"]
+        kept = await db_session.execute(
+            select(EmailEvent.id).where(EmailEvent.id.in_([orphan_id, linked_id]))
         )
-        db_session.add(old_webhook)
+        assert list(kept.scalars()) == [linked_id]
 
-        # Create old cancelled subscription
+    async def test_cleanup_all_reaches_its_last_step_with_the_settings_as_they_are(
+        self, db_session, test_user
+    ):
+        """No setting a step reads is missing: with nothing patched in, the run ends and
+        every step has a count."""
+        results = await DataCleanupService(db=db_session, dry_run=True).cleanup_all()
+
+        assert list(results) == [
+            "audit_logs",
+            "email_logs",
+            "email_events",
+            "error_logs",
+            "user_sessions",
+            "cleanup_expired_tokens",
+        ]
+
+    async def test_cleanup_all_leaves_cancelled_subscriptions_linked(
+        self, db_session, test_user, plan
+    ):
+        """Anonymization isn't part of the nightly run until it is designed: the user_id
+        column is NOT NULL. Nor are webhook events: an old, handled one is still there."""
+        old_webhook = _webhook_event(days_old=100)
+        db_session.add(old_webhook)
         old_subscription = Subscription(
             id=uuid4(),
             user_id=test_user.id,
@@ -413,22 +705,10 @@ class TestCleanupAll:
         db_session.add(old_subscription)
         await db_session.commit()
 
-        # Run cleanup_all()
-        cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        results = await cleanup_service.cleanup_all()
+        results = await DataCleanupService(db=db_session, dry_run=False).cleanup_all()
 
-        # Verify results include new cleanup tasks
-        assert "webhook_events" in results
-        assert "cancelled_subscriptions_anonymized" in results
-
-        # Verify cleanup was performed
-        assert results["webhook_events"] == 1
-        assert results["cancelled_subscriptions_anonymized"] == 1
-
-        # Verify webhook deleted
-        webhook_check = await db_session.get(WebhookEvent, old_webhook.id)
-        assert webhook_check is None
-
-        # Verify subscription anonymized
+        assert "cancelled_subscriptions_anonymized" not in results
+        assert "webhook_events" not in results
+        assert await db_session.get(WebhookEvent, old_webhook.id) is not None
         await db_session.refresh(old_subscription)
-        assert old_subscription.user_id is None
+        assert old_subscription.user_id == test_user.id

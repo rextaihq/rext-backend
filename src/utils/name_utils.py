@@ -2,18 +2,22 @@ import re
 import unicodedata
 
 from src.api.middleware.exceptions import RextValidationException
-from src.utils.input_safety import find_markup
+from src.utils.input_safety import find_markup, has_hidden_characters, without_joiners_in_words
 
 # Full-name policy for sign-up (email/password and invitation registration).
 # rext-admin's signupFullNameSchema (schemas/auth-schemas.ts) should hold the
 # same rules so the form reports them while the user types.
-FULL_NAME_MIN_LENGTH = 3
-FULL_NAME_MAX_LENGTH = 50  # matches the sign-up form's limit
+#
+# A person is never refused for how their name is written (rext-control#933): the rule was
+# English letters starting with a capital, which refused "john smith" typed on a phone,
+# "José", "O'Brien", "Anne-Marie", "Li" and every name in a script without capitals. Only
+# what protects us is checked: a name is there, has a letter in it, fits its limit, and holds
+# no markup, no hidden or control character and no web address written as one.
+FULL_NAME_MAX_LENGTH = 100  # the column holds 200
 
-# English letters, with single spaces between words. This excludes digits,
-# emoji, punctuation, symbols and invisible characters (zero-width spaces,
-# right-to-left overrides) in one rule, rather than trying to list them.
-_FULL_NAME_RE = re.compile(r"^[A-Za-z]+(?: [A-Za-z]+)*$")
+# A web address written as one. The name is printed in emails to other people (an invitation
+# says who sent it), and no name holds either of these.
+_WEB_ADDRESS_RE = re.compile(r"://|\bwww\.", re.IGNORECASE)
 
 
 WORKSPACE_NAME_MIN_LETTERS = 1  # the same as the dashboard's form asks
@@ -77,38 +81,38 @@ def validate_signup_full_name(full_name: str) -> str:
 
     Leading/trailing whitespace is removed and runs of whitespace inside the
     name are collapsed to one space before the rules are checked, so
-    "  John   Smith " is stored as "John Smith".
+    "  John   Smith " is stored as "John Smith". The name is stored as the
+    person wrote it: any script, any case, with its accents, apostrophes,
+    hyphens and full stops.
 
     Requirements:
-    - 3 to 50 characters
-    - Letters (A-Z, a-z) and single spaces only: no numbers, emoji or
-      special characters
-    - Starts with a capital letter
+    - not empty, and at least one letter of any script
+    - at most FULL_NAME_MAX_LENGTH characters
+    - no HTML or script, no hidden or control character, no web address
+      written as one ("http://", "www.")
 
     Raises:
         RextValidationException: If the name does not meet the requirements
     """
-    name = " ".join((full_name or "").split())
+    name = unicodedata.normalize("NFC", " ".join((full_name or "").split()))
     errors = []
 
     if not name:
         errors.append("Full name is required")
     else:
-        # Digits only get their own message when they are the sole problem;
-        # "<script>alert(1)</script>" should be reported as markup, not numbers.
-        if not _FULL_NAME_RE.match(name) and not _FULL_NAME_RE.match(
-            " ".join("".join(ch for ch in name if not ch.isdigit()).split()) or "x"
-        ):
-            errors.append(
-                "Full name can only contain letters and spaces (no emoji or special characters)"
-            )
-        elif any(ch.isdigit() for ch in name):
-            errors.append("Full name should not contain numbers")
-        elif not name[0].isupper():
-            errors.append("Full name must start with a capital letter")
+        # The joiners Persian and Indic scripts write inside a word are part of the name
+        # there, and hidden characters anywhere else.
+        visible = without_joiners_in_words(name)
+        markup_error = find_markup(visible, "Full name")
+        if markup_error:
+            errors.append(markup_error)
+        elif has_hidden_characters(name):
+            errors.append("Full name cannot contain hidden or control characters")
+        elif _WEB_ADDRESS_RE.search(visible):
+            errors.append("Full name cannot contain a web address")
+        elif not any(char.isalpha() for char in name):
+            errors.append("Full name must contain at least one letter")
 
-        if len(name) < FULL_NAME_MIN_LENGTH:
-            errors.append(f"Full name must be at least {FULL_NAME_MIN_LENGTH} characters")
         if len(name) > FULL_NAME_MAX_LENGTH:
             errors.append(f"Full name must be at most {FULL_NAME_MAX_LENGTH} characters")
 
@@ -124,7 +128,7 @@ def validate_signup_fields(full_name: str, password: str) -> str:
     Check the sign-up name and password together and report every problem.
 
     Checking them one after the other stopped at the first failure, so a
-    lowercase name was never reported while the password was also wrong.
+    name's problem was never reported while the password was also wrong.
 
     Returns:
         The normalised full name.
