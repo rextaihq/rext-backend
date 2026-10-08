@@ -385,12 +385,67 @@ def test_a_mention_already_linked_right_is_left_alone():
         "## Why Nextly\n\nIt is quick.",  # a heading
         "| Tool | Price |\n| Nextly | $9 |",  # a table
         "Read [the Nextly review](https://reviews.test/nextly) first.",  # another link's words
-        "Run `nextly init` to start.",  # code
+        "Read [Nextly docs](https://nextly.test/docs) first.",  # a deep link of the brand's own
+        "Read [Nextly](https://reviews.test/nextly) first.",  # the name, linked somewhere else
+        "Run `nextly init` to start.",  # inline code
+        "Install it:\n\n```\nNextly init\n```\n\nThen go on.",  # a code block
         "![Nextly's editor](https://img.test/e.png)",  # an image
+        "See https://nextly.test/docs for more.",  # a bare address
+        "Write to hello@nextly.test for more.",  # an address
+        "Their nextly-powered site is quick.",  # the name inside another word
+        "Teams use nextly every day.",  # not written as the brand writes it
     ],
 )
 def test_a_mention_where_a_link_does_not_belong_is_left_for_the_repair(body):
     assert _fixed(body_markdown=body)["body_markdown"] == body
+
+
+@pytest.mark.parametrize(
+    ("brand", "body"),
+    [
+        ("Buffer", "Slow buffering hurts. Bufferapp is one fix."),
+        ("Later", "Decide later what to post. Laterally, nothing changes."),
+    ],
+)
+def test_letters_inside_another_word_are_not_the_brand(brand, body):
+    content = {"introduction": "", "body_markdown": body}
+    context = {"brand_name": brand, "brand_url": "https://brand.test"}
+
+    assert ensure_brand_link(content, context, stage="test") is content
+
+
+def test_another_link_in_the_sentence_is_left_as_it_is():
+    body = "Nextly is covered in [our pricing guide](https://nextly.test/pricing) in full."
+
+    fixed = _fixed(body_markdown=body)
+
+    assert fixed["body_markdown"] == (
+        "[Nextly](https://nextly.test) is covered in "
+        "[our pricing guide](https://nextly.test/pricing) in full."
+    )
+    assert v.check_brand_url_accuracy(fixed, SPEC)["passed"]
+
+
+@pytest.mark.parametrize(
+    ("body", "linked"),
+    [
+        ("Many pick Nextly.", "Many pick [Nextly](https://nextly.test)."),
+        ("Many like Nextly's editor.", "Many like [Nextly](https://nextly.test)'s editor."),
+        ("One option (Nextly) is quick.", "One option ([Nextly](https://nextly.test)) is quick."),
+        ("- Nextly: the quick one", "- [Nextly](https://nextly.test): the quick one"),
+    ],
+)
+def test_the_name_is_linked_with_the_punctuation_around_it_left_alone(body, linked):
+    assert _fixed(body_markdown=body)["body_markdown"] == linked
+
+
+def test_a_name_of_several_words_is_linked_whole():
+    content = {"introduction": "", "body_markdown": "Teams write with Rext AI every day."}
+    context = {"brand_name": "Rext AI", "brand_url": "https://rext.test"}
+
+    fixed = ensure_brand_link(content, context, stage="test")
+
+    assert fixed["body_markdown"] == "Teams write with [Rext AI](https://rext.test) every day."
 
 
 def test_no_brand_or_no_address_changes_nothing():
