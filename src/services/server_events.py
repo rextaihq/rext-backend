@@ -205,7 +205,8 @@ async def report_event(
             of two events only when their id and their time are both the same, so a
             retry must send the time it sent before, not the moment of the retry.
         user_id: The account. Its id is sent only when its stored answer allows it.
-        workspace_id: The workspace, where there is one.
+        workspace_id: The workspace, where there is one. Sent only with the account's
+            id: an anonymous event names no workspace either.
         context: The person's standing, for a caller that has read it already (code
             on a sync session, with ``allows_identity`` and ``plan_properties``);
             read here otherwise.
@@ -240,9 +241,11 @@ async def _report(
     if context is None:
         context = await event_context(user_id) if user_id is not None else EventContext()
     sent = sendable(name, {**context.plan, **properties})
-    if workspace_id is not None:
-        sent["workspace_id"] = str(workspace_id)
     person_id = str(user_id) if context.identified and user_id is not None else None
+    # A workspace's id is as steady as an account's: on an anonymous event it would tie
+    # one person's events together, and to a named member's. Only a named event has it.
+    if workspace_id is not None and person_id is not None:
+        sent["workspace_id"] = str(workspace_id)
     return await money_events.send_server_event(
         name, sent, key=key, person_id=person_id, occurred_at=occurred_at
     )

@@ -184,21 +184,25 @@ async def test_an_allowed_event_carries_the_accounts_id_its_plan_and_its_workspa
 
 
 @pytest.mark.asyncio
-async def test_an_event_without_the_persons_yes_names_no_one(posthog):
+async def test_an_event_without_the_persons_yes_names_no_one_and_no_workspace(posthog):
     posthog.context = EventContext(identified=False, plan=PLAN)
-    user_id = uuid4()
+    user_id, workspace_id = uuid4(), uuid4()
 
     await report_event(
-        "user_signed_up",
-        {"method": "credentials"},
-        key=str(user_id),
+        "workspace_created",
+        {"first_workspace": True},
+        key="k-1",
         occurred_at=AT,
         user_id=user_id,
+        workspace_id=workspace_id,
     )
 
     event = posthog.sent[0]
     assert event.person_id is None
-    assert str(user_id) not in str(event.properties)
+    # A workspace's id is as steady as an account's, so an anonymous event has neither.
+    assert event.properties == {**PLAN, "first_workspace": True}
+    for steady in (user_id, workspace_id):
+        assert str(steady) not in str(event.properties)
 
 
 @pytest.mark.asyncio
