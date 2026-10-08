@@ -191,6 +191,11 @@ def _weak_ending_indexes(parsed: SEOTopics, keyphrase: str) -> List[int]:
     ]
 
 
+def _other_titles(parsed: SEOTopics, index: int) -> set[str]:
+    """The titles of the set's other topics, for comparing without regard to case."""
+    return {other.title.casefold() for place, other in enumerate(parsed.topics) if place != index}
+
+
 def _drop_filler_endings(parsed: SEOTopics, keyphrase: str) -> None:
     """A valid title that ends on one filler word loses it, when what is left is still a valid
     title that ends well ("...Understanding Best Practices Now"): no model call for that."""
@@ -200,10 +205,7 @@ def _drop_filler_endings(parsed: SEOTopics, keyphrase: str) -> None:
         shorter = without_filler_ending(topic.title, keyphrase)
         # Not into another topic's title: two choices that differ by the filler word alone
         # would become one. The ending then goes to the repair, which writes it anew.
-        others = {
-            other.title.casefold() for place, other in enumerate(parsed.topics) if place != index
-        }
-        if shorter and shorter.casefold() not in others:
+        if shorter and shorter.casefold() not in _other_titles(parsed, index):
             # The topic's place only: a title carries the customer's keyphrase.
             logger.info("Dropped the filler ending of topic %d", index)
             topic.title = shorter
@@ -359,9 +361,14 @@ async def _repair_invalid_titles(
                 # that only ended weakly is given up for one that ends well, never for another
                 # weak ending; a title that broke the rules is given up for any valid one, since
                 # the last net may drop a topic it can't mend.
-                candidate = without_filler_ending(candidate, keyphrase) or candidate
+                mended = without_filler_ending(candidate, keyphrase)
+                if mended and mended.casefold() not in _other_titles(parsed, index):
+                    candidate = mended
                 if index in weak_indexes and title_ending_problem(candidate, keyphrase):
                     continue
+            # Never a second copy of a title the set already offers.
+            if candidate.casefold() in _other_titles(parsed, index):
+                continue
             parsed.topics[index].title = candidate
             repaired_count += 1
 

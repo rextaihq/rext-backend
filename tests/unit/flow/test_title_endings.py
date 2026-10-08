@@ -198,6 +198,8 @@ def test_a_filler_word_is_dropped_only_where_the_title_stands_without_it(title, 
         ),
         # A question keeps its mark at the end: nothing is put after it.
         ("What Is Compound Interest and How Does It Work Easily?", KEYPHRASE, None),
+        # ...nor after a clause that closed on a mark of its own.
+        ("What Is Compound Interest and How Does It Work? Today", KEYPHRASE, None),
         # A title that stands without its word is left without it, as before.
         (
             "A Complete Guide to Email Marketing for Small Shops Today",
@@ -371,6 +373,23 @@ async def test_a_title_left_short_is_lifted_without_a_second_call_to_the_model()
     assert titles[0] == without_filler_ending(short_of_it, KEYPHRASE)
     assert tg._weak_ending_indexes(_set(*titles), KEYPHRASE) == []
     assert model.ainvoke.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_repair_never_gives_a_topic_another_topics_title():
+    """The repair answers with a title another topic already has, or with one that would
+    become it once its filler word is mended: the set keeps its five different choices."""
+    twin = "What Is Compound Interest in Simple Terms for You: A Guide"
+    weak = "What Is Compound Interest? A Simple Explanation for You"
+    model = _model(
+        _set(twin, weak, *GOOD[:3]),
+        _set(twin, "What Is Compound Interest in Simple Terms for You Now", *GOOD[:3]),
+    )
+
+    titles = await _titles(model)
+
+    assert len({title.casefold() for title in titles}) == len(titles)
+    assert titles[0] == twin
 
 
 def test_two_topics_are_not_made_one_by_dropping_a_filler_word():
