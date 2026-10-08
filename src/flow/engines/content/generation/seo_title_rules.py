@@ -534,9 +534,9 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     return verb not in _PREPOSITION_AFTER_VERB[last]
 
 
-def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
-    """Drop trailing words until the title fits, never cutting the keyphrase; with
-    ``tidy_end``, never stop on a dangling word either."""
+def _trim_to_max(title: str, keyphrase: str) -> str:
+    """Drop trailing words until the title fits, never cutting the keyphrase and never
+    stopping on a dangling word."""
     words = title.split()
     max_width = title_range(title, keyphrase)[1]
 
@@ -550,7 +550,7 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
     kept = len(words)
     while kept > 1 and title_width(first(kept)) > max_width and can_cut_to(kept - 1):
         kept -= 1
-    if tidy_end and kept < len(words):
+    if kept < len(words):
         # A trim that stopped after "in", "for" or "the" drops it too; the minimum, if it is
         # missed now, is met by the claim-free padding.
         while kept > 1 and _ends_dangling(words, kept) and can_cut_to(kept - 1):
@@ -984,18 +984,11 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
         separator = "：" if _title_family(f"{lead}{cleaned}") == "cjk" else ": "
         cleaned = f"{lead}{separator}{cleaned}" if cleaned else lead
 
-    low, high = title_range(cleaned, keyphrase)
-    if title_width(cleaned) > high:
-        tidy = _trim_to_max(cleaned, keyphrase)
-        if title_width(tidy) < low:
-            tidy = _pad_to_min(tidy, keyphrase)
-        # The tidy ending, when it still makes a valid title; otherwise the plain trim, so a
-        # title is never lost for the sake of its last word.
-        cleaned = (
-            tidy
-            if title_is_valid(tidy, keyphrase)
-            else _trim_to_max(cleaned, keyphrase, tidy_end=False)
-        )
+    if title_width(cleaned) > title_range(cleaned, keyphrase)[1]:
+        # Trimmed to fit, a title never stops on a word left hanging ("...Best Recording
+        # Software for"). Where only such an ending would keep it in range and no qualifier
+        # lifts the tidy one to the minimum, the title is not offered: the caller drops it.
+        cleaned = _trim_to_max(cleaned, keyphrase)
 
     if title_width(cleaned) < title_range(cleaned, keyphrase)[0]:
         cleaned = _pad_to_min(cleaned, keyphrase)
