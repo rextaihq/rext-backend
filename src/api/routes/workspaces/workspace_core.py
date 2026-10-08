@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ from src.api.schema.workspace_schema import (
     WorkspaceUpdateSchema,
 )
 from src.api.security.dependencies import get_current_user
+from src.services import account_events
 from src.services.email_helpers import send_workspace_email
 from src.services.workspace_service import WorkspaceService, pipeline_state
 from src.utils.auth_utils import verify_current_user
@@ -76,6 +77,7 @@ async def get_status(request: Request):
 async def create_workspace(
     data: WorkspaceSchema,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: None = Depends(check_workspace_limit()),
@@ -140,6 +142,14 @@ async def create_workspace(
         workspace_id=UUID(str(workspace_id)),
         new_values={"name": data.name, "url": url},
         request=request,
+    )
+
+    # A background task runs once the response is sent, so after this route's commit.
+    background_tasks.add_task(
+        account_events.workspace_created,
+        user_id,
+        UUID(str(workspace_id)),
+        datetime.now(timezone.utc),
     )
 
     return created(
