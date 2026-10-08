@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from langgraph_sdk import Auth
 
-from src.api.middleware.exceptions import RextAuthenticationException, TokenExpiredException
+from src.api.middleware.exceptions import (
+    DatabaseConnectionException,
+    RextAuthenticationException,
+    TokenExpiredException,
+)
 from src.api.security import auth as langgraph_auth
 
 USER = "11111111-1111-1111-1111-111111111111"
@@ -77,6 +81,22 @@ async def test_bad_or_expired_token_is_refused(monkeypatch, fake_db, error):
         await langgraph_auth.authenticate("Bearer not-a-valid-token")
 
     assert exc.value.status_code == 401
+
+
+async def test_a_session_check_that_could_not_run_is_a_503_not_a_refusal(monkeypatch, fake_db):
+    """The token was not found wanting: the server could not look (rext-control#874)."""
+    _token_check(
+        monkeypatch,
+        DatabaseConnectionException(
+            message="We could not check your session just now. Please try again."
+        ),
+    )
+
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.authenticate("Bearer valid")
+
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "We could not check your session just now. Please try again."
 
 
 async def test_valid_token_speaks_for_its_user(monkeypatch, fake_db):

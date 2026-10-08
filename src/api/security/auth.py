@@ -18,7 +18,11 @@ from langgraph_sdk import Auth
 
 from src.api.config import get_settings
 from src.api.database.async_database import get_async_db_context
-from src.api.middleware.exceptions import InvalidAPIKeyException, RextAuthenticationException
+from src.api.middleware.exceptions import (
+    DatabaseConnectionException,
+    InvalidAPIKeyException,
+    RextAuthenticationException,
+)
 from src.api.security.dependencies import get_current_user
 from src.api.security.run_admission import MAX_ACTIVE_RUNS, admit_run
 
@@ -73,6 +77,11 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
             return await get_current_user(authorization, db)
     except RextAuthenticationException as exc:
         raise Auth.exceptions.HTTPException(status_code=401, detail=exc.message) from None
+    except DatabaseConnectionException as exc:
+        # The session check could not read the database (rext-control#874): the runtime's own
+        # routes say so as the app's do, instead of an unhandled error. Never a 401: the token
+        # was not found wanting.
+        raise Auth.exceptions.HTTPException(status_code=503, detail=exc.message) from None
 
 
 @auth.on.threads
