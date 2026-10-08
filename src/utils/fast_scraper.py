@@ -110,6 +110,14 @@ def _www_twin(url: str) -> Optional[str]:
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
+def _host_asked(exc: httpx.RequestError) -> str:
+    """The host of the request an error ended, or nothing when the error names no request."""
+    try:
+        return (exc.request.url.host or "").lower()
+    except RuntimeError:
+        return ""
+
+
 async def check_website_reachable(url: str) -> str:
     """
     Confirm that `url` belongs to a live website before we build anything on it, and return the
@@ -173,12 +181,16 @@ async def check_website_reachable(url: str) -> str:
         raise WebsiteUnreachableError(
             "This website is not responding. Please check the URL and try again."
         ) from exc
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as exc:
         # A server that answered and then kept us waiting. Let through, unless what it did
-        # send before stalling is a parking page (below).
+        # send before stalling is a parking page, or the host it stalled at is a parking
+        # marketplace's (below).
+        final_host = final_host or _host_asked(exc)
         logger.info("Website reachability check timed out for %s: let through", loggable_url(url))
     except httpx.HTTPError as exc:
-        logger.info("Website reachability check failed for %s: %s", url, exc)
+        logger.info(
+            "Website reachability check failed for %s: %s", loggable_url(url), type(exc).__name__
+        )
         raise WebsiteUnreachableError(
             "We couldn't reach this website. Please check the URL and try again."
         ) from exc
