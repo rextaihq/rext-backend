@@ -646,21 +646,22 @@ async def test_a_renewal_recovered_inside_the_offer_is_no_first_payment(db, cloc
     assert await _grants(db, paid) == []
 
 
-async def test_an_empty_payment_log_vouches_for_nobody(db, clock):
+@pytest.mark.parametrize(
+    ("billing_reason", "granted"), [("updated", []), ("renewal", []), ("initial", [1000])]
+)
+async def test_an_empty_payment_log_vouches_for_nobody(db, clock, billing_reason, granted):
     """No payment in the audit log at all: a new database, or one whose records have aged
     out. It cannot say that a subscription never paid, so a payment that is not called
     "initial" is not taken for a first one. One that is called "initial" still is."""
     await _launch_promotion(db)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
-    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason="updated")
+
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason=billing_reason)
+
     subscription = await _subscription_of(db, ls_id)
     assert subscription.current_credits == 1000
-    assert await _grants(db, subscription) == []
-
-    other, other_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
-    await _pays(db, clock, other, other_id, at=OPENS + timedelta(days=1), billing_reason="initial")
-    assert [g.amount for g in await _grants(db, await _subscription_of(db, other_id))] == [1000]
+    assert [g.amount for g in await _grants(db, subscription)] == granted
 
 
 async def test_a_subscription_older_than_the_payment_records_is_not_taken_for_a_first_payment(
