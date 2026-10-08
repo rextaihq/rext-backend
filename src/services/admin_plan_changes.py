@@ -168,6 +168,18 @@ def _standing(subscription: Optional[UserSubscription]) -> _Standing:
     return _Standing(subscription, billed, refused, not_a_trial)
 
 
+async def _one_change_at_a_time(db: AsyncSession, user_id: UUID) -> None:
+    """One change per user at a time, from before their plan is read.
+
+    Two requests for one user (two admins, or one sent twice) would otherwise both
+    check the same plan and both reach Lemon Squeezy, the second on what the first
+    had made of it, with its billing, its credits and its audit entry worked out from
+    a plan that is no longer theirs. The lock is the user's checkout lock, held until
+    the transaction ends, so a checkout of theirs waits too.
+    """
+    await SubscriptionService(db)._lock_checkout(user_id)
+
+
 def _variant(plan: SubscriptionPlan, period: BillingPeriod) -> Optional[str]:
     if period == BillingPeriod.MONTHLY:
         return plan.lemonsqueezy_variant_id_monthly
@@ -423,6 +435,7 @@ async def change_plan(
             Lemon Squeezy not accepting the change.
     """
     reason = clean_reason(reason)
+    await _one_change_at_a_time(db, user_id)
     subscription = await _current_subscription(db, user_id)
     standing = await _standing_of(db, user_id, subscription)
     if standing.change_refused:
@@ -555,6 +568,7 @@ async def extend_trial(
             Lemon Squeezy runs.
     """
     reason = clean_reason(reason)
+    await _one_change_at_a_time(db, user_id)
     # The subscription the options showed (an active one before a trial), then its row
     # under a lock, read again.
     subscription = await _current_subscription(db, user_id)
