@@ -57,6 +57,7 @@ from src.flow.engines.content.generation.repair_content import (
 )
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
+    brand_named_in,
     build_requirements_spec,
     is_excluded_brand_link,
     on_site,
@@ -1381,12 +1382,11 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
     intro_occurrences = _brand_occurrences(intro, brand_name, about_selling)
     body_occurrences = _brand_occurrences(body, brand_name, about_selling)
     total = len(intro_occurrences) + len(body_occurrences)
-    if not total:
-        return _pass(
-            "brand_prominence", "Brand not mentioned (caught by brand_presence); skipping."
-        )
 
     if prominence == "subtle":
+        # The call to action's own rule comes before the count: an article that names the brand
+        # only there fails brand_presence, and a repair that then adds the body mention would
+        # make this check fail anew and be thrown away as a step back. Both are asked at once.
         cta = final_content.get("cta") if isinstance(final_content.get("cta"), dict) else {}
         brand_host = _host(brand.get("brand_url") or "")
         cta_text = (cta.get("text") or "").strip().casefold()
@@ -1401,7 +1401,8 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
         brand_cta_url = next(
             (url for url in cta_urls if _is_brand_host(_host(url), brand_host)), None
         )
-        if _mention_present(cta.get("text") or "", brand_name):
+        # As a word of its own: the brand "Box" is not named by "Open your toolbox".
+        if brand_named_in(cta.get("text") or "", brand_name):
             return _fail(
                 "brand_prominence",
                 "blocking",
@@ -1417,6 +1418,10 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
                 f"{brand_name}'s site ({brand_cta_url}). Point it at a next step in the article's own "
                 f"subject instead, without the brand.",
             )
+        if not total:
+            return _pass(
+                "brand_prominence", "Brand not mentioned (caught by brand_presence); skipping."
+            )
         if total > 1:
             return _fail(
                 "brand_prominence",
@@ -1428,6 +1433,10 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
             )
         return _pass("brand_prominence", "One subtle mention, as the user chose.")
 
+    if not total:
+        return _pass(
+            "brand_prominence", "Brand not mentioned (caught by brand_presence); skipping."
+        )
     if not body_occurrences or body_occurrences[-1].position_fraction < (
         1 - _CLOSING_TAIL_FRACTION
     ):
