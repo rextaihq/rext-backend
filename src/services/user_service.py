@@ -31,7 +31,7 @@ from src.api.middleware.exceptions import (
 from src.api.models.user_models.users import Users
 from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
 from src.utils.logger import logger
-from src.utils.password_utils import validate_password_strength
+from src.utils.password_utils import ensure_password_not_breached, validate_password_strength
 from src.utils.token_cleanup import cleanup_expired_tokens
 
 # Distinguishes "field omitted" from "field explicitly set to null", so an
@@ -198,6 +198,7 @@ class UserService:
 
         # Validate new password strength
         validate_password_strength(new_password)
+        await ensure_password_not_breached(new_password)
 
         # Hash new password
         user.password_hash = await hash_password_async(new_password)
@@ -826,6 +827,7 @@ class UserService:
         # Handle password update
         if password:
             validate_password_strength(password)
+            await ensure_password_not_breached(password)
             user.password_hash = await hash_password_async(password)
             user.password_changed_at = datetime.now(dt_timezone.utc)
 
@@ -886,6 +888,7 @@ class UserService:
 
         # Validate new password strength
         validate_password_strength(new_password)
+        await ensure_password_not_breached(new_password)
 
         # Update password
         user.password_hash = await hash_password_async(new_password)

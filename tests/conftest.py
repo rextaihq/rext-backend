@@ -15,6 +15,8 @@ from sqlalchemy.pool import NullPool
 
 # Prevent MinIO/S3 bucket checks at import time during tests.
 os.environ.setdefault("REXT_STORAGE_SKIP_BUCKET_CHECK", "1")
+# No call to the breached-password list from a test that sets or changes a password.
+os.environ.setdefault("REXT_PASSWORD_BREACH_CHECK", "off")
 
 from src.api.config import get_settings
 from src.api.database.async_database import get_async_db

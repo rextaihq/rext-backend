@@ -66,7 +66,7 @@ from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
 from src.utils.name_utils import validate_signup_full_name
-from src.utils.password_utils import validate_password_strength
+from src.utils.password_utils import ensure_password_not_breached, validate_password_strength
 
 _REFRESH_ROTATION_REASON_PREFIX = "refresh:v1:"
 _MAX_REFRESH_REPLAY_HOPS = 32
@@ -190,6 +190,7 @@ class AuthService:
 
         # Validate password strength
         validate_password_strength(password)
+        await ensure_password_not_breached(password)
 
         # Hash password
         hashed_pwd = await hash_password_async(password)
@@ -1272,6 +1273,7 @@ class AuthService:
 
         # Validate password strength
         validate_password_strength(new_password)
+        await ensure_password_not_breached(new_password)
 
         # Hash and update password
         hashed_pwd = await hash_password_async(new_password)
