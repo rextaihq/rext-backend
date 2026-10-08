@@ -1,7 +1,7 @@
 """
 Tests for the data retention cleanup service.
 
-- cleanup_all() on old and recent rows in every table it cleans
+- cleanup_all() on old and recent rows in every table it cleans, and with a step that fails
 - the batched deletes, and the dry run the nightly job starts in (its counts)
 - cleanup_webhook_events()
 - anonymize_cancelled_subscriptions(), which cleanup_all() doesn't run yet
@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -28,7 +28,8 @@ from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
 from src.config.cleanup_config import CleanupConfig
-from src.services.data_cleanup_service import DataCleanupService
+from src.services.data_cleanup_service import DataCleanupIncomplete, DataCleanupService
+from src.services.plan_change_charges import PAID, REFUNDED
 from tests.conftest import TEST_DATABASE_URL
 
 Subscription = UserSubscription
@@ -112,11 +113,13 @@ def _days_ago(days: int) -> datetime:
     return datetime.now(timezone.utc) - timedelta(days=days)
 
 
-def _webhook_event(days_old: int, processed: bool = True) -> WebhookEvent:
+def _webhook_event(
+    days_old: int, processed: bool = True, name: str = "subscription_updated"
+) -> WebhookEvent:
     return WebhookEvent(
         id=uuid4(),
         event_id=f"evt_{uuid4().hex[:12]}",
-        event_name="subscription_updated",
+        event_name=name,
         payload={"test": "data"},
         processed=processed,
         created_at=_days_ago(days_old),
@@ -541,6 +544,9 @@ async def _old_and_recent_rows(db: AsyncSession, user: Users) -> dict:
             "webhook_events": [
                 _webhook_event(days_old=30),
                 _webhook_event(days_old=100, processed=False),
+                # what a customer paid and was refunded: the admin's refund rows read these
+                _webhook_event(days_old=400, name=PAID),
+                _webhook_event(days_old=400, name=REFUNDED),
             ],
             "cleanup_expired_tokens": [token(now + timedelta(hours=1))],
         },
@@ -595,6 +601,60 @@ class TestCleanupAll:
         assert preview == results
         for table, deleted in rows["deleted"].items():
             assert preview[table] >= len(deleted), table
+
+    async def test_a_step_that_fails_does_not_stop_the_steps_after_it(
+        self, db_session, test_user, monkeypatch
+    ):
+        """The nightly run once stopped at the webhook events, every night, and the steps
+        after it never ran. Now each step runs whatever the one before it did, and the run
+        says at its end which steps failed."""
+        rows = await _old_and_recent_rows(db_session, test_user)
+        # Read now: the rollback after the failed step expires every loaded row.
+        old = {
+            table: [(type(row), row.id) for row in table_rows]
+            for table, table_rows in rows["deleted"].items()
+        }
+        service = DataCleanupService(db=db_session, dry_run=False)
+
+        async def there(model, row_id) -> bool:
+            found = await db_session.execute(select(model.id).where(model.id == row_id))
+            return found.scalar_one_or_none() is not None
+
+        async def a_statement_that_fails() -> int:
+            # A failed statement leaves the transaction unusable until it is rolled back.
+            await db_session.execute(text("SELECT 1 / 0"))
+            return 0
+
+        monkeypatch.setattr(service, "cleanup_webhook_events", a_statement_that_fails)
+
+        with pytest.raises(DataCleanupIncomplete) as incomplete:
+            await service.cleanup_all()
+
+        assert incomplete.value.failed == ["webhook_events"]
+        assert "webhook_events" not in incomplete.value.results
+        for table in ("audit_logs", "user_sessions", "cleanup_expired_tokens"):
+            assert incomplete.value.results[table] >= len(old[table]), table
+            for model, row_id in old[table]:
+                assert not await there(model, row_id), table
+        for model, row_id in old["webhook_events"]:
+            assert await there(model, row_id)
+
+    async def test_cleanup_all_reaches_its_last_step_with_the_settings_as_they_are(
+        self, db_session, test_user
+    ):
+        """No setting a step reads is missing: with nothing patched in, the run ends and
+        every step has a count."""
+        results = await DataCleanupService(db=db_session, dry_run=True).cleanup_all()
+
+        assert list(results) == [
+            "audit_logs",
+            "email_logs",
+            "email_events",
+            "error_logs",
+            "user_sessions",
+            "webhook_events",
+            "cleanup_expired_tokens",
+        ]
 
     async def test_cleanup_all_leaves_cancelled_subscriptions_linked(
         self, db_session, test_user, plan
