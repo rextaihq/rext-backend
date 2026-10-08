@@ -70,8 +70,32 @@ KEYPHRASE = "what is compound interest"
         # The keyphrase's own last words are the customer's.
         ("Everything Small Teams Should Know About What to Do Now", "what to do now", None),
         ("Small Business Marketing Ideas You Can Start Today", "start today", None),
-        # Too short to judge, and scripts without spaces.
-        ("Start Here", "", None),
+        ("Small Business Marketing Ideas You Can Start Today", "start-today", None),
+        # "for you" completes a participle as it completes "right" or "made".
+        ("Compound Interest Calculators and Guides Designed for You", "compound interest", None),
+        ("Compound Interest Explained: A Savings Plan Made for You", "compound interest", None),
+        # A preposition whose object is missing...
+        (
+            "Compound Interest: How Your Savings Grow Over Time With",
+            "compound interest",
+            "unfinished:with",
+        ),
+        ("What Is Compound Interest? Five Examples to Compare With", KEYPHRASE, "unfinished:with"),
+        # ...but not after a verb that takes it, in a question that strands it, in a pair, or
+        # when it is an adverb as often as a preposition.
+        ("Compound Interest Explained: What to Look For", "compound interest", None),
+        ("Compound Interest Calculators: Who Are They For?", "compound interest", None),
+        ("Kitchen Remodel Ideas on a Budget: Before and After", "kitchen remodel ideas", None),
+        ("Email Marketing Tools Your Whole Team Can Rely On", "email marketing", None),
+        ("Email Marketing in 2026: What Lies Beyond", "email marketing", None),
+        # A title of few words is judged like any other; one word has no ending.
+        (
+            "Pneumonoultramicroscopicsilicovolcanoconiosis Today",
+            "pneumonoultramicroscopicsilicovolcanoconiosis",
+            "filler:today",
+        ),
+        ("Here", "", None),
+        # Scripts without spaces.
         ("複利とは何か：基本概念、用途、使用方法", "複利とは", None),
         ("", "", None),
     ],
@@ -228,6 +252,45 @@ async def test_an_invalid_title_and_a_weak_ending_go_to_one_repair_together():
 
     assert titles == [rewritten, lengthened, *GOOD[:3]]
     assert model.ainvoke.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_a_rewrite_of_a_broken_title_loses_its_filler_too():
+    """The title broke the rules, so its ending was never on the list of weak ones. Its
+    rewrite is valid and ends on a filler word: the word is dropped, as in any title."""
+    short = "What Is Compound Interest"
+    rewritten = "What Is Compound Interest? Understanding Its Formula Now"
+    model = _model(_set(short, *GOOD[1:4]), _set(rewritten, *GOOD[1:4]))
+
+    titles = await _titles(model)
+
+    assert titles == [GOOD[0], *GOOD[1:4]]
+
+
+@pytest.mark.asyncio
+async def test_a_broken_title_takes_a_valid_rewrite_even_one_that_ends_weakly():
+    """A valid title beats one that breaks the rules: the last net may drop a topic it can't
+    mend. Dropping this filler word would leave the title too short, so it stays."""
+    short = "What Is Compound Interest"
+    rewritten = "What Is Compound Interest and How Does It Work Easily?"
+    assert title_is_valid(rewritten, KEYPHRASE)
+    model = _model(_set(short, *GOOD[:3]), _set(rewritten, *GOOD[:3]))
+
+    titles = await _titles(model)
+
+    assert titles == [rewritten, *GOOD[:3]]
+
+
+def test_the_title_step_logs_no_title(monkeypatch):
+    """A title carries the customer's keyphrase: the log names the topic's place only."""
+    logged = []
+    monkeypatch.setattr(tg.logger, "info", lambda *args, **kwargs: logged.append((args, kwargs)))
+    topics = _set("What Is Compound Interest? Understanding Its Formula Now", *GOOD[1:4])
+
+    tg._drop_filler_endings(topics, KEYPHRASE)
+
+    assert topics.topics[0].title == GOOD[0]
+    assert logged and "Compound" not in repr(logged)
 
 
 @pytest.mark.asyncio

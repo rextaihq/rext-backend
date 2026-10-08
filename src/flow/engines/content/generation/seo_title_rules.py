@@ -559,13 +559,27 @@ _FILLER_END_WORDS = frozenset(
     {"now", "today", "here", "easily", "effectively", "efficiently", "successfully"}
 )
 _FILLER_END_PHRASES = frozenset({("for", "you"), ("right", "now")})
-# Words "for you" completes ("Which Plan Is Right for You"): no filler after them.
+# Words "for you" completes ("Which Plan Is Right for You", "Guides Made for You"): no filler
+# after them, nor after a regular participle ("Designed for You", "Tailored for You").
 _COMPLETED_BY_FOR_YOU = frozenset(
     {
         "right", "best", "good", "better", "enough", "work", "works", "working", "fit", "fits",
-        "mean", "means", "matter", "matters",
+        "mean", "means", "matter", "matters", "made", "built", "written", "chosen", "meant",
+        "done", "ready",
     }
 )  # fmt: skip
+# Prepositions that need an object, so a title that ends on one was cut short ("...Grow Over
+# Time With"). Only those that are never an adverb or a particle: "Look Around", "Start Over"
+# and "What Lies Beyond" end whole. A verb that takes the preposition may end on it ("What to
+# Look For"), and a question asked with what, who, which or where strands one by nature ("Who
+# Is This Guide For?").
+_OBJECT_PREPOSITIONS = frozenset(
+    {
+        "with", "for", "of", "to", "at", "from", "by", "into", "onto", "upon", "as", "during",
+        "between", "among", "toward", "towards", "until", "despite", "against",
+    }
+)  # fmt: skip
+_STRANDING_QUESTION_WORDS = frozenset({"what", "who", "whom", "which", "where"})
 # Words a whole title doesn't end on ("...Examples to Enhance Your"): the trim's list without
 # the modals, which close a clause in a title nobody cut ("Yes, You Can").
 _UNFINISHED_END_WORDS = _DANGLING_END_WORDS - {
@@ -578,22 +592,47 @@ def _plain_words(title: str) -> list[str]:
     return [word.lower().strip(_WORD_EDGES) for word in title.split()]
 
 
+def _completes_for_you(word: str) -> bool:
+    return word in _COMPLETED_BY_FOR_YOU or (len(word) > 4 and word.endswith("ed"))
+
+
+def _preposition_left_hanging(title: str, words: list[str]) -> bool:
+    """Whether the title's last word is a preposition whose object is missing."""
+    last = words[-1]
+    if last not in _OBJECT_PREPOSITIONS:
+        return False
+    # The clause the title ends in: "What Is X? Five Examples to Compare With" asks nothing
+    # with its last words.
+    clauses = [clause for clause in re.split(r"[:?!|—–]", title) if clause.strip()]
+    if _STRANDING_QUESTION_WORDS.intersection(_plain_words(clauses[-1]) if clauses else words):
+        return False
+    before = words[-2]
+    if before in ("and", "or"):  # a pair that shares its object elsewhere, or none
+        return False
+    if before in _PREPOSITION_AFTER_VERB.get(last, ()):
+        return False
+    phrasal = before in _PARTICLES and len(words) > 2 and words[-3] in _PHRASAL_VERBS
+    return not (phrasal and last not in ("of", "to"))
+
+
 def title_ending_problem(title: Any, keyphrase: Any = "") -> Optional[str]:
     """Why the title's ending is weak: "unfinished:your" for a word left hanging, "filler:now"
     for words that would fit any title. None for an ending that is fine, for one that is the
-    keyphrase's own last words, and for a title too short to judge."""
-    words = _plain_words(normalize_title(title))
-    if len(words) < 4:
+    keyphrase's own last words, and for a title of one word."""
+    cleaned = normalize_title(title)
+    words = _plain_words(cleaned)
+    if len(words) < 2:
         return None
-    own = _plain_words(normalize_title(keyphrase))
-    if own and words[-len(own) :] == own:
+    # The keyphrase as the title matcher reads it: "start-today" ends "...You Can Start Today".
+    own = _normalize_for_match(keyphrase).split()
+    if own and _normalize_for_match(cleaned).split()[-len(own) :] == own:
         return None
     last = words[-1]
-    if last in _UNFINISHED_END_WORDS:
+    if last in _UNFINISHED_END_WORDS or _preposition_left_hanging(cleaned, words):
         return f"unfinished:{last}"
     pair = (words[-2], last)
     if pair in _FILLER_END_PHRASES:
-        if pair == ("for", "you") and words[-3] in _COMPLETED_BY_FOR_YOU:
+        if pair == ("for", "you") and len(words) > 2 and _completes_for_you(words[-3]):
             return None
         return f"filler:{' '.join(pair)}"
     return f"filler:{last}" if last in _FILLER_END_WORDS else None

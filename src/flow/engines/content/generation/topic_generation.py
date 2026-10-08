@@ -194,12 +194,13 @@ def _weak_ending_indexes(parsed: SEOTopics, keyphrase: str) -> List[int]:
 def _drop_filler_endings(parsed: SEOTopics, keyphrase: str) -> None:
     """A valid title that ends on one filler word loses it, when what is left is still a valid
     title that ends well ("...Understanding Best Practices Now"): no model call for that."""
-    for topic in parsed.topics:
+    for index, topic in enumerate(parsed.topics):
         if not title_is_valid(topic.title, keyphrase):
             continue
         shorter = without_filler_ending(topic.title, keyphrase)
         if shorter:
-            logger.info("Dropped the filler ending of %r -> %r", topic.title, shorter)
+            # The topic's place only: a title carries the customer's keyphrase.
+            logger.info("Dropped the filler ending of topic %d", index)
             topic.title = shorter
 
 
@@ -348,10 +349,14 @@ async def _repair_invalid_titles(
             candidate = repaired.topics[index].title
             if not title_is_valid(candidate, keyphrase):
                 continue
-            # A valid title that only ended weakly is given up for one that ends well, never
-            # for another weak ending.
-            if index in weak_indexes and title_ending_problem(candidate, keyphrase):
-                continue
+            if title_ending_problem(candidate, keyphrase):
+                # Its filler is dropped where that alone mends it. Past that, a valid title
+                # that only ended weakly is given up for one that ends well, never for another
+                # weak ending; a title that broke the rules is given up for any valid one, since
+                # the last net may drop a topic it can't mend.
+                candidate = without_filler_ending(candidate, keyphrase) or candidate
+                if index in weak_indexes and title_ending_problem(candidate, keyphrase):
+                    continue
             parsed.topics[index].title = candidate
             repaired_count += 1
 
