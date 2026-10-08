@@ -1136,6 +1136,44 @@ def test_a_brand_with_no_address_is_unlinked_however_the_link_is_written(written
     )
 
 
+@pytest.mark.parametrize(
+    "written",
+    ["(/signup)", "(mailto:sales@acme.example)", "(HTTPS://RIVAL.EXAMPLE/)", '(/signup "Sign up")'],
+)
+@pytest.mark.parametrize("outline", ["no website", "none", "subtle"])
+def test_a_call_to_action_with_no_link_has_none_however_the_link_is_written(written, outline):
+    """Review round 2: the call to action's link in the article was found only as a plain
+    lower-case web address, so the same call to action as a path or a mail address stayed a
+    link while its `url` was cleared."""
+    plan = _no_website("prominent") if outline == "no website" else _outline(outline)
+    article = {
+        **ARTICLE,
+        "body_markdown": f"## Choose the spot\n\nReady? [Start planning today]{written}.",
+        "cta": {"text": "Start planning today", "url": "https://rival.example/app"},
+    }
+
+    cleaned, _ = _checked(article, plan)
+
+    assert cleaned["body_markdown"].endswith("Ready? Start planning today.")
+    assert cleaned["cta"]["url"] is None
+
+
+def test_a_link_shown_as_an_example_in_code_is_left_as_written():
+    """Review round 2: a tutorial's example of a link, in a code span or a fenced block, is
+    the example, not a link: taken for one, the cleanup rewrote the sample."""
+    body = (
+        "## Choose the spot\n\nWrite a link as `[Acme Tools](/signup)` in your notes:\n\n"
+        "```markdown\n[Acme Tools](https://acme.example/)\n```\n\n"
+        "Teams use [Acme Tools](https://acme.example/) to plan."
+    )
+
+    cleaned, _ = _checked({**ARTICLE, "body_markdown": body}, _no_website("prominent"))
+
+    assert "`[Acme Tools](/signup)`" in cleaned["body_markdown"]
+    assert "```markdown\n[Acme Tools](https://acme.example/)\n```" in cleaned["body_markdown"]
+    assert cleaned["body_markdown"].endswith("Teams use Acme Tools to plan.")
+
+
 def test_with_no_brand_at_all_the_call_to_action_has_no_address_either():
     """A workspace made from a name alone has no brand voice (rext-control#905): the writer
     was told nothing about the call to action's link, and nothing took a made-up one out."""
