@@ -269,6 +269,32 @@ async def test_reporting_only_lets_the_sign_in_through_and_says_so(providers, ch
     assert TOKEN not in caplog.text and "ana@example.com" not in caplog.text.lower()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "google",
+    [
+        # The same address, not confirmed by Google.
+        {"email": "ana@example.com", "email_verified": "false"},
+        # Another address than the one named.
+        {"email": "other@example.com", "email_verified": "true"},
+    ],
+)
+async def test_reporting_only_goes_on_with_an_email_the_provider_does_not_vouch_for(
+    providers, google, caplog
+):
+    providers.settings.PROVIDER_SIGN_IN_CHECK = "report"
+    providers.google = {**providers.google, **google}
+
+    with caplog.at_level("WARNING"):
+        signed_in = await checked_sign_in(
+            "google", "108000000000000000001", "ana@example.com", TOKEN
+        )
+
+    # As before the check existed: the address named, taken as the account's.
+    assert (signed_in.email, signed_in.email_verified) == ("ana@example.com", True)
+    assert "does not vouch for (reporting only)" in caplog.text
+
+
 # The two routes that take a provider account from a request
 
 
@@ -350,7 +376,7 @@ def _service_finding(*, linked, user):
         return SimpleNamespace(
             scalar_one_or_none=lambda: found,
             scalars=lambda: SimpleNamespace(
-                first=lambda: found,
+                first=lambda: found[0] if isinstance(found, list) else found,
                 all=lambda: found if isinstance(found, list) else ([found] if found else []),
             ),
         )
@@ -638,3 +664,22 @@ async def test_a_call_with_the_dashboards_key_leaves_a_line_that_holds_no_key(mo
     assert "with the dashboard's key: counted per account" in caplog.text
     assert key not in caplog.text and "1080001" not in caplog.text
     assert request.state.rate_limit_identity == "oauth:google:1080001"
+
+
+@pytest.mark.asyncio
+async def test_one_account_stored_under_two_spellings_still_signs_in(monkeypatch):
+    ana = _user("ana")
+    ana.login_count, ana.last_login_at = 0, None
+    twice = [SimpleNamespace(user=ana), SimpleNamespace(user=ana)]
+    service, db = _service_finding(linked=twice, user=None)
+    monkeypatch.setattr(db, "flush", AsyncMock(side_effect=RuntimeError("far enough")))
+
+    # The first of the two rows is the link: reading them is not an error.
+    with pytest.raises(RuntimeError, match="far enough"):
+        await service.oauth_login_or_register(
+            provider="google",
+            provider_account_id="108000000000000000001",
+            provider_email="ana@example.com",
+            provider_name="Ana",
+            email_verified=True,
+        )

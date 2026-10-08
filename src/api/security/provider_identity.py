@@ -292,7 +292,10 @@ async def checked_sign_in(
             email=email,
             email_verified=True,
         )
-    if reporting and email and email != (identity.email or ""):
+    if reporting:
+        # Enforcing, this address would not count as the account's confirmed one (another
+        # address than the provider's, or one it has not confirmed). Reporting says so and goes
+        # on as before the check existed.
         logger.warning(
             "A provider sign-in names an email the provider does not vouch for (reporting only)",
             extra={"provider": provider_label(provider)},

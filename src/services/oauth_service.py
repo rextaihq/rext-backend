@@ -158,7 +158,9 @@ class OAuthService:
                 OAuthAccount.provider_account_id == provider_account_id,
             )
         )
-        oauth_account = result.scalar_one_or_none()
+        # The first of them, should one account ever be stored under two spellings of its
+        # provider: a second row must not turn a sign-in into an error.
+        oauth_account = result.scalars().first()
 
         if oauth_account:
             # OAuth account exists - login existing user
@@ -436,7 +438,9 @@ class OAuthService:
                 OAuthAccount.provider_account_id == provider_account_id,
             )
         )
-        existing_oauth = result.scalar_one_or_none()
+        # The first of them, should one account ever be stored under two spellings of its
+        # provider: a second row must not turn a sign-in into an error.
+        existing_oauth = result.scalars().first()
 
         if existing_oauth:
             if existing_oauth.user_id != user_id:
@@ -497,7 +501,9 @@ class OAuthService:
                 func.lower(func.trim(OAuthAccount.provider)) == provider.strip().lower(),
             )
         )
-        oauth_account = result.scalar_one_or_none()
+        # The first of them, should one account ever be stored under two spellings of its
+        # provider: a second row must not turn a sign-in into an error.
+        oauth_account = result.scalars().first()
 
         if not oauth_account:
             raise ResourceNotFoundException(
