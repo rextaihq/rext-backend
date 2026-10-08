@@ -64,7 +64,9 @@ class ContentVersionService:
             created_by_user_id=user_id,
             source=source.value,
             word_count=count_words(text.get("introduction"), text.get("body_markdown")),
-            **{**text, "title": text.get("title") or content.title},
+            # An untitled article's empty title is its title; only a text with none borrows
+            # the article's.
+            **{**text, "title": content.title if text.get("title") is None else text["title"]},
         )
         if at is not None:
             version.created_at = at
@@ -163,6 +165,28 @@ class ContentVersionService:
         await self._keep_the_newest(content.id)
         return version
 
+    async def keep_text(
+        self,
+        content: Content,
+        text: Dict[str, Any],
+        source: ContentVersionSource,
+        user_id: Optional[UUID],
+    ) -> ContentVersion:
+        """Keep a given text of the article as a version: for a caller that holds the text it
+        acted on, which the article may no longer be (the scheduler publishes what it read at
+        its start). Once: nothing new when the newest version is this text from this source."""
+        newest = await self._newest(content.id)
+        if (
+            newest is not None
+            and newest.source == source.value
+            and text_of(newest) == {**text_of(newest), **text}
+        ):
+            return newest
+        version = self._add(content, text, source, user_id)
+        await self.db.flush()
+        await self._keep_the_newest(content.id)
+        return version
+
     async def list(self, content_id: UUID, workspace_id: UUID) -> List[Dict[str, Any]]:
         """The article's versions, newest first, without their bodies."""
         rows = (
@@ -203,19 +227,28 @@ class ContentVersionService:
 
 
 async def record_published(
-    db: AsyncSession, content: Content, user_id: Optional[UUID] = None
+    db: AsyncSession,
+    content: Content,
+    user_id: Optional[UUID] = None,
+    text: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Keep the text as it went out to a site, for a publish that has no request behind it
-    (the scheduler's): nobody is its maker unless one is named.
+    (the scheduler's): nobody is its maker unless one is named. ``text`` is what was sent,
+    when the caller read the article before it published (text_of() then); without it the
+    article as it stands is kept.
 
     For a caller whose own work must not fail with it: the version is written inside a
     savepoint, and a failure is logged and leaves the caller's transaction as it was.
     """
     try:
         async with db.begin_nested():
-            await ContentVersionService(db).record(
-                content, text_of(content), user_id, ContentVersionSource.PUBLISH
-            )
+            versions = ContentVersionService(db)
+            if text is None:
+                await versions.record(
+                    content, text_of(content), user_id, ContentVersionSource.PUBLISH
+                )
+            else:
+                await versions.keep_text(content, text, ContentVersionSource.PUBLISH, user_id)
     except Exception:
         logger.exception(
             "The published text could not be kept as a version",
@@ -227,13 +260,33 @@ def _aware(moment: datetime) -> datetime:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
+def _amended(version: ContentVersion) -> bool:
+    if version.created_at is None or version.updated_at is None:
+        return False
+    return _aware(version.updated_at) > _aware(version.created_at)
+
+
+def went_live(content_status: Optional[str], results: Any) -> bool:
+    """Whether a publish put the article's text on a site now, so that it is a version of its
+    own: the article is published, or one site took it while another's publish is only
+    scheduled (a Shopify article goes out at once when the WordPress post waits)."""
+    if content_status == "published":
+        return any(getattr(result, "success", False) for result in results)
+    return any(
+        getattr(result, "success", False) and getattr(result, "shopify_article_id", None)
+        for result in results
+    )
+
+
 def summary(version: ContentVersion, maker: Optional[str]) -> Dict[str, Any]:
     """A version as the history lists it."""
     by = version.created_by_user_id
     return {
         "id": version.id,
         "created_at": version.created_at,
-        "updated_at": version.updated_at,
+        # Only once a later save of the sitting was written into it: a version nobody
+        # amended has no update, whatever the row's own timestamp says.
+        "updated_at": version.updated_at if _amended(version) else None,
         "created_by": {"id": by, "name": maker or None} if by else None,
         "source": version.source,
         "title": version.title,

@@ -22,7 +22,7 @@ from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.content_models.content_version import ContentVersion, ContentVersionSource
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.schema.content_schema import ContentUpdate
+from src.api.schema.content_schema import ContentCreate, ContentUpdate
 from src.services import content_service
 from src.services.content_service import ContentService
 from src.services.content_version_service import (
@@ -32,6 +32,7 @@ from src.services.content_version_service import (
     count_words,
     record_published,
     text_of,
+    went_live,
 )
 from tests.conftest import TEST_DATABASE_URL
 
@@ -173,7 +174,9 @@ async def test_the_saves_of_one_sitting_are_one_version(session):
     newest, first = await _versions(session, article)
     assert first["source"] == "generation"
     assert newest["word_count"] == count_words(article.introduction, "One. Two. Three.")
-    assert newest["updated_at"] >= newest["created_at"]
+    # Amended by the sitting's later saves; the first version never was.
+    assert newest["updated_at"] > newest["created_at"]
+    assert first["updated_at"] is None
 
 
 @pytest.mark.asyncio
@@ -373,6 +376,85 @@ async def test_a_scheduled_publish_keeps_the_text_as_it_went_out_with_no_maker(s
     newest, *older = await _versions(session, article)
     assert (newest["source"], newest["created_by"]) == ("publish", None)
     assert [v["source"] for v in older] == ["edit", "generation"]
+
+
+@pytest.mark.asyncio
+async def test_a_scheduled_publish_keeps_what_was_sent_not_what_the_article_became(session):
+    user, _, article = await _setup(session)
+    sent = text_of(article)
+
+    # Edited while the post was on its way to the site.
+    await _save(session, article, user, body_markdown="Edited while it was being published.")
+    await record_published(session, article, text=sent)
+    await record_published(session, article, text=sent)  # once
+
+    versions = ContentVersionService(session)
+    newest, *older = await _versions(session, article)
+    assert newest["source"] == "publish"
+    assert (await versions.get(article.id, newest["id"], article.workspace_id))[
+        0
+    ].body_markdown == sent["body_markdown"]
+    assert [v["source"] for v in older] == ["edit", "generation"]
+
+
+@pytest.mark.asyncio
+async def test_a_persons_save_of_a_generated_article_is_an_edit_and_the_runs_own_is_not(session):
+    """The save endpoints reach an article its run already stored through create_content: a
+    person's save is kept as an edit, with the text it replaced; the run saving again is not."""
+    user, workspace, article = await _setup(session)
+    service = ContentService(session)
+
+    def saved_again(body):
+        return ContentCreate(
+            title=article.title,
+            introduction=article.introduction,
+            body_markdown=body,
+            langgraph_thread_id=article.langgraph_thread_id,
+        )
+
+    await service.create_content(workspace.id, user.id, saved_again("Written again by the run."))
+    assert await _versions(session, article) == []
+
+    await service.create_content(
+        workspace.id, user.id, saved_again("Edited before saving."), version_as=EDIT
+    )
+    assert [v["source"] for v in await _versions(session, article)] == ["edit", "generation"]
+
+
+@pytest.mark.asyncio
+async def test_an_untitled_articles_first_version_keeps_its_empty_title(session):
+    user, workspace, article = await _setup(session, generated=False)
+    article.title = ""
+    await session.flush()
+
+    await _save(session, article, user, title="A Title At Last")
+
+    newest, first = await _versions(session, article)
+    assert (first["title"], newest["title"]) == ("", "A Title At Last")
+
+
+def _site(success=True, shopify=None, wordpress=None):
+    return type(
+        "Result",
+        (),
+        {"success": success, "shopify_article_id": shopify, "wordpress_post_id": wordpress},
+    )()
+
+
+@pytest.mark.parametrize(
+    ("status", "results", "live"),
+    [
+        ("published", [_site(wordpress=7)], True),
+        ("published", [_site(success=False)], False),
+        # WordPress waits for its date, Shopify took the article now.
+        ("scheduled", [_site(shopify=3), _site(wordpress=None)], True),
+        ("scheduled", [_site(wordpress=None)], False),
+        ("draft", [_site(wordpress=7)], False),
+        ("scheduled", [_site(success=False, shopify=3)], False),
+    ],
+)
+def test_a_publish_is_a_version_when_a_site_took_the_text_now(status, results, live):
+    assert went_live(status, results) is live
 
 
 @pytest.mark.asyncio
