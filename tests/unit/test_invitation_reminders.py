@@ -13,9 +13,11 @@ from sqlalchemy.pool import NullPool
 import src.api.tasks.invitation_reminder_task as task
 from src.api.database.base import Base
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.email_preferences_service import EmailPreferencesService, write_preference
 from tests.conftest import TEST_DATABASE_URL
 
 NOW = datetime.now(timezone.utc)
@@ -50,7 +52,11 @@ async def db():
     """The tables these tests need, inside a transaction that is rolled back. The job
     commits each reminder: here a commit only releases a savepoint."""
     tables = _with_parents(
-        Users.__table__, Role.__table__, WorkspaceModel.__table__, UserInvitations.__table__
+        Users.__table__,
+        Role.__table__,
+        WorkspaceModel.__table__,
+        UserInvitations.__table__,
+        NotificationPreferences.__table__,
     )
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.connect() as connection:
@@ -137,6 +143,84 @@ async def test_only_a_pending_invitation_inside_the_two_days_is_reminded(db, out
 
     assert await task.send_invitation_reminders(db) == 0
     assert outbox.sent == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("turned_off", ["email_notifications", "ws_invite_received"])
+async def test_someone_who_turned_these_emails_off_gets_no_reminder(db, outbox, turned_off):
+    """An invited person who has an account has a say: all email off, or the invitation
+    emails off, and the reminder isn't sent. Someone without an account has no such setting."""
+    place = await _workspace(db)
+    opted_out = await _invitation(db, place, expires_in=timedelta(hours=20))
+    no_account = await _invitation(db, place, expires_in=timedelta(hours=30))
+    # The account's address differs from the invitation's in its case only.
+    person = Users(email=opted_out.email.upper())
+    db.add(person)
+    await db.flush()
+    preferences = await EmailPreferencesService(db).get_or_create_preferences(person.id)
+    assert write_preference(preferences, turned_off, False)
+    await db.commit()
+
+    assert await task.send_invitation_reminders(db) == 1
+
+    assert [email["to"] for email in outbox.sent] == [no_account.email]
+    assert opted_out.reminder_sent is False
+
+
+@pytest.mark.asyncio
+async def test_an_invited_person_with_an_account_and_no_opt_out_is_reminded(db, outbox):
+    place = await _workspace(db)
+    invitation = await _invitation(db, place, expires_in=timedelta(hours=20))
+    db.add(Users(email=invitation.email))
+    await db.commit()
+
+    assert await task.send_invitation_reminders(db) == 1
+    assert invitation.reminder_sent is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "hours_left, days_said",
+    [(47, 2), (37, 2), (35, 1), (25, 1), (5, 1)],
+)
+async def test_the_reminder_says_the_days_left_to_the_nearest_day(
+    db, outbox, hours_left, days_said
+):
+    place = await _workspace(db)
+    await _invitation(db, place, expires_in=timedelta(hours=hours_left))
+
+    await task.send_invitation_reminders(db)
+
+    assert outbox.sent[0]["tags"]["days_until_expiry"] == str(days_said)
+    says_tomorrow = "expires <strong>tomorrow</strong>" in outbox.sent[0]["html"]
+    assert says_tomorrow is (days_said == 1)
+
+
+@pytest.mark.asyncio
+async def test_an_invitation_that_runs_out_during_the_run_gets_no_reminder(db, outbox, monkeypatch):
+    """The clock is read for each invitation: one that expired while the others were
+    being sent is not reminded of a link that no longer works."""
+    place = await _workspace(db)
+    first = await _invitation(db, place, expires_in=timedelta(hours=1))
+    second = await _invitation(db, place, expires_in=timedelta(hours=2))
+    second_id = second.id
+
+    class _SlowEmails:
+        def __init__(self, _db):
+            pass
+
+        async def send_email(self, **email):
+            # While the first email goes out, the second invitation runs out.
+            row = await db.get(UserInvitations, second_id)
+            row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            outbox.sent.append(email)
+            return SimpleNamespace(status="sent")
+
+    monkeypatch.setattr(task, "EmailService", _SlowEmails)
+
+    assert await task.send_invitation_reminders(db) == 1
+
+    assert [email["to"] for email in outbox.sent] == [first.email]
 
 
 @pytest.mark.asyncio

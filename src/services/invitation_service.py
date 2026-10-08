@@ -621,6 +621,8 @@ class InvitationService:
             invitation.email, invitation.workspace_id
         )
         invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=extend_days)
+        # It runs again from today: its reminder is due again before the new expiry.
+        invitation.reminder_sent = False
 
         logger.info(
             "Invitation token rotated on resend",
