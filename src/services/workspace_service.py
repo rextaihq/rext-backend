@@ -507,9 +507,22 @@ class WorkspaceService:
         )
         if voice is None:
             self.db.add(BrandVoice(workspace_id=workspace.id, about=description))
-        else:
+        elif (voice.about or "").strip() != description:
+            # Other words, another draft: what was drafted from the old ones goes with them,
+            # so the new voice never mixes the two (the draft keeps a field it leaves empty).
             voice.about = description
+            voice.brand_name = None
+            voice.customer_profile = None
+            voice.selling_position = None
+            voice.target_audience = []
+            voice.brand_voice = []
+            voice.content_pillar = []
         await self.db.flush()
+        # The detail's cached brand voice (ten minutes) would go on saying what it said before.
+        try:
+            await invalidate_cache_key(f"workspace:brand_voice:{workspace.id}")
+        except Exception as exc:  # noqa: BLE001 - the cache is a convenience, never a refusal
+            logger.warning("Failed to invalidate brand voice cache: %r", exc)
 
     async def retry_pipeline_for_user(
         self, workspace_id: UUID, user_id: UUID, description: Optional[str] = None
@@ -526,7 +539,7 @@ class WorkspaceService:
                 message="Only a run that failed or was interrupted can be retried.",
                 rule_name="workspace_pipeline_not_retryable",
             )
-        if description:
+        if description is not None:
             await self._keep_description(workspace, description)
         # A voice that was drafted has been the owner's to edit since, so only this path (a run
         # that left nothing, or not all of it) drafts a workspace with no website again.

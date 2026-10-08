@@ -229,4 +229,9 @@ class WorkspacePipelineRetryRequest(BaseModel):
         ),
     )
 
-    _tidy_description = field_validator("description")(_tidy_description)
+    # Trimmed only: a description sent blank is still one that was sent, and is refused as too
+    # short rather than taken for none and drafted from what was kept before.
+    @field_validator("description")
+    @classmethod
+    def _trimmed(cls, value: Optional[str]) -> Optional[str]:
+        return value.strip() if isinstance(value, str) else value
