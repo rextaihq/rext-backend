@@ -431,3 +431,27 @@ async def test_a_switch_off_that_cannot_be_recorded_leaves_the_banner_on(
     read = (await _call("GET", READ)).json()["data"]
     assert read["active"] is True
     assert read["message"] == MESSAGE
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+async def test_a_failed_switch_does_not_undo_someone_elses_later_switch(
+    redis: FakeRedis, grant, audit, method: str
+):
+    grant("security.manage")
+    assert (await _call("PUT", ADMIN, json={"message": MESSAGE})).status_code == 200
+
+    # While this switch's audit entry is failing, another super admin's switch goes through.
+    async def another_switch_then_fail(**_kwargs: Any) -> None:
+        await set_banner("Publishing to WordPress is failing.", ["publishing"], 30)
+        raise RuntimeError("the database went away")
+
+    audit.side_effect = another_switch_then_fail
+    body = {"message": "A notice that can't be recorded."} if method == "PUT" else None
+    response = await _call(method, ADMIN, json=body)
+    assert response.status_code >= 500
+
+    # Theirs is recorded and stays: nothing is put back over it.
+    read = (await _call("GET", READ)).json()["data"]
+    assert read["active"] is True
+    assert read["message"] == "Publishing to WordPress is failing."

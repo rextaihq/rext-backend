@@ -88,7 +88,7 @@ async def set_incident_banner(
         )
         await db.commit()
     except Exception:
-        await incident_banner_service.restore_banner(previous)
+        await incident_banner_service.restore_banner(previous, written=banner)
         raise
 
     return success(data=banner, request=request, message="Incident banner switched on")
@@ -124,7 +124,7 @@ async def clear_incident_banner(
         )
         await db.commit()
     except Exception:
-        await incident_banner_service.restore_banner(previous)
+        await incident_banner_service.restore_banner(previous, written=None)
         raise
 
     return success(
