@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import unicodedata
 from uuid import UUID
 
@@ -704,6 +705,18 @@ def _keeps_main_sections(first: dict, retried: dict) -> bool:
 
 # A section's first key points become its H3s; any beyond these stay as its key points.
 _MAX_DERIVED_SUBSECTIONS = 4
+# A subheading is a few words. A key point written as a sentence stays a key point.
+_MAX_HEADING_WORDS = 10
+_MAX_HEADING_CHARACTERS = 80
+
+
+def _heading_shaped(point: str) -> bool:
+    """A key point short enough to stand as a subheading, and one phrase, not two sentences."""
+    return (
+        0 < len(point.split()) <= _MAX_HEADING_WORDS
+        and len(point) <= _MAX_HEADING_CHARACTERS
+        and not re.search(r"[.!?;]\s", point)
+    )
 
 
 def _subsections_from_key_points(outline: dict) -> int:
@@ -716,7 +729,9 @@ def _subsections_from_key_points(outline: dict) -> int:
     same H2s and none (first_h3=0, second_h3=0, gained=0, three runs of three). The parts are
     there under another name. Each key point of an H2 with two or more becomes an H3 directly
     after it, in its own words, and leaves that section's key points, so it is planned once.
-    An H2 with fewer than two is left whole. Nothing is invented.
+    Only a point that is shaped like a heading is used (a few words, one phrase): a sentence
+    stays a key point of its section. An H2 with fewer than two such points is left whole.
+    Nothing is invented.
     """
     sections = _outline_sections(outline)
     rebuilt: list = []
@@ -731,11 +746,14 @@ def _subsections_from_key_points(outline: dict) -> int:
         is_main = (
             isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
         )
-        if not is_main or len(points) < 2:
+        headings = [point for point in points if _heading_shaped(point)][:_MAX_DERIVED_SUBSECTIONS]
+        if not is_main or len(headings) < 2:
             rebuilt.append(section)
             continue
-        rebuilt.append({**section, "key_points": points[_MAX_DERIVED_SUBSECTIONS:]})
-        for point in points[:_MAX_DERIVED_SUBSECTIONS]:
+        rebuilt.append(
+            {**section, "key_points": [point for point in points if point not in headings]}
+        )
+        for point in headings:
             rebuilt.append(
                 {
                     "heading": point,

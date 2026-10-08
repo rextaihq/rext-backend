@@ -324,6 +324,33 @@ def test_only_the_first_key_points_become_subsections_and_the_rest_stay():
 
 
 @pytest.mark.unit
+def test_a_key_point_written_as_a_sentence_stays_a_key_point():
+    sentence = (
+        "Explain how list quality affects deliverability when a sender warms up a new domain."
+    )
+    two = "Start small. Then grow the list."
+    outline = _planned(
+        ("Plan", ["Segmentation of email lists", sentence, "Personalization techniques", two]),
+        ("Send", [sentence, "When to send"]),
+    )
+
+    made = outline_module._subsections_from_key_points(outline)
+
+    sections = outline["structure"]["sections"]
+    assert made == 2
+    assert [section["heading"] for section in sections] == [
+        "Plan",
+        "Segmentation of email lists",
+        "Personalization techniques",
+        "Send",
+    ]
+    # What is no heading stays where it was, in its order; a section with one heading-shaped
+    # point is left whole.
+    assert sections[0]["key_points"] == [sentence.rstrip("."), two.rstrip(".")]
+    assert sections[3]["key_points"] == [sentence, "When to send"]
+
+
+@pytest.mark.unit
 def test_an_outline_whose_sections_have_no_parts_is_left_as_it_is():
     outline = _pillar("H2", "H2", "H2", "H2")
     before = [dict(section) for section in outline["structure"]["sections"]]
