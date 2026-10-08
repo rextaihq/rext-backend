@@ -10,7 +10,7 @@ All endpoints require super admin permissions.
 """
 
 from datetime import datetime, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
@@ -59,6 +59,7 @@ from src.services.order_service import (
     apply_refund_state,
     refundable_amount,
 )
+from src.services.plan_change_charges import PlanChangeCharge, plan_change_charges_for_orders
 from src.services.refund_cancellation import (
     cancel_at_provider_for_refund,
     end_for_refund,
@@ -398,6 +399,9 @@ async def search_refundable_orders(
     refunded = await RefundService(db).get_refunded_totals(
         [o.lemonsqueezy_order_id for o in orders]
     )
+    # What each customer paid for a plan change since: a refund of the order
+    # doesn't give that back.
+    plan_change = await plan_change_charges_for_orders(db, orders)
 
     rows = []
     for order in orders:
@@ -424,6 +428,9 @@ async def search_refundable_orders(
                 "already_refunded": remaining <= 0,
                 "refunded_amount": refunded_so_far,
                 "refundable_amount": remaining,
+                "plan_change_charges": [
+                    charge.as_row() for charge in plan_change.get(order.lemonsqueezy_order_id, ())
+                ],
             }
         )
 
@@ -490,12 +497,15 @@ async def _notify_requester(
         )
 
 
-def _admin_request_row(req, refunded_so_far: int = 0) -> dict:
+def _admin_request_row(
+    req, refunded_so_far: int = 0, plan_change: Sequence[PlanChangeCharge] = ()
+) -> dict:
     """Serialise a refund request with the context an admin needs to judge it.
 
     Carries the order's money state as well as the request's own, because
     approving and processing are separate steps: the queue has to show whether
-    an approved request still has a balance left to pay out.
+    an approved request still has a balance left to pay out. And what the
+    customer paid for a plan change since, which this refund doesn't give back.
     """
     order_total = req.order.total if req.order else None
     remaining = refundable_amount(req.order, refunded_so_far) if req.order else 0
@@ -523,13 +533,15 @@ def _admin_request_row(req, refunded_so_far: int = 0) -> dict:
         "awaiting_processing": (
             req.status == RefundRequestStatus.APPROVED and req.refund_id is None and remaining > 0
         ),
+        "plan_change_charges": [charge.as_row() for charge in plan_change],
     }
 
 
 async def _request_row_with_totals(db: AsyncSession, req) -> dict:
     """`_admin_request_row` for one request, with its order's refund total."""
     refunded = await RefundService(db).get_refunded_total(req.lemonsqueezy_order_id)
-    return _admin_request_row(req, refunded)
+    plan_change = await plan_change_charges_for_orders(db, [req.order])
+    return _admin_request_row(req, refunded, plan_change.get(req.lemonsqueezy_order_id, ()))
 
 
 @router.get(
@@ -563,11 +575,16 @@ async def list_refund_requests(
     refunded = await RefundService(db).get_refunded_totals(
         [r.lemonsqueezy_order_id for r in result["requests"]]
     )
+    plan_change = await plan_change_charges_for_orders(db, [r.order for r in result["requests"]])
 
     return success(
         data={
             "data": [
-                _admin_request_row(r, refunded.get(r.lemonsqueezy_order_id, 0))
+                _admin_request_row(
+                    r,
+                    refunded.get(r.lemonsqueezy_order_id, 0),
+                    plan_change.get(r.lemonsqueezy_order_id, ()),
+                )
                 for r in result["requests"]
             ],
             "pagination": result["pagination"],
