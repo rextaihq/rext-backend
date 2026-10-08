@@ -58,7 +58,11 @@ async def session():
                 )
 
         await connection.run_sync(tables_unless_migrated)
-        async with AsyncSession(bind=connection, expire_on_commit=False) as db:
+        # A savepoint of its own: a route that refuses rolls its session back, and that must
+        # stop at what the test has committed, not undo the tables and rows before it.
+        async with AsyncSession(
+            bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
+        ) as db:
             yield db
         await transaction.rollback()
     await engine.dispose()
@@ -170,7 +174,9 @@ async def test_an_impersonating_admin_cant_write_the_customers_answer(session, u
     from src.api.server import app
 
     user.analytics_consent, user.analytics_region = "denied", "eea"
-    await session.flush()
+    # Committed (to the test's own savepoint): the refused call rolls its session back, and
+    # that must not take the account with it.
+    await session.commit()
 
     async def override_get_db():
         yield session
@@ -188,9 +194,10 @@ async def test_an_impersonating_admin_cant_write_the_customers_answer(session, u
         app.dependency_overrides.clear()
 
     assert written.status_code == 403, written.text
+    assert read.status_code == 200, read.text
+    assert (read.json()["data"]["answer"], read.json()["data"]["region"]) == ("denied", "eea")
+    await session.refresh(user)
     assert (user.analytics_consent, user.analytics_region) == ("denied", "eea")
-    assert read.status_code == 200
-    assert read.json()["data"]["answer"] == "denied"
 
 
 @pytest.mark.asyncio
