@@ -430,7 +430,13 @@ class EndpointRateLimiter:
                 ):
                     # FastAPI caches the body, so this is safe and won't consume the stream
                     body = await request.json()
-                    email = body.get("email") or body.get("email_address")
+                    # "provider_email" is what a Google or GitHub sign-in carries
+                    # (rext-control#892). That call comes from the dashboard's server, so
+                    # without the email in the key every such sign-in shared one address's
+                    # allowance.
+                    email = (
+                        body.get("email") or body.get("email_address") or body.get("provider_email")
+                    )
                     if email:
                         # Use a truncated hash to keep keys manageable and protect privacy
                         email_h = hashlib.sha256(email.lower().strip().encode()).hexdigest()[:12]
