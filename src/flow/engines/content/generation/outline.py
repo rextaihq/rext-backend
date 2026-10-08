@@ -943,8 +943,18 @@ async def generate_outline(state: REXT) -> dict:
                 s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
             )
             if isinstance(minutes, int) and not isinstance(minutes, bool) and minutes > 0:
+                # Never under the least the outline's own model accepts for it.
+                field = getattr(model_schema, "model_fields", {}).get("target_reading_time_minutes")
+                least = next(
+                    (
+                        rule.ge
+                        for rule in getattr(field, "metadata", None) or []
+                        if getattr(rule, "ge", None) is not None
+                    ),
+                    1,
+                )
                 outline_dict["target_reading_time_minutes"] = max(
-                    1, round(minutes * kept / (kept + trimmed))
+                    min(minutes, least), round(minutes * kept / (kept + trimmed))
                 )
         if sections:
             target = _summed_word_target(model_schema, sections)

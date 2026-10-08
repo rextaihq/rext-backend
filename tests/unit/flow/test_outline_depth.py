@@ -280,7 +280,8 @@ def test_a_plan_over_its_types_range_comes_down_by_the_same_share_everywhere():
     fitted, removed = fit_budgets(sections, 2000)
 
     budgets = [section["suggested_word_count"] for section in fitted]
-    assert budgets == [320, 270, 270, 270, 230, 230, 200, 200]
+    # The two sections at their whole budget give nothing; the six above it share the cut.
+    assert budgets == [320, 270, 270, 270, 220, 220, 200, 200]
     assert sum(budgets) <= 2000 and removed == 2150 - sum(budgets)
     # The plan keeps its shape, and what was given is not changed.
     assert budgets == sorted(budgets, reverse=True)
@@ -306,6 +307,29 @@ def test_no_whole_section_is_taken_under_its_budget_and_no_subsection_under_half
     assert budgets[0] == 100  # an H2 that only introduces its H3s: half a whole budget at least
     assert budgets[1:3] == [210, 210]
     assert all(words >= 200 for words in budgets[3:])
+
+
+def test_what_a_section_at_its_floor_cannot_give_comes_from_the_ones_that_can():
+    """Review round 2: one long section and seven at their whole budget. One pass by the same
+    share left 2,120 words; the long section has the room, so it gives the rest."""
+    sections = _planned(800, 200, 200, 200, 200, 200, 200, 200)
+
+    fitted, removed = fit_budgets(sections, 2000)
+
+    budgets = [section["suggested_word_count"] for section in fitted]
+    assert budgets == [600, 200, 200, 200, 200, 200, 200, 200]
+    assert sum(budgets) == 2000 and removed == 200
+
+
+def test_a_plan_whose_floors_alone_pass_the_ceiling_comes_down_to_its_floors():
+    sections = _planned(*[300] * 12)
+
+    fitted, removed = fit_budgets(sections, 2000)
+
+    # Twelve whole sections cannot be 2,000 words: each is at its 200, and the caller holds
+    # the article's target.
+    assert [section["suggested_word_count"] for section in fitted] == [200] * 12
+    assert removed == 1200
 
 
 def test_a_section_without_a_budget_counts_as_a_whole_one_and_is_left_as_it_is():

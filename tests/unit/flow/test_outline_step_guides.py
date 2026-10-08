@@ -421,3 +421,16 @@ async def test_a_blog_planned_inside_its_range_is_as_the_model_wrote_it(monkeypa
     assert budgets == [300, 350, 300, 400, 300]
     assert outline["target_word_count"] == 1650
     assert outline["target_reading_time_minutes"] == 8
+
+
+@pytest.mark.unit
+async def test_a_reading_time_brought_down_is_never_under_what_the_outlines_model_accepts(
+    monkeypatch,
+):
+    """Review round 2: the blog's model takes two minutes at least."""
+    outline, _ = await _generate(
+        monkeypatch, "blog", [_blog(400, 400, 400, 400, 400, 400, 400, 400, minutes=2)]
+    )
+
+    assert outline["target_word_count"] == 2000
+    assert outline["target_reading_time_minutes"] == 2

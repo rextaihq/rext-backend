@@ -123,29 +123,55 @@ def _budget(section: dict) -> int | None:
 def fit_budgets(
     sections: list[dict], most: int, least_words: int = MAIN_SECTION_MIN_WORDS
 ) -> tuple[list[dict], int]:
-    """``sections`` with their budgets brought down in proportion until the plan adds up to
-    ``most`` words or fewer, and how many words came off.
+    """``sections`` with their budgets brought down until the plan adds up to ``most`` words or
+    fewer, and how many words came off.
 
     Every budget gives the same share, so the plan keeps its shape. An H2 without H3s is not
     taken under ``least_words`` (the whole budget `fill_main_budgets` guarantees), and no other
-    budget under half of that, so a plan of many sections can still come out above ``most``:
-    the caller holds the article's target to ``most`` itself. A section without a budget
-    counts as ``least_words``, as the sum does, and is left as it is.
+    budget under half of that; what a section at its floor cannot give is taken from the ones
+    that still can, by the same share again. Only when the floors alone add up to more than
+    ``most`` does a plan come out above it: the caller holds the article's target to ``most``
+    itself. A section without a budget counts as ``least_words``, as the sum does, and is left
+    as it is.
     """
     sections = [dict(section) for section in sections]
-    total = sum(_budget(section) or least_words for section in sections)
-    if total <= most:
+    budgets = [_budget(section) for section in sections]
+    if sum(budget or least_words for budget in budgets) <= most:
         return sections, 0
+    floors = [
+        None
+        if budget is None
+        else min(
+            budget,
+            least_words
+            if _level(section) == "H2" and not _children(sections, index)
+            else least_words // 2,
+        )
+        for index, (section, budget) in enumerate(zip(sections, budgets, strict=True))
+    ]
+    # Sections brought to their floor give no more; the rest share what is left.
+    at_floor: set[int] = set()
+    giving = {index for index, budget in enumerate(budgets) if budget is not None}
+    share = 1.0
+    while giving:
+        room = most - sum(
+            least_words if budgets[i] is None else floors[i]
+            for i in range(len(sections))
+            if i not in giving
+        )
+        share = max(0.0, room) / sum(budgets[i] for i in giving)
+        under = {i for i in giving if budgets[i] * share < floors[i]}
+        if not under:
+            break
+        at_floor |= under
+        giving -= under
     removed = 0
-    for index, section in enumerate(sections):
-        budget = _budget(section)
-        if budget is None:
-            continue
-        plain = _level(section) == "H2" and not _children(sections, index)
-        floor = min(budget, least_words if plain else least_words // 2)
-        fitted = max(floor, budget * most // total // _BUDGET_STEP * _BUDGET_STEP)
-        removed += budget - fitted
-        section["suggested_word_count"] = fitted
+    for index in sorted(giving | at_floor):
+        fitted = floors[index]
+        if index in giving:
+            fitted = max(fitted, int(budgets[index] * share) // _BUDGET_STEP * _BUDGET_STEP)
+        removed += budgets[index] - fitted
+        sections[index]["suggested_word_count"] = fitted
     return sections, removed
 
 
