@@ -409,21 +409,26 @@ class TestUpdateSubscription:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "attempts, known",
+        "attempts, refused_with",
         [
-            (["timeout", 429, 429], False),
-            ([503, 429, 429], False),
-            ([429, "timeout", 429], False),
-            ([429, 429, "timeout"], False),
-            ([429, 429, 429], True),
+            (["timeout", 429, 429], None),
+            ([503, 429, 429], None),
+            ([429, "timeout", 429], None),
+            ([429, 429, "timeout"], None),
+            (["timeout", 422], None),
+            (["disconnected"], None),
+            ([429, 429, 429], 429),
+            ([422], 422),
+            ([429, 422], 422),
         ],
     )
-    async def test_a_429_after_an_unanswered_attempt_leaves_the_outcome_unknown(
-        self, provider, monkeypatch, attempts, known
+    async def test_an_update_is_refused_only_when_no_attempt_went_unanswered(
+        self, provider, monkeypatch, attempts, refused_with
     ):
-        """The request is tried three times and a caller sees only the last error. An
-        attempt that timed out or met a server error may have been applied, so a 429
-        on a later attempt doesn't make the update a refusal; three 429s do."""
+        """The request is tried up to three times and a caller sees only the last error.
+        An attempt that timed out, met a server error or lost its connection part-way may
+        have been applied, so an answer on a later attempt (a 429, a 4xx) doesn't make the
+        update a refusal. It is one when every attempt was answered."""
         from src.providers.payment.base_provider import PaymentChangeUnknown
 
         # The real request with its retries, without the waits between them.
@@ -436,11 +441,12 @@ class TestUpdateSubscription:
             response.json.return_value = {"errors": [{"detail": "not now"}]}
             return response
 
-        outcomes = [
-            httpx.TimeoutException("timed out") if attempt == "timeout" else answer(attempt)
-            for attempt in attempts
-        ]
-        expected = LemonSqueezyTransientError if known else PaymentChangeUnknown
+        no_answer = {
+            "timeout": httpx.TimeoutException("timed out"),
+            "disconnected": httpx.RemoteProtocolError("Server disconnected"),
+        }
+        outcomes = [no_answer.get(attempt) or answer(attempt) for attempt in attempts]
+        expected = LemonSqueezyError if refused_with else PaymentChangeUnknown
 
         with (
             patch.object(provider.client, "request", side_effect=outcomes) as request,
@@ -448,9 +454,9 @@ class TestUpdateSubscription:
         ):
             await provider.update_subscription("sub_123", "variant_789")
 
-        assert request.call_count == 3
-        if known:
-            assert raised.value.status_code == 429
+        assert request.call_count == len(attempts)
+        if refused_with:
+            assert raised.value.status_code == refused_with
 
     @pytest.mark.asyncio
     async def test_an_update_lemon_squeezy_refuses_is_still_a_refusal(self, provider):
