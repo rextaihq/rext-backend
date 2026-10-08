@@ -23,7 +23,7 @@ from src.api.models.subscription_models.refund_requests import (
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
-from src.services.credit_grants import grant_credits_used
+from src.services.credit_grants import grant_credits_used, period_admin_adjustment
 from src.services.order_service import refundable_amount
 from src.services.refund_service import RefundService
 from src.utils.logger import logger
@@ -181,7 +181,12 @@ class RefundRequestService:
             until=ordered_at + timedelta(days=1) if ordered_at else None,
             order_id=order.lemonsqueezy_order_id,
         )
-        used = max(0, granted - balance - already_cut) + bonus_used
+        # An admin's deduction or reset this period moved the balance without any
+        # credit being used: added back, it leaves "used" as it was.
+        used = (
+            max(0, granted - balance - already_cut + period_admin_adjustment(subscription))
+            + bonus_used
+        )
         # Bonus credits spent are spent value too: they lower the refundable
         # credits as monthly credits would, and credits already cut by earlier
         # refunds of this order are gone, so neither a near-full nor a series of

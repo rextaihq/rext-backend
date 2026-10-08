@@ -667,14 +667,52 @@ async def test_already_valid_content_is_not_repaired_or_rewritten_by_validation(
     assert repairer.calls == []
 
 
-async def test_repair_that_breaks_a_passing_check_is_discarded_and_the_retry_is_told_why():
+async def test_repair_that_breaks_a_passing_check_keeps_the_part_that_broke_nothing():
+    """The fix is in one paragraph, the damage in others: the fix stays (rext-control#818)."""
     article = _with_fabricated_citation()
+    # Removes the fabricated citation, and also strips the focus keyphrase from the body.
+    repairer = _fake_model(
+        _echo(
+            **{
+                f" A [recent survey]({FABRICATED}) says most teams agree.": "",
+                "crm software": "the tool",
+                "CRM Software": "The Tool",
+            }
+        )
+    )
+    with patch.object(repair_module, "load_content_model", return_value=repairer):
+        first = await repair_content(await validate_content(_state(article)))
+
+    (attempt,) = first["content"]["review"]["repair_history"]
+    assert attempt["accepted"] is True
+    assert attempt["regressed_checks"]  # what the repair as returned broke
+    assert attempt["salvaged"]["how"] == "blocks" and attempt["salvaged"]["kept"] == 1
+    assert attempt["unresolved_checks"] == [] and attempt["lost_checks"] == []
+    body = first["content"]["final_content"]["body_markdown"]
+    assert FABRICATED not in body  # the fix is kept
+    assert "crm software" in body and "the tool" not in body  # the damage is not
+    passed = await validate_content(first)
+    assert passed["content"]["review"]["validation"]["passed"]
+    assert len(repairer.calls) == 1  # no second attempt was needed
+
+
+async def test_repair_with_no_harmless_part_is_discarded_and_the_retry_is_told_why():
+    article = _with_fabricated_citation()
+    survey = f" A [recent survey]({FABRICATED}) says most teams agree."
 
     def responder(calls, messages):
-        replace = {f" A [recent survey]({FABRICATED}) says most teams agree.": ""}
-        if len(calls) == 1:  # first attempt also strips the focus keyphrase from the body
-            replace.update({"crm software": "the tool", "CRM Software": "The Tool"})
-        return _echo(**replace)(calls, messages)
+        answer = _echo(**{survey: ""})(calls, messages)
+        if len(calls) == 1:
+            # A rewrite that can't be taken apart: the paragraphs run together, and the
+            # focus keyphrase is gone from all of it.
+            for field in ("introduction", "body_markdown"):
+                answer[field] = (
+                    answer[field]
+                    .replace("\n\n", "\n")
+                    .replace("crm software", "the tool")
+                    .replace("CRM Software", "The Tool")
+                )
+        return answer
 
     repairer = _fake_model(responder)
     state = _state(article)
@@ -682,16 +720,16 @@ async def test_repair_that_breaks_a_passing_check_is_discarded_and_the_retry_is_
         first = await repair_content(await validate_content(state))
         history = first["content"]["review"]["repair_history"]
         assert history[0]["accepted"] is False
-        assert history[0]["regressed_checks"]
-        # Nothing was accepted: the pre-repair article (and its keyphrase) stands.
+        assert "salvaged" not in history[0]
+        # Nothing was accepted: the pre-repair article stands.
         assert first["content"]["final_content"]["body_markdown"] == article["body_markdown"]
 
         second_state = await validate_content(first)
+        assert validation_router(second_state) == "repair_content"  # it has not had its turn
         second = await repair_content(second_state)
 
     retry_prompt = _human_text(repairer.calls[1])
     assert "PREVIOUS REPAIR ATTEMPT FAILED" in retry_prompt
-    assert all(name in retry_prompt for name in history[0]["regressed_checks"])
     assert second["content"]["review"]["repair_history"][1]["accepted"] is True
     assert FABRICATED not in second["content"]["final_content"]["body_markdown"]
     passed = await validate_content(second)

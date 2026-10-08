@@ -26,6 +26,7 @@ from src.services.credit_grants import (
     forfeit_grants,
     grant_balance,
     live_grants,
+    period_admin_adjustment,
     split_cost,
 )
 from src.utils.datetime_utils import next_billing_anchor
@@ -34,6 +35,30 @@ from src.utils.logger import logger
 # Default limits for free tier when no subscription plan is found
 FREE_MAX_WORKSPACES = 1
 FREE_MAX_API_CALLS = 100
+
+
+def replenish_if_due(subscription: UserSubscription) -> bool:
+    """Start the new month's credits when the reset date has passed (non-trial plans).
+
+    Not while a renewal is unpaid: the new month's credits come with the payment
+    (subscription_payment_success), not with Lemon Squeezy's retries. The caller
+    holds the subscription's row lock. Returns whether the credits were reset.
+    """
+    if not (
+        subscription.plan
+        and not subscription.plan.is_trial_plan
+        and subscription.credits_reset_date
+        and subscription.status not in FAILED_PAYMENT_STATUSES
+    ):
+        return False
+    reset_dt = subscription.credits_reset_date
+    if reset_dt.tzinfo is None:
+        reset_dt = reset_dt.replace(tzinfo=timezone.utc)
+    if reset_dt >= datetime.now(timezone.utc):
+        return False
+    subscription.current_credits = subscription.plan.credits_per_month or 0
+    subscription.credits_reset_date = next_billing_anchor(subscription.credits_reset_date)
+    return True
 
 
 class UsageTrackingService:
@@ -186,35 +211,31 @@ class UsageTrackingService:
         if not subscription:
             return False
 
-        # Replenish if reset date passed (non-trial plans). Not while a renewal
-        # is unpaid: the new month's credits come with the payment
-        # (subscription_payment_success), not with Lemon Squeezy's retries.
-        if (
-            subscription.plan
-            and not subscription.plan.is_trial_plan
-            and subscription.credits_reset_date
-            and subscription.status not in FAILED_PAYMENT_STATUSES
-        ):
-            reset_dt = subscription.credits_reset_date
-            if reset_dt.tzinfo is None:
-                reset_dt = reset_dt.replace(tzinfo=timezone.utc)
-            if reset_dt < datetime.now(timezone.utc):
-                subscription.current_credits = subscription.plan.credits_per_month or 0
-                subscription.credits_reset_date = next_billing_anchor(
-                    subscription.credits_reset_date
-                )
+        replenish_if_due(subscription)
 
-        # Grants (an offer's bonus) are spent first, soonest expiry first; the row
-        # lock above serialises every change to them.
-        grants = await live_grants(self.db, subscription.id)
-        split = split_cost(cost, [g.remaining for g in grants], subscription.current_credits or 0)
+        # Grants with an expiry (an offer's bonus) are spent first, soonest expiry
+        # first, then the monthly credits, then grants without an expiry (credits
+        # an admin added), oldest first. The row lock above serialises every
+        # change to this subscription's; the grants are locked too, since what
+        # an admin added is spendable from any of the user's subscription rows.
+        grants = await live_grants(self.db, subscription.id, lock=True)
+        expiring = [g for g in grants if g.expires_at is not None]
+        lasting = [g for g in grants if g.expires_at is None]
+        split = split_cost(
+            cost,
+            [g.remaining for g in expiring],
+            subscription.current_credits or 0,
+            [g.remaining for g in lasting],
+        )
         if split is None:
             return False
 
-        from_grants, from_monthly = split
-        for grant, taken in zip(grants, from_grants):
+        from_expiring, from_monthly, from_lasting = split
+        for grant, taken in zip(expiring, from_expiring):
             grant.remaining -= taken
         subscription.current_credits -= from_monthly
+        for grant, taken in zip(lasting, from_lasting):
+            grant.remaining -= taken
         await self.db.flush()
         return True
 
@@ -264,6 +285,8 @@ class UsageTrackingService:
         lemonsqueezy_order_id: str,
         refunded_total: int,
         original_amount: int,
+        latest: Optional[bool] = None,
+        subscription_id: Optional[UUID] = None,
     ) -> Optional[Dict[str, Any]]:
         """Shrink the unused part of a partially refunded period's credits.
 
@@ -299,6 +322,12 @@ class UsageTrackingService:
             refunded_total: Cumulative cents refunded on that order, not the
                 amount of this one refund.
             original_amount: Cents the order was charged in full.
+            latest: Whether the refunded payment is the current period's. None asks
+                the orders table (the account's newest order); a renewal's invoice,
+                which has no order, is judged by its caller.
+            subscription_id: The refunded subscription, when the caller knows it (a
+                renewal's invoice belongs to one). None takes the account's newest
+                subscription that grants access, as an order's refund does.
 
         Returns:
             A summary of the adjustment for the caller to log and audit, or
@@ -311,13 +340,20 @@ class UsageTrackingService:
 
         from src.services.order_service import OrderService
 
-        if not await OrderService(self.db).is_latest_order(user_id, lemonsqueezy_order_id):
+        if latest is None:
+            latest = await OrderService(self.db).is_latest_order(user_id, lemonsqueezy_order_id)
+        if not latest:
             return None
 
+        owner = (
+            UserSubscription.id == subscription_id
+            if subscription_id is not None
+            else UserSubscription.user_id == user_id
+        )
         result = await self.db.execute(
             select(UserSubscription)
             .options(selectinload(UserSubscription.plan))
-            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
+            .where(and_(owner, subscription_grants_access()))
             .order_by(UserSubscription.start_date.desc())
             .limit(1)
             # The same row lock as consume_credits: grants change under it only.
@@ -336,9 +372,11 @@ class UsageTrackingService:
 
         # The balance is stale and due to be replenished for a new period, so
         # the refunded period's entitlement is already gone.
-        if subscription.credits_reset_date and subscription.credits_reset_date < datetime.now(
-            timezone.utc
-        ):
+        reset = subscription.credits_reset_date
+        if reset and reset.tzinfo is None:
+            # Set earlier in this transaction (utc_now_naive), it has no zone yet: it's UTC.
+            reset = reset.replace(tzinfo=timezone.utc)
+        if reset and reset < datetime.now(timezone.utc):
             return None
 
         meta = {**(subscription.subscription_metadata or {})}
@@ -355,9 +393,13 @@ class UsageTrackingService:
         )
 
         balance = subscription.current_credits or 0
-        used = max(0, granted - balance - already_cut)
+        # An admin's deduction or reset this period moved the balance without any
+        # credit being used; it stays on top of what the refund leaves (a
+        # deduction stays deducted, a reset's credits stay given).
+        adjustment = period_admin_adjustment(subscription)
+        used = max(0, granted - balance - already_cut + adjustment)
         retained_grant = granted * (original_amount - refunded_total) // original_amount
-        target = max(0, retained_grant - used)
+        target = max(0, retained_grant - used + adjustment)
 
         # Never hand credits back: a refund can only reduce an entitlement.
         if target >= balance:
@@ -370,7 +412,7 @@ class UsageTrackingService:
             # changes to a plain JSONB column.
             meta["refund_credit_reduction"] = {
                 "order_id": str(lemonsqueezy_order_id),
-                "credits": granted - used - target,
+                "credits": granted - used + adjustment - target,
             }
             subscription.subscription_metadata = meta
         subscription.updated_at = datetime.now(timezone.utc)

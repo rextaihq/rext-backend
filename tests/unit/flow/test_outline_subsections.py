@@ -16,6 +16,7 @@ from src.flow.prompts.human.outline import (
     get_outline_prompt,
     outline_subsection_rule,
     subsection_request,
+    wants_no_subsections,
 )
 
 FIXED_SHAPE_TYPES = [
@@ -378,3 +379,28 @@ def test_the_summed_word_target_stays_inside_the_blog_limits(budgets, expected):
 @pytest.mark.unit
 def test_the_summed_word_target_is_the_plain_sum_without_schema_limits():
     assert outline_module._summed_word_target(object, [{"suggested_word_count": 9000}, "x"]) == 9000
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("feedback", "expected"),
+    [
+        ("Remove the H3s, keep it to main sections", True),
+        ("No subsections, please", True),
+        ("The sub-headings aren't needed", True),
+        # One of them, named in the singular: the rest stay.
+        ("Remove the H3 under the introduction", False),
+        ("Drop that subsection", False),
+        # Several of them, but in one place only (review round 2).
+        ("Remove the H3s under the introduction", False),
+        ("The subsections in the pricing section aren't needed", False),
+        # A place that is the whole outline narrows nothing.
+        ("Remove the H3s in the article", True),
+        # Not a request for fewer at all.
+        ("Add H3s under the tools section", False),
+        ("Make the tone friendlier", False),
+        (None, False),
+    ],
+)
+def test_feedback_that_removes_the_subsections_as_a_whole(feedback, expected):
+    assert wants_no_subsections(feedback) is expected
