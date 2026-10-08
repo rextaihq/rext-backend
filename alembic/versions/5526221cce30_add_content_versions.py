@@ -1,7 +1,7 @@
 """add content_versions: an article's text as a save left it
 
 Revision ID: 5526221cce30
-Revises: f53595e1d014
+Revises: 368c3e36e8b5
 Create Date: 2026-10-08 05:19:04.000000
 
 FB2.25 (revnix/rext-control#706), part four: the editor's history. A new, empty table; no
@@ -21,7 +21,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "5526221cce30"
-down_revision: Union[str, Sequence[str], None] = "f53595e1d014"
+down_revision: Union[str, Sequence[str], None] = "368c3e36e8b5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
