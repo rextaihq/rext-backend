@@ -19,11 +19,58 @@ jobs:
     uses: ./.github/workflows/ci-quality.yaml
 
   # ──────────────────────────────────────────────
+  # ⏳ Stage 1b — One deploy per merge window
+  # ──────────────────────────────────────────────
+  window:
+    name: ⏳ Merge Window
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for the merge window to close
+        # Merges reach main in two windows an hour, minutes 00-09 and 30-39 UTC, so
+        # that production restarts once a window, not after every merge. A build
+        # takes minutes: a run that went ahead at once deployed the window's first
+        # merges, and its later ones brought a second restart. So a run whose push
+        # came inside a window waits here for that window's end (and 20 seconds
+        # more, for a merge begun in its last second). By then main holds every
+        # merge of the window, the stale check below refuses all but the newest
+        # run, and that one deploys them together. The quality gate runs meanwhile.
+        #
+        # The window is the push's, read from when the run was created: a push
+        # just before a window, or one that queued into the next, is not held, and
+        # a run whose window has passed (it queued, or it is run again) goes on at
+        # once. A manual run never waits here.
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOW=$(date -u +%s)
+          PUSHED=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}" --jq '.created_at | fromdateiso8601' 2> /dev/null || true)
+          case "$PUSHED" in
+            ''|*[!0-9]*)
+              echo "::warning::The run's start time could not be read: taking the time now as the push's"
+              PUSHED=$NOW ;;
+          esac
+          INTO=$(( PUSHED % 1800 ))
+          if [ "$INTO" -ge 600 ]; then
+            echo "Pushed outside a merge window: no wait"
+            exit 0
+          fi
+          WAIT=$(( PUSHED - INTO + 620 - NOW ))
+          if [ "$WAIT" -le 0 ]; then
+            echo "Pushed inside a merge window that has closed: no wait"
+            exit 0
+          fi
+          echo "Pushed inside a merge window: waiting ${WAIT}s for it to close, so that one run deploys all of its merges"
+          sleep "$WAIT"
+
+  # ──────────────────────────────────────────────
   # 🐳 Stage 2a — Build & Push Backend Image to GHCR
   # ──────────────────────────────────────────────
   docker_job:
     name: 🐳 Build & Push Backend
-    needs: quality
+    needs: [quality, window]
     # Only main publishes :latest: a manual run on another ref must not reach production.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -106,7 +153,7 @@ jobs:
   # ──────────────────────────────────────────────
   docker_shopify:
     name: 🐳 Build & Push Shopify App
-    needs: quality
+    needs: [quality, window]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

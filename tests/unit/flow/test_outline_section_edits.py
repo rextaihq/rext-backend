@@ -14,6 +14,7 @@ from src.flow.engines.content.generation.content_generation import (
     _format_outline_for_generation,
 )
 from src.flow.engines.content.generation.outline_structure import (
+    is_faq_section,
     resolve_expected_headings,
     resolve_outline_structure,
 )
@@ -517,3 +518,175 @@ def test_approval_with_an_added_section_writes_it(monkeypatch):
 
     assert _headings(outline) == ["Why the right shoe matters", "Caring for your shoes"]
     assert "Caring for your shoes" in repr(outline["_render"])
+
+
+# --- the writer keeps what the user approved (G70 #586, G71 #587) -------------
+
+
+def _tools_outline():
+    outline = _blog_outline()
+    outline["structure"]["sections"] = [
+        _section("Top tools for agencies"),
+        _section("1. Rext AI", "H3"),
+        _section("2. Surfer SEO", "H3"),
+        _section("3. Contentbot", "H3"),
+        _section("4. Postiv", "H3"),
+        _section("5. SEO.ai", "H3"),
+        _section("FAQs on AI writing tools"),
+    ]
+    return outline
+
+
+TOOL_IDS = [f"structure.sections:{i}" for i in range(7)]
+
+
+def test_moved_numbered_items_are_numbered_again_in_their_new_order():
+    """A moved item kept its old number, and the writer put it back where the number said."""
+    rows = [{"id": TOOL_IDS[i]} for i in (0, 1, 5, 2, 3, 6)]  # 5. SEO.ai up two, Postiv removed
+
+    edited = apply_section_edits(_tools_outline(), "blog", rows)
+
+    assert _headings(edited) == [
+        "Top tools for agencies",
+        "1. Rext AI",
+        "2. SEO.ai",
+        "3. Surfer SEO",
+        "4. Contentbot",
+        "FAQs on AI writing tools",
+    ]
+    plan = _format_outline_for_generation(edited, "blog")
+    assert plan.index("2. SEO.ai") < plan.index("3. Surfer SEO") < plan.index("4. Contentbot")
+
+
+def test_a_single_numbered_heading_keeps_its_number():
+    outline = _blog_outline()
+    outline["structure"]["sections"][1]["heading"] = "3 ways cushioning helps"
+    outline["structure"]["sections"][3]["heading"] = "1. Get fitted"
+    rows = [{"id": BLOG_IDS[i]} for i in (3, 0, 1, 2)]
+
+    edited = apply_section_edits(outline, "blog", rows)
+
+    assert _headings(edited)[:2] == ["1. Get fitted", "Why the right shoe matters"]
+    assert "3 ways cushioning helps" in _headings(edited)
+
+
+def test_a_renamed_faq_section_is_still_where_the_faqs_go():
+    """Renamed, it no longer says FAQ: the writer wrote it and then added a second FAQ."""
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+    from src.flow.engines.content.generation.outline_structure import faq_section_heading
+
+    rows = [{"id": TOOL_IDS[i]} for i in range(6)]
+    rows.append({"id": TOOL_IDS[6], "heading": "Questions agencies ask"})
+
+    edited = apply_section_edits(_tools_outline(), "blog", rows)
+
+    assert faq_section_heading(edited, "blog") == "Questions agencies ask"
+    plan = _format_outline_for_generation(edited, "blog")
+    assert 'in the section "Questions agencies ask"' in plan
+    assert "Holds faqs" not in plan and "holds_faqs" not in plan
+    block = PersonaInjectionMiddleware()._build_outline_block(edited, "blog")
+    assert 'section "Questions agencies ask"' in block
+    assert "Holds faqs" not in block and "holds_faqs" not in block
+
+
+@pytest.mark.parametrize(
+    ("heading", "holds_faqs"),
+    [
+        ("FAQs", True),
+        ("FAQ: choosing a CRM", True),
+        ("FAQs on content marketing ROI", True),
+        ("Frequently asked questions about pricing", True),
+        ("Content marketing ROI: FAQs", True),
+        ("FAQ-driven content strategy", False),
+        ("FAQs-first help pages", False),
+        ("Help pages that replace the non-FAQ", False),
+        ("Why FAQ pages rank", False),
+    ],
+)
+def test_a_heading_holds_the_faqs_only_when_faq_is_a_word_of_its_own(heading, holds_faqs):
+    assert is_faq_section({"heading": heading}) is holds_faqs
+
+
+def test_an_outline_without_a_faq_section_keeps_the_faq_at_the_end():
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+    from src.flow.engines.content.generation.outline_structure import faq_section_heading
+
+    outline = _blog_outline()  # the FAQs, but no section whose heading says FAQ
+
+    assert faq_section_heading(outline, "blog") is None
+    assert "in the FAQ section" in _format_outline_for_generation(outline, "blog")
+    block = PersonaInjectionMiddleware()._build_outline_block(outline, "blog")
+    assert "a FAQ section at the end of the article" in block
+
+
+def test_the_writer_is_not_told_to_adapt_the_order():
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+
+    block = PersonaInjectionMiddleware()._build_outline_block(_tools_outline(), "blog")
+
+    assert "adapt where needed" not in block
+    assert "in this order, under these headings" in block
+
+
+def test_the_writer_is_given_the_target_length_not_3000_words():
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+
+    block = PersonaInjectionMiddleware()._build_outline_block(_tools_outline(), "blog")
+
+    assert "3000 words" not in block
+    assert "Keep to the target word count" in block
+
+
+def test_each_numbered_run_is_numbered_on_its_own():
+    """Two numbered lists under two H2s stay two lists, each counted from its own start."""
+    outline = _blog_outline()
+    outline["structure"]["sections"] = [
+        _section("Set it up"),
+        _section("1. Install", "H3"),
+        _section("2. Configure", "H3"),
+        _section("Keep it going"),
+        _section("1. Measure", "H3"),
+        _section("2. Iterate", "H3"),
+    ]
+    rows = [{"id": f"structure.sections:{i}"} for i in (0, 2, 1, 3, 4, 5)]  # swap the first two
+
+    edited = apply_section_edits(outline, "blog", rows)
+
+    assert _headings(edited) == [
+        "Set it up",
+        "1. Configure",
+        "2. Install",
+        "Keep it going",
+        "1. Measure",
+        "2. Iterate",
+    ]
+
+
+def test_a_renamed_heading_is_marked_and_the_mark_never_shows():
+    rows = [{"id": BLOG_IDS[i]} for i in range(4)]
+    rows[0]["heading"] = "Why fit matters most"
+
+    edited = apply_section_edits(_blog_outline(), "blog", rows)
+
+    first, second = edited["structure"]["sections"][:2]
+    assert first["heading_edited"] is True and "heading_edited" not in second
+    plan = _format_outline_for_generation(edited, "blog")
+    assert "Heading edited" not in plan and "heading_edited" not in plan
+
+
+@pytest.mark.parametrize("target", [800, 2400])
+def test_the_length_the_writer_is_told_is_the_length_the_check_accepts(target):
+    """An 800-word target was told 1,000-1,200 words; the check rejects above 896."""
+    import re
+
+    from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+    from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+
+    prompt = PersonaInjectionMiddleware()._build_full_content_prompt(
+        None, _blog_outline(), target_word_count=target, content_type="blog"
+    )
+
+    low, high = compute_word_target_band(target)
+    told = re.search(r"Combined total: (\d+)-(\d+) words", prompt)
+    assert told and (int(told.group(1)), int(told.group(2))) == (low, high)
+    assert "minimum 200 words" not in prompt and "at least 200 words" not in prompt

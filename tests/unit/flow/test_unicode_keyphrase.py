@@ -84,6 +84,8 @@ def _nfd(text: str) -> str:
         ("人々2026年ガイド", "人々", True),
         # A letter and accent that lowercasing leaves apart are still the one letter.
         ("J\u030c guide for beginners", "\u01f0", True),
+        # The zero-width space separates words, unlike the joiners.
+        ("Best SEO\u200bAgencies for Small Businesses", "seo agencies", True),
         # CJK ideographs beyond the first plane (Extension B on) are unspaced too.
         ("𠀀𠀁𠀂", "𠀁", True),
         ("2026年𠮷野家の店舗", "𠮷野家", True),
@@ -91,6 +93,22 @@ def _nfd(text: str) -> str:
 )
 def test_a_keyphrase_in_any_script_is_matched(title, keyphrase, expected):
     assert contains_keyphrase(title, keyphrase) is expected
+
+
+def test_an_armenian_keyphrase_is_measured_as_it_is_written():
+    """Matching reads "և" as "եւ", but it takes one character in a title."""
+    keyphrase = "սուրճ և թեյ և հաց և պանիր և միրգ և բանջարեղեն և քաղցրավենիք և կաթ և ձու"
+    assert len(keyphrase) == 71
+    assert keyphrase_fits_a_title(keyphrase)
+    assert title_max_chars(keyphrase) == 75
+
+
+def test_a_keyphrase_starting_with_a_dotless_i_can_still_be_repaired():
+    """Capitalizing "ışık" gives "Işık", which lowercases to a dotted i: it stays as typed."""
+    title = keyphrase_title("ışık terapisi")
+    assert title is not None
+    assert "ışık Terapisi" in title
+    assert contains_keyphrase(title, "ışık terapisi")
 
 
 def test_a_keyphrase_whose_capital_is_longer_can_still_be_repaired():
@@ -114,7 +132,7 @@ def test_a_keyphrase_is_measured_in_characters_however_it_was_typed():
 def test_a_keyword_in_another_script_fits_a_title():
     assert keyphrase_fits_a_title("项目管理软件")
     assert keyphrase_fits_a_title("برامج إدارة المشاريع")
-    assert title_max_chars("项目管理软件") == 59
+    assert title_max_chars("项目管理软件") == 60  # in width: 30 Chinese characters (G69c)
 
 
 def test_a_title_in_another_script_can_be_valid():

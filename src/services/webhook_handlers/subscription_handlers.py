@@ -58,7 +58,9 @@ from src.services.credit_grants import (
 )
 from src.services.duplicate_subscriptions import (
     LIVE_STATUSES,
+    is_known_duplicate,
     is_settled_duplicate,
+    lock_customer_subscriptions,
     provider_created_record,
     settle_duplicate_subscriptions,
 )
@@ -312,7 +314,10 @@ def _ignore_payment_after_refund(
 
 
 def _ignore_settled_duplicate(
-    subscription: UserSubscription, sub_data: Dict[str, Any], event: str
+    subscription: UserSubscription,
+    sub_data: Dict[str, Any],
+    event: str,
+    known: bool = False,
 ) -> bool:
     """A subscription settled as the older of two ends when it was settled.
 
@@ -321,7 +326,7 @@ def _ignore_settled_duplicate(
     subscription would give the plan again. A settled duplicate that Lemon Squeezy
     reports live again (resumed in its portal) bills again, so a person is told.
     """
-    if not is_settled_duplicate(subscription):
+    if not (is_known_duplicate if known else is_settled_duplicate)(subscription):
         return False
     logger.info(
         f"{event}: ignored, the subscription was settled as a duplicate",
@@ -344,6 +349,22 @@ def _ignore_settled_duplicate(
     return True
 
 
+def _settled_on_arrival(subscription: UserSubscription, settled, event: str) -> bool:
+    """The subscription just stored is the older of two (its webhook came last).
+
+    settle_duplicate_subscriptions() has cancelled and refunded it, or, while
+    automatic settlement is off, marked it for a person to; either way it gets no
+    promotion, discount record, creation audit or welcome email.
+    """
+    if subscription.id not in settled and not is_known_duplicate(subscription):
+        return False
+    logger.info(
+        f"{event}: the new subscription was settled as the older of two; nothing more is done",
+        extra={"subscription_id": str(subscription.id)},
+    )
+    return True
+
+
 async def _locked_subscription(
     db: AsyncSession, lemonsqueezy_subscription_id: Optional[str]
 ) -> Optional[UserSubscription]:
@@ -360,6 +381,24 @@ async def _locked_subscription(
         .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
+
+
+async def _lock_customer_of(db: AsyncSession, lemonsqueezy_subscription_id: Optional[str]) -> None:
+    """The settlement lock of the subscription's customer, taken before its row is locked.
+
+    For a handler that may settle a duplicate after changing the row (see
+    lock_customer_subscriptions for the order and why). A subscription we don't have has
+    no customer to lock; its handler deals with that itself.
+    """
+    user_id = (
+        await db.execute(
+            select(UserSubscription.user_id).where(
+                UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
+            )
+        )
+    ).scalar_one_or_none()
+    if user_id is not None:
+        await lock_customer_subscriptions(db, user_id)
 
 
 def _still_paid_through(subscription: UserSubscription) -> bool:
@@ -552,6 +591,9 @@ async def handle_subscription_created(
 
     internal_status = lemonsqueezy_status(status)
 
+    # The customer's lock before any row's: this handler settles a duplicate further down.
+    await lock_customer_subscriptions(db, user.id)
+
     # Check if subscription already exists (shouldn't happen due to idempotency, but be safe)
     existing_sub = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
@@ -735,13 +777,16 @@ async def handle_subscription_created(
         )
 
     # A second live Lemon Squeezy subscription bills twice: settle the older one.
-    await settle_duplicate_subscriptions(db, user.id)
+    settled = await settle_duplicate_subscriptions(db, user.id)
 
     # Update user's provider_customer_id if not set
     if not user.provider_customer_id and lemonsqueezy_customer_id:
         user.provider_customer_id = lemonsqueezy_customer_id
         await db.flush()
         logger.info(f"Updated user {user.id} provider_customer_id")
+
+    if _settled_on_arrival(subscription, settled, "subscription_created"):
+        return None
 
     # A promotion's bonus (the launch offer): a paid subscription started inside a
     # promotion's window gets it once. The first payment's invoice tries again
@@ -933,6 +978,10 @@ async def handle_subscription_updated(
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+        # The customer's lock before the first write: this branch ends the customer's local
+        # trial and then settles a duplicate, as subscription_created does.
+        await lock_customer_subscriptions(db, user.id)
+
         # Find plan by variant_id
         stmt = select(SubscriptionPlan).where(
             (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id)
@@ -1029,12 +1078,15 @@ async def handle_subscription_updated(
             },
         )
 
-        await settle_duplicate_subscriptions(db, user.id)
+        settled = await settle_duplicate_subscriptions(db, user.id)
 
         # Update user's provider_customer_id if not set
         if not user.provider_customer_id and lemonsqueezy_customer_id:
             user.provider_customer_id = lemonsqueezy_customer_id
             await db.flush()
+
+        if _settled_on_arrival(subscription, settled, "subscription_updated"):
+            return None
 
         # The recovered subscription gets its promotion's bonus as
         # subscription_created would have given it (once per subscription).
@@ -1412,7 +1464,18 @@ async def handle_subscription_cancelled(
         extra={"subscription_id": str(subscription.id), "status": subscription.status.value},
     )
 
-    # Fetch user + plan for the cancellation email
+    return await cancellation_email_task(db, subscription)
+
+
+async def cancellation_email_task(
+    db: AsyncSession, subscription: UserSubscription
+) -> Optional[Dict[str, Any]]:
+    """The cancellation's audit entry and its email (and in-app notice) data.
+
+    Used by subscription_cancelled and by the nightly reconcile when it finds a
+    cancellation whose webhook was missed.
+    """
+    end_date = subscription.end_date
     stmt = select(Users).where(Users.id == subscription.user_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -1915,6 +1978,9 @@ async def handle_subscription_payment_recovered(
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
     renews_at = sub_data.get("renews_at")
 
+    # The customer's lock before the row's: a recovery can end in a settlement (below).
+    await _lock_customer_of(db, lemonsqueezy_subscription_id)
+
     # Find subscription
     subscription = await _locked_subscription(db, lemonsqueezy_subscription_id)
 
@@ -1937,6 +2003,15 @@ async def handle_subscription_payment_recovered(
                 "event_updated_at": sub_data.get("updated_at"),
             },
         )
+        return None
+    # Paid again after it was settled as the older of two, or marked for a person to
+    # settle: it isn't restored, and a person is told the customer was charged again.
+    if _ignore_settled_duplicate(
+        subscription,
+        {**sub_data, "status": "active"},
+        "subscription_payment_recovered",
+        known=True,
+    ):
         return None
 
     # Get user for email

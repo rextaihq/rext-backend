@@ -6,7 +6,11 @@ import pytest
 from src.api.middleware.exceptions import RextExternalServiceException
 from src.api.schema.content_schema import ContentCreate
 from src.utils.storage import storage_service
-from src.web.wordpress import WordPressPublisher
+from src.web.wordpress import (
+    BodyImageUploadError,
+    SiteRefusedCredentialsError,
+    WordPressPublisher,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -407,7 +411,10 @@ async def test_media_upload_failure_prevents_broken_post_from_being_published():
     )
     publisher.client.post = AsyncMock()
 
-    with pytest.raises(RextExternalServiceException, match="HTTP 401"):
+    # A refused login is said as one; the image isn't at fault (revnix/rext-control#677).
+    with pytest.raises(
+        SiteRefusedCredentialsError, match="refused the username or the application password"
+    ):
         await publisher.publish_post(
             ContentCreate(
                 title="Upload must succeed",
@@ -584,6 +591,142 @@ async def test_a_scheduled_publish_retries_only_an_image_failure_that_may_pass(
         )
 
     assert _is_transient_publish_error(raised.value) is retried
+
+
+def _plugin_publisher() -> WordPressPublisher:
+    return WordPressPublisher(
+        site_url="https://example.com",
+        api_endpoint="https://example.com/wp-json/rext-ai/v1",
+        api_key="rotated-away",
+    )
+
+
+def _downloads_a_png(publisher: WordPressPublisher) -> None:
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.rext.test/image.png"),
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refusal", [401, 403])
+async def test_a_refused_key_at_the_image_upload_is_said_as_the_key_not_the_image(refusal):
+    """revnix/rext-control#677: with a wrong key saved, the publish blamed an image that was
+    fine, and replacing it changed nothing."""
+    from src.tasks.scheduled_tasks import _get_publish_failure_reason, _is_transient_publish_error
+
+    publisher = _plugin_publisher()
+    _downloads_a_png(publisher)
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(refusal, json={"code": "rext_invalid_key"})
+    )
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(SiteRefusedCredentialsError) as raised:
+        await publisher.publish_post(
+            ContentCreate(
+                title="A fine image",
+                body_html='<img src="https://cdn.rext.test/image.png">',
+            ),
+            categories=[3],
+        )
+
+    error = raised.value
+    assert error.message.startswith("Publishing stopped: the site refused the API key.")
+    assert "Copy the key from the Rext AI plugin's settings" in error.message
+    for text in (error.message, error.notice):
+        assert "image" not in text
+        assert "rotated-away" not in text
+    assert not isinstance(error, BodyImageUploadError)
+    # The site refuses the same key again: a scheduled publish doesn't retry it, and its
+    # notice to the person is the same plain sentence.
+    assert _is_transient_publish_error(error) is False
+    assert _get_publish_failure_reason(error) == error.notice
+    publisher.client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refusal", [401, 403])
+async def test_a_refused_key_at_the_post_call_is_said_as_the_key(refusal):
+    from src.tasks.scheduled_tasks import _is_transient_publish_error
+
+    publisher = _plugin_publisher()
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(refusal, json={"code": "rext_invalid_key"})
+    )
+
+    with pytest.raises(SiteRefusedCredentialsError) as raised:
+        await publisher.publish_post(
+            ContentCreate(title="No images", body_html="<p>Text only.</p>"),
+            categories=[3],
+        )
+
+    assert raised.value.message.startswith("Publishing stopped: the site refused the API key.")
+    assert "https://example.com" not in raised.value.message
+    assert _is_transient_publish_error(raised.value) is False
+    publisher.client.post.assert_awaited_once()
+
+
+def test_a_403_says_what_else_it_can_be():
+    """HTTP 403 is the site saying no to a request it could read: a security plugin answers a
+    right key that way, and a WordPress user without the role gets it too."""
+    with_key = SiteRefusedCredentialsError(uses_api_key=True, status_code=403)
+    assert with_key.notice.startswith("The site refused the API key.")
+    assert "a security plugin or a firewall" in with_key.notice
+
+    with_user = SiteRefusedCredentialsError(uses_api_key=False, status_code=403)
+    assert "a role that can publish posts and upload media" in with_user.notice
+    assert "password" not in with_user.notice
+
+    wrong_password = SiteRefusedCredentialsError(uses_api_key=False, status_code=401)
+    assert wrong_password.notice == "The site refused the username or the application password."
+
+
+@pytest.mark.asyncio
+async def test_a_refused_key_at_a_featured_image_outside_the_body_stops_the_publish():
+    """Any other failure of that image publishes the post without it. A refused key would only
+    fail again at the post call, so it stops here, said as the key."""
+    publisher = _plugin_publisher()
+    _downloads_a_png(publisher)
+    publisher.client.send = AsyncMock(return_value=httpx.Response(401, json={}))
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(SiteRefusedCredentialsError):
+        await publisher.publish_post(
+            ContentCreate(
+                title="A hero only",
+                body_html="<p>Text only.</p>",
+                images_data={"feature_image_url": "https://cdn.rext.test/image.png"},
+            ),
+            categories=[3],
+        )
+
+    publisher.client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_image_the_site_finds_too_large_is_still_said_as_the_image():
+    publisher = _plugin_publisher()
+    _downloads_a_png(publisher)
+    publisher.client.send = AsyncMock(return_value=httpx.Response(413, json={}))
+    publisher.client.post = AsyncMock()
+
+    with pytest.raises(BodyImageUploadError) as raised:
+        await publisher.publish_post(
+            ContentCreate(
+                title="A large image",
+                body_html='<img src="https://cdn.rext.test/image.png">',
+            ),
+            categories=[3],
+        )
+
+    assert "an image in the article" in raised.value.message
+    assert "HTTP 413" in raised.value.message
+    publisher.client.post.assert_not_awaited()
 
 
 def test_an_image_that_isnt_one_is_not_retried():

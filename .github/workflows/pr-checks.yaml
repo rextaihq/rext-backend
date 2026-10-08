@@ -143,8 +143,9 @@ jobs:
         # The baseline migration is schema only; the RBAC seed is idempotent and prints only role and permission names.
         run: set -o pipefail; uv run python -m scripts.seed_permissions | tail -n 3
 
-      - name: Tests (reported, not blocking yet)
-        continue-on-error: true
+      - name: Tests
+        # Blocking since main went back to no failing test (2026-10-07): a failure or an error outside
+        # tests/quarantine.list turns this check red.
         # tests/ci_quarantine.py reports the failures of the tests in tests/quarantine.list as expected, so a failure
         # listed below is a new one, and ends the process once pytest has reported. A test that hangs fails after a
         # minute and the run goes on; the step stops after ten (the suite takes about four). pytest-timeout comes with

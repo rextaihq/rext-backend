@@ -109,11 +109,7 @@ GROUPS = {"a.test": {"top_result": {"title": "A", "snippet": "about a"}, "top_po
 async def test_the_same_rows_reuse_the_intent_answer(monkeypatch, day_cache):
     answer = (
         "COMMERCIAL",
-        {
-            "a.test": SEOIntentResult(
-                domain="a.test", intent="COMMERCIAL", confidence="high", is_brand=True
-            )
-        },
+        {"a.test": SEOIntentResult(domain="a.test", intent="COMMERCIAL", is_brand=True)},
         ["running shoes for women"],
     )
     classify = AsyncMock(return_value=answer)
@@ -202,7 +198,8 @@ async def test_the_library_save_makes_no_embedding(monkeypatch):
 
     await keyword_module.save_keyword_research(state, {}, runtime=SimpleNamespace(store=_Store()))
 
-    assert saved == [{"index": False}]
+    # Two writes: the item, and the search results kept beside it for a later start (E24).
+    assert saved == [{"index": False}, {"index": False}]
 
 
 # --- the timing lines -------------------------------------------------------------------

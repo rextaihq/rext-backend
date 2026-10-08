@@ -6,13 +6,14 @@ Strictly separates core content from SEO metadata.
 """
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
 import markdown
-from sqlalchemy import func, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,6 +31,7 @@ from src.api.models.content_models.publishing_result import (
     PublishingStatus,
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.content_schema import (
     ContentCreate,
     ContentSEODataSchema,
@@ -116,6 +118,37 @@ async def notify_content_published(content: Content, workspace_id) -> None:
     )
 
 
+def _host_of(address: Optional[str]) -> Optional[str]:
+    """The host of a site's address, lowercase and without "www."; None when it has none."""
+    if not address:
+        return None
+    text = address.strip()
+    parsed = urlparse(text if "://" in text else f"//{text}")
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    return host or None
+
+
+# A Markdown image embed and an HTML image tag: addresses in them are no links.
+_IMAGES = r"!\[[^]]*\]\([^)]*\)|<img[^>]*>"
+
+
+def _own_site_link(hosts: List[str]) -> str:
+    """A PostgreSQL pattern for a link to the workspace's own site, in Markdown or HTML:
+
+    - an address on one of these hosts, with or without "www." and with or without a scheme
+      ("https://example.com/x", "//example.com/x"). The host must end there (a path, a port, a
+      query, a closing bracket, a quote, a space or the text's end), so "example.com.au" is no
+      link to "example.com";
+    - a link from the site's root ("](/pricing)", href="/pricing"), which has no host at all.
+    """
+    names = "|".join(re.escape(host) for host in hosts)
+    ends = r'[/:?#)"<>\s' + "'" + "]"
+    opens = r'[("=\s' + "'" + "]"
+    absolute = rf"(://|{opens}//)(www\.)?({names})({ends}|$)"
+    from_the_root = r"(\]\(|href=[" + "\"'" + r"])/([^/]|$)"
+    return f"({absolute})|({from_the_root})"
+
+
 class ContentService:
     """
     Service for content business logic.
@@ -184,6 +217,8 @@ class ContentService:
         finished article while the editor's manual Save reconciles to the same
         row (no duplicate, no title-collision error).
         """
+        persona_id = await self._workspace_persona_id(workspace_id, data.persona_id)
+
         # Idempotency: reconcile to the existing row for this generation thread.
         if data.langgraph_thread_id:
             existing_by_thread = (
@@ -210,7 +245,7 @@ class ContentService:
                     images_data=data.images_data,
                     links_data=data.links_data,
                     schema_markup=data.schema_markup,
-                    persona_id=data.persona_id,
+                    persona_id=persona_id,
                 )
                 return await self.update_content(
                     existing_by_thread.id,
@@ -245,7 +280,7 @@ class ContentService:
             links_data=data.links_data,
             schema_markup=data.schema_markup,
             langgraph_thread_id=data.langgraph_thread_id,
-            persona_id=data.persona_id,
+            persona_id=persona_id,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -337,6 +372,8 @@ class ContentService:
         ]
         for field in updatable_fields:
             val = getattr(data, field, None)
+            if field == "persona_id":
+                val = await self._workspace_persona_id(workspace_id, val)
             if val is not None:
                 setattr(content, field, val)
 
@@ -453,12 +490,15 @@ class ContentService:
             for pr in pub_data:
                 if pr.content_id not in pub_results:
                     pub_results[pr.content_id] = []
+                # The names of ContentPublishingResultSchema, as the API's spec gives them.
                 pub_results[pr.content_id].append(
                     {
                         "site_id": str(pr.site_id),
                         "status": pr.status,
-                        "url": pr.external_url,
-                        "last_synced": pr.last_synced_at.isoformat() if pr.last_synced_at else None,
+                        "external_url": pr.external_url,
+                        "last_synced_at": (
+                            pr.last_synced_at.isoformat() if pr.last_synced_at else None
+                        ),
                     }
                 )
 
@@ -475,6 +515,72 @@ class ContentService:
             "limit": limit,
             "offset": offset,
         }
+
+    async def content_health(self, workspace_id: UUID) -> Dict[str, Any]:
+        """Counts over the workspace's published articles, for the home's content health card
+        (FB2.27a): how many have no meta description, and how many link to none of the
+        workspace's own sites. Counted in the database: no article body is read out.
+
+        `no_internal_links` is None when the workspace has no address to look for (no website
+        and no connected site): "every article" would be a count of nothing.
+        """
+        # A description of spaces, tabs or line breaks only is no description.
+        has_description = ContentSEOData.meta_description.op("~")(r"\S")
+        counts = [
+            func.count(),
+            func.count().filter(
+                or_(ContentSEOData.meta_description.is_(None), not_(has_description))
+            ),
+        ]
+        hosts = await self._own_hosts(workspace_id)
+        if hosts:
+            # The published article is its introduction and its body: the Markdown body, or the
+            # HTML one when there is no Markdown (as the WordPress publisher chooses). An image
+            # is no link, so image embeds are taken out before the search.
+            own_site_link = _own_site_link(hosts)
+            body = func.coalesce(func.nullif(Content.body_markdown, ""), Content.body_html, "")
+            text = func.regexp_replace(
+                func.concat(func.coalesce(Content.introduction, ""), " ", body), _IMAGES, " ", "gi"
+            )
+            counts.append(func.count().filter(not_(text.op("~*")(own_site_link))))
+        # One statement, so the counts are of one moment and agree with each other.
+        row = (
+            await self.db.execute(
+                select(*counts)
+                .select_from(Content)
+                .outerjoin(ContentSEOData, ContentSEOData.content_id == Content.id)
+                .where(
+                    Content.workspace_id == workspace_id,
+                    Content.deleted_at.is_(None),
+                    Content.status == "published",
+                )
+            )
+        ).one()
+        return {
+            "published": row[0] or 0,
+            "missing_meta_description": row[1] or 0,
+            "no_internal_links": (row[2] or 0) if hosts else None,
+        }
+
+    async def _own_hosts(self, workspace_id: UUID) -> List[str]:
+        """The hosts of the workspace's website and of its connected sites, without "www."."""
+        website = await self.db.scalar(
+            select(WorkspaceModel.url).where(WorkspaceModel.id == workspace_id)
+        )
+        sites = (
+            await self.db.scalars(
+                select(WorkspaceIntegration.site_url).where(
+                    WorkspaceIntegration.workspace_id == workspace_id,
+                    WorkspaceIntegration.is_active.is_(True),
+                )
+            )
+        ).all()
+        hosts = set()
+        for address in (website, *sites):
+            host = _host_of(address)
+            if host:
+                hosts.add(host)
+        return sorted(hosts)
 
     async def get_content(self, content_id: UUID, workspace_id: UUID) -> Dict[str, Any]:
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
@@ -549,12 +655,43 @@ class ContentService:
             "author_email": persona.email if persona else None,
         }
 
+    async def _workspace_persona_id(
+        self, workspace_id: UUID, persona_id: Optional[UUID]
+    ) -> Optional[UUID]:
+        """`persona_id` when that persona is this workspace's own, else None.
+
+        The id arrives as the caller sent it, from the outline step or the API. Another
+        workspace's persona is never saved as an article's author: publishing would
+        credit it by name. The save goes through either way: a new article is saved
+        with no author persona, and an update leaves the article's author as it was
+        (a rejected value changes nothing, like any other field sent empty).
+        """
+        if not persona_id:
+            return None
+        from src.api.models.knowledge_models.persona_model import Persona
+
+        owned = (
+            await self.db.execute(
+                select(Persona.id).where(
+                    Persona.id == persona_id, Persona.workspace_id == workspace_id
+                )
+            )
+        ).scalar_one_or_none()
+        if owned is None:
+            logger.warning(
+                "content: persona %s is not in workspace %s; saved with no author persona",
+                persona_id,
+                workspace_id,
+            )
+        return owned
+
     async def author_persona_for(self, content: Content):
         """The author persona chosen for this article in the outline step, if any.
 
         Returns None when the article was written with no persona, or when the
         persona has since been deleted — in both cases WordPress publishes under
-        the connected account, as it did before a persona could be chosen.
+        the connected account, as it did before a persona could be chosen. Only a
+        persona of the article's own workspace is ever returned.
         """
         persona_id = getattr(content, "persona_id", None)
         if not persona_id:
@@ -562,11 +699,15 @@ class ContentService:
         from src.api.models.knowledge_models.persona_model import Persona
 
         persona = (
-            await self.db.execute(select(Persona).where(Persona.id == persona_id))
+            await self.db.execute(
+                select(Persona).where(
+                    Persona.id == persona_id, Persona.workspace_id == content.workspace_id
+                )
+            )
         ).scalar_one_or_none()
         if persona is None:
             logger.warning(
-                "[PUBLISH] content_id=%s references persona %s which no longer exists",
+                "[PUBLISH] content_id=%s references persona %s which is not in its workspace",
                 content.id,
                 persona_id,
             )

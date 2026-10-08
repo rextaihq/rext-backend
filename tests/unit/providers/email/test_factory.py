@@ -49,7 +49,9 @@ class TestEmailProviderFactoryGetProvider:
         mock_config.resend_from_email = "noreply@rext.com"
         mock_config.resend_from_name = "Rext AI"
 
-        provider = get_email_provider()
+        # The provider reads its own module's config: the same settings, not the environment's.
+        with patch("src.providers.email.resend_provider.email_config", mock_config):
+            provider = get_email_provider()
 
         assert isinstance(provider, ResendEmailProvider)
         assert provider.get_provider_name() == "resend"
@@ -191,7 +193,9 @@ class TestEmailProviderFactoryInstanceManagement:
         # Clear instances
         EmailProviderFactory.reset()
 
-        primary = get_email_provider()
+        # The provider reads its own module's config: the same settings, not the environment's.
+        with patch("src.providers.email.resend_provider.email_config", mock_config):
+            primary = get_email_provider()
         fallback = get_fallback_email_provider()
 
         assert primary is not fallback

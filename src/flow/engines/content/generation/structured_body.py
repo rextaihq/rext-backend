@@ -40,6 +40,8 @@ from src.flow.engines.content.generation.link_integrity import extract_links, re
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
     expand_section_containers,
+    faq_section_heading,
+    is_faq_section,
     render_section_plan,
     resolve_outline_structure,
 )
@@ -110,13 +112,46 @@ def _section_description(block: OutlineBlock) -> str:
         "REQUIRED — write it in full; never merge it into another section or leave it out."
         if block.required
         else "Optional — write it when the approved outline gives it content, otherwise leave null.",
-        f"Use the approved heading {block.heading!r} as `heading`; change its wording only to "
-        "read naturally, never its meaning.",
+        # A heading the user reworded in the outline step is theirs: it's used word for
+        # word, and assembly writes it whatever the model returns (G70,
+        # revnix/rext-control#586). The others may still be tuned for the keyphrase.
+        f"Use the heading {block.heading!r} as `heading`, word for word: the user wrote it."
+        if _heading_edited(block)
+        else f"Use the approved heading {block.heading!r} as `heading`; change its wording "
+        "only to read naturally, never its meaning.",
     ]
+    if isinstance(block.data, dict) and is_faq_section(block.data):
+        lines.append(
+            "This is the article's FAQ section: write the approved FAQs here, as questions "
+            "and answers. There is no other FAQ section."
+        )
     plan = render_section_plan(block.data)
     if plan:
         lines.append("Its approved plan:\n" + plan)
     return "\n".join(lines)
+
+
+def _heading_edited(block: OutlineBlock) -> bool:
+    return isinstance(block.data, dict) and block.data.get("heading_edited") is True
+
+
+def _without_separate_faqs(
+    blocks: list[OutlineBlock], outline: dict, content_type: str
+) -> list[OutlineBlock]:
+    """The blocks less the outline's FAQ list when a planned section holds the FAQs.
+
+    That section is where they're written (G71, revnix/rext-control#587): the list as
+    a required block of its own made the writer write them twice.
+    """
+    if not faq_section_heading(outline, content_type):
+        return blocks
+    kept = [b for b in blocks if b.key not in ("faqs", "faq")]
+    if len(kept) != len(blocks):
+        logger.info(
+            "structured body: content_type=%s writes the FAQs in their planned section",
+            content_type,
+        )
+    return kept
 
 
 def _field_description(block: OutlineBlock) -> str:
@@ -153,7 +188,7 @@ def build_structured_body_model(
     break a production run.
     """
     resolved = blocks if blocks is not None else resolve_outline_structure(outline, content_type)
-    resolved = expand_section_containers(resolved)
+    resolved = _without_separate_faqs(expand_section_containers(resolved), outline, content_type)
     if not resolved:
         logger.info(
             "build_structured_body_model: no structural blocks for content_type=%s; "
@@ -290,7 +325,7 @@ def build_structured_content_model(
     # field of its own, so the writer can't fold sections together
     # (rext-control#329). After the collision filter: a container a typed field
     # owns (how-to-guide's `steps`) stays with that field.
-    resolved = expand_section_containers(resolved)
+    resolved = _without_separate_faqs(expand_section_containers(resolved), outline, content_type)
 
     # Resolved here rather than demanded from the caller, because everything it
     # needs is already in `outline` — so the call site is unchanged and no stage
@@ -402,18 +437,21 @@ def assemble_structured_payload(
     ordered = []
     for block in blocks:
         raw = content_dict.get(block.key)
+        written = None
         if isinstance(raw, dict):
             try:
-                ordered.append((block.key, ContentBlock(**raw)))
-                continue
+                written = ContentBlock(**raw)
             except Exception:
                 logger.warning(
                     "assemble_structured_payload: block %r malformed; skipping.", block.key
                 )
         elif isinstance(raw, ContentBlock):
-            ordered.append((block.key, raw))
-            continue
-        ordered.append((block.key, None))
+            written = raw
+        if written is not None and block.parent and _heading_edited(block):
+            # A heading the user reworded is written as they wrote it, never the
+            # model's rewording of it (G70, revnix/rext-control#586).
+            written = written.model_copy(update={"heading": block.heading})
+        ordered.append((block.key, written))
 
     assembled = blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
     payload = {k: v for k, v in content_dict.items() if k not in {b.key for b in blocks}}

@@ -10,7 +10,14 @@ from src.flow.engines.content.generation.focus_keyword import (
     resolve_focus_keyword,
 )
 from src.flow.model.llm_manager import load_model
-from src.flow.model.provider_outage import provider_outage
+from src.flow.model.provider_outage import (
+    STEP_FAILED,
+    UNREADABLE_ANSWER,
+    ProviderOutage,
+    ProviderUnavailable,
+    provider_outage,
+)
+from src.flow.model.runaway import ainvoke_watched, ran_away
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
@@ -369,7 +376,9 @@ async def _fetch_workspace_profile(workspace_id) -> dict:
 
 
 def _format_reader_and_offer(profile: dict) -> str:
-    """The workspace's reader and offer, as the outline prompt reads them."""
+    """The workspace's customers and offer, as the outline prompt reads them. The customers
+    are who the site serves, not the article's reader: that is whoever searches the keyword
+    (the prompt's rule 12), which is why the block doesn't say "who this is for"."""
     profile = profile or {}
     reader = [
         f"- Customer profile: {profile['customer_profile']}"
@@ -393,7 +402,7 @@ def _format_reader_and_offer(profile: dict) -> str:
         return "None available."
     blocks = []
     if reader:
-        blocks.append("WHO THIS IS FOR:\n" + "\n".join(reader))
+        blocks.append("WHO THE SITE SERVES:\n" + "\n".join(reader))
     if offer:
         blocks.append("WHAT THE BRAND OFFERS:\n" + "\n".join(offer))
     return "\n".join(blocks)
@@ -517,6 +526,29 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
         f"  Scores: {score_text or cluster.get('overall_score', '')}\n"
         f"  Rationale: {cluster.get('rationale', '')}"
     )
+
+
+# What a regeneration is shown of the rejected outline: the plan the model wrote. The rest of
+# the stored outline is the page's display copy of that plan, the heading map (in the prompt
+# under its own heading) and what was looked up after it was written (links, personas, the
+# brand's fit), plus the review's own marks: thousands of tokens the feedback never refers to.
+_NOT_THE_PLAN = frozenset(
+    {
+        "_render",
+        "cluster_heading_map",
+        "internal_links",
+        "persona_recommendations",
+        "selected_persona_id",
+        "brand_voice_promotion",
+        "rejected_reason",
+        "status",
+        "iteration_count",
+    }
+)
+
+
+def _previous_outline_for_prompt(outline_state: dict | None) -> dict:
+    return {key: value for key, value in (outline_state or {}).items() if key not in _NOT_THE_PLAN}
 
 
 # A step guide's whole body is its steps. On staging one How-To came back with one step and
@@ -710,6 +742,9 @@ async def generate_outline(state: REXT) -> dict:
         messages = prompt_template.format_messages(
             content_type=content_type,
             topic=topic,
+            # The reader rule names "whoever types the Focus Keyword"; a title the user wrote
+            # may not contain it, so the prompt states it.
+            focus_keyword=focus_keyword or topic,
             related_topics=", ".join(related_topics),
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
@@ -722,7 +757,7 @@ async def generate_outline(state: REXT) -> dict:
                 content_type, content_type_raw, outline_rejected_reason
             ),
             rejected_reason=outline_rejected_reason,
-            previous_outline=outline_state,
+            previous_outline=_previous_outline_for_prompt(outline_state),
         )
 
         # 🔒 Fail-fast guard
@@ -734,7 +769,9 @@ async def generate_outline(state: REXT) -> dict:
         with timed_stage(
             "outline_model", regenerating=outline_rejected_reason not in (None, "", "None")
         ):
-            generated_outline = await outline_model.ainvoke(messages)
+            generated_outline = await ainvoke_watched(
+                outline_model, messages, stage="outline_model", schema=model_schema
+            )
         outline_dict = generated_outline.model_dump()
 
         # Asked once more, only when the outline can't be written from: one extra model call.
@@ -752,7 +789,16 @@ async def generate_outline(state: REXT) -> dict:
             # The first outline stays unless the second is at least as full: a failed or thinner
             # second attempt never costs the run what it already had.
             try:
-                retried = (await outline_model.ainvoke([*messages, retry_note])).model_dump()
+                with timed_stage("outline_model", regenerating=reviewed, attempt=2):
+                    retried = (
+                        await ainvoke_watched(
+                            outline_model,
+                            [*messages, retry_note],
+                            stage="outline_model",
+                            schema=model_schema,
+                            attempts=1,  # itself the second attempt: four calls otherwise
+                        )
+                    ).model_dump()
             except Exception as error:
                 # An outage is the run's to report (the handler below), not a reason to return,
                 # and charge for, an outline already known to be thin.
@@ -803,17 +849,18 @@ async def generate_outline(state: REXT) -> dict:
         # The persona is ranked HERE rather than at extraction time because fit
         # is a property of the article (topic, title, intent, content type), not
         # of the workspace.
-        internal_links, persona_ranking, brand_voice_promotion = await asyncio.gather(
-            _fetch_internal_links(outline_dict, workspace_id),
-            _rank_personas_for_outline(
-                outline_dict,
-                workspace_id,
-                topic=topic,
-                search_intent=intent_distribution,
-                content_type=content_type,
-            ),
-            _fetch_brand_voice_promotion(outline_dict, workspace_id),
-        )
+        with timed_stage("outline_lookups"):
+            internal_links, persona_ranking, brand_voice_promotion = await asyncio.gather(
+                _fetch_internal_links(outline_dict, workspace_id),
+                _rank_personas_for_outline(
+                    outline_dict,
+                    workspace_id,
+                    topic=topic,
+                    search_intent=intent_distribution,
+                    content_type=content_type,
+                ),
+                _fetch_brand_voice_promotion(outline_dict, workspace_id),
+            )
         recommended_persona_id, persona_recommendations = persona_ranking
         outline_dict["internal_links"] = internal_links
         outline_dict["selected_persona_id"] = recommended_persona_id
@@ -841,8 +888,13 @@ async def generate_outline(state: REXT) -> dict:
         if provider_outage(e) is not None:
             raise
         logger.exception("Error generating outline")
-        return {
-            "content": {
-                "error": "We couldn't generate the requested content right now. Please try again.",
-            }
-        }
+        # No outline: the run ends with the same notice. It used to go on to the review step,
+        # which opened on an empty outline (rext-control#697). Nothing has been charged: the
+        # outline is charged only once it is written.
+        raise ProviderUnavailable(
+            ProviderOutage(
+                provider="OpenAI",
+                kind=UNREADABLE_ANSWER if ran_away(e) else STEP_FAILED,
+                detail=type(e).__name__,
+            )
+        ) from e

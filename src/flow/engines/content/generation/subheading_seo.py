@@ -532,10 +532,14 @@ async def _llm_rewrite(request: dict) -> list[dict]:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from src.flow.model.llm_manager import load_model
+    from src.flow.model.runaway import ainvoke_watched
 
     model = load_model(max_tokens=2048, temperature=0.4).with_structured_output(HeadingRewritePlan)
-    plan = await model.ainvoke(
-        [SystemMessage(content=request["system"]), HumanMessage(content=request["human"])]
+    plan = await ainvoke_watched(
+        model,
+        [SystemMessage(content=request["system"]), HumanMessage(content=request["human"])],
+        stage="heading_rewrites",
+        schema=HeadingRewritePlan,
     )
     if isinstance(plan, HeadingRewritePlan):
         return [r.model_dump() for r in plan.rewrites]

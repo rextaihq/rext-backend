@@ -6,11 +6,15 @@ every Library-started article was written without SERP data, and any text in
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import langgraph.config as langgraph_config
 import pytest
+from langgraph.store.memory import InMemoryStore
 
+import src.flow.engines.seo.keyword_recomendation as keyword_module
 import src.flow.engines.serp.normalization as normalization_module
 import src.services.notification_helper as notification_module
 import src.utils.credit_manager as credit_module
@@ -23,6 +27,7 @@ from src.flow.engines.router.library_router import library_router
 from src.flow.engines.seo.library_item import (
     LIBRARY_ITEM_MESSAGE,
     LIBRARY_ITEM_MISSING,
+    LIBRARY_RESEARCH_FRESH_FOR,
     charge_library_start,
     library_charge_router,
     library_item_router,
@@ -94,8 +99,9 @@ async def test_a_library_start_loads_the_item_from_the_callers_library(billing):
         _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
     )
 
-    # The signed-in user's Library, not the user id the payload claims.
-    assert store.asked == [(("library", U1, W1), KEY)]
+    # The signed-in user's Library, not the user id the payload claims; then the
+    # analysis's kept search results, which this item has none of.
+    assert store.asked == [(("library", U1, W1), KEY), (("library_research", U1, W1), KEY)]
     # The stored keyword and market, not the start's.
     assert update["serp_payload"] == {"query": "content marketing roi", "country": "United Kingdom"}
     assert update["content"] == {"error": None, "error_code": None}
@@ -235,3 +241,155 @@ def test_the_charges_lead_to_the_content_steps_or_the_credits_end():
     assert ("charge_library_start", "content_engine") in edges
     assert ("charge_library_start", "insufficient_credits") in edges
     assert ("serp_engine", "content_engine") not in edges
+
+
+# E24 (rext-control#496): a start within a week of its analysis reuses the analysis's
+# search results instead of reading them, and paying for them, again.
+
+RESEARCH_NS = ("library_research", U1, W1)
+
+
+def _research(age: timedelta) -> dict:
+    return {
+        "analysed_at": (datetime.now(timezone.utc) - age).isoformat(),
+        "serp_normalized": {
+            "query": "content marketing roi",
+            "normalize_results": [{"title": "A", "url": "https://a.test", "position": 1}],
+            "related_topics": ["content marketing metrics"],
+            "questions": ["How do you measure content marketing ROI?"],
+            "features": {"people_also_ask": True, "ai_overview": False},
+            "intent_matched_signals": {"primary_intent": "commercial", "titles": ["A"]},
+        },
+        "competitors": [{"domain": "a.test", "top_positions": [1], "total_occurrences": 1}],
+        "final_intent_type": "commercial",
+        "related_searches": ["content roi calculator"],
+    }
+
+
+@pytest.fixture
+def said(monkeypatch):
+    events = []
+    monkeypatch.setattr(langgraph_config, "get_stream_writer", lambda: events.append)
+    return events
+
+
+async def test_a_start_within_a_week_reuses_the_analysis_search_results(billing, said):
+    charged, _ = billing
+    research = _research(timedelta(days=2))
+    store = Store({(("library", U1, W1), KEY): ITEM, (RESEARCH_NS, KEY): research})
+
+    update = await load_library_item(
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
+    )
+
+    # What the SERP step would have left, from the analysis.
+    assert update["serp_normalized"] == research["serp_normalized"]
+    assert update["competitors"] == research["competitors"]
+    assert update["final_intent_type"] == "commercial"
+    assert update["serp_result"] == {
+        "related_searches": ["content roi calculator"],
+        "serp_status": "ok",
+    }
+    assert update["seo_result"]["intent_type"] == "commercial"
+    assert (
+        update["seo_result"]["keyword_recommendations"]["research_reused_at"]
+        == (research["analysed_at"])
+    )
+    # Straight to the charges, without a SERP; the start screen is told.
+    assert library_item_router({"content": {}, **update}) == "charge_library_start"
+    assert said == [
+        {
+            "type": "library",
+            "step": "library.research_reused",
+            "analysed_at": research["analysed_at"],
+        }
+    ]
+    charged.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "research",
+    [
+        _research(LIBRARY_RESEARCH_FRESH_FOR + timedelta(hours=1)),
+        None,
+        {**_research(timedelta(days=1)), "serp_normalized": {"normalize_results": []}},
+        {**_research(timedelta(days=1)), "analysed_at": "not a time"},
+    ],
+    ids=["older than a week", "never kept", "no results kept", "unreadable time"],
+)
+async def test_any_other_start_reads_the_search_results_again(billing, said, research):
+    items = {(("library", U1, W1), KEY): {**ITEM, "timestamp": "2026-09-20T10:00:00+00:00"}}
+    if research is not None:
+        items[(RESEARCH_NS, KEY)] = research
+    store = Store(items)
+
+    update = await load_library_item(
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
+    )
+
+    assert "serp_normalized" not in update and "competitors" not in update
+    assert update["seo_result"]["keyword_recommendations"]["research_reused_at"] is None
+    assert library_item_router({"content": {}, **update}) == "serp_engine"
+    assert said == [
+        {
+            "type": "library",
+            "step": "library.research_refreshed",
+            "analysed_at": "2026-09-20T10:00:00+00:00",
+        }
+    ]
+
+
+async def test_a_start_that_reuses_its_research_pays_only_for_its_titles(billing):
+    charged, _ = billing
+    state = {
+        "serp_payload": {**_state()["serp_payload"], "query": "content marketing roi"},
+        "seo_result": {
+            "keyword_recommendations": {"research_reused_at": "2026-10-06T09:00:00+00:00"}
+        },
+    }
+
+    assert await charge_library_start(state) == {}
+
+    assert [c.args[2] for c in charged.await_args_list] == ["title_generation"]
+
+
+async def test_the_analysis_keeps_its_search_results_beside_the_item(monkeypatch):
+    monkeypatch.setattr(keyword_module, "has_organic_results", lambda state: True)
+    store = InMemoryStore()
+    research = _research(timedelta(0))
+    state = {
+        "serp_payload": {
+            "query": "content marketing roi",
+            "country": "us",
+            "user_id": U1,
+            "workspace_id": W1,
+        },
+        "serp_normalized": {
+            **research["serp_normalized"],
+            # Not read after the SERP step: not kept.
+            "stats": {"organic_count": 1},
+            "domain_stats": {"unique_domains": 1},
+        },
+        "competitors": research["competitors"],
+        "final_intent_type": "commercial",
+        "serp_result": {"related_searches": ["content roi calculator"], "organic_results": [{}]},
+        "seo_result": {"serp_backlinks": {"main_intent": "informational", "search_volume": 320}},
+    }
+
+    update = await keyword_module.save_keyword_research(
+        state, {}, runtime=SimpleNamespace(store=store)
+    )
+
+    key = update["seo_result"][keyword_module.KEYWORD_RESEARCH_KEY]
+    item = await store.aget(("library", U1, W1), key)
+    kept = await store.aget(RESEARCH_NS, key)
+    # Beside the item, not in it: the dashboard downloads every item's value.
+    assert "serp_normalized" not in item.value and "competitors" not in item.value
+    assert kept.value == {**research, "analysed_at": item.value["timestamp"]}
+
+
+def test_a_fresh_analysis_leads_from_the_item_straight_to_the_charges():
+    edges = {(e.source, e.target) for e in create_rext_engine().get_graph().edges}
+
+    assert ("load_library_item", "charge_library_start") in edges
+    assert ("load_library_item", "serp_engine") in edges

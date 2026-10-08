@@ -28,9 +28,11 @@ writes it from its heading, as a required planned section.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from src.flow.engines.content.generation.outline_structure import (
+    FAQ_HEADING,
     item_heading_field,
     resolve_outline_structure,
     section_containers,
@@ -42,6 +44,8 @@ HEADING_LEVELS = ("H2", "H3", "H4")
 # More than this many added sections in one approval is not a review any more;
 # the rest are ignored and logged.
 MAX_ADDED_SECTIONS = 6
+# A list item's own number in its heading: "5. SEO.ai …", "2) Surfer …".
+_NUMBERED_HEADING = re.compile(r"^(\d{1,2})([.)])(\s+)")
 
 
 def _row_id(path: str, index: int) -> str:
@@ -111,12 +115,71 @@ def _edited_item(item: dict, row: dict) -> dict:
     item = dict(item)
     heading = row.get("heading")
     field = item_heading_field(item)
+    # The FAQ section keeps a mark whatever it's renamed to, so the writer puts the
+    # FAQs there rather than adding another FAQ section (G71, revnix/rext-control#587).
+    if field and FAQ_HEADING.search(item[field]):
+        item["holds_faqs"] = True
     if field and isinstance(heading, str) and heading.strip():
+        if heading.strip() != item[field].strip():
+            # The user's own wording is written as it is (G70, revnix/rext-control#586).
+            item["heading_edited"] = True
         item[field] = heading.strip()
     level = row.get("heading_level")
     if level in HEADING_LEVELS and item.get("heading_level") in HEADING_LEVELS:
         item["heading_level"] = level
     return item
+
+
+def _number_runs(items: list[dict]) -> list[list[int]]:
+    """The list's runs of numbered headings: consecutive, at one heading level.
+
+    A heading without a number, or at another level (the next H2 after a run of
+    H3s), ends a run, so "1. Install / 2. Configure" under one H2 and "1. Measure /
+    2. Iterate" under the next are two lists, not one of four.
+    """
+    runs: list[list[int]] = []
+    current: list[int] = []
+    level = None
+    for index, item in enumerate(items):
+        field = item_heading_field(item)
+        numbered = bool(field and _NUMBERED_HEADING.match(item[field]))
+        if numbered and current and item.get("heading_level") == level:
+            current.append(index)
+            continue
+        if current:
+            runs.append(current)
+        current = [index] if numbered else []
+        level = item.get("heading_level")
+    if current:
+        runs.append(current)
+    return runs
+
+
+def _renumbered(items: list[dict]) -> list[dict]:
+    """Each run of numbered headings ("1. …", "2. …") numbered again in its new order.
+
+    A moved item kept its old number ("5. SEO.ai" third), and the writer put it back
+    where its number said (G70, revnix/rext-control#586). A run counts from its lowest
+    number; a run of one is left alone, its number being part of its heading.
+    """
+    items = list(items)
+    for run in _number_runs(items):
+        if len(run) < 2:
+            continue
+        numbers = [
+            int(_NUMBERED_HEADING.match(items[index][item_heading_field(items[index])]).group(1))
+            for index in run
+        ]
+        for position, index in enumerate(run, min(numbers)):
+            item = dict(items[index])
+            field = item_heading_field(item)
+            item[field] = _NUMBERED_HEADING.sub(
+                lambda match, n=position: f"{n}{match.group(2)}{match.group(3)}",
+                item[field],
+                count=1,
+            )
+            items[index] = item
+    return items
 
 
 def _rows_by_list(rows: list) -> dict[str, list[tuple[int | None, dict]]]:
@@ -190,6 +253,7 @@ def apply_section_edits(outline: dict, content_type: str, rows: Any) -> dict:
         # A list that now opens on a subsection has no H2 above it.
         if reordered[0].get("heading_level") in ("H3", "H4"):
             reordered[0]["heading_level"] = "H2"
+        reordered = _renumbered(reordered)
         logger.info(
             "[OutlineEdits] %s: %d of %d sections, order %s",
             path,

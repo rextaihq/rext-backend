@@ -5,11 +5,23 @@ from uuid import UUID
 from langchain_core.runnables import RunnableConfig
 
 from src.flow.engines.content.generation.cta_labels import strip_cta_labels
+from src.flow.engines.content.generation.requirements_spec import approved_secondary_keywords
 from src.flow.states.rext import REXT
 from src.services.check_wording import user_detail
 from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
 
 logger = logging.getLogger(__name__)
+
+
+def _saved_secondary_keywords(content_state: dict, final: dict, focus_keyphrase: str) -> list:
+    """The secondary keywords saved with the article: the list the user approved at the
+    outline, not the copy the model may or may not have written back. An outline with a
+    keyword list decides, even when the user emptied it; the model's list is only for an
+    outline that carries none (an older run)."""
+    outline = content_state.get("outline") or {}
+    if isinstance(outline.get("keywords_to_include"), list):
+        return approved_secondary_keywords(outline, focus_keyphrase)
+    return final.get("secondary_keywords") or []
 
 
 class ArticleNotSaved(RuntimeError):
@@ -198,7 +210,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         # (keyword_density.py). The column already existed and was never
         # populated, so the UI had no density to show.
         keyphrase_density=_as_float(final.get("keyphrase_density")),
-        secondary_keywords=final.get("secondary_keywords") or [],
+        secondary_keywords=_saved_secondary_keywords(content_state, final, focus_keyphrase),
         seo_score=_as_float(on_page.get("seo_health_score")),
         readability_score=_as_float(
             readability.get("flesch_reading_ease") or readability.get("score")

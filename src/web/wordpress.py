@@ -212,6 +212,53 @@ class BodyImageUploadError(RextExternalServiceException):
         )
 
 
+# What a person reads when the site no longer accepts the connection's credentials: at Test
+# connection, and when a publish is refused the same way.
+_REFUSED_API_KEY = (
+    "The site refused the API key. Copy the key from the Rext AI plugin's "
+    "settings and update the connection."
+)
+_REFUSED_PASSWORD = "The site refused the username or the application password."
+
+
+def _refused_notice(uses_api_key: bool, status_code: int) -> str:
+    """HTTP 401 is the credentials themselves. HTTP 403 is the site saying no to a request it
+    could read: with a key that is most often the key too, but a security plugin answers the
+    same way; with a WordPress user it is that user's role."""
+    if status_code != 403:
+        return _REFUSED_API_KEY if uses_api_key else _REFUSED_PASSWORD
+    if uses_api_key:
+        return (
+            f"{_REFUSED_API_KEY} If the key is right, a security plugin or a firewall on the "
+            "site may be blocking Rext AI."
+        )
+    return (
+        "The site didn't allow the connected user to do this. The user needs a role that can "
+        "publish posts and upload media, such as Editor."
+    )
+
+
+class SiteRefusedCredentialsError(RextExternalServiceException):
+    """A publish stopped because the site answered HTTP 401 or 403 to the media upload or to the
+    post call: it no longer accepts the connection's API key (or its username and application
+    password), as after the key is changed in WordPress. Nothing in the article is at fault, so
+    the message names no image (revnix/rext-control#677).
+
+    ``notice`` says it for the person, in the Connect dialog's words. ``transient`` is always
+    false: the site refuses the same key again, so a scheduled publish doesn't retry it."""
+
+    transient = False
+
+    def __init__(self, uses_api_key: bool, status_code: int):
+        self.notice = _refused_notice(uses_api_key, status_code)
+        super().__init__(
+            message=f"Publishing stopped: {self.notice[0].lower()}{self.notice[1:]}",
+            service_name="WordPress",
+            service_error=f"HTTP {status_code}",
+            context={"transient": False},
+        )
+
+
 def _body_image_refusal(error: Exception, image_url: str) -> BodyImageUploadError:
     reason = _redact_urls(getattr(error, "message", None) or str(error), image_url)
     transient = isinstance(error, ExternalServiceTimeoutException) or bool(
@@ -492,10 +539,7 @@ class WordPressPublisher:
         if code in (401, 403):
             return outcome(
                 "invalid_credentials",
-                "The site refused the API key. Copy the key from the Rext AI plugin's "
-                "settings and update the connection."
-                if self.api_key
-                else "The site refused the username or the application password.",
+                _REFUSED_API_KEY if self.api_key else _REFUSED_PASSWORD,
             )
         if code == 404:
             return outcome(
@@ -835,6 +879,8 @@ class WordPressPublisher:
             if media_info is None:
                 try:
                     media_info = await self._upload_featured_image(image_url, alt_text=alt_text)
+                except SiteRefusedCredentialsError:
+                    raise
                 except Exception as exc:
                     logger.error(
                         "[WordPress Publish] failed to sync embedded image=%s; stopping the publish",
@@ -978,6 +1024,12 @@ class WordPressPublisher:
                 await asyncio.sleep(delay)
                 continue
             return response
+
+    def _raise_if_credentials_refused(self, response: httpx.Response) -> None:
+        """HTTP 401 or 403 from the site on a publish call: it refused the connection's key. Only
+        for the site's own answers, never an image's download from somewhere else."""
+        if response.status_code in (401, 403):
+            raise SiteRefusedCredentialsError(bool(self.api_key), response.status_code)
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Raise a useful HTTP exception even when the response lacks a bound request."""
@@ -1281,6 +1333,8 @@ class WordPressPublisher:
                 _body_summary(media_response),
             )
 
+            # The key, not the image: said as such, before the image's own refusals.
+            self._raise_if_credentials_refused(media_response)
             if media_response.status_code != 201:
                 reason = (
                     f"WordPress media API returned HTTP {media_response.status_code}; "
@@ -1730,6 +1784,9 @@ class WordPressPublisher:
             logger.info("[WordPress Publish] featured image alt=%r", featured_alt)
             try:
                 media_info = await self._upload_featured_image(image_url, alt_text=featured_alt)
+            except SiteRefusedCredentialsError:
+                # Not this image's failure: the post call would be refused the same way.
+                raise
             except Exception as exc:
                 if image_url in body_images and not self._is_existing_wordpress_media_url(
                     image_url
@@ -1900,6 +1957,7 @@ class WordPressPublisher:
 
             logger.info("[WordPress Publish] post_response_status=%s", response.status_code)
             logger.info("[WordPress Publish] post_response_body=%s", _body_summary(response))
+            self._raise_if_credentials_refused(response)
             self._raise_for_status(response)
 
             raw = response.json()

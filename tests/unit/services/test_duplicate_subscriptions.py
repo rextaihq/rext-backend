@@ -282,6 +282,154 @@ async def test_one_settlement_per_customer_at_a_time(session, alerts, monkeypatc
     assert params == {"key": f"subscriptions:settle:{user.id}"}
 
 
+def _record_statements(session, monkeypatch):
+    """Every statement the session executes from here on, as (sql, parameters)."""
+    statements = []
+    execute = session.execute
+
+    async def recording(statement, *args, **kwargs):
+        statements.append((str(statement), args[0] if args else None))
+        return await execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", recording)
+    return statements
+
+
+def _customer_lock_then_row_lock(statements, user_id):
+    """Whether the customer's settlement lock was taken before any row was locked."""
+    customer_lock = next(
+        i for i, (sql, _) in enumerate(statements) if "pg_advisory_xact_lock" in sql
+    )
+    row_lock = next(i for i, (sql, _) in enumerate(statements) if "FOR UPDATE" in sql)
+    assert statements[customer_lock][1] == {"key": f"subscriptions:settle:{user_id}"}
+    return customer_lock < row_lock
+
+
+@pytest.mark.asyncio
+async def test_a_recovery_takes_the_customer_s_lock_before_the_row_s(session, alerts, monkeypatch):
+    """It can end in a settlement, so it takes the locks in the settlement's order (#724).
+
+    Storing a new purchase holds the customer's lock and then writes the older rows; a
+    recovery that held its row and then waited for the customer's lock would deadlock with it.
+    """
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_recovered,
+    )
+
+    user, (older, _) = await _customer_with(
+        session, SubscriptionStatus.UNPAID, SubscriptionStatus.ACTIVE
+    )
+    provider = _provider()
+    monkeypatch.setattr(module, "get_payment_provider_singleton", lambda: provider)
+    statements = _record_statements(session, monkeypatch)
+
+    await handle_subscription_payment_recovered(
+        {
+            "data": {
+                "type": "subscription-invoices",
+                "id": "inv-order",
+                "attributes": {
+                    "subscription_id": older.lemonsqueezy_subscription_id,
+                    "total": 8900,
+                },
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_payment_recovered"),
+        session,
+    )
+
+    assert _customer_lock_then_row_lock(statements, user.id)
+
+
+@pytest.mark.asyncio
+async def test_a_new_purchase_takes_the_customer_s_lock_before_any_row_s(
+    session, alerts, monkeypatch
+):
+    """subscription_created locks its own row if one exists already: the customer first."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    provider = _provider()
+    monkeypatch.setattr(module, "get_payment_provider_singleton", lambda: provider)
+    monkeypatch.setattr(handlers, "grant_promotion_bonus", AsyncMock())
+    user, (newer,) = await _customer_with(session, SubscriptionStatus.ACTIVE)
+    newer.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    plan = await session.get(SubscriptionPlan, newer.plan_id)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{uuid4().hex[:6]}"
+    await session.flush()
+    statements = _record_statements(session, monkeypatch)
+
+    await handlers.handle_subscription_created(
+        {
+            "data": {
+                "type": "subscriptions",
+                "id": "ls-lock-order",
+                "attributes": {
+                    "status": "active",
+                    "variant_id": plan.lemonsqueezy_variant_id_monthly,
+                    "user_email": user.email,
+                    "created_at": "2026-10-06T09:00:00Z",
+                    "updated_at": "2026-10-06T09:00:05Z",
+                },
+            },
+            "custom_data": {"user_id": str(user.id)},
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_created"),
+        session,
+    )
+
+    assert _customer_lock_then_row_lock(statements, user.id)
+
+
+@pytest.mark.asyncio
+async def test_an_update_that_stores_the_purchase_takes_the_customer_s_lock_first(
+    session, alerts, monkeypatch
+):
+    """subscription_updated can arrive first and store the purchase itself (#724).
+
+    That branch ends the customer's local trial and then settles, as subscription_created
+    does: the customer's lock comes before it reads or writes any of the customer's rows.
+    """
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    provider = _provider()
+    monkeypatch.setattr(module, "get_payment_provider_singleton", lambda: provider)
+    monkeypatch.setattr(handlers, "grant_promotion_bonus", AsyncMock())
+    user, (newer,) = await _customer_with(session, SubscriptionStatus.ACTIVE)
+    newer.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    plan = await session.get(SubscriptionPlan, newer.plan_id)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{uuid4().hex[:6]}"
+    await session.flush()
+    statements = _record_statements(session, monkeypatch)
+
+    await handlers.handle_subscription_updated(
+        {
+            "data": {
+                "type": "subscriptions",
+                "id": "ls-update-first",
+                "attributes": {
+                    "status": "active",
+                    "variant_id": plan.lemonsqueezy_variant_id_monthly,
+                    "user_email": user.email,
+                    "created_at": "2026-10-06T09:00:00Z",
+                    "updated_at": "2026-10-06T09:00:05Z",
+                },
+            },
+            "custom_data": {"user_id": str(user.id)},
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_updated"),
+        session,
+    )
+
+    customer_lock = next(
+        i for i, (sql, _) in enumerate(statements) if "pg_advisory_xact_lock" in sql
+    )
+    customer_rows = next(
+        i for i, (sql, _) in enumerate(statements) if "WHERE user_subscriptions.user_id" in sql
+    )
+    assert statements[customer_lock][1] == {"key": f"subscriptions:settle:{user.id}"}
+    assert customer_lock < customer_rows
+
+
 @pytest.mark.asyncio
 async def test_a_settled_duplicate_keeps_its_end_when_lemon_squeezy_cancels_it(
     session, alerts, monkeypatch
@@ -364,3 +512,203 @@ async def test_while_automatic_settlement_is_off_a_person_is_asked_once(
     older.status = SubscriptionStatus.CANCELLED
     older.end_date = NOW + timedelta(days=20)
     assert billing_action(older) is None
+
+
+# --- revnix/rext-control#529, part A: before automatic settlement is turned on ----------
+
+
+@pytest.mark.asyncio
+async def test_a_known_duplicate_grants_nothing(session, alerts):
+    """Settled here or left to a person, a duplicate never gives the plan, even before its end."""
+    from src.api.models.subscription_models.subscriptions import subscription_grants_access
+
+    user, (found, settled, kept) = await _customer_with(
+        session, SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED, SubscriptionStatus.ACTIVE
+    )
+    found.subscription_metadata = {"duplicate_found_of": str(kept.id)}
+    settled.subscription_metadata = {"duplicate_of": str(kept.id)}
+    settled.end_date = NOW + timedelta(days=25)  # Lemon Squeezy's paid-through end
+    await session.flush()
+
+    granting = (
+        await session.scalars(
+            select(UserSubscription.id).where(
+                UserSubscription.user_id == user.id, subscription_grants_access()
+            )
+        )
+    ).all()
+
+    assert granting == [kept.id]
+
+
+@pytest.mark.asyncio
+async def test_a_late_recovery_on_a_settled_duplicate_changes_nothing_and_tells_a_person(
+    session, alerts, monkeypatch
+):
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    handler_alerts = MagicMock()
+    monkeypatch.setattr(handlers, "trigger_payment_alert", handler_alerts)
+    user, (older, _) = await _customer_with(
+        session, SubscriptionStatus.ACTIVE, SubscriptionStatus.ACTIVE
+    )
+    await module.settle_duplicate_subscriptions(session, user.id, _provider())
+    await session.refresh(older)
+    ended = older.end_date
+
+    task = await handlers.handle_subscription_payment_recovered(
+        {
+            "data": {
+                "type": "subscription-invoices",
+                "id": "inv-again",
+                "attributes": {
+                    "subscription_id": older.lemonsqueezy_subscription_id,
+                    "total": 8900,
+                },
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_payment_recovered"),
+        session,
+    )
+
+    await session.refresh(older)
+    assert task is None
+    assert older.status == SubscriptionStatus.CANCELLED
+    assert older.end_date == ended
+    assert handler_alerts.call_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_an_older_purchase_arriving_last_gets_no_bonus_audit_or_welcome(
+    session, alerts, monkeypatch
+):
+    """Its subscription_created comes after the newer one's: it's settled on arrival, and that's all."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    provider = _provider()
+    monkeypatch.setattr(module, "get_payment_provider_singleton", lambda: provider)
+    bonus = AsyncMock()
+    monkeypatch.setattr(handlers, "grant_promotion_bonus", bonus)
+    user, (newer,) = await _customer_with(session, SubscriptionStatus.ACTIVE)
+    newer.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    plan = await session.get(SubscriptionPlan, newer.plan_id)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{uuid4().hex[:6]}"
+    await session.flush()
+    payload = {
+        "data": {
+            "type": "subscriptions",
+            "id": "ls-bought-first",
+            "attributes": {
+                "status": "active",
+                "variant_id": plan.lemonsqueezy_variant_id_monthly,
+                "user_email": user.email,
+                "created_at": "2026-10-06T09:00:00Z",
+                "updated_at": "2026-10-06T09:00:05Z",
+            },
+        },
+        "custom_data": {"user_id": str(user.id)},
+    }
+
+    task = await handlers.handle_subscription_created(
+        payload, SimpleNamespace(id=uuid4(), event_type="subscription_created"), session
+    )
+
+    older = await session.scalar(
+        select(UserSubscription).where(
+            UserSubscription.lemonsqueezy_subscription_id == "ls-bought-first"
+        )
+    )
+    assert task is None
+    assert older.status == SubscriptionStatus.CANCELLED
+    assert older.subscription_metadata["duplicate_of"] == str(newer.id)
+    provider.cancel_subscription.assert_awaited_once_with("ls-bought-first")
+    bonus.assert_not_called()
+    created_audit = await session.execute(
+        select(AuditLog.id).where(AuditLog.resource_id == str(older.id))
+    )
+    assert created_audit.first() is None
+
+
+@pytest.mark.asyncio
+async def test_an_older_purchase_left_to_a_person_gets_no_bonus_audit_or_welcome_either(
+    session, alerts, monkeypatch
+):
+    """With automatic settlement off it is only marked, and stops there all the same."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    monkeypatch.delenv("BILLING_AUTO_SETTLE_DUPLICATES", raising=False)
+    bonus = AsyncMock()
+    monkeypatch.setattr(handlers, "grant_promotion_bonus", bonus)
+    user, (newer,) = await _customer_with(session, SubscriptionStatus.ACTIVE)
+    newer.subscription_metadata = module.provider_created_record("2026-10-06T10:00:00Z")
+    plan = await session.get(SubscriptionPlan, newer.plan_id)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{uuid4().hex[:6]}"
+    await session.flush()
+    payload = {
+        "data": {
+            "type": "subscriptions",
+            "id": "ls-bought-first-manual",
+            "attributes": {
+                "status": "active",
+                "variant_id": plan.lemonsqueezy_variant_id_monthly,
+                "user_email": user.email,
+                "created_at": "2026-10-06T09:00:00Z",
+                "updated_at": "2026-10-06T09:00:05Z",
+            },
+        },
+        "custom_data": {"user_id": str(user.id)},
+    }
+
+    task = await handlers.handle_subscription_created(
+        payload, SimpleNamespace(id=uuid4(), event_type="subscription_created"), session
+    )
+
+    older = await session.scalar(
+        select(UserSubscription).where(
+            UserSubscription.lemonsqueezy_subscription_id == "ls-bought-first-manual"
+        )
+    )
+    assert task is None
+    assert older.status == SubscriptionStatus.ACTIVE  # a person cancels and refunds it
+    assert older.subscription_metadata["duplicate_found_of"] == str(newer.id)
+    bonus.assert_not_called()
+    created_audit = await session.execute(
+        select(AuditLog.id).where(AuditLog.resource_id == str(older.id))
+    )
+    assert created_audit.first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_late_recovery_on_a_duplicate_left_to_a_person_restores_nothing(
+    session, alerts, monkeypatch
+):
+    """Cancelled and refunded by hand, then paid again: it stays as it is, and a person is told."""
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    handler_alerts = MagicMock()
+    monkeypatch.setattr(handlers, "trigger_payment_alert", handler_alerts)
+    user, (older, newer) = await _customer_with(
+        session, SubscriptionStatus.CANCELLED, SubscriptionStatus.ACTIVE
+    )
+    older.subscription_metadata = {"duplicate_found_of": str(newer.id)}
+    await session.flush()
+
+    task = await handlers.handle_subscription_payment_recovered(
+        {
+            "data": {
+                "type": "subscription-invoices",
+                "id": "inv-again-manual",
+                "attributes": {
+                    "subscription_id": older.lemonsqueezy_subscription_id,
+                    "total": 8900,
+                },
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_payment_recovered"),
+        session,
+    )
+
+    await session.refresh(older)
+    assert task is None
+    assert older.status == SubscriptionStatus.CANCELLED
+    assert handler_alerts.call_args.kwargs["severity"] == "critical"

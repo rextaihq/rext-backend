@@ -18,11 +18,16 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_article_brand_policy,
 )
 from src.flow.engines.content.generation.outline_structure import (
+    faq_section_heading,
     format_structure_for_prompt,
     resolve_outline_structure,
 )
 from src.flow.engines.content.generation.persona_relevance import persona_fits_topic
-from src.flow.engines.content.generation.requirements_spec import excluded_brand_of
+from src.flow.engines.content.generation.requirements_spec import (
+    brand_named_in,
+    excluded_brand_of,
+)
+from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
@@ -66,6 +71,46 @@ def persona_fits_outline(persona: Any, outline: Optional[dict]) -> bool:
         persona,
         topic=outline.get("focus_keyphrase") or outline.get("title"),
         title=outline.get("title"),
+    )
+
+
+def persona_query(workspace_id, selected_id):
+    """The persona an article is written as, always one of the workspace's own.
+
+    With a selection: that persona, and only inside this workspace. The id comes back from
+    the outline screen as the caller sent it, so another workspace's persona, or one since
+    deleted, finds nothing and the article is written with no persona (never as whichever
+    is newest). Without one (a run from before the outline step chose): the newest.
+    """
+    # A run's state carries the workspace id as text (it arrives as JSON); bound as a UUID,
+    # like the persona's own id below, whatever the driver would make of the text.
+    query = select(Persona).where(Persona.workspace_id == uuid.UUID(str(workspace_id)))
+    if selected_id:
+        return query.where(Persona.id == uuid.UUID(str(selected_id)))
+    return query.order_by(Persona.created_at.desc()).limit(1)
+
+
+def _profile_under_the_choice(profile: Optional[dict], excluded: Optional[dict]) -> Optional[dict]:
+    """The Brand Voice Profile as the writer may read it under the user's brand choice.
+
+    A profile with a brand name is cleared of that name before the writer reads it. One saved
+    without a name can't be: its sentences about the company ("Acme builds sites") name a brand
+    nobody recorded, and the outline's name for it is then only the workspace's label, which
+    need not be the brand. Under "no mention" those sentences stay out; the voice, the readers
+    and the pillars are kept."""
+    if profile is None or not excluded or (profile.get("brand_name") or "").strip():
+        return profile
+    return {**profile, "about": "", "selling_position": ""}
+
+
+def _is_named(persona: Persona, name: str) -> bool:
+    """Whether a persona's name (its full one or its short one) is or contains ``name`` as a
+    phrase of its own, in any case: "Acme Tools Inc." carries the brand "Acme Tools" as surely
+    as "Acme Tools" does, and the brand check reads it the same way."""
+    wanted = " ".join((name or "").split())
+    return bool(wanted) and any(
+        brand_named_in(" ".join(str(value or "").split()), wanted)
+        for value in (getattr(persona, "full_name", None), getattr(persona, "name", None))
     )
 
 
@@ -376,7 +421,8 @@ FABRICATION IS BANNED:
 ========================
 FAQ SECTION (MANDATORY)
 ========================
-- Add a FAQ section at the end
+- Put the FAQs in the outline's FAQ section when it has one, under that section's own heading, which may not say "FAQ" (the APPROVED FAQs line names it). Add no other FAQ or questions section
+- Only when the outline has no FAQ section, add a FAQ section at the end
 - If the outline above includes an "APPROVED FAQs" list, you MUST use every one of those questions — do not invent new ones or drop any. Reword only for tone/flow; the answers should be expanded to 2–3 sentences where the outline gives a short or missing answer.
 - If no APPROVED FAQs are listed in the outline, include 3–5 real, relevant user questions with concise, clear answers (2–3 sentences each)
 
@@ -586,10 +632,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         personas = await self._fetch_best_persona(workspace_id, outline)
         # The Brand Voice Profile steers the writing beside the persona, whose own
         # tone wins where they disagree (rext-control #161, option 1).
-        voice = article_voice(
-            personas.tone_of_voice if personas else None,
-            await fetch_brand_voice_profile(workspace_id),
-        )
+        profile = await fetch_brand_voice_profile(workspace_id)
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
         internal_links = (outline or {}).get("internal_links") or []
@@ -605,8 +648,32 @@ Write the full article now. Every third-party claim must have an inline [text](u
         fits_topic = persona_fits_outline(personas, outline) if personas else True
         print(f"  persona fits the topic: {fits_topic}")
 
+        content_state = state.get("content") or {}
+        excluded = excluded_brand_of(
+            outline or {},
+            title=content_state.get("selected_topic"),
+            keyphrase=content_state.get("focus_keyword"),
+        )
+        # A persona who carries the excluded brand's own name (a personal brand): the author's
+        # name can't open the article and stay out of it. The "no mention" choice wins, so the
+        # article keeps the persona's voice and reasoning and never states the name, the same
+        # unnamed mode a persona outside the subject writes in (rext-control#760).
+        if personas and excluded and _is_named(personas, excluded["brand_name"]):
+            fits_topic = False
+            print("  persona shares the excluded brand's name: written unnamed")
+        voice = article_voice(
+            personas.tone_of_voice if personas else None,
+            _profile_under_the_choice(profile, excluded),
+        )
+
         full_prompt = self._build_full_content_prompt(
-            personas, outline, target_word_count, content_type, voice=voice, fits_topic=fits_topic
+            personas,
+            outline,
+            target_word_count,
+            content_type,
+            voice=voice,
+            fits_topic=fits_topic,
+            excluded_brand=excluded,
         )
 
         # The author profile is the only ground truth for first-person experience
@@ -694,26 +761,32 @@ Write the full article now. Every third-party claim must have an inline [text](u
         content_type: str = "",
         voice: Optional[dict] = None,
         fits_topic: bool = True,
+        excluded_brand: Optional[dict] = None,
     ) -> str:
         persona_block = self._build_persona_block(personas, fits_topic) if personas else ""
         outline_block = self._build_outline_block(outline, content_type) if outline else ""
         brand_placement_block = (
-            self._build_brand_placement_block(outline, content_type) if outline else ""
+            self._build_brand_placement_block(outline, content_type, excluded_brand)
+            if outline
+            else ""
         )
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
 
-        body_min = target_word_count
-        body_buffer = max(200, int(target_word_count * 0.15))
-        body_max = body_min + body_buffer
-        total_min = target_word_count + 200
-        total_max = total_min + body_buffer
-        section_min = max(300, int(target_word_count * 0.12))
-        subsection_min = max(120, int(target_word_count * 0.05))
+        # The article is checked against the target band (check_word_count_band):
+        # introduction and body together. The parts are planned inside that band, so
+        # these instructions never ask for more than the check accepts; an 800-word
+        # target used to be told 1,000-1,200 words and fail above 896.
+        total_min, total_max = compute_word_target_band(target_word_count)
+        intro_words = min(200, max(60, round(target_word_count * 0.12)))
+        body_min = max(0, total_min - intro_words)
+        body_max = max(0, total_max - intro_words)
+        section_min = max(80, round(target_word_count * 0.10))
+        subsection_min = max(40, round(target_word_count * 0.04))
 
         length_acceptance_block = (
             f"WORD COUNT — NON-NEGOTIABLE:\n"
-            f"- `introduction` field: minimum 200 words\n"
+            f"- `introduction` field: about {intro_words} words\n"
             f"- `body_markdown` field: {body_min}-{body_max} words — stay within this range\n"
             f"- Combined total: {total_min}-{total_max} words — stay within this range\n"
             f"- Every H2 section: minimum {section_min} words\n"
@@ -724,7 +797,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         length_enforcement_block = (
             f"### MANDATORY LENGTH ENFORCEMENT\n"
             f"Your output MUST meet ALL of the following before submitting:\n"
-            f"- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph\n"
+            f"- `introduction`: about {intro_words} words, in full paragraphs\n"
             f"- `body_markdown`: {body_min}-{body_max} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
             f"- Total combined length: {total_min}-{total_max} words — do not go meaningfully under or over this range\n\n"
             f"EXPANSION RULES — apply to every section that runs short:\n"
@@ -788,22 +861,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         async def _fetch() -> Optional[Persona]:
             async with get_pooled_langgraph_db_context() as db:
-                if selected_id:
-                    from uuid import UUID as _UUID
-
-                    result = await db.execute(
-                        select(Persona).where(Persona.id == _UUID(str(selected_id)))
-                    )
-                    persona = result.scalar_one_or_none()
-                    if persona:
-                        return persona
-                # Fallback: most recently created persona for this workspace
-                result = await db.execute(
-                    select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
-                    .order_by(Persona.created_at.desc())
-                    .limit(1)
-                )
+                result = await db.execute(persona_query(workspace_id, selected_id))
                 return result.scalar_one_or_none()
 
         try:
@@ -981,22 +1039,35 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         approved_faqs = extract_outline_faqs(outline)
         if approved_faqs:
+            faq_heading = faq_section_heading(outline, content_type)
+            where = (
+                f'the outline\'s section "{faq_heading}" (its FAQ section, under that heading; add no other FAQ section)'
+                if faq_heading
+                else "a FAQ section at the end of the article"
+            )
             lines.append(
-                f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN a FAQ section at the end of the article, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):"
+                f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN {where}, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):"
             )
             for faq in approved_faqs:
                 lines.append(f"  - Q: {faq['question']}")
                 if faq.get("answer"):
                     lines.append(f"    A: {faq['answer']}")
 
+        # The sections' order and headings are the user's: "adapt where needed" let the
+        # writer reorder them (G70, revnix/rext-control#586). The length is the target
+        # word count the instructions give, not a fixed 3,000-word minimum that
+        # overrode every content type's range.
         lines.append(
-            "\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links."
+            "\nWrite the sections in this order, under these headings, and write each one fully. Keep to the target word count the instructions give. Clearly mention the facts and stats with links."
         )
 
         return "\n".join(lines)
 
     def _build_brand_placement_block(
-        self, outline: Optional[OutlineState], content_type: str
+        self,
+        outline: Optional[OutlineState],
+        content_type: str,
+        excluded: Optional[dict] = None,
     ) -> str:
         """High-priority, system-prompt-level pointer to the brand-placement rules.
 
@@ -1012,7 +1083,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
         part — visible at the highest-priority point in the prompt too, not
         just once, buried in a much longer human message.
         """
-        excluded = excluded_brand_of(outline or {})
+        # `excluded` is decided by the caller from the run's own title and keyphrase, the same
+        # ones the human message and the checks read, so the three never disagree.
         if excluded and not (outline or {}).get("promote_brand"):
             # The user chose no mention (rext-control#700): said here too, at the top of the
             # prompt, since the outline itself may still name the brand.
@@ -1021,7 +1093,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 "## BRAND EXCLUSION — MANDATORY\n\n"
                 f"The user chose NO mention of {name}. Do not name {name}, or link to its site, "
                 "anywhere in the article, its call to action or its meta tags, even where the "
-                "outline names it. The human message below says how to handle those parts."
+                "outline names it. The one exception: the approved internal links you are given "
+                "stay, with their exact addresses. The human message below says how to handle "
+                "the parts of the outline that name it."
             )
         if not outline or not outline.get("promote_brand"):
             return ""

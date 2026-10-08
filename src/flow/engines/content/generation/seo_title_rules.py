@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 TITLE_MIN_CHARS = 50
 TITLE_MAX_CHARS = 59
@@ -54,6 +54,53 @@ _NEUTRAL_PREFIXES: tuple[str, ...] = (
     "A Practical Guide to ",
 )
 
+# The same for the scripts with a range of their own, in the title's own language (G69c): no
+# English is added to them. Lead-ins, then suffixes, tried as the English ones are.
+_LOCAL_PADDING: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "zh-Hans": (
+        ("", "了解", "一文读懂"),
+        ("：概述", "：基本概念", "：定义、用途与选择要点", "：基本概念、常见用途与选择方法"),
+    ),
+    "zh-Hant": (
+        ("", "了解", "一文讀懂"),
+        ("：概述", "：基本概念", "：定義、用途與選擇要點", "：基本概念、常見用途與選擇方法"),
+    ),
+    # A title in Han characters alone, with no sign of its language: qualifiers whose every
+    # character is written the same in simplified and traditional Chinese and in Japanese. The
+    # longest lifts even a one-character keyphrase to the minimum, so the last-resort title
+    # never fails for want of padding.
+    "han": (
+        ("",),
+        (
+            "：概要",
+            "：基本概念",
+            "：基本概念、用途、使用方法",
+            "：基本概念、目的、用途、使用方法、重要性",
+        ),
+    ),
+    "ja": (
+        ("", "基礎から学ぶ"),
+        ("：概要", "：基本ガイド", "：入門ガイド", "の基本：意味・使い方・選び方"),
+    ),
+    "ko": (
+        ("", "한눈에 보는 "),
+        (" | 개요", " | 기본 가이드", " | 입문 가이드", " | 의미, 활용법, 선택 기준"),
+    ),
+    "th": (
+        ("", "ทำความรู้จัก"),
+        (" | ภาพรวม", " | ความรู้พื้นฐาน", " | คู่มือเบื้องต้น", " | ความหมาย การใช้งาน และวิธีเลือก"),
+    ),
+}
+# Characters written only in Traditional Chinese, only in Simplified Chinese, or only in
+# Japanese (its own simplified forms), to tell which language a Han-only title is in. None is
+# shared with another of the three; a title with no such character gets the neutral qualifiers.
+_TRADITIONAL_ONLY = frozenset("們這與體學實點擇對說讀麼來將當從應發關會營銷產圖戲匯賣價處")
+_SIMPLIFIED_ONLY = frozenset(
+    "们这个为实选择导对开关时说读义么从还进电动应发现机种类语叶书车门马鱼鸟长东网软处务价优买卖"
+    "荐营销产业热题视频图戏页评测词"
+)
+_JAPANESE_ONLY = frozenset("観気広歩楽図駅売発対総経済読続験検権県辺変転伝")
+
 _WHITESPACE_RE = re.compile(r"\s+")
 # Scripts written without spaces between words (Thai, Lao, Myanmar, Khmer, kana including the
 # halfwidth forms, CJK ideographs and the iteration marks 々 〆 〇, with the supplementary
@@ -77,10 +124,10 @@ def _nfc(text: Any) -> str:
 
 
 def _capitalized(word: str) -> str:
-    """The word with a capital first letter, unless that capital is longer than the letter
-    (Armenian և is ԵՒ, German ß is SS), which would change what the phrase matches."""
-    first = word[:1].upper()
-    return first + word[1:] if len(first) == len(word[:1]) else word
+    """The word with a capital first letter, unless that capital would match differently: German
+    ß is SS, and the Turkish dotless ı is I, which lowercases to a dotted i."""
+    capital = word[:1].upper() + word[1:]
+    return capital if _normalize_for_match(capital) == _normalize_for_match(word) else word
 
 
 def normalize_title(title: Any) -> str:
@@ -110,8 +157,9 @@ def _normalize_for_match(text: Any) -> str:
     base_flattened = False
     for char in lowered:
         category = unicodedata.category(char)
-        if category == "Cf":
-            # Invisible inside a word (a soft hyphen, a zero-width joiner): not a word break.
+        if category == "Cf" and char != "\u200b":
+            # Invisible inside a word (a soft hyphen, a zero-width joiner): not a word break. The
+            # zero-width space is one, and is flattened below.
             continue
         if category[0] == "M":
             # A mark goes with the character it sits on: an emoji's variation selector is not
@@ -119,12 +167,18 @@ def _normalize_for_match(text: Any) -> str:
             if not base_flattened:
                 kept.append(char)
             continue
-        base_flattened = char == "_" or category[0] in "PSZC"
-        kept.append(" " if base_flattened else char)
+        flat = _flattened(char)
+        base_flattened = flat == " "
+        kept.append(flat)
     # Beside a script written without spaces, a space (or the punctuation it replaced: "生成AI・
     # ツール") is no word break, so it goes in both the phrase and the text.
     spaced = " ".join("".join(kept).split())
     return f" {_SPACE_BESIDE_UNSPACED_RE.sub('', spaced)} "
+
+
+def _flattened(char: str) -> str:
+    """A space for punctuation, a symbol, a separator, a control character or the underscore."""
+    return " " if char == "_" or unicodedata.category(char)[0] in "PSZC" else char
 
 
 def contains_keyphrase(text: Any, keyphrase: Any) -> bool:
@@ -161,28 +215,108 @@ def _at_boundary(edge: str, beside: str) -> bool:
     )
 
 
-def title_max_chars(keyphrase: Any = "") -> int:
-    """The longest a title for this keyphrase may be.
+# A title is measured by how wide it is on a results page, not by its code points (G69c,
+# rext-control #610): a character of an East Asian wide script takes the room of two Latin
+# letters, and a combining mark (Thai's vowel and tone marks) or an invisible format character
+# none. For Latin text the width is the length, so the Latin rule is as it was.
+_THAI_RE = re.compile("[\u0e00-\u0e7f]")
+_KANA_RE = re.compile("[\u3040-\u30ff\uff66-\uff9f]")
+_HANGUL_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
+# Each script family's range, inclusive, in width: (minimum, maximum, the ceiling a long
+# keyphrase may take it to). About 600 pixels in search results hold 30 CJK characters, or 55
+# Thai ones, and SEO guidance for those languages agrees (the research on rext-control #610).
+_TITLE_RANGES: dict[str, tuple[int, int, int]] = {
+    "narrow": (TITLE_MIN_CHARS, TITLE_MAX_CHARS, TITLE_MAX_CHARS_CEILING),
+    "cjk": (40, 60, 64),
+    "thai": (38, 55, 60),
+}
 
-    TITLE_MAX_CHARS, or the keyphrase plus TITLE_ROOM_BESIDE_KEYPHRASE when that is more,
-    never over TITLE_MAX_CHARS_CEILING. A short keyphrase keeps 59.
-    """
+
+def _is_wide(char: str) -> bool:
+    return unicodedata.east_asian_width(char) in ("W", "F")
+
+
+def title_width(text: Any) -> int:
+    """How wide a title is, in Latin letters: 2 for a wide character, 0 for a mark or an
+    invisible format character, 1 for anything else."""
+    return sum(
+        0 if unicodedata.category(char) in ("Mn", "Me", "Cf") else 2 if _is_wide(char) else 1
+        for char in _nfc(text)
+    )
+
+
+def _title_family(text: Any) -> str:
+    """ "cjk" when wide characters take a third of the text's letter width, "thai" when Thai
+    letters are a third of its letters, else "narrow" (Latin, Cyrillic, Arabic and the like)."""
+    letters = [char for char in _nfc(text) if unicodedata.category(char)[0] in "LN"]
+    if not letters:
+        return "narrow"
+    wide = sum(2 for char in letters if _is_wide(char))
+    if wide * 3 >= wide + sum(1 for char in letters if not _is_wide(char)):
+        return "cjk"
+    if sum(1 for char in letters if _THAI_RE.match(char)) * 3 >= len(letters):
+        return "thai"
+    return "narrow"
+
+
+def title_range(title: Any = "", keyphrase: Any = "") -> tuple[int, int]:
+    """The widths a title may have, inclusive: its script family's range, with room beside a
+    long keyphrase up to the family's ceiling. Without a title, the keyphrase's family decides."""
+    low, high, ceiling = _TITLE_RANGES[_title_family(title or keyphrase)]
     # Measured as keyphrase_fits_a_title measures it, so a keyword the gate lets through is
     # never given a smaller limit than the gate assumed.
-    length = len(_normalize_for_match(keyphrase).strip()) if keyphrase else 0
-    return min(TITLE_MAX_CHARS_CEILING, max(TITLE_MAX_CHARS, length + TITLE_ROOM_BESIDE_KEYPHRASE))
+    keyphrase_width = _matched_width(keyphrase) if keyphrase else 0
+    return low, min(ceiling, max(high, keyphrase_width + TITLE_ROOM_BESIDE_KEYPHRASE))
+
+
+def _matched_width(keyphrase: Any) -> int:
+    """The keyphrase's width as matching reads it (punctuation flattened), but with the Armenian
+    ligature և as the one character it takes in a title, not the two it is matched as."""
+    return title_width(_normalize_for_match(keyphrase).strip()) - _nfc(keyphrase).count("և")
+
+
+def title_length_terms(keyphrase: Any = "") -> tuple[int, int, str]:
+    """The range a prompt states for this keyphrase's titles, in the characters a writer counts,
+    and how to count them: a Chinese, Japanese or Korean title's range is half its width."""
+    low, high = title_range("", keyphrase)
+    family = _title_family(keyphrase)
+    if family == "cjk":
+        return (
+            low // 2,
+            high // 2,
+            "Count each Chinese, Japanese or Korean character, and each full-width punctuation "
+            "mark (such as ：、。), as one, and a Latin letter, digit, space or half-width "
+            "punctuation mark as half of one.",
+        )
+    if family == "thai":
+        return low, high, "Thai vowel and tone marks written above or below a letter don't count."
+    cjk_low, cjk_high, _ = _TITLE_RANGES["cjk"]
+    thai_low, thai_high, _ = _TITLE_RANGES["thai"]
+    return (
+        low,
+        high,
+        "Count spaces and punctuation as characters. A title written in Chinese, Japanese or "
+        f"Korean is {cjk_low // 2}-{cjk_high // 2} of those characters instead (a Latin letter, "
+        f"digit or space counting half), and one in Thai {thai_low}-{thai_high} characters.",
+    )
+
+
+def title_max_chars(keyphrase: Any = "") -> int:
+    """The widest a title for this keyphrase may be (TITLE_MAX_CHARS for a short Latin one)."""
+    return title_range("", keyphrase)[1]
 
 
 def keyphrase_fits_a_title(keyphrase: Any) -> bool:
-    """False when the keyphrase alone is longer than any title may be.
+    """False when the keyphrase alone is wider than any title may be.
 
-    Every title must contain the keyphrase and stay within TITLE_MAX_CHARS_CEILING,
-    so such a keyphrase can produce no title at all: the keyword gate does not
-    charge for titles then, and the topic step ends the run without a model call.
-    It is measured as contains_keyphrase matches it (case, quotes and other
-    punctuation flattened), so a keyword some title could hold is never refused.
+    Every title must contain the keyphrase and stay within its family's ceiling, so such a
+    keyphrase can produce no title at all: the keyword gate does not charge for titles then,
+    and the topic step ends the run without a model call. It is measured as contains_keyphrase
+    matches it (case, quotes and other punctuation flattened), so a keyword some title could
+    hold is never refused.
     """
-    return len(_normalize_for_match(keyphrase).strip()) <= TITLE_MAX_CHARS_CEILING
+    ceiling = _TITLE_RANGES[_title_family(keyphrase)][2]
+    return _matched_width(keyphrase) <= ceiling
 
 
 def title_violations(title: Any, keyphrase: Any = "") -> list[str]:
@@ -193,11 +327,12 @@ def title_violations(title: Any, keyphrase: Any = "") -> list[str]:
     if not cleaned:
         return ["empty_title"]
 
-    length = len(cleaned)
-    if length < TITLE_MIN_CHARS:
-        reasons.append(f"too_short:{length}")
-    elif length > title_max_chars(keyphrase):
-        reasons.append(f"too_long:{length}")
+    width = title_width(cleaned)
+    low, high = title_range(cleaned, keyphrase)
+    if width < low:
+        reasons.append(f"too_short:{width}")
+    elif width > high:
+        reasons.append(f"too_long:{width}")
 
     if keyphrase and not contains_keyphrase(cleaned, keyphrase):
         reasons.append("missing_focus_keyphrase")
@@ -212,24 +347,34 @@ def title_is_valid(title: Any, keyphrase: Any = "") -> bool:
 _TRAILING_PUNCTUATION = " ,;:-–—"
 # Words a trimmed title must not end on: a trim that stops just after one leaves the phrase
 # hanging ("Innovations in AI content writing tools for agencies in", G69a). Not "is", "are",
-# "this", "these" or "those": they can close a clause ("Who We Are", "Why You Need This").
+# "this", "these" or "those": they can close a clause ("Who We Are", "Why You Need This"). "that"
+# can too, so it dangles only when the trim cut more than a time ("Tools That [Save Time]", but
+# "Needs That [Today]").
 _DANGLING_END_WORDS = frozenset(
     {
         "a", "an", "the", "and", "or", "but", "nor", "&", "via", "per", "than", "vs", "versus",
-        "your", "our", "their", "its", "my", "that",
+        "your", "our", "their", "its", "my",
+        # A modal whose verb, or a conjunction whose clause, was cut ("What Marketing Can",
+        # "Works Because"). Not "may", "will" or "though": a month, a noun, a clause's end.
+        "can", "could", "would", "should", "might", "must", "shall", "because", "although",
+        "unless", "whether", "if",
     }
 )  # fmt: skip
 
 
 def _verb_forms(verb: str) -> set[str]:
     """A regular verb's written forms ("rely": relies, relied, relying), for the table below."""
-    stem = verb[:-1] if verb.endswith("e") else verb
-    forms = {verb, f"{verb}s", f"{stem}ed", f"{stem}ing"}
+    past = f"{verb}d" if verb.endswith("e") else f"{verb}ed"
+    # "care": caring, but "agree": agreeing.
+    progressive = (
+        f"{verb[:-1]}ing" if verb.endswith("e") and not verb.endswith("ee") else f"{verb}ing"
+    )
+    forms = {verb, f"{verb}s", past, progressive}
     if re.search(r"[^aeiou][aeiou][^aeiouwxy]$", verb):  # commit: committed, committing
         forms |= {f"{verb}{verb[-1]}ed", f"{verb}{verb[-1]}ing"}
     if verb.endswith("y") and verb[-2:-1] not in ("a", "e", "i", "o", "u"):
         forms |= {f"{verb[:-1]}ies", f"{verb[:-1]}ied"}
-    if verb.endswith(("s", "sh", "ch", "x")):
+    if verb.endswith(("s", "sh", "ch", "x", "o")):  # go: goes
         forms.add(f"{verb}es")
     return forms
 
@@ -256,6 +401,24 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
         "over": ("think", "thought", "argue", "fight"),
         "under": ("fall", "fell", "fallen"),
         "onto": ("hold", "held", "latch"),
+        "without": ("live", "do", "go"),
+        "through": ("go", "get", "walk", "talk", "think", "break"),
+        "after": ("look", "take", "go"),
+        "across": ("come", "run"),
+        "around": ("look", "get", "work", "shop"),
+        "against": ("go", "stand", "fight"),
+        "beyond": ("go", "look"),
+        "behind": ("stand", "fall", "leave"),
+        "upon": ("rely", "depend", "call"),
+        "before": (),
+        "during": (),
+        "between": (),
+        "within": (),
+        "among": (),
+        "toward": (),
+        "towards": (),
+        "until": (),
+        "despite": (),
     }.items()
 }  # fmt: skip
 
@@ -263,9 +426,19 @@ _PREPOSITION_AFTER_VERB: dict[str, frozenset[str]] = {
 # Words that follow a preposition without being its object ("Turns To Today", "Sign Up Now"),
 # and the time phrases that do the same ("Catch Up On This Year").
 _TIME_ADVERBS = frozenset(
-    {"today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon", "anyway"}
-)
+    {
+        "today", "now", "tonight", "tomorrow", "again", "instead", "first", "fast", "soon",
+        "anyway", "online", "offline", "here", "there", "everywhere", "anywhere", "locally",
+        "globally", "worldwide", "abroad", "together", "alone", "quickly", "easily",
+        "ultimately", "finally", "really", "actually", "too", "also", "ever", "yet", "already",
+    }
+)  # fmt: skip
 _TIME_PHRASE_STARTS = frozenset({"this", "next", "last", "every"})
+# Prepositions that take a time as their object, and the times that can be one.
+_TIME_OBJECT_PREPOSITIONS = frozenset(
+    {"for", "until", "till", "since", "by", "before", "after", "from", "during"}
+)
+_TIME_WORDS = frozenset({"today", "now", "tonight", "tomorrow", "soon"})
 _TIME_NOUNS = frozenset(
     {
         "year", "month", "week", "weekend", "season", "quarter", "time", "spring", "summer",
@@ -275,6 +448,18 @@ _TIME_NOUNS = frozenset(
 # Particles a verb takes before its preposition ("Catch Up On", "Fall Back On"). Not before "of"
 # or "to", which make compound prepositions of them ("Out Of", "Up To 50%").
 _PARTICLES = frozenset({"up", "out", "down", "back", "off", "away", "along", "ahead"})
+# The verbs those particles make phrasal verbs of; a particle after anything else is part of a
+# noun ("Round Up For Teams" lost its object).
+_PHRASAL_VERBS = frozenset(
+    form
+    for verb in (
+        "catch", "fall", "look", "sign", "keep", "cut", "set", "follow", "show", "end", "give",
+        "come", "stand", "check", "reach", "figure", "find", "work", "carry", "go", "get", "turn",
+        "line", "team", "build", "open", "sum", "log", "opt", "speak", "think", "start", "hold",
+        "put", "take", "bring", "call", "pick", "run", "sort", "point", "back", "clean", "move",
+    )
+    for form in _verb_forms(verb)
+)  # fmt: skip
 
 
 def _bare(word: str) -> str:
@@ -287,24 +472,36 @@ def _ends_dangling(words: list[str], kept: int) -> bool:
     last = _bare(words[kept - 1])
     if last in _DANGLING_END_WORDS:
         return True
+    # What the trim cut, all of it: only a time ("Today", "This Year") leaves a word whole;
+    # "for Today and Tomorrow" was the preposition's object.
+    removed = [word for word in (_bare(word) for word in words[kept:]) if word]
+    only_time_cut = (
+        not removed
+        or (len(removed) == 1 and removed[0] in _TIME_ADVERBS)
+        or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS and removed[1] in _TIME_NOUNS)
+    )
+    if last == "that":
+        # "Needs That: Guide" ended a clause on it, as "Needs That Today" did.
+        return not (only_time_cut or words[kept - 1][-1] in _TRAILING_PUNCTUATION)
     if last not in _PREPOSITION_AFTER_VERB:
         return False
     # A preposition that ended a clause, or stood before another one or an adverb of time, had
     # no object for the trim to cut ("Rely On: A Guide", "Fall Back On in 2026", "Turns To
     # Today"). One before a conjunction may share the object that follows it ("for and by
     # Industry Experts"), so a conjunction proves nothing.
-    following = _bare(words[kept]) if kept < len(words) else ""
-    after_that = _bare(words[kept + 1]) if kept + 1 < len(words) else ""
-    if (
-        words[kept - 1][-1] in _TRAILING_PUNCTUATION
-        or not following
-        or following in _PREPOSITION_AFTER_VERB
-        or following in _TIME_ADVERBS
-        or (following in _TIME_PHRASE_STARTS and after_that in _TIME_NOUNS)
-    ):
+    # "for", "until" or "since" take a time as their object ("Guide for [Today]"): a time cut
+    # after one of them cut its object; after the others it didn't ("Turns To [Today]").
+    time_was_object = last in _TIME_OBJECT_PREPOSITIONS and (
+        (len(removed) == 1 and removed[0] in _TIME_WORDS)
+        or (len(removed) == 2 and removed[0] in _TIME_PHRASE_STARTS)
+    )
+    # A preposition before another one is no proof it had no object: "in [under 10 Minutes]"
+    # nests the second in the first's object. "Rely On in 2026" is kept by its verb.
+    if words[kept - 1][-1] in _TRAILING_PUNCTUATION or (only_time_cut and not time_was_object):
         return False
     verb = _bare(words[kept - 2]) if kept > 1 else ""
-    if verb in _PARTICLES and last not in ("of", "to"):
+    before_particle = _bare(words[kept - 3]) if kept > 2 else ""
+    if verb in _PARTICLES and before_particle in _PHRASAL_VERBS and last not in ("of", "to"):
         return False
     return verb not in _PREPOSITION_AFTER_VERB[last]
 
@@ -313,7 +510,7 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
     """Drop trailing words until the title fits, never cutting the keyphrase; with
     ``tidy_end``, never stop on a dangling word either."""
     words = title.split()
-    max_chars = title_max_chars(keyphrase)
+    max_width = title_range(title, keyphrase)[1]
 
     def first(count: int) -> str:
         return " ".join(words[:count]).rstrip(_TRAILING_PUNCTUATION)
@@ -323,7 +520,7 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
         return not keyphrase or contains_keyphrase(first(count), keyphrase)
 
     kept = len(words)
-    while kept > 1 and len(first(kept)) > max_chars and can_cut_to(kept - 1):
+    while kept > 1 and title_width(first(kept)) > max_width and can_cut_to(kept - 1):
         kept -= 1
     if tidy_end and kept < len(words):
         # A trim that stopped after "in", "for" or "the" drops it too; the minimum, if it is
@@ -333,18 +530,217 @@ def _trim_to_max(title: str, keyphrase: str, tidy_end: bool = True) -> str:
     return first(kept)
 
 
-def _pad_to_min(title: str, max_chars: int = TITLE_MAX_CHARS) -> str:
+def _local_language(title: str) -> Optional[str]:
+    """The language of a title in a script with a range of its own, for its qualifiers."""
+    family = _title_family(title)
+    if family == "thai":
+        return "th"
+    if family != "cjk":
+        return None
+    if _KANA_RE.search(title) or any(char in _JAPANESE_ONLY for char in title):
+        return "ja"
+    if _HANGUL_RE.search(title):
+        return "ko"
+    traditional = sum(char in _TRADITIONAL_ONLY for char in title)
+    simplified = sum(char in _SIMPLIFIED_ONLY for char in title)
+    if traditional > simplified:
+        return "zh-Hant"
+    return "zh-Hans" if simplified > traditional else "han"
+
+
+def _pad_to_min(title: str, keyphrase: str = "") -> str:
     """Lift a too-short title into range with claim-free qualifiers.
 
     One suffix first; a very short title (~20 chars) cannot reach the minimum
-    with a single suffix, so a neutral lead-in is then combined with one.
+    with a single suffix, so a neutral lead-in is then combined with one. A
+    Chinese, Japanese, Korean or Thai title gets one qualifier in its own
+    language, or none.
     """
-    base = title.rstrip(" ,;:-–—")
-    for prefix in _NEUTRAL_PREFIXES:
-        for suffix in _NEUTRAL_SUFFIXES:
-            candidate = f"{prefix}{base}{suffix}"
-            if TITLE_MIN_CHARS <= len(candidate) <= max_chars:
-                return candidate
+    base = title.rstrip(" ,;:-–—：")
+    low, high = title_range(title, keyphrase)
+    language = _local_language(title)
+    prefixes, suffixes = (
+        _LOCAL_PADDING[language] if language else (_NEUTRAL_PREFIXES, _NEUTRAL_SUFFIXES)
+    )
+    for candidate in (f"{prefix}{base}{suffix}" for prefix in prefixes for suffix in suffixes):
+        if low <= title_width(candidate) <= high:
+            return candidate
+    return title
+
+
+# The keyphrase's case (G49, rext-control #463). Matching ignores case, so a title may write the
+# user's "seo agency for small business" as "SEO Agency for Small Business": only the letters'
+# case changes, never a word.
+
+# Short words a Title Case title keeps in lowercase unless they open it.
+_TITLE_CASE_SMALL_WORDS = frozenset(
+    {
+        "a", "an", "the", "and", "or", "but", "nor", "for", "of", "in", "on", "at", "to", "by",
+        "with", "from", "into", "onto", "as", "vs", "via", "per", "than",
+    }
+)  # fmt: skip
+# Acronyms SEO users type in lowercase; written in capitals in any title ("kpis" is "KPIs").
+# Not "it" or "us", which are words too.
+_ACRONYMS = frozenset(
+    {
+        "seo", "sem", "ppc", "ai", "crm", "erp", "saas", "b2b", "b2c", "d2c", "roi", "kpi", "api",
+        "ui", "ux", "cms", "faq", "diy", "usa", "uk", "eu", "gdpr", "hipaa", "vpn", "sql", "css",
+        "html", "php", "aws", "iot", "ar", "vr", "nft", "ctr", "cpc", "cpm", "cpa", "smb",
+        "llc", "pdf", "url", "hr", "pr", "llm", "gpt", "ecom",
+    }
+)  # fmt: skip
+_ACRONYM_SPELLINGS = {"saas": "SaaS", "ecom": "eCom"}
+_WORD_EDGE_PUNCTUATION = "\"'`“”‘’()[]{}.,;:!?"
+_SENTENCE_BREAKS = (":", "?", "!", ".", "|", "-", "–", "—")
+
+
+def _same_length_case(word: str, cased: str) -> str:
+    """``cased`` when it changes only the case of ``word``'s letters, else ``word``: "ß" upper is
+    "SS", which would change a title's length."""
+    return cased if len(cased) == len(word) and cased.lower() == word.lower() else word
+
+
+def _acronym(word: str) -> Optional[str]:
+    """The written form of an acronym the user typed in lowercase, or None."""
+    low = word.lower()
+    if low in _ACRONYMS:
+        return _ACRONYM_SPELLINGS.get(low, low.upper())
+    if low.endswith("s") and low[:-1] in _ACRONYMS and len(low) > 2:  # "kpis": KPIs
+        return f"{_ACRONYM_SPELLINGS.get(low[:-1], low[:-1].upper())}s"
+    return None
+
+
+def _phrase_spans(title: str, keyphrase: str, ignore_case: bool) -> list[tuple[int, int]]:
+    """Where the keyphrase is written in the title letter for letter, at the word boundaries
+    contains_keyphrase accepts: "seo" in "最佳seo工具" is a word."""
+    spans = []
+    for match in re.finditer(re.escape(keyphrase), title, re.IGNORECASE if ignore_case else 0):
+        start, end = match.span()
+        before = title[start - 1] if start else " "
+        after = title[end] if end < len(title) else " "
+        if _at_boundary(keyphrase[0], _flattened(before)) and _at_boundary(
+            keyphrase[-1], _flattened(after)
+        ):
+            spans.append((start, end))
+    return spans
+
+
+def _opens_at(title: str, start: int) -> bool:
+    """Whether the word at ``start`` opens the title or a clause after a break (": ", " - ")."""
+    before = title[:start].rstrip()
+    return not before or before.endswith(_SENTENCE_BREAKS)
+
+
+def _title_style(title: str, skip: tuple[int, int]) -> Optional[str]:
+    """How the title's own words, outside the keyphrase, are cased: "title" or "sentence".
+
+    None when no word decides it. Opening words, short words, acronyms and words with a capital
+    inside ("YouTube") don't count.
+    """
+    votes = []
+    for match in re.finditer(r"\S+", title):
+        if skip[0] <= match.start() < skip[1]:
+            continue
+        word = match.group().strip(_WORD_EDGE_PUNCTUATION)
+        if (
+            not word[:1].isalpha()
+            or word[:1].lower() == word[:1].upper()
+            or _opens_at(title, match.start())
+            or word.lower() in _TITLE_CASE_SMALL_WORDS
+            or any(char.isupper() for char in word[1:])
+        ):
+            continue
+        votes.append(word[:1].isupper())
+    if not votes:
+        return None
+    # Names keep their capitals in a sentence-case title ("…work with Google, Microsoft and
+    # Apple today"), while a Title Case title leaves almost nothing in lowercase: Title Case only
+    # when its capitals outnumber its lowercase words more than three to one.
+    capitals = sum(votes)
+    return "title" if capitals > 3 * (len(votes) - capitals) else "sentence"
+
+
+def keyphrase_spellings(titles: Iterable[Any], keyphrase: Any) -> dict[int, str]:
+    """How the keyphrase's words are spelled, by position, where their case is not a matter of
+    style.
+
+    The user's own capitals come first ("London", "SEO"), then what the titles show: a capital
+    inside a word ("SaaS", "iPhone"), or a capitalized word in the middle of a sentence-case
+    title (a name). By position, so "it" and "IT" in one keyphrase keep their own spellings.
+    """
+    keyphrase = normalize_title(keyphrase)
+    spellings: dict[int, str] = {}
+    for title in titles:
+        title = normalize_title(title)
+        for start, end in _phrase_spans(title, keyphrase, ignore_case=True):
+            style = _title_style(title, (start, end))
+            for index, match in enumerate(re.finditer(r"\S+", title[start:end])):
+                word = match.group()
+                if any(char.isupper() for char in word[1:]) or (
+                    style == "sentence"
+                    and word[:1].isupper()
+                    and not _opens_at(title, start + match.start())
+                ):
+                    spellings.setdefault(index, word)
+    for index, word in enumerate(keyphrase.split(" ")):
+        if word != word.lower():
+            spellings[index] = word
+    return spellings
+
+
+def _cased_keyphrase(
+    keyphrase: str, style: Optional[str], opens: bool, spellings: dict[int, str]
+) -> str:
+    words = []
+    for index, word in enumerate(keyphrase.split(" ")):
+        if index in spellings:
+            words.append(_same_length_case(word, spellings[index]))
+            continue
+        # Each part of a joined word on its own: "seo-friendly" is "SEO-Friendly" in Title Case,
+        # "seo's" is "SEO's"; nothing after an apostrophe is capitalized ("Don't").
+        parts = re.split(r"(\W+)", word)
+        for part_index in range(0, len(parts), 2):
+            part = parts[part_index]
+            acronym = _acronym(part)
+            after_apostrophe = part_index > 0 and parts[part_index - 1] in ("'", "’")
+            if acronym:
+                parts[part_index] = _same_length_case(part, acronym)
+            elif not after_apostrophe and (
+                (index == 0 and part_index == 0 and opens)
+                or (style == "title" and part.lower() not in _TITLE_CASE_SMALL_WORDS)
+            ):
+                parts[part_index] = _capitalized(part)
+        words.append("".join(parts))
+    return " ".join(words)
+
+
+def display_keyphrase(keyphrase: Any) -> str:
+    """The keyphrase in Title Case, as a title's opening words ("seo agency" is "SEO Agency")."""
+    keyphrase = normalize_title(keyphrase)
+    return _cased_keyphrase(keyphrase, "title", True, keyphrase_spellings([], keyphrase))
+
+
+def recase_keyphrase(title: Any, keyphrase: Any, spellings: Optional[dict[int, str]] = None) -> str:
+    """The title with the keyphrase written in the title's case, where it was copied as typed.
+
+    "Find the Best seo agency for small business in 2026" becomes "Find the Best SEO Agency for
+    Small Business in 2026"; in a sentence-case title only acronyms, names and an opening word
+    change. A keyphrase the title already writes another way is left as written, and so is a
+    title whose case can't be told.
+    """
+    title = normalize_title(title)
+    keyphrase = normalize_title(keyphrase)
+    if not keyphrase or keyphrase.lower() == keyphrase.upper():  # no letters with a case
+        return title
+    if spellings is None:
+        spellings = keyphrase_spellings([title], keyphrase)
+    for start, end in _phrase_spans(title, keyphrase, ignore_case=False):
+        opens = _opens_at(title, start)
+        style = _title_style(title, (start, end))
+        if style is None and not opens:
+            continue
+        cased = _cased_keyphrase(keyphrase, style, opens, spellings)
+        title = f"{title[:start]}{cased}{title[end:]}"
     return title
 
 
@@ -366,13 +762,15 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
     if keyphrase and not contains_keyphrase(cleaned, keyphrase):
         # Capitalized for display only; matching is case-insensitive, so the
         # title still contains the user's exact phrase.
-        lead = " ".join(_capitalized(word) for word in keyphrase.split())
-        cleaned = f"{lead}: {cleaned}" if cleaned else lead
+        lead = display_keyphrase(keyphrase)
+        separator = "：" if _title_family(f"{lead}{cleaned}") == "cjk" else ": "
+        cleaned = f"{lead}{separator}{cleaned}" if cleaned else lead
 
-    if len(cleaned) > title_max_chars(keyphrase):
+    low, high = title_range(cleaned, keyphrase)
+    if title_width(cleaned) > high:
         tidy = _trim_to_max(cleaned, keyphrase)
-        if len(tidy) < TITLE_MIN_CHARS:
-            tidy = _pad_to_min(tidy, title_max_chars(keyphrase))
+        if title_width(tidy) < low:
+            tidy = _pad_to_min(tidy, keyphrase)
         # The tidy ending, when it still makes a valid title; otherwise the plain trim, so a
         # title is never lost for the sake of its last word.
         cleaned = (
@@ -381,8 +779,8 @@ def repair_title(title: Any, keyphrase: Any = "") -> Optional[str]:
             else _trim_to_max(cleaned, keyphrase, tidy_end=False)
         )
 
-    if len(cleaned) < TITLE_MIN_CHARS:
-        cleaned = _pad_to_min(cleaned, title_max_chars(keyphrase))
+    if title_width(cleaned) < title_range(cleaned, keyphrase)[0]:
+        cleaned = _pad_to_min(cleaned, keyphrase)
 
     return cleaned if title_is_valid(cleaned, keyphrase) else None
 
@@ -398,8 +796,7 @@ def keyphrase_title(keyphrase: Any) -> Optional[str]:
     keyphrase = normalize_title(keyphrase)
     if not keyphrase:
         return None
-    title = " ".join(_capitalized(word) for word in keyphrase.split())
-    return repair_title(title, keyphrase)
+    return repair_title(display_keyphrase(keyphrase), keyphrase)
 
 
 # NOTE: resolving WHICH keyphrase to enforce is not this module's job — that

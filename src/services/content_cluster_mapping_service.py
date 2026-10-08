@@ -361,9 +361,10 @@ def format_cluster_heading_map_for_prompt(
         section_label = "Topics and keywords to place (map each onto the closest approved section):"
         entry_prefix = "Topic"
 
-    lines.append(
-        f"H1 keyword focus: {h1.get('suggested_heading', '')} | Primary keyword: {h1.get('primary_keyword', '')}"
-    )
+    h1_line = f"H1 keyword focus: {h1.get('suggested_heading', '')}"
+    if h1.get("primary_keyword"):
+        h1_line += f" | Primary keyword: {h1['primary_keyword']}"
+    lines.append(h1_line)
     lines.append(f"Content-type guidance: {cluster_heading_map.get('content_type_guidance', '')}")
     lines.append("Rules:")
 
@@ -429,6 +430,87 @@ def format_cluster_heading_map_for_prompt(
                 )
 
     return "\n".join(lines)
+
+
+def _keyword_key(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _entry_without_keywords(entry: dict[str, Any], removed: set[str]) -> dict[str, Any] | None:
+    """One section or cluster of the map without the removed keywords; None when it was
+    only about one of them (its own keyword gone and no other left)."""
+    primary = entry.get("primary_keyword", "")
+    supporting = [
+        k for k in entry.get("supporting_keywords") or [] if _keyword_key(k) not in removed
+    ]
+    if _keyword_key(primary) in removed:
+        if not supporting:
+            return None
+        primary = ""
+    trimmed = {**entry, "primary_keyword": primary, "supporting_keywords": supporting}
+    if "h3_topics" in entry:
+        trimmed["h3_topics"] = [
+            topic for topic in entry.get("h3_topics") or [] if _keyword_key(topic) not in removed
+        ]
+    if "mapped_h3_clusters" in entry:
+        trimmed["mapped_h3_clusters"] = _entries_without_keywords(
+            entry.get("mapped_h3_clusters"), removed
+        )
+    return trimmed
+
+
+def _entries_without_keywords(entries: Any, removed: set[str]) -> list[dict[str, Any]]:
+    kept = []
+    for entry in entries or []:
+        trimmed = _entry_without_keywords(entry, removed) if isinstance(entry, dict) else None
+        if trimmed is not None:
+            kept.append(trimmed)
+    return kept
+
+
+def clusters_without_keywords(
+    keyword_clusters: list[dict[str, Any]] | None, removed_keywords: list[str] | None
+) -> list[dict[str, Any]]:
+    """The keyword clusters without the keywords a user removed at the outline gate; a
+    cluster left with no keyword goes too."""
+    removed = {_keyword_key(k) for k in removed_keywords or []} - {""}
+    clusters = keyword_clusters or []
+    if not removed:
+        return clusters
+    kept = []
+    for cluster in clusters:
+        keywords = [
+            item
+            for item in cluster.get("keywords") or []
+            if _keyword_key(item.get("keyword") if isinstance(item, dict) else item) not in removed
+        ]
+        if keywords:
+            kept.append({**cluster, "keywords": keywords})
+    return kept
+
+
+def cluster_heading_map_without_keywords(
+    cluster_heading_map: dict[str, Any] | None, removed_keywords: list[str] | None
+) -> dict[str, Any] | None:
+    """The cluster map without the keywords a user removed at the outline gate.
+
+    The map is built before the gate, so it still lists a removed phrase as coverage the
+    writer must give: removing the chip alone changed nothing in the article."""
+    removed = {_keyword_key(k) for k in removed_keywords or []} - {""}
+    if not removed or not cluster_heading_map or not cluster_heading_map.get("enabled"):
+        return cluster_heading_map
+    trimmed = dict(cluster_heading_map)
+    h1 = cluster_heading_map.get("h1")
+    if isinstance(h1, dict) and _keyword_key(h1.get("primary_keyword")) in removed:
+        trimmed["h1"] = {**h1, "primary_keyword": ""}
+    for key in ("h2_sections", "h3_sections", "body_copy_clusters"):
+        trimmed[key] = _entries_without_keywords(cluster_heading_map.get(key), removed)
+    trimmed["additional_keywords"] = [
+        k
+        for k in cluster_heading_map.get("additional_keywords") or []
+        if _keyword_key(k) not in removed
+    ]
+    return trimmed
 
 
 def _normalize_key(value: str | None) -> str:

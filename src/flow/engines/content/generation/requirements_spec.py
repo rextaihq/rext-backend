@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from typing import Optional, TypedDict
+from urllib.parse import urlparse
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
@@ -29,6 +30,7 @@ from src.flow.engines.content.generation.focus_keyword import (
     focus_keyword_from_outline,
     normalize_focus_keyword,
 )
+from src.flow.engines.content.generation.link_integrity import normalize_url
 from src.flow.engines.content.generation.outline_structure import (
     planned_sections,
     resolve_expected_headings,
@@ -47,6 +49,10 @@ class RequirementsSpec(TypedDict, total=False):
     # from the outline's optional `keyphrase_synonyms`; empty unless something
     # upstream supplies them — never model-guessed here.
     keyphrase_synonyms: list[str]
+    # The other keywords the user approved at the outline (keywords_to_include
+    # without the focus keyphrase): each should appear at least once, a soft
+    # requirement (FB2.18, rext-control#699).
+    secondary_keywords: list[str]
     # The EXACT title the user selected at the topic-selection interrupt.
     # Read-only from that moment on: topic_generation is the only stage allowed
     # to repair a title, so every later stage compares against this and reverts
@@ -75,6 +81,9 @@ class RequirementsSpec(TypedDict, total=False):
     # (brand_prominence "none"): the article must not name it anywhere
     # (rext-control#700). None when a mention was approved or no brand is known.
     excluded_brand: Optional[dict]
+    # The user's choice keeps the brand out of the call to action ("None", or "Subtle"'s one
+    # body mention): the call to action then carries no link at all (rext-control#760).
+    cta_without_link: bool
     sourced_facts: list[dict]
     target_word_count: int
     cta_required: bool
@@ -168,6 +177,42 @@ def excluded_brand_of(
     return {"brand_name": brand_name, "brand_url": (promo.get("brand_url") or "").strip()}
 
 
+def site_host(url: str) -> str:
+    """The host of an address, without "www."; "" for one that can't be read."""
+    try:
+        host = (urlparse(url or "").hostname or "").lower()
+    except ValueError:
+        # A malformed address ("https://[bad") names no host: a check reports, never raises.
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def on_site(host: str, site: str) -> bool:
+    """Whether ``host`` is ``site`` or one of its subdomains (app., shop., …)."""
+    return bool(site) and (host == site or host.endswith("." + site))
+
+
+def is_excluded_brand_link(
+    url: str, excluded: Optional[dict], approved_internal_links: Optional[list]
+) -> bool:
+    """Whether ``url`` goes to the site of a brand the user excluded, other than through an
+    internal link the user approved (the article lives on that site: its own pages stay linked).
+
+    Such a link is never protected, restored or kept: the "no mention" choice covers it, so no
+    step may hold on to it (rext-control#760)."""
+    brand_site = site_host((excluded or {}).get("brand_url") or "")
+    if not brand_site or not on_site(site_host(url), brand_site):
+        return False
+    # The same key the rest of the link pipeline compares by: an approved page linked with a
+    # "#section" or a tracking parameter is still that approved page.
+    approved = {
+        normalize_url(link.get("url") or "")
+        for link in approved_internal_links or []
+        if isinstance(link, dict)
+    }
+    return normalize_url(url) not in approved
+
+
 def brand_named_in(text: str, brand_name: str) -> bool:
     """Whether ``text`` names the brand as a word of its own, in any case."""
     name = (brand_name or "").strip()
@@ -233,6 +278,17 @@ def _typed_content_fields(content_type: str) -> frozenset[str]:
         return frozenset()
 
 
+def approved_secondary_keywords(outline: dict, focus_keyphrase: str) -> list[str]:
+    """The keywords the user approved at the outline besides the focus keyphrase. The writer,
+    the check and the saved article all read this list, never the model's own copy of it."""
+    focus = (focus_keyphrase or "").casefold()
+    return [
+        str(k).strip()
+        for k in (outline or {}).get("keywords_to_include") or []
+        if str(k).strip() and str(k).strip().casefold() != focus
+    ]
+
+
 def build_requirements_spec(
     outline: dict,
     content_type: str,
@@ -273,6 +329,12 @@ def build_requirements_spec(
     placement_policy = apply_brand_prominence(type_policy, outline.get("brand_prominence"))
     blocks = resolve_outline_structure(outline, content_type)
     brand_context = _extract_brand_context(outline)
+    approved_internal_links = outline.get("internal_links") or []
+    excluded_brand = excluded_brand_of(
+        outline,
+        title=selected_title or outline.get("title") or "",
+        keyphrase=focus_keyphrase,
+    )
 
     return RequirementsSpec(
         target_keyword=focus_keyphrase,
@@ -281,6 +343,7 @@ def build_requirements_spec(
             for s in (outline.get("keyphrase_synonyms") or [])
             if normalize_focus_keyword(s)
         ],
+        secondary_keywords=approved_secondary_keywords(outline, focus_keyphrase),
         selected_title=selected_title or outline.get("title") or "",
         content_type=content_type or "",
         expected_sections=resolve_expected_headings(blocks),
@@ -298,13 +361,14 @@ def build_requirements_spec(
         ],
         hero_context=_hero_context(outline),
         hero_required=type_policy["prefers_top"],
-        approved_internal_links=outline.get("internal_links") or [],
+        approved_internal_links=approved_internal_links,
         brand_context=brand_context,
-        excluded_brand=excluded_brand_of(
-            outline,
-            title=selected_title or outline.get("title") or "",
-            keyphrase=focus_keyphrase,
-        ),
+        excluded_brand=excluded_brand,
+        # Every "None" and "Subtle", a title or keyphrase that is the brand's own included:
+        # the name stays where the keyphrase needs it, but a call to action that names or
+        # links the brand is promotion, which the choice declined. One rule, the one the
+        # writer is given (brand_kept_out_of_cta).
+        cta_without_link=bool(brand_kept_out_of_cta(outline)),
         sourced_facts=outline.get("key_facts") or [],
         target_word_count=outline.get("target_word_count") or 0,
         cta_required=outline_cta is not None,
@@ -317,5 +381,13 @@ def build_requirements_spec(
             brand_context=brand_context,
             generation_meta=generation_meta,
         ),
-        link_inventory=list((generation_meta or {}).get("link_inventory") or []),
+        # A link to an excluded brand's site is never one to keep: recorded as a citation
+        # before the choice was read, it would be put back before every check.
+        link_inventory=[
+            record
+            for record in (generation_meta or {}).get("link_inventory") or []
+            if not is_excluded_brand_link(
+                (record or {}).get("url") or "", excluded_brand, approved_internal_links
+            )
+        ],
     )

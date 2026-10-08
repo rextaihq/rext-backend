@@ -17,6 +17,7 @@ Does NOT:
 - Process payments (that's payment service - future)
 """
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -144,8 +145,10 @@ def trial_has_ended(
         return False
     if latest.status == SubscriptionStatus.EXPIRED:
         return True
+    # A trial cancelled before its end is CANCELLED, and the job never expires it; it
+    # ends on its date all the same, as `subscription_grants_access` has it (F16a).
     return (
-        latest.status == SubscriptionStatus.TRIAL
+        latest.status in (SubscriptionStatus.TRIAL, SubscriptionStatus.CANCELLED)
         and latest.trial_end_date is not None
         and latest.trial_end_date <= now
     )
@@ -410,8 +413,24 @@ class SubscriptionService:
 
         logger.info(f"🔍 DEBUG: Variant ID is {variant_id}")
 
-        # A repeated request for the same checkout gets the one already open.
-        reuse_key = f"checkout:open:{user_id}:{variant_id}:{discount_code or ''}"
+        # A repeated request for the same checkout gets the one already open: the same
+        # in everything that changes the checkout (plan, discount, affiliate, where it
+        # returns), so a different affiliate or return address opens its own.
+        reuse_key = (
+            "checkout:open:"
+            + hashlib.sha256(
+                "\x1f".join(
+                    [
+                        str(user_id),
+                        str(variant_id),
+                        discount_code or "",
+                        affiliate_code or "",
+                        success_url or "",
+                        cancel_url or "",
+                    ]
+                ).encode()
+            ).hexdigest()
+        )
         open_checkout = await cache.get(reuse_key)
         if open_checkout:
             logger.info(

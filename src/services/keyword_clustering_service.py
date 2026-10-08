@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from langchain.messages import HumanMessage, SystemMessage
 
 from src.flow.model.llm_manager import load_model
+from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.keyword_clustering import KeywordClusteringLLMOutput
 from src.flow.prompts.system.keyword_clustering import KEYWORD_CLUSTERING_SYSTEM_PROMPT
 from src.flow.states.rext import IntentMatchedSerpSignals
@@ -1271,17 +1272,20 @@ class KeywordClusteringService:
             "and content type. Selecting from the candidate list is not mandatory; reject "
             "all keywords that do not fit well into topic-based clusters. Cluster names must "
             "represent actual topics users search for, not fragments. For each cluster, "
-            "provide a natural heading, likely SERP page type, outline placement "
-            "(H2, H3, or body), and quality scores. Reject weak, awkward, unrelated, "
+            "provide a natural heading, outline placement (H2, H3, or body), a one-phrase "
+            "rationale, and quality scores. Reject weak, awkward, unrelated, "
             "or mixed-intent terms."
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)
-        result: KeywordClusteringLLMOutput = await model.ainvoke(
+        result: KeywordClusteringLLMOutput = await ainvoke_watched(
+            model,
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=human_prompt),
-            ]
+            ],
+            stage="clustering",
+            schema=KeywordClusteringLLMOutput,
         )
 
         candidate_map = {kw["keyword"].lower(): kw for kw in keywords_data if kw.get("keyword")}
@@ -1316,7 +1320,6 @@ class KeywordClusteringService:
                     "total_score": round(sum(k.get("score", 0) for k in cluster_keywords), 2),
                     "main_intent": group.intent.lower(),
                     "rationale": group.rationale,
-                    "likely_serp_page_type": group.likely_serp_page_type,
                     "recommended_heading": group.natural_heading,
                     "outline_placement": placement,
                     "intent_match_score": round(float(group.intent_match_score or 0), 2),
