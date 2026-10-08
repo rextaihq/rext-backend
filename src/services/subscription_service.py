@@ -458,6 +458,10 @@ class SubscriptionService:
         - Current usage must not exceed new plan limits (for downgrades)
         - Billing period can be changed optionally
         - Updates are immediate
+        - A plan Lemon Squeezy bills changes here only when it has changed there: an
+          answer that leaves the subscription on its plan (one paid through PayPal),
+          or no confirmed answer, changes nothing here; nor is its billing period
+          changed here alone
 
         Args:
             user_id: User UUID
@@ -495,6 +499,19 @@ class SubscriptionService:
         if current_subscription.plan_id == new_plan_id:
             # Only billing period change
             if billing_period and billing_period != current_subscription.billing_period:
+                # Lemon Squeezy bills the period it holds: set here alone, the customer
+                # would read the new period and go on paying the old one.
+                if (
+                    current_subscription.provider_subscription_id
+                    or current_subscription.lemonsqueezy_subscription_id
+                ):
+                    raise BusinessRuleViolationException(
+                        message=(
+                            "A billing period can't be changed alone from here yet. Change "
+                            "it in the billing portal. Nothing was changed."
+                        ),
+                        rule_name="billing_period_unchanged_at_provider",
+                    )
                 current_subscription.billing_period = billing_period
                 current_subscription.updated_at = datetime.now(timezone.utc)
                 await self.db.flush()
@@ -548,14 +565,24 @@ class SubscriptionService:
                     )
                     # Lemon Squeezy answers 200 for a subscription paid through PayPal and
                     # leaves it as it was (the customer changes it in the billing portal).
-                    if by_admin and str(getattr(updated, "plan_id", None)) != str(new_variant_id):
+                    # The plan changes here only when it has changed there, whoever asked:
+                    # otherwise the higher plan and its credits would be free.
+                    if str(getattr(updated, "plan_id", None)) != str(new_variant_id):
+                        if by_admin:
+                            raise BusinessRuleViolationException(
+                                message=(
+                                    "Lemon Squeezy left the subscription on its plan: one paid "
+                                    "through PayPal is changed by the customer in their billing "
+                                    "portal. Nothing was changed."
+                                ),
+                                rule_name="admin_plan_unchanged_at_provider",
+                            )
                         raise BusinessRuleViolationException(
                             message=(
-                                "Lemon Squeezy left the subscription on its plan: one paid "
-                                "through PayPal is changed by the customer in their billing "
-                                "portal. Nothing was changed."
+                                "Your plan can't be changed from here with your payment "
+                                "method. Change it in the billing portal. Nothing was changed."
                             ),
-                            rule_name="admin_plan_unchanged_at_provider",
+                            rule_name="plan_unchanged_at_provider",
                         )
                     self.provider_change_accepted = True
 
@@ -679,6 +706,18 @@ class SubscriptionService:
                                 + ". Nothing was changed."
                             ),
                             rule_name="admin_plan_provider",
+                        )
+                    elif isinstance(e, (PaymentChangeUnknown, PaymentChangeUnconfirmed)):
+                        # No answer, or none that says which plan the subscription is on
+                        # now: "it failed, try again" would be a guess. Nothing changes
+                        # here; if it changed there, Lemon Squeezy's update brings it.
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Your plan change was sent, but it couldn't be confirmed. "
+                                "If it went through, your new plan shows here within a few "
+                                "minutes: check before trying again."
+                            ),
+                            rule_name="plan_change_unconfirmed",
                         )
                     else:
                         raise RextValidationException(
