@@ -14,6 +14,7 @@ from uuid import UUID
 
 from src.api.database.async_database import get_async_db_context
 from src.utils.logger import logger
+from src.utils.loop_bridge import MainLoopNotReady
 
 # Credits deducted at each pipeline stage (total = 15 per article)
 STAGE_CREDITS: dict[str, int] = {
@@ -390,6 +391,10 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                         _emit_credit_event(balance, stages[0], 0, step="credits.low")
 
                 except InsufficientCreditsError:
+                    raise
+                except MainLoopNotReady:
+                    # No way to the database from this job's thread: the charge after the
+                    # stage could not be made either, so its paid work does not run.
                     raise
                 except Exception as exc:
                     logger.warning("Credit pre-flight check failed: %s — proceeding", exc)

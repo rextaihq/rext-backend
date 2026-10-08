@@ -158,6 +158,36 @@ def test_the_credits_go_through_the_same_bridge(monkeypatch):
     assert error is None and ran_on is server_loop and ran_on is not worker_loop
 
 
+async def test_a_stage_whose_balance_cannot_be_read_for_want_of_the_main_loop_does_not_run(
+    monkeypatch,
+):
+    """Review round 1: the pre-flight read goes on when it fails for any other reason. With no
+    way to the database the charge after the stage could not be made either, so the stage's
+    paid work (the model, the search) must not run."""
+    ran = []
+
+    async def no_main_loop(uid, workspace_id=None):
+        raise MainLoopNotReady("the server's main event loop was not registered")
+
+    monkeypatch.setattr(credit_manager, "_get_balance", no_main_loop)
+
+    @credit_manager.deduct_credits("generate_outline")
+    async def stage(state):
+        ran.append(state)
+        return {"content": {"outline": {}}}
+
+    state = {
+        "serp_payload": {
+            "user_id": "00000000-0000-0000-0000-000000000001",
+            "workspace_id": "00000000-0000-0000-0000-000000000002",
+        }
+    }
+    with pytest.raises(MainLoopNotReady):
+        await stage(state)
+
+    assert ran == []
+
+
 def test_an_analytics_event_is_never_sent_from_a_runs_own_loop():
     """`send_soon` started the send on the running loop when no main loop was registered; its
     read of the person then used the pool from the run's loop. It is dropped instead."""
