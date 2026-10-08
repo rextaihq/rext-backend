@@ -9,12 +9,12 @@ FastAPI loop). This dispatches a worker-loop coroutine onto the registered main
 loop and blocks a thread-pool thread for the result, so the pooled engine never
 sees a cross-loop connection.
 
-It never runs a worker thread's coroutine on the worker's own loop. It used to,
+It never runs a job thread's coroutine on the job's own loop. It used to,
 whenever no main loop was registered yet, and the runtime takes runs from its
 queue before this app's startup has finished: a run resumed in the seconds after
 a restart then used the pool's connections from another loop, left one inside a
 transaction, and later requests on that connection were answered as saved and
-never were (rext-control#858). A worker thread now waits for the main loop, for
+never were (rext-control#858). A job's thread now waits for the main loop, for
 a bounded time, and fails its step loudly if none appears.
 
 The one bridge: credit_manager, the notifications and the pipeline's nodes all
@@ -30,10 +30,14 @@ from src.utils import loop_registry
 
 T = TypeVar("T")
 
-# How long a worker thread waits for the server's main loop to be registered. Startup
+# How long a job's thread waits for the server's main loop to be registered. Startup
 # registers it as its first statement, so this is waited out only if startup itself is stuck.
 MAIN_LOOP_WAIT_SECONDS = 30.0
 _POLL_SECONDS = 0.05
+# How the runtime names the threads that run a job on a loop of its own
+# (langgraph_runtime_inmem/queue.py: thread_name_prefix=f"bg-loop-{idx}"). A test reads the
+# runtime's source for it, so an upgrade that renames them fails there, not in production.
+JOB_THREAD_PREFIX = "bg-loop-"
 
 
 class MainLoopNotReady(RuntimeError):
@@ -51,10 +55,10 @@ def get_main_loop_context():
 
 
 def on_worker_thread() -> bool:
-    """Whether this is a thread other than the process's main one: where the runtime runs a
-    job's isolated loop. The main thread's loop is the server's own, or a script's or a
-    test's, and is the only loop there is to use the pool from."""
-    return threading.current_thread() is not threading.main_thread()
+    """Whether this thread is one of the runtime's job threads, each running a job on a loop
+    of its own. Any other thread's loop (the server's, a script's, a test's, a test client's)
+    is, with no main loop registered, the only loop there is to use the pool from."""
+    return threading.current_thread().name.startswith(JOB_THREAD_PREFIX)
 
 
 async def wait_for_main_loop(timeout: Optional[float] = None) -> asyncio.AbstractEventLoop:
@@ -82,10 +86,11 @@ async def run_on_main_loop(coro: Awaitable[T]) -> T:
     run_coroutine_threadsafe and waits using asyncio.to_thread(future.result) so the
     caller's own loop stays unblocked.
 
-    With no main loop registered: on the main thread (a script, a test, the server's own
-    loop before startup registered it) the current loop is the one the pool belongs to, and
-    `coro` is awaited directly. On a worker thread it never is: the call waits for the main
-    loop (see wait_for_main_loop) and raises MainLoopNotReady without running `coro`.
+    With no main loop registered: outside the runtime's job threads (a script, a test, the
+    server's own loop before startup registered it) the current loop is the one the pool
+    belongs to, and `coro` is awaited directly. On a job's thread it never is: the call waits
+    for the main loop (see wait_for_main_loop) and raises MainLoopNotReady without running
+    `coro`.
     """
     main_loop, current_loop = get_main_loop_context()
 

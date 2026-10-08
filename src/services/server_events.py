@@ -280,8 +280,8 @@ def send_soon(sending: Coroutine[Any, Any, Any]) -> None:
             _in_flight.add(task)
             task.add_done_callback(_in_flight.discard)
         else:
-            # No loop of the server's to send on: none at all, or a run's own loop on a worker
-            # thread before the main loop is registered. The event is dropped, never sent
+            # No loop of the server's to send on: none at all, or a run's own loop on one of
+            # the runtime's job threads before the main loop is registered. It is dropped, never sent
             # from there: its read of the person would use the pool from another loop
             # (rext-control#858).
             sending.close()
