@@ -34,7 +34,6 @@ def validate_api_key(api_key: str) -> Tuple[bool, str]:
         Tuple of (is_valid, message)
     """
     print("🔍 Validating LemonSqueezy API key...")
-    print(f"   Key prefix: {api_key[:12]}...")
     print(f"   Key length: {len(api_key)} characters")
 
     try:

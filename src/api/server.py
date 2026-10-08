@@ -25,7 +25,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from src.api.build_info import BUILD_COMMIT
 from src.api.cache.redis_client import cache
-from src.api.config import settings
+from src.api.config import STOCK_STORAGE_SIGN_IN, settings
 
 # Local application imports
 # Structured logging
@@ -130,6 +130,17 @@ async def lifespan(app):
         logger.info("✅ Free tools: Cloudflare Turnstile tokens are verified")
     else:
         logger.info("Free tools: TURNSTILE_SECRET_KEY is unset, so their bot check is skipped")
+
+    # --- The media store's sign-in ---
+    # Its settings fall back to the store's stock pair, which is right for a laptop only. Said at
+    # startup (no value is logged), so a deployed server shows whether its own pair is set.
+    if settings.ENVIRONMENT in ("production", "staging") and STOCK_STORAGE_SIGN_IN in (
+        settings.MINIO_ACCESS_KEY,
+        settings.MINIO_SECRET_KEY,
+    ):
+        logger.warning(
+            "The media store runs on its stock sign-in: set MINIO_ACCESS_KEY and MINIO_SECRET_KEY"
+        )
 
     # --- Validate production configuration ---
     if settings.ENVIRONMENT == "production":
