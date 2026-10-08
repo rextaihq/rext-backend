@@ -110,15 +110,98 @@ HOW_TO = {
 }
 
 
-def test_how_to_steps_stay_with_their_typed_field_and_lists_of_entries_stay_whole():
-    # how-to-guide's content model writes steps through its typed `steps` list,
-    # and a tool list is the content of one section, not a section per tool.
+def test_how_to_steps_are_no_prose_blocks_and_lists_of_entries_stay_whole():
+    # The steps block stays with the typed `steps` list, which the article shows as one
+    # numbered list, and a tool list is the content of one section, not a section per tool.
     model, blocks = _model(HOW_TO, "how-to-guide")
 
     assert not [b for b in blocks if b.parent]
     assert not [f for f in model.model_fields if re.fullmatch(r"(steps|tools)_\d+", f)]
     spec = build_requirements_spec(HOW_TO, "how-to-guide", focus_keyword="tracking")
     assert spec["planned_sections"] == []
+
+
+def test_each_approved_step_of_a_how_to_guide_is_a_required_field_in_the_approved_order():
+    """The typed list alone left the writer to its own four to six one-sentence steps
+    (rext-control #817): each approved step is asked for by name."""
+    model, _ = _model(HOW_TO, "how-to-guide")
+
+    step_fields = [f for f in model.model_fields if re.fullmatch(r"step_\d+", f)]
+    assert step_fields == ["step_1", "step_2"]
+    assert all(model.model_fields[f].is_required() for f in step_fields)
+    first, second = (model.model_fields[f].description for f in step_fields)
+    assert "Step 1 of 2" in first and "'Install the tracking snippet'" in first
+    assert "Step 2 of 2" in second and "'Tag your campaign links'" in second
+    # What the outline planned for the step is on the step's own field.
+    assert "Add it to every page." in first and "Use UTM parameters." in second
+    # The free list is no longer asked for.
+    assert not model.model_fields["steps"].is_required()
+    assert "Leave this empty" in model.model_fields["steps"].description
+
+
+def test_a_steps_plan_carries_its_expected_result_its_warning_and_its_tips():
+    outline = {
+        "steps": {
+            "steps": [
+                {
+                    "title": "Remove the plant from its pot",
+                    "description": "Tip the pot and ease the root ball out.",
+                    "expected_result": "The root ball comes out whole.",
+                    "warning": "Never pull the plant by its stem.",
+                    "tips": ["Water it the day before", " "],
+                }
+            ]
+        }
+    }
+    model, _ = _model({**HOW_TO, **outline}, "how-to-guide")
+
+    description = model.model_fields["step_1"].description
+    assert "Expected result: The root ball comes out whole." in description
+    assert "Warning: Never pull the plant by its stem." in description
+    assert "Tips to work in: Water it the day before" in description
+
+
+def test_the_order_of_the_approved_list_is_the_steps_order_whatever_their_numbers_say():
+    """A reorder at the outline step leaves `step_number` as it was written."""
+    steps = [
+        {"step_number": 2, "title": "Tag your campaign links", "description": "UTM."},
+        {"step_number": 1, "title": "Install the tracking snippet", "description": "Add it."},
+    ]
+    model, _ = _model({**HOW_TO, "steps": {"steps": steps}}, "how-to-guide")
+
+    assert "'Tag your campaign links'" in model.model_fields["step_1"].description
+    assert "'Install the tracking snippet'" in model.model_fields["step_2"].description
+
+
+def test_two_how_to_guides_never_share_a_model():
+    other = {**HOW_TO, "steps": {"steps": [{"title": "Open the report", "description": "Go."}]}}
+
+    first, _ = _model(HOW_TO, "how-to-guide")
+    second, _ = _model(other, "how-to-guide")
+
+    assert "step_2" in first.model_fields and "step_2" not in second.model_fields
+    assert "'Open the report'" in second.model_fields["step_1"].description
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        [],
+        [{"title": "", "description": "No title"}, {"title": "Second", "description": "x"}],
+        [{"title": f"Step {n}", "description": "x"} for n in range(1, 23)],
+    ],
+)
+def test_an_outline_without_a_usable_list_of_steps_keeps_the_typed_list(steps):
+    model, _ = _model({**HOW_TO, "steps": {"steps": steps}}, "how-to-guide")
+
+    assert not [f for f in model.model_fields if re.fullmatch(r"step_\d+", f)]
+    assert "Leave this empty" not in (model.model_fields["steps"].description or "")
+
+
+def test_another_article_type_gets_no_step_fields():
+    model, _ = _model(_blog_outline(), "blog")
+
+    assert not [f for f in model.model_fields if re.fullmatch(r"step_\d+", f)]
 
 
 def test_a_sections_plan_is_on_its_own_field_and_bookkeeping_is_not():
