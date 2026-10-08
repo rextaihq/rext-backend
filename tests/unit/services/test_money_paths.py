@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -112,6 +112,10 @@ def _session(conn):
 @pytest_asyncio.fixture
 async def db(connection):
     async with _session(connection) as session:
+        # A migrated test database holds the real launch offer. Only the promotions a test
+        # makes itself count here, or a test that reads the real clock would get the bonus
+        # while the suite runs in launch week.
+        await session.execute(update(Promotion).values(is_active=False))
         yield session
 
 
