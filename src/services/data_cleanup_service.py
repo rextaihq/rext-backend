@@ -61,16 +61,17 @@ class DataCleanupService:
         """
         Delete the rows that match the conditions, one batch at a time.
 
-        PostgreSQL has no DELETE ... LIMIT, so each batch deletes the ids a
-        limited select picks, and is committed before the next one starts.
-        The delete repeats the conditions: a row updated after the select
-        picked it (a session refreshed meanwhile) is checked again as it now
-        is, and kept. "fetch" takes the deleted rows out of the session too, so
-        a caller that loaded one doesn't still see it.
+        PostgreSQL has no DELETE ... LIMIT, so each batch picks its ids with a
+        limited select, deletes those, and is committed before the next one
+        starts. The delete repeats the conditions: a row updated after it was
+        picked (a session refreshed meanwhile) is checked again as it now is,
+        and kept. "fetch" takes the deleted rows out of the session too, so a
+        caller that loaded one doesn't still see it.
 
-        It ends with the first batch that deletes nothing. A batch can delete
-        fewer rows than it picked (the kept ones above) while more wait beyond
-        its limit, so a short batch is not the end.
+        It ends when a select picks nothing. What a batch deleted says nothing
+        about what is left: it deletes fewer rows than it picked, or none, when
+        some were kept as above, while more wait beyond its limit. A kept row
+        no longer matches, so it isn't picked again.
 
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
@@ -85,10 +86,17 @@ class DataCleanupService:
         batch_size = cleanup_config.CLEANUP_BATCH_SIZE
 
         while True:
-            batch = select(model.id).where(*conditions).limit(batch_size)
+            picked = (
+                (await self.db.execute(select(model.id).where(*conditions).limit(batch_size)))
+                .scalars()
+                .all()
+            )
+            if not picked:
+                return deleted_total
+
             result = await self.db.execute(
                 delete(model)
-                .where(model.id.in_(batch), *conditions)
+                .where(model.id.in_(picked), *conditions)
                 .execution_options(synchronize_session="fetch")
             )
             await self.db.commit()
@@ -100,9 +108,6 @@ class DataCleanupService:
                 f"Deleted batch of {deleted_batch} rows from {model.__tablename__} "
                 f"(total: {deleted_total})"
             )
-
-            if deleted_batch <= 0:
-                return deleted_total
 
     def _log_result(self, count: int, records: str, **context) -> None:
         """Log what a cleanup step deleted, or would delete in dry-run mode."""
