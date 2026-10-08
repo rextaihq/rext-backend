@@ -408,6 +408,51 @@ class TestUpdateSubscription:
         assert refused.value.status_code == 429
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "attempts, known",
+        [
+            (["timeout", 429, 429], False),
+            ([503, 429, 429], False),
+            ([429, "timeout", 429], False),
+            ([429, 429, "timeout"], False),
+            ([429, 429, 429], True),
+        ],
+    )
+    async def test_a_429_after_an_unanswered_attempt_leaves_the_outcome_unknown(
+        self, provider, monkeypatch, attempts, known
+    ):
+        """The request is tried three times and a caller sees only the last error. An
+        attempt that timed out or met a server error may have been applied, so a 429
+        on a later attempt doesn't make the update a refusal; three 429s do."""
+        from src.providers.payment.base_provider import PaymentChangeUnknown
+
+        # The real request with its retries, without the waits between them.
+        monkeypatch.setattr(LemonSqueezyProvider._make_request.retry, "sleep", AsyncMock())
+
+        def answer(status):
+            response = MagicMock()
+            response.status_code = status
+            response.headers = {}
+            response.json.return_value = {"errors": [{"detail": "not now"}]}
+            return response
+
+        outcomes = [
+            httpx.TimeoutException("timed out") if attempt == "timeout" else answer(attempt)
+            for attempt in attempts
+        ]
+        expected = LemonSqueezyTransientError if known else PaymentChangeUnknown
+
+        with (
+            patch.object(provider.client, "request", side_effect=outcomes) as request,
+            pytest.raises(expected) as raised,
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
+        assert request.call_count == 3
+        if known:
+            assert raised.value.status_code == 429
+
+    @pytest.mark.asyncio
     async def test_an_update_lemon_squeezy_refuses_is_still_a_refusal(self, provider):
         from src.providers.payment.providers.lemonsqueezy import LemonSqueezyAPIError
 
