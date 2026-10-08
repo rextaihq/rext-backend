@@ -12,7 +12,12 @@ import httpx
 import pytest
 
 from src.services import money_events
-from src.services.money_events import money_event, record_money_event, send_money_event
+from src.services.money_events import (
+    money_event,
+    record_money_event,
+    send_money_event,
+    send_server_event,
+)
 
 
 def _subscription(**attributes):
@@ -165,6 +170,7 @@ async def test_nothing_is_sent_without_the_project_s_key(monkeypatch):
 
 async def test_the_event_goes_to_posthog_with_no_person_and_an_id_of_its_own(monkeypatch):
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    monkeypatch.setenv("ENVIRONMENT", "Production")
     monkeypatch.delenv("POSTHOG_HOST", raising=False)
     requests = []
     at = datetime(2026, 10, 8, 5, 0, tzinfo=timezone.utc)
@@ -183,8 +189,9 @@ async def test_the_event_goes_to_posthog_with_no_person_and_an_id_of_its_own(mon
     assert body["api_key"] == "phc_test"
     assert body["event"] == "subscription_started"
     assert body["properties"]["$process_person_profile"] is False
-    assert body["properties"]["source"] == "backend"
+    assert body["properties"]["source"] == "server"
     assert body["properties"]["surface"] == "app"
+    assert body["properties"]["environment"] == "production"
     assert body["timestamp"] == "2026-10-08T05:00:00+00:00"
     # No identity: the id is made from the webhook's, and is the event's own.
     assert body["distinct_id"] == body["uuid"]
@@ -192,6 +199,53 @@ async def test_the_event_goes_to_posthog_with_no_person_and_an_id_of_its_own(mon
         assert private not in requests[0].content.decode()
     # A retry is the same event again, not a second one.
     assert json.loads(requests[1].content)["uuid"] == body["uuid"]
+
+
+async def test_a_server_event_carries_the_person_only_when_one_is_given(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    requests = []
+
+    async with _client(requests) as client:
+        await send_server_event(
+            "workspace_created", {"first_workspace": True}, key="ws-1", client=client
+        )
+        await send_server_event(
+            "workspace_created",
+            {"first_workspace": True},
+            key="ws-1",
+            person_id="user-1",
+            client=client,
+        )
+
+    anonymous, known = (json.loads(request.content) for request in requests)
+    assert anonymous["properties"]["$process_person_profile"] is False
+    assert anonymous["distinct_id"] == anonymous["uuid"]
+    assert known["distinct_id"] == "user-1"
+    assert "$process_person_profile" not in known["properties"]
+    # The same thing that happened is the same event either way.
+    assert known["uuid"] == anonymous["uuid"]
+    for body in (anonymous, known):
+        assert body["event"] == "workspace_created"
+        assert body["properties"] == {
+            **body["properties"],
+            "first_workspace": True,
+            "surface": "app",
+            "source": "server",
+            "environment": "staging",
+        }
+
+
+async def test_two_kinds_of_event_about_one_thing_are_two_events(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    requests = []
+
+    async with _client(requests) as client:
+        await send_server_event("credits_spent", {}, key="row-1", client=client)
+        await send_server_event("credits_low", {}, key="row-1", client=client)
+
+    first, second = (json.loads(request.content)["uuid"] for request in requests)
+    assert first != second
 
 
 async def test_a_refusal_or_a_failure_never_reaches_the_webhook(monkeypatch):
