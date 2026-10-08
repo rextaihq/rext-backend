@@ -78,3 +78,6 @@ async def test_the_providers_own_check_follows_the_same_rule(monkeypatch):
     assert await provider.verify_webhook_signature(PAYLOAD, _signed("the-old")) is True
     assert await provider.verify_webhook_signature(PAYLOAD, _signed("the-new")) is True
     assert await provider.verify_webhook_signature(PAYLOAD, _signed("a-third")) is False
+    # A secret passed in by the caller stands alone: the replaced one is not accepted beside it.
+    assert await provider.verify_webhook_signature(PAYLOAD, _signed("own"), "own") is True
+    assert await provider.verify_webhook_signature(PAYLOAD, _signed("the-old"), "own") is False

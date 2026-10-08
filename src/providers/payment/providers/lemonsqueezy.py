@@ -993,11 +993,9 @@ class LemonSqueezyProvider(PaymentProvider):
         # is accepted too.
         from src.config.payment_config import payment_settings
 
-        is_valid = signed_with_one_of(
-            payload,
-            signature,
-            signing_secrets(webhook_secret, payment_settings.lemonsqueezy_webhook_secret_previous),
-        )
+        # Only beside this provider's own secret: a secret a caller passes in stands alone.
+        previous = None if secret else payment_settings.lemonsqueezy_webhook_secret_previous
+        is_valid = signed_with_one_of(payload, signature, signing_secrets(webhook_secret, previous))
 
         if is_valid:
             logger.info("Webhook signature verified successfully", operation="webhook_verification")
