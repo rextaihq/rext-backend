@@ -34,6 +34,7 @@ from src.flow.engines.content.generation.repair_content import run_targeted_repa
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
 from src.flow.engines.content.generation.section_rewrite import (
     INTRODUCTION,
+    MIN_WORDS_TO_REWRITE,
     OPENING,
     SECTION,
     Part,
@@ -472,6 +473,11 @@ async def _rewrite_by_section(
         focus_keyphrase,
         content_type,
         wanted_scale(sum(count_words(part.text) for part in parts), word_target),
+        # Where the density check counts the keyphrase beside the introduction and the body.
+        elsewhere="\n".join(
+            str(original_payload.get(field) or "")
+            for field in ("title", "meta_title", "meta_description")
+        ),
     )
     new_phrases = secondary_plan(parts, spec.get("secondary_keywords"))
     cta = original_payload.get("cta")
@@ -591,11 +597,13 @@ async def humanize_content(state: REXT) -> dict:
     )
     # An article of several sections is rewritten one section at a time, each told its own
     # length (section_rewrite.py): told the whole article's, the model wrote to a length of
-    # its own. A body with fewer than two H2s has nothing to split and is rewritten whole.
+    # its own. A body with fewer than two H2s has nothing to split and is rewritten whole, and
+    # so is one whose every part is too short to be sent on its own (a page of several
+    # two-line sections): by section, nothing of it would be rewritten at all.
     parts = split_article(original_payload.get("introduction") or "", body_markdown)
     if sum(1 for part in parts if part.kind == SECTION and part.level == 2) >= (
         MIN_SECTIONS_TO_SPLIT
-    ):
+    ) and any(count_words(part.text) >= MIN_WORDS_TO_REWRITE for part in parts):
         merged_payload = await _rewrite_by_section(
             original_payload,
             parts,

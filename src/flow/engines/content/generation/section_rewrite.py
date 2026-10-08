@@ -215,28 +215,45 @@ def _brand_linked(text: str, brand: dict[str, str]) -> bool:
     )
 
 
+# A heading line of any level. The outline's entries are H2 and H3, and H4 on a pillar page.
+_HEADING_LINE = re.compile(r"^(#{1,6})[ \t]+\S")
+_FENCE_LINE = re.compile(r"^\s*(```|~~~)")
+
+
+def _heading_lines(text: str) -> list[tuple[int, int]]:
+    """(level, line index) of every heading line in the text, of any level, in order; a line
+    inside a fenced example is not one."""
+    found, fenced = [], False
+    for index, line in enumerate((text or "").splitlines()):
+        if _FENCE_LINE.match(line):
+            fenced = not fenced
+        elif not fenced and (heading := _HEADING_LINE.match(line)):
+            found.append((len(heading.group(1)), index))
+    return found
+
+
 def _with_its_headings(part: Part, text: str) -> Optional[str]:
     """``text`` with every heading line as the part was drafted with it, or None when the
     headings are not the drafted ones in number, level and order.
 
     A heading is the outline's, approved before the article was written, and the checks on
-    headings ran before the rewrite: a section's own, and each sub-section's under it. A
-    reworded one is put back as it was; one added, dropped or moved is a rewrite that cannot be
-    used. A section may leave its own heading line off (it is put on), and nothing may stand
-    before it."""
-    drafted, found = extract_subheadings(part.text), extract_subheadings(text)
-    levels, had = [h.level for h in found], [h.level for h in drafted]
+    headings ran before the rewrite: a section's own, and each one under it, down to the H4s of
+    a pillar page. A reworded one is put back as it was; one added, dropped or moved is a
+    rewrite that cannot be used. A section may leave its own heading line off (it is put on),
+    and nothing may stand before it."""
+    drafted, found = _heading_lines(part.text), _heading_lines(text)
+    levels, had = [level for level, _ in found], [level for level, _ in drafted]
     own_left_off = part.kind == SECTION and levels == had[1:]
     if levels != had and not own_left_off:
         return None
     was, lines = part.text.splitlines(), text.splitlines()
-    for mine, theirs in zip(drafted[1:] if own_left_off else drafted, found, strict=True):
-        lines[theirs.line_index] = was[mine.line_index]
+    for (_, mine), (_, theirs) in zip(drafted[1:] if own_left_off else drafted, found, strict=True):
+        lines[theirs] = was[mine]
     if part.kind != SECTION:
         return "\n".join(lines).strip()
     if own_left_off:
         return f"{part.heading}\n\n" + "\n".join(lines).strip()
-    return "\n".join(lines[found[0].line_index :]).strip()
+    return "\n".join(lines[found[0][1] :]).strip()
 
 
 def judge(
@@ -319,7 +336,11 @@ def _uses(text: str, focus: str) -> tuple[int, int]:
 
 
 def keyphrase_plan(
-    parts: list[Part], focus_keyphrase: str, content_type: str, scale: float
+    parts: list[Part],
+    focus_keyphrase: str,
+    content_type: str,
+    scale: float,
+    elsewhere: str = "",
 ) -> dict[int, int]:
     """How often each part's text is to use the keyphrase: as often as it does, moved by one
     in a part or two when the article's count would otherwise leave the range its length allows.
@@ -328,12 +349,19 @@ def keyphrase_plan(
     short when the rewrite adds fifty words (a how-to on staging: three uses at 1,984 words,
     still three at 2,083, and the density check failed), so the plan is made for the length
     wanted, and keeps one above the least where the range has room.
+
+    ``elsewhere`` is the article's title and meta fields: the check counts the keyphrase there
+    too (keyword_density), so the plan does, or a draft near the top of its range would be
+    planned up to the body's own most and fail by what the title and the meta add.
     """
     focus = (focus_keyphrase or "").strip()
     if not focus or not parts:
         return {}
     report = analyze_keyword_density(
-        text="\n\n".join(part.text for part in parts), keyphrase=focus, content_type=content_type
+        text="\n\n".join(part.text for part in parts),
+        keyphrase=focus,
+        content_type=content_type,
+        extra_text=elsewhere,
     )
     policy = resolve_density_policy(
         round(report["word_count"] * scale),
