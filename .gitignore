@@ -5,18 +5,10 @@ build/
 dist/
 wheels/
 *.egg-info
-# Settings files: every copy, backup and variant of one stays out of git (an editor's "~" copy
-# too). Only the examples, which hold placeholders, are tracked.
-.env*
-.envrc*
-*.env
-*.env.*
-*.env~
-*.envrc
-*.envrc~
-!.env.example
-!.env.*.example
-!*.env.example
+# Settings files: every copy, backup and variant of one stays out of git, under any name that
+# holds ".env" (.env.local, prod.env, .envrc, app.envrc.local, .env~ ...). Only the examples,
+# which hold placeholders, are tracked.
+*.env*
 !*.example
 *.bak
 *.backup
