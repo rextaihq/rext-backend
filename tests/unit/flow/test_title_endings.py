@@ -15,6 +15,7 @@ import pytest
 
 from src.flow.engines.content.generation import topic_generation as tg
 from src.flow.engines.content.generation.seo_title_rules import (
+    takes_a_guide_ending,
     title_ending_problem,
     title_is_valid,
     without_filler_ending,
@@ -211,10 +212,31 @@ def test_a_filler_word_is_dropped_only_where_the_title_stands_without_it(title, 
 def test_a_title_left_short_by_its_filler_word_is_lifted_with_a_short_neutral_ending(
     title, keyphrase, lifted
 ):
-    assert without_filler_ending(title, keyphrase) == lifted
+    assert without_filler_ending(title, keyphrase, lift=True) == lifted
     if lifted:
         assert title_is_valid(lifted, keyphrase)
         assert title_ending_problem(lifted, keyphrase) is None
+
+
+def test_a_guide_ending_is_only_for_an_article_that_guides_or_explains():
+    """ ": A Guide" promises a guide. A landing page's title, or one for a search that wants to
+    buy, is left to the repair when dropping its filler word alone would leave it short."""
+    assert takes_a_guide_ending("blog", "informational")
+    assert takes_a_guide_ending("How-To-Guide", "Informational")
+    assert not takes_a_guide_ending("landing-page", "informational")
+    assert not takes_a_guide_ending("blog", "transactional")
+    assert not takes_a_guide_ending(None, None)
+
+    landing = "Buy CRM Software for Your Small Business Team Today"
+    assert title_ending_problem(landing, "crm software") == "filler:today"
+    assert without_filler_ending(landing, "crm software") is None
+    assert without_filler_ending(landing, "crm software", lift=True) is not None
+
+
+def test_a_filler_word_inside_single_quotation_marks_stays_for_the_repair():
+    title = "Benefits of Standing Desks: ‘Why They Matter Today’"
+    assert title_ending_problem(title, "benefits of standing desks") == "filler:today"
+    assert without_filler_ending(title, "benefits of standing desks", lift=True) is None
 
 
 def test_a_filler_word_that_closes_a_bracket_is_not_cut_out_of_it():
@@ -365,12 +387,16 @@ async def test_a_broken_title_takes_a_valid_rewrite_even_one_that_ends_weakly():
 @pytest.mark.asyncio
 async def test_a_title_left_short_is_lifted_without_a_second_call_to_the_model():
     short_of_it = "What Is Compound Interest in Simple Terms for You Now"
-    assert without_filler_ending(short_of_it, KEYPHRASE)
+    lifted = without_filler_ending(short_of_it, KEYPHRASE, lift=True)
+    assert lifted and without_filler_ending(short_of_it, KEYPHRASE) is None
     model = _model(_set(short_of_it, *GOOD))
 
-    titles = await _titles(model)
+    results = await tg._generate_and_validate_topics(
+        model=model, messages=[], query=KEYPHRASE, keyphrase=KEYPHRASE, guide_endings=True
+    )
 
-    assert titles[0] == without_filler_ending(short_of_it, KEYPHRASE)
+    titles = [topic.title for topic in results.topics]
+    assert titles[0] == lifted
     assert tg._weak_ending_indexes(_set(*titles), KEYPHRASE) == []
     assert model.ainvoke.call_count == 1
 

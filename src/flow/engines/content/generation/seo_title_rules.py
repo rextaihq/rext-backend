@@ -49,6 +49,23 @@ _NEUTRAL_SUFFIXES: tuple[str, ...] = (
 # gone ("...Benefits Of Standing Desks Today" is 48 without it). The same rule as the suffixes
 # above: no facts, rankings or superlatives. After a title that already holds a colon only the
 # ones without one are tried.
+# The article types whose title may end ": A Guide" or " Explained": the ones that explain or
+# guide. A landing page, a comparison or a list promises something else, and so does a title
+# for a search that wants to buy or to find a site.
+GUIDE_LIKE_CONTENT_TYPES = frozenset(
+    {"article", "blog", "how-to-guide", "explainer", "tutorial", "pillar-content"}
+)
+
+
+def takes_a_guide_ending(content_type: Any, intent: Any) -> bool:
+    """Whether a title for this article type and search intent may be lifted with a short
+    ending that promises a guide or an explanation."""
+    return (
+        str(content_type or "").strip().lower() in GUIDE_LIKE_CONTENT_TYPES
+        and str(intent or "").strip().lower() == "informational"
+    )
+
+
 _SHORT_NEUTRAL_SUFFIXES: tuple[str, ...] = (
     ": A Guide",
     " Explained",
@@ -635,11 +652,17 @@ def _closed_up(title: Any) -> str:
 
 
 def _balanced(title: str) -> bool:
-    """Whether every bracket and quotation mark that opens also closes."""
+    """Whether every bracket and quotation mark that opens also closes. A single closing mark
+    is an apostrophe as often ("Beginner’s"), so only an opening one without its closing one
+    counts against the title."""
     pairs = (("(", ")"), ("[", "]"), ("“", "”"))
-    return all(title.count(opening) == title.count(closing) for opening, closing in pairs) and (
-        title.count('"') % 2 == 0
-    )
+    if not all(title.count(opening) == title.count(closing) for opening, closing in pairs):
+        return False
+    if title.count('"') % 2 or title.count("‘") > title.count("’"):
+        return False
+    opening_straight = len(re.findall(r"(?:^|\s)'(?=\S)", title))
+    closing_straight = len(re.findall(r"(?<=\S)'(?=$|\s|[?!.,;:])", title))
+    return opening_straight <= closing_straight
 
 
 def _completes_for_you(word: str) -> bool:
@@ -694,12 +717,13 @@ def title_ending_problem(title: Any, keyphrase: Any = "") -> Optional[str]:
     return f"filler:{last}" if last in _FILLER_END_WORDS else None
 
 
-def without_filler_ending(title: Any, keyphrase: Any = "") -> Optional[str]:
+def without_filler_ending(title: Any, keyphrase: Any = "", lift: bool = False) -> Optional[str]:
     """The title without its one filler word, when what is left is a valid title that ends
     well ("...Understanding Best Practices Now"). Left a few characters under the minimum, it
-    is lifted with a short neutral ending where one fits ("...Standing Desks: A Guide"). None
-    when neither gives a title that stands: the ending then has to be written anew, which is
-    the repair's work."""
+    is lifted with a short neutral ending where one fits ("...Standing Desks: A Guide"), with
+    ``lift`` only: those endings promise a guide or an explanation, so the caller says whether
+    the article is one. None when neither gives a title that stands: the ending then has to
+    be written anew, which is the repair's work."""
     cleaned = _closed_up(title)
     problem = title_ending_problem(cleaned, keyphrase) or ""
     if not problem.startswith("filler:") or " " in problem:
@@ -707,13 +731,14 @@ def without_filler_ending(title: Any, keyphrase: Any = "") -> Optional[str]:
     words = cleaned.split()
     asks = words[-1].rstrip("\"'”’)").endswith("?")
     shorter = " ".join(words[:-1]).rstrip(_TRAILING_PUNCTUATION) + ("?" if asks else "")
-    # The word closed a bracket or a quotation that opened before it ("(Start Here)").
+    # The word closed a bracket or a quotation that opened before it ("(Start Here)", "‘Why
+    # They Matter Today’").
     if _ends_dangling(words, len(words) - 1) or not _balanced(shorter):
         return None
     candidates = [shorter]
     # A question keeps its mark at the end, as does a clause that closed on a mark of its own
     # ("...How Does It Work? Today"), and the other scripts have padding of their own.
-    if not asks and shorter[-1:] not in "?!." and not _local_language(shorter):
+    if lift and not asks and shorter[-1:] not in "?!." and not _local_language(shorter):
         known = shorter.lower()
         candidates += [
             f"{shorter}{suffix}"
