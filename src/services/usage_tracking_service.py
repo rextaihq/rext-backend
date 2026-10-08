@@ -277,6 +277,7 @@ class UsageTrackingService:
         original_amount: int,
         latest: Optional[bool] = None,
         subscription_id: Optional[UUID] = None,
+        bonus_order_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Shrink the unused part of a partially refunded period's credits.
 
@@ -318,6 +319,9 @@ class UsageTrackingService:
             subscription_id: The refunded subscription, when the caller knows it (a
                 renewal's invoice belongs to one). None takes the account's newest
                 subscription that grants access, as an order's refund does.
+            bonus_order_id: The order the payment's promotional bonus was granted
+                under, when it isn't ``lemonsqueezy_order_id`` (a first payment
+                refunded under its invoice's own key). None: the same order.
 
         Returns:
             A summary of the adjustment for the caller to log and audit, or
@@ -379,7 +383,7 @@ class UsageTrackingService:
 
         # Any refund forfeits the period's unspent promotional bonus.
         bonus_forfeited = await forfeit_grants(
-            self.db, subscription.id, order_id=lemonsqueezy_order_id
+            self.db, subscription.id, order_id=bonus_order_id or lemonsqueezy_order_id
         )
 
         balance = subscription.current_credits or 0

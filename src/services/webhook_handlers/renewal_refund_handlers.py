@@ -262,6 +262,12 @@ async def handle_subscription_payment_refunded(
                 original_amount=total,
                 latest=True,
                 subscription_id=subscription.id,
+                # An "updated" invoice here is the first payment under another name: its
+                # refunds are kept under the invoice, its promotional bonus was granted
+                # under the subscription's order.
+                bonus_order_id=(
+                    subscription.lemonsqueezy_order_id if billing_reason == "updated" else None
+                ),
             )
             if adjustment:
                 await audit_logger.log_payment_refunded(
