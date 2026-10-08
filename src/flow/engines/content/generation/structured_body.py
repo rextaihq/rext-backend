@@ -37,11 +37,16 @@ from typing import Any, Callable, List, Optional
 
 from pydantic import BaseModel, Field, create_model
 
+from src.flow.engines.content.generation.brand_slot import (
+    SLOT_LINE_PREFIX,
+    sections_inside_window,
+)
 from src.flow.engines.content.generation.link_integrity import extract_links, restore_lost_links
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
     expand_section_containers,
     faq_section_heading,
+    is_cta_key,
     is_faq_section,
     render_section_plan,
     resolve_outline_structure,
@@ -160,6 +165,90 @@ def _without_separate_faqs(
             content_type,
         )
     return kept
+
+
+def _writer_blocks(outline: dict, content_type: str) -> list[OutlineBlock]:
+    """The blocks the article's body is assembled from, in order: what
+    build_structured_content_model keeps (a block a typed field of the content model owns,
+    such as a how-to guide's `steps`, is written through that field), each planned section a
+    block of its own, less the call to action, which is a line or two and no section."""
+    from src.flow.model.structure.contents import get_generated_content_model
+
+    base_model = get_generated_content_model(content_type)
+    reserved = set(base_model.model_fields) if base_model is not None else set()
+    resolved = [
+        block
+        for block in resolve_outline_structure(outline or {}, content_type)
+        if block.key not in reserved
+    ]
+    blocks = _without_separate_faqs(
+        expand_section_containers(resolved), outline or {}, content_type
+    )
+    return [block for block in blocks if not is_cta_key(block.key)]
+
+
+def planned_section_count(outline: dict, content_type: str) -> int:
+    """How many H2 sections the writer is asked for (planned subsections, H3 and H4, are part
+    of their section). 0 when the outline resolves to none."""
+    return sum(1 for block in _writer_blocks(outline, content_type) if block.level == 2)
+
+
+def _section_list(outline: dict) -> list[dict]:
+    """The outline's own list of sections, as the brand slot reads it (brand_slot.py):
+    `structure.sections`, or a flat `sections`."""
+    container = outline.get("structure")
+    sections = container.get("sections") if isinstance(container, dict) else None
+    if not isinstance(sections, list):
+        sections = outline.get("sections")
+    return [s for s in sections if isinstance(s, dict)] if isinstance(sections, list) else []
+
+
+def _holds_brand_slot(value: Any) -> bool:
+    """Whether a brand slot was reserved here: a line the review step wrote for the writer
+    ("Work in the approved mention of …"), at any depth."""
+    if isinstance(value, str):
+        return value.startswith(SLOT_LINE_PREFIX)
+    if isinstance(value, dict):
+        return any(_holds_brand_slot(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_holds_brand_slot(item) for item in value)
+    return False
+
+
+def early_body_sections(outline: dict, content_type: str, fraction: float) -> list[str]:
+    """What "an early body section" means for this outline, by name: the sections inside the
+    first ``fraction`` of the article by their place in the plan.
+
+    A writer told "inside the first 30% of the article" cannot measure it, and put the one
+    mention a section too late (31% on a ten-section guide, rext-control#760).
+
+    It never says anything the brand slot does not (brand_slot.py reserves the section the
+    mention belongs in, and brand_schema_context tells the writer that field):
+
+    * a slot reserved in the outline's section list is the one section named;
+    * with none reserved, the window is counted as the slot counts it, over the same list
+      (`sections_inside_window`: in planned words, as the placement check reads the written
+      body, H3s included);
+    * a slot reserved anywhere else (a typed list of a fixed-shape type) says where already,
+      and nothing is named here;
+    * an outline with no section list (a how-to's blocks) is counted over the blocks the body
+      is built from, the opening and the FAQ left out.
+    """
+    outline = outline or {}
+    sections = _section_list(outline)
+    if sections:
+        reserved = [section for section in sections if _holds_brand_slot(section)]
+        named = reserved[:1] or sections[: sections_inside_window(sections, fraction)]
+        return [str(s.get("heading") or "").strip() for s in named if s.get("heading")]
+    if _holds_brand_slot(outline):
+        return []
+    parts = [
+        block
+        for block in _writer_blocks(outline, content_type)
+        if block.key not in ("hero", "faq", "faqs")
+        and not (isinstance(block.data, dict) and is_faq_section(block.data))
+    ]
+    return [block.heading for block in parts[: max(1, int(len(parts) * fraction))]]
 
 
 def _field_description(block: OutlineBlock) -> str:

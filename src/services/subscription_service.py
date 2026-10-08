@@ -52,6 +52,7 @@ from src.config.payment_config import payment_settings
 from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
+from src.services.credit_grants import as_utc, change_plan_credits
 from src.services.duplicate_subscriptions import is_known_duplicate
 from src.services.notification_helper import schedule_if_allowed
 from src.services.refund_cancellation import is_ended_by_refund
@@ -690,8 +691,28 @@ class SubscriptionService:
                     extra={"plan_id": str(new_plan_id), "billing_period": new_billing_period.value},
                 )
 
+        # Lemon Squeezy's call can take a while, and an article can spend credits meanwhile:
+        # the row is read again under a lock before the balance is worked out from it (F8a).
+        await self.db.execute(
+            select(UserSubscription)
+            .where(UserSubscription.id == current_subscription.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+        # A row from before the start-month marker says whether it had its month while the
+        # evidence is still on it: the change below ends a trial's status and its end date, and
+        # the first payment would then take it for a start that opened paid (F8e).
+        from src.services.webhook_handlers.subscription_handlers import record_start_month
+
+        had_its_month = record_start_month(current_subscription)
+
         # Update local subscription
         old_billing_period = current_subscription.billing_period
+        # A trial's credits come with its first payment. So do those of a trial already made
+        # active whose first payment hasn't come (Lemon Squeezy's update can land while it
+        # answers the change above): until then the balance stays as it is.
+        on_trial = current_subscription.status == SubscriptionStatus.TRIAL or not had_its_month
 
         # Check if upgrading from a trial
         was_trial = (
@@ -743,16 +764,32 @@ class SubscriptionService:
             current_subscription.trial_end_date = None
 
         if new_plan.credits_per_month is not None:
-            current_subscription.current_credits = new_plan.credits_per_month
-            # Keep the credit reset aligned to the existing billing-period end
-            # (provider `renews_at`); the subscription_updated webhook reconciles
-            # this afterwards. Only fall back to a calendar month if we have no
-            # anchor at all.
-            current_subscription.credits_reset_date = (
-                current_subscription.renews_at
-                or current_subscription.credits_reset_date
-                or add_months(datetime.now(timezone.utc), 1)
+            # The credits period keeps its end: the stored reset date while it's ahead (a
+            # renewal invoice moves it, and renews_at can lag until Lemon Squeezy's update
+            # arrives), else renews_at, and a calendar month only with no anchor at all. A past
+            # date would let the next spend refill the month this change has just worked out.
+            now = datetime.now(timezone.utc)
+            period_before = current_subscription.credits_reset_date
+            current_subscription.credits_reset_date = next(
+                (
+                    end
+                    for end in (
+                        current_subscription.credits_reset_date,
+                        current_subscription.renews_at,
+                    )
+                    if end and as_utc(end) > now
+                ),
+                add_months(now, 1),
             )
+            # The change keeps what was used this period (F8a). A trial's credits come with
+            # its first payment, so its balance stays as it is.
+            if not on_trial:
+                change_plan_credits(
+                    current_subscription,
+                    current_plan.credits_per_month,
+                    new_plan.credits_per_month,
+                    period_before=period_before,
+                )
 
         current_subscription.updated_at = datetime.now(timezone.utc)
 
