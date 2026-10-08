@@ -42,6 +42,7 @@ from src.flow.engines.content.generation.seo_title_rules import (
     normalize_title,
     recase_keyphrase,
     repair_title,
+    takes_a_guide_ending,
     title_ending_problem,
     title_is_valid,
     title_length_terms,
@@ -196,13 +197,13 @@ def _other_titles(parsed: SEOTopics, index: int) -> set[str]:
     return {other.title.casefold() for place, other in enumerate(parsed.topics) if place != index}
 
 
-def _drop_filler_endings(parsed: SEOTopics, keyphrase: str) -> None:
+def _drop_filler_endings(parsed: SEOTopics, keyphrase: str, lift: bool = False) -> None:
     """A valid title that ends on one filler word loses it, when what is left is still a valid
     title that ends well ("...Understanding Best Practices Now"): no model call for that."""
     for index, topic in enumerate(parsed.topics):
         if not title_is_valid(topic.title, keyphrase):
             continue
-        shorter = without_filler_ending(topic.title, keyphrase)
+        shorter = without_filler_ending(topic.title, keyphrase, lift)
         # Not into another topic's title: two choices that differ by the filler word alone
         # would become one. The ending then goes to the repair, which writes it anew.
         if shorter and shorter.casefold() not in _other_titles(parsed, index):
@@ -254,6 +255,7 @@ async def _repair_invalid_titles(
     parsed: SEOTopics,
     query: str,
     keyphrase: str,
+    lift: bool = False,
 ) -> SEOTopics:
     """
     Ask the LLM to repair only titles that violate the title contract, or that keep the
@@ -361,7 +363,7 @@ async def _repair_invalid_titles(
                 # that only ended weakly is given up for one that ends well, never for another
                 # weak ending; a title that broke the rules is given up for any valid one, since
                 # the last net may drop a topic it can't mend.
-                mended = without_filler_ending(candidate, keyphrase)
+                mended = without_filler_ending(candidate, keyphrase, lift)
                 if mended and mended.casefold() not in _other_titles(parsed, index):
                     candidate = mended
                 if index in weak_indexes and title_ending_problem(candidate, keyphrase):
@@ -454,6 +456,7 @@ async def _generate_and_validate_topics(
     query: str,
     keyphrase: str,
     regenerating: bool = False,
+    guide_endings: bool = False,
 ) -> Optional[SEOTopics]:
     """
     Generate topics and apply the non-breaking SEO validation/repair layer.
@@ -484,7 +487,7 @@ async def _generate_and_validate_topics(
 
         # A filler word at the end goes where the title stands without it; an ending that has
         # to be written anew goes to the repair with the invalid titles (G65).
-        _drop_filler_endings(results, keyphrase)
+        _drop_filler_endings(results, keyphrase, guide_endings)
 
         if _invalid_title_indexes(results, keyphrase) or _weak_ending_indexes(results, keyphrase):
             results = await _repair_invalid_titles(
@@ -492,10 +495,11 @@ async def _generate_and_validate_topics(
                 parsed=results,
                 query=query,
                 keyphrase=keyphrase,
+                lift=guide_endings,
             )
 
         results = _apply_deterministic_title_repair(results, keyphrase)
-        _drop_filler_endings(results, keyphrase)
+        _drop_filler_endings(results, keyphrase, guide_endings)
 
         if not results.topics and not regenerating:
             # Every title was dropped: the keyphrase itself is offered as the one title
@@ -848,6 +852,9 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
         query=query,
         keyphrase=keyphrase,
         regenerating=regenerating,
+        # A title left short by its filler word may take ": A Guide" only where the article
+        # is a guide or an explanation.
+        guide_endings=takes_a_guide_ending(selected_content_type, selected_intent),
     )
 
     if results is None:
