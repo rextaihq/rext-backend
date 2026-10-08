@@ -349,7 +349,10 @@ def _service_finding(*, linked, user):
         found = answers.pop(0) if answers else None
         return SimpleNamespace(
             scalar_one_or_none=lambda: found,
-            scalars=lambda: SimpleNamespace(first=lambda: found),
+            scalars=lambda: SimpleNamespace(
+                first=lambda: found,
+                all=lambda: found if isinstance(found, list) else ([found] if found else []),
+            ),
         )
 
     db.execute = execute
@@ -375,7 +378,9 @@ async def test_nothing_is_linked_or_opened_on_an_unconfirmed_email(existing_user
 
 @pytest.mark.asyncio
 async def test_an_existing_user_is_found_by_email_in_any_case(monkeypatch):
-    registered = SimpleNamespace(id="ana", login_count=0, last_login_at=None, is_active=True)
+    registered = SimpleNamespace(
+        id="ana", email="Ana@example.com", login_count=0, last_login_at=None, is_active=True
+    )
     service, db = _service_finding(linked=None, user=registered)
     # The link is as far as this looks: what follows it (sessions, tokens) is the service's own.
     monkeypatch.setattr(db, "flush", AsyncMock(side_effect=RuntimeError("far enough")))
@@ -393,6 +398,68 @@ async def test_an_existing_user_is_found_by_email_in_any_case(monkeypatch):
     assert "lower(users.email)" in db.asked[1]
     (linked,) = (call.args[0] for call in db.add.call_args_list)
     assert linked.user_id == "ana"
+
+
+def _user(id, email):
+    return SimpleNamespace(id=id, email=email)
+
+
+@pytest.mark.parametrize(
+    ("stored", "picked"),
+    [
+        ([], None),
+        ([("ana", "Ana@example.com")], "ana"),
+        # Two addresses that differ by case only: the one written exactly as the provider's.
+        ([("old", "Ana@example.com"), ("exact", "ana@example.com")], "exact"),
+    ],
+)
+def test_the_user_an_email_belongs_to(stored, picked):
+    users = [_user(*one) for one in stored]
+
+    found = OAuthService._the_one_with_this_email(users, "ana@example.com")
+
+    assert (found.id if found else None) == picked
+
+
+def test_two_users_by_case_and_neither_exact_is_nobodys_to_pick():
+    users = [_user("one", "Ana@example.com"), _user("two", "ANA@example.com")]
+
+    with pytest.raises(RextAuthenticationException, match="More than one account"):
+        OAuthService._the_one_with_this_email(users, "ana@example.com")
+
+
+@pytest.mark.asyncio
+async def test_googles_other_shape_of_answer_is_read_too(providers):
+    providers.google = {
+        "issued_to": OUR_APP,
+        "audience": OUR_APP,
+        "user_id": "108000000000000000001",
+        "email": "ana@example.com",
+        "verified_email": True,
+    }
+
+    signed_in = await checked_sign_in("google", "108000000000000000001", "ana@example.com", TOKEN)
+
+    assert (signed_in.email, signed_in.email_verified) == ("ana@example.com", True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("header", [{"x-ratelimit-remaining": "0"}, {"retry-after": "30"}])
+async def test_githubs_spent_rate_limit_is_not_a_word_on_the_token(providers, monkeypatch, header):
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/token"):
+            return httpx.Response(200, json={"user": providers.github_user})
+        return httpx.Response(403, headers=header, json={"message": "rate limit"})
+
+    monkeypatch.setattr(
+        provider_identity,
+        "_client",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+    )
+
+    # Not "this account has no confirmed email": the addresses could not be asked for.
+    with pytest.raises(ProviderUnavailable, match="rate limit"):
+        await checked_sign_in("github", "4242", "ana@example.com", TOKEN)
 
 
 # The call that carries the dashboard's key says so

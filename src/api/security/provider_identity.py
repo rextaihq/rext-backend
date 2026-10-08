@@ -82,6 +82,11 @@ async def _ask(client: httpx.AsyncClient, method: str, url: str, **kwargs: Any) 
         raise ProviderUnavailable(type(exc).__name__) from exc
     if response.status_code >= 500 or response.status_code == 429:
         raise ProviderUnavailable(f"status {response.status_code}")
+    if response.status_code == 403 and (
+        response.headers.get("x-ratelimit-remaining") == "0" or "retry-after" in response.headers
+    ):
+        # GitHub answers a spent rate limit with 403 as well as 429: not a word on the token.
+        raise ProviderUnavailable("the provider's rate limit")
     return response
 
 
@@ -108,14 +113,18 @@ async def _google(client: httpx.AsyncClient, access_token: str) -> ProviderIdent
     if not isinstance(told, dict):
         raise ProviderUnavailable("an answer of another shape")
 
-    if expected not in (told.get("aud"), told.get("azp")):
+    # Google's token information comes in two shapes, by the version that answers: `aud`, `azp`,
+    # `sub` and `email_verified`, or `audience`, `issued_to`, `user_id` and `verified_email`.
+    made_for = {told.get(name) for name in ("aud", "azp", "audience", "issued_to")}
+    if expected not in made_for:
         raise ProviderRefused("the token was made for another app")
 
-    account_id = str(told.get("sub") or "").strip()
+    account_id = str(told.get("sub") or told.get("user_id") or "").strip()
     if not account_id:
         raise ProviderRefused("the token names no account")
     email = _lower(told.get("email")) or None
-    verified = bool(email) and str(told.get("email_verified")).lower() == "true"
+    vouched = told.get("email_verified", told.get("verified_email"))
+    verified = bool(email) and str(vouched).lower() == "true"
     return ProviderIdentity(
         account_id=account_id,
         email=email,

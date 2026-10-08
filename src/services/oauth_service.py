@@ -64,6 +64,23 @@ class OAuthService:
         """
         self.db = db
 
+    @staticmethod
+    def _the_one_with_this_email(users: List[Users], email: str) -> Optional[Users]:
+        """The user a provider's email belongs to, among those whose address matches it in any
+        case: the one written exactly so, else the only one. Two users whose addresses differ
+        only by case and neither exact: nobody is picked for them."""
+        exact = [user for user in users if user.email == email]
+        if exact:
+            return exact[0]
+        if len(users) > 1:
+            raise RextAuthenticationException(
+                message=(
+                    "More than one account uses this email address. Sign in with your email "
+                    "and password, then connect the provider from your account settings."
+                )
+            )
+        return users[0] if users else None
+
     async def oauth_login_or_register(
         self,
         provider: str,
@@ -161,7 +178,7 @@ class OAuthService:
                 .where(func.lower(Users.email) == provider_email.lower())
                 .order_by(Users.created_at)
             )
-            user = result.scalars().first()
+            user = self._the_one_with_this_email(result.scalars().all(), provider_email)
 
             if user:
                 # User exists - link this OAuth account to their account
