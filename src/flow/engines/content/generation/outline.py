@@ -14,6 +14,7 @@ from src.flow.engines.content.generation.focus_keyword import (
 from src.flow.engines.content.generation.outline_depth import (
     MIN_MAIN_SECTIONS,
     hold_main_sections,
+    hold_plan_inside_its_range,
 )
 from src.flow.model.llm_manager import load_model
 from src.flow.model.provider_outage import (
@@ -28,6 +29,7 @@ from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
     normalize_content_type,
+    plan_ceiling,
 )
 from src.flow.prompts.human.outline import (
     get_outline_prompt,
@@ -994,9 +996,40 @@ async def generate_outline(state: REXT) -> dict:
         # blog's `structure.sections`. Reading only the flat key meant blog
         # outlines never had their word budget recomputed and silently fell back
         # to the schema default regardless of how deep the plan actually was.
+        # A plan above the range the product shows for the type is brought inside it first,
+        # every budget by the same share (outline_depth.py): a first outline and one written
+        # again after feedback alike, since the range is the type's, not the plan's.
+        most = plan_ceiling(content_type)
+        trimmed = hold_plan_inside_its_range(outline_dict, most)
         sections = _outline_sections(outline_dict)
+        if trimmed:
+            logger.info(
+                "Outline plan brought inside its type's range: %s words off, content_type=%s",
+                trimmed,
+                content_type,
+            )
+            # The model's reading time was for the plan it wrote: it comes down with it.
+            minutes = outline_dict.get("target_reading_time_minutes")
+            kept = sum(
+                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
+            )
+            if isinstance(minutes, int) and not isinstance(minutes, bool) and minutes > 0:
+                # Never under the least the outline's own model accepts for it.
+                field = getattr(model_schema, "model_fields", {}).get("target_reading_time_minutes")
+                least = next(
+                    (
+                        rule.ge
+                        for rule in getattr(field, "metadata", None) or []
+                        if getattr(rule, "ge", None) is not None
+                    ),
+                    1,
+                )
+                outline_dict["target_reading_time_minutes"] = max(
+                    min(minutes, least), round(minutes * kept / (kept + trimmed))
+                )
         if sections:
-            outline_dict["target_word_count"] = _summed_word_target(model_schema, sections)
+            target = _summed_word_target(model_schema, sections)
+            outline_dict["target_word_count"] = min(target, most) if most else target
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly

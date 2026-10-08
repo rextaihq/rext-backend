@@ -19,6 +19,9 @@ MAX_MAIN_SECTIONS = 8
 # budget of an introducing H2 spread to every section.
 MAIN_SECTION_MIN_WORDS = 200
 
+# Budgets are brought down to a multiple of this, as the model writes them.
+_BUDGET_STEP = 10
+
 _CONTAINERS = ("structure", "content_structure")
 
 
@@ -110,6 +113,86 @@ def fill_main_budgets(
             section["suggested_word_count"] = least_words
             lifted += 1
     return sections, lifted
+
+
+def _budget(section: dict) -> int | None:
+    words = section.get("suggested_word_count")
+    return words if isinstance(words, int) and not isinstance(words, bool) and words > 0 else None
+
+
+def fit_budgets(
+    sections: list[dict], most: int, least_words: int = MAIN_SECTION_MIN_WORDS
+) -> tuple[list[dict], int]:
+    """``sections`` with their budgets brought down until the plan adds up to ``most`` words or
+    fewer, and how many words came off.
+
+    Every budget gives the same share, so the plan keeps its shape. An H2 without H3s is not
+    taken under ``least_words`` (the whole budget `fill_main_budgets` guarantees), and no other
+    budget under half of that; what a section at its floor cannot give is taken from the ones
+    that still can, by the same share again. Only when the floors alone add up to more than
+    ``most`` does a plan come out above it: the caller holds the article's target to ``most``
+    itself. A section without a budget counts as ``least_words``, as the sum does, and is left
+    as it is.
+    """
+    sections = [dict(section) for section in sections]
+    budgets = [_budget(section) for section in sections]
+    if sum(budget or least_words for budget in budgets) <= most:
+        return sections, 0
+    floors = [
+        None
+        if budget is None
+        else min(
+            budget,
+            least_words
+            if _level(section) == "H2" and not _children(sections, index)
+            else least_words // 2,
+        )
+        for index, (section, budget) in enumerate(zip(sections, budgets, strict=True))
+    ]
+    # Sections brought to their floor give no more; the rest share what is left.
+    at_floor: set[int] = set()
+    giving = {index for index, budget in enumerate(budgets) if budget is not None}
+    share = 1.0
+    while giving:
+        room = most - sum(
+            least_words if budgets[i] is None else floors[i]
+            for i in range(len(sections))
+            if i not in giving
+        )
+        share = max(0.0, room) / sum(budgets[i] for i in giving)
+        under = {i for i in giving if budgets[i] * share < floors[i]}
+        if not under:
+            break
+        at_floor |= under
+        giving -= under
+    removed = 0
+    for index in sorted(giving | at_floor):
+        fitted = floors[index]
+        if index in giving:
+            fitted = max(fitted, int(budgets[index] * share) // _BUDGET_STEP * _BUDGET_STEP)
+        removed += budgets[index] - fitted
+        sections[index]["suggested_word_count"] = fitted
+    return sections, removed
+
+
+def hold_plan_inside_its_range(outline: dict, most: int | None) -> int:
+    """Bring a generated outline's budgets down until its plan adds up to ``most`` words or
+    fewer (the range the product shows for its type, `outlines.plan_ceiling`), in place.
+    Returns the words that came off; 0 with no ceiling, and for an outline with no section
+    list."""
+    if not most:
+        return 0
+    for key in _CONTAINERS:
+        container = outline.get(key)
+        sections = container.get("sections") if isinstance(container, dict) else None
+        if not isinstance(sections, list) or not sections:
+            continue
+        kept = [section for section in sections if isinstance(section, dict)]
+        fitted, removed = fit_budgets(kept, most)
+        if removed:
+            container["sections"] = fitted
+        return removed
+    return 0
 
 
 def hold_main_sections(outline: dict) -> tuple[int, int]:
