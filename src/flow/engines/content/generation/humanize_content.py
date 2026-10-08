@@ -38,6 +38,7 @@ from src.flow.engines.content.generation.section_rewrite import (
     SECTION,
     Part,
     brand_lines,
+    call_to_action_lines,
     join_article,
     keyphrase_plan,
     keyword_lines,
@@ -473,6 +474,8 @@ async def _rewrite_by_section(
         wanted_scale(sum(count_words(part.text) for part in parts), word_target),
     )
     new_phrases = secondary_plan(parts, spec.get("secondary_keywords"))
+    cta = original_payload.get("cta")
+    call_to_action = ((cta.get("text") if isinstance(cta, dict) else "") or "").strip()
 
     def messages_for(part: Part, index: int, low: int, high: int) -> list:
         return prompt.format_messages(
@@ -486,12 +489,19 @@ async def _rewrite_by_section(
                 brand_context=spec.get("brand_context"),
                 excluded_brand=spec.get("excluded_brand"),
             ),
-            keyword_instruction=keyword_lines(
-                part.text,
-                focus_keyphrase,
-                spec.get("secondary_keywords"),
-                wanted_uses=uses.get(index),
-                new_phrases=new_phrases.get(index),
+            keyword_instruction="\n".join(
+                line
+                for line in (
+                    keyword_lines(
+                        part.text,
+                        focus_keyphrase,
+                        spec.get("secondary_keywords"),
+                        wanted_uses=uses.get(index),
+                        new_phrases=new_phrases.get(index),
+                    ),
+                    call_to_action_lines(part.text, call_to_action),
+                )
+                if line
             ),
             words=count_words(part.text),
             low=low,
@@ -508,6 +518,7 @@ async def _rewrite_by_section(
             word_target=word_target,
             brand=spec.get("brand_context"),
             excluded=spec.get("excluded_brand"),
+            keep=[call_to_action] if call_to_action else None,
         )
     except Exception:
         logger.exception("humanize_content: the rewrite failed; keeping pre-humanize content.")

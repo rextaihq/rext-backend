@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -70,13 +71,30 @@ INTRODUCTION = "introduction"
 OPENING = "opening"
 SECTION = "section"
 
-_FENCE = re.compile(r"^\s*```[a-zA-Z]*\s*\n(.*)\n\s*```\s*$", re.DOTALL)
-# Where a markdown link or an image embed points.
+# An answer wrapped whole in a code fence, of backticks or of tildes.
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})[a-zA-Z]*\s*\n(.*)\n\s*\1\s*$", re.DOTALL)
+# Where a markdown link or an image embed points, and where an image embed does.
 _TARGET = re.compile(r"\]\(\s*<?([^)\s>]+)")
+_IMAGE = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)")
+# A numbered step, a bullet and a table's row, each at the start of its line.
+_STEP = re.compile(r"^[ \t]{0,8}\d{1,3}[.)][ \t]+\S", re.MULTILINE)
+_BULLET = re.compile(r"^[ \t]{0,8}[-*+][ \t]+\S", re.MULTILINE)
+_ROW = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.MULTILINE)
 
 
 def _targets(text: str) -> set[str]:
     return {target.rstrip("/") for target in _TARGET.findall(text or "")}
+
+
+def _images(text: str) -> Counter:
+    """Each image the text embeds, as often as it does: an image turned into a link still
+    points where it did, and one of two alike is gone without its address being."""
+    return Counter(target.rstrip("/") for target in _IMAGE.findall(text or ""))
+
+
+def _items(text: str) -> tuple[int, int, int]:
+    """(numbered steps, bullets, table rows) in the text."""
+    return len(_STEP.findall(text)), len(_BULLET.findall(text)), len(_ROW.findall(text))
 
 
 @dataclass(frozen=True)
@@ -181,7 +199,7 @@ def _plain_text(answer: Any) -> str:
         )
     text = str(content or "").strip()
     fenced = _FENCE.match(text)
-    return fenced.group(1).strip() if fenced else text
+    return fenced.group(2).strip() if fenced else text
 
 
 def _mentions(text: str, name: str) -> int:
@@ -197,6 +215,30 @@ def _brand_linked(text: str, brand: dict[str, str]) -> bool:
     )
 
 
+def _with_its_headings(part: Part, text: str) -> Optional[str]:
+    """``text`` with every heading line as the part was drafted with it, or None when the
+    headings are not the drafted ones in number, level and order.
+
+    A heading is the outline's, approved before the article was written, and the checks on
+    headings ran before the rewrite: a section's own, and each sub-section's under it. A
+    reworded one is put back as it was; one added, dropped or moved is a rewrite that cannot be
+    used. A section may leave its own heading line off (it is put on), and nothing may stand
+    before it."""
+    drafted, found = extract_subheadings(part.text), extract_subheadings(text)
+    levels, had = [h.level for h in found], [h.level for h in drafted]
+    own_left_off = part.kind == SECTION and levels == had[1:]
+    if levels != had and not own_left_off:
+        return None
+    was, lines = part.text.splitlines(), text.splitlines()
+    for mine, theirs in zip(drafted[1:] if own_left_off else drafted, found, strict=True):
+        lines[theirs.line_index] = was[mine.line_index]
+    if part.kind != SECTION:
+        return "\n".join(lines).strip()
+    if own_left_off:
+        return f"{part.heading}\n\n" + "\n".join(lines).strip()
+    return "\n".join(lines[found[0].line_index :]).strip()
+
+
 def judge(
     part: Part,
     rewritten: str,
@@ -204,32 +246,17 @@ def judge(
     *,
     brand: dict[str, str] | None = None,
     excluded: dict[str, str] | None = None,
+    keep: list[str] | None = None,
 ) -> tuple[Optional[str], str]:
     """(the rewritten part as it goes into the article, "") or (None, why the part is kept as
-    drafted).
-
-    The part's own heading line is the drafted one whatever came back: a heading is the
-    outline's, and the checks on headings ran before the rewrite. No heading of its level or
-    above may have been added: that is a new section."""
-    text = (rewritten or "").strip()
-    if not text:
+    drafted). What the part's message asks to be kept is held here, not trusted: the headings,
+    the links and images, the lists, the brand's mentions, and the phrases in ``keep`` (the
+    article's call to action)."""
+    if not (rewritten or "").strip():
         return None, "came back empty"
-    found = extract_subheadings(text)
-    if part.kind == SECTION:
-        level = part.level
-        own = [h for h in found if h.level == level]
-        if len(own) > 1 or any(h.level < level for h in found):
-            return None, "a heading was added"
-        lines = text.splitlines()
-        if own:
-            lines[own[0].line_index] = part.heading
-            # Nothing may stand before a part's own heading.
-            text = "\n".join(lines[own[0].line_index :]).strip()
-        else:
-            text = f"{part.heading}\n\n{text}"
-    elif any(h.level == 2 for h in found):
-        # The introduction and the opening have no H2: one that appeared is a new section.
-        return None, "a heading was added"
+    text = _with_its_headings(part, rewritten.strip())
+    if text is None:
+        return None, "its headings changed"
     count, drafted = words(text), words(part.text)
     # Too long is longer than the guard allows and longer than the part was: a part that had
     # to come down and came back no longer than it was drafted does the length no harm, and
@@ -240,8 +267,12 @@ def judge(
         return None, f"too short ({count} words for {round(wanted)} wanted)"
     # A link or an image the part had and its rewrite has not: put back afterwards it would
     # land at the article's end, on a line of its own, and fail the check on woven-in links.
-    if _targets(part.text) - _targets(text):
+    if _targets(part.text) - _targets(text) or _images(part.text) - _images(text):
         return None, "a link or an image was lost"
+    # A step dropped from a how-to, a product from a table, a list told as prose: the facts
+    # went with them, and nothing after the rewrite compares the lists.
+    if any(now < was for was, now in zip(_items(part.text), _items(text), strict=True)):
+        return None, "a list or a table lost items"
     # The brand is named where the writer and its checks put it, as often as the user chose
     # (a Subtle article names it once): a mention added or dropped, or parted from its link,
     # is a rewrite that cannot be used.
@@ -258,6 +289,9 @@ def judge(
     barred = ((excluded or {}).get("brand_name") or "").strip()
     if barred and _mentions(text, barred) > _mentions(part.text, barred):
         return None, "a brand the article leaves out was named"
+    for phrase in keep or []:
+        if phrase.lower() in part.text.lower() and phrase.lower() not in text.lower():
+            return None, "the call to action's words changed"
     return text, ""
 
 
@@ -268,9 +302,10 @@ def accept(
     *,
     brand: dict[str, str] | None = None,
     excluded: dict[str, str] | None = None,
+    keep: list[str] | None = None,
 ) -> Optional[str]:
     """The rewritten part as it goes into the article, or None to keep the part as drafted."""
-    return judge(part, rewritten, wanted, brand=brand, excluded=excluded)[0]
+    return judge(part, rewritten, wanted, brand=brand, excluded=excluded, keep=keep)[0]
 
 
 def _uses(text: str, focus: str) -> tuple[int, int]:
@@ -310,13 +345,21 @@ def keyphrase_plan(
     wanted = min(max(current, min(least + 1, most)), most)
     plan = {index: _uses(part.text, focus)[0] for index, part in enumerate(parts)}
     rewritten = [i for i, part in enumerate(parts) if words(part.text) >= MIN_WORDS_TO_REWRITE]
-    # One more in the longest parts, where a use reads least forced; one fewer in the parts
-    # that have the most.
-    for index in sorted(rewritten, key=lambda i: -words(parts[i].text))[: max(0, wanted - current)]:
-        plan[index] += 1
-    for index in sorted(rewritten, key=lambda i: -plan[i])[: max(0, current - wanted)]:
-        if plan[index] > 0:
-            plan[index] -= 1
+    # One more in the longest parts, where a use reads least forced, and round again when
+    # more are needed than there are parts; one fewer in whichever part then has the most,
+    # until the article's count is the one wanted.
+    longest_first = sorted(rewritten, key=lambda i: -words(parts[i].text))
+    owed = wanted - current
+    while owed > 0 and longest_first:
+        for index in longest_first[:owed]:
+            plan[index] += 1
+        owed -= len(longest_first[:owed])
+    while owed < 0 and rewritten:
+        index = max(rewritten, key=lambda i: plan[i])
+        if plan[index] <= 0:
+            break
+        plan[index] -= 1
+        owed += 1
     return plan
 
 
@@ -422,6 +465,19 @@ def keyword_lines(
     return "\n".join(lines)
 
 
+def call_to_action_lines(text: str, call_to_action: str | None) -> str:
+    """What the part that carries the article's call to action is told. The brief's line for
+    it is the whole article's and is not said to every part; said to none, the one part that
+    holds it was free to reword it away from the call to action saved with the article."""
+    phrase = (call_to_action or "").strip()
+    if not phrase or phrase.lower() not in text.lower():
+        return ""
+    return (
+        f'- This part carries the article\'s call to action, "{phrase}". Keep those words '
+        "exactly as they are, where they stand."
+    )
+
+
 def brand_lines(
     text: str,
     *,
@@ -451,6 +507,39 @@ def brand_lines(
     )
 
 
+def hold_the_range(parts: list[Part], rewritten: list[Part], word_target: int) -> list[Part]:
+    """The rewritten parts, with the ones that took the article out of its range put back.
+
+    A part may come back a fifth over what was wanted of it; an article is allowed 12%. Every
+    part a little long is an article outside its range that no part's guard saw. So the parts
+    that grew the most go back to their drafts, the largest first, until the article is inside
+    (or none is left that grew); the same the other way for an article that came out short.
+    """
+    if not word_target:
+        return rewritten
+    low, high = compute_word_target_band(word_target)
+    held = list(rewritten)
+    grew = {
+        index: words(after.text) - words(before.text)
+        for index, (before, after) in enumerate(zip(parts, rewritten, strict=True))
+        if after is not before
+    }
+    total = sum(words(part.text) for part in held)
+    over = total > high
+    if not over and total >= low:
+        return held
+    for index in sorted(grew, key=lambda i: -grew[i] if over else grew[i]):
+        if (low <= total <= high) or (grew[index] <= 0 if over else grew[index] >= 0):
+            break
+        logger.info(
+            "section rewrite: part %s kept as drafted: the article would leave its range",
+            index + 1,
+        )
+        total -= grew[index]
+        held[index] = parts[index]
+    return held
+
+
 async def rewrite_parts(
     parts: list[Part],
     *,
@@ -459,6 +548,7 @@ async def rewrite_parts(
     word_target: int,
     brand: dict[str, str] | None = None,
     excluded: dict[str, str] | None = None,
+    keep: list[str] | None = None,
 ) -> tuple[list[Part], dict[str, int]]:
     """Every part rewritten at once, each kept as drafted when its rewrite cannot be used.
 
@@ -488,13 +578,16 @@ async def rewrite_parts(
                 type(error).__name__,
             )
             return part
-        accepted, why = judge(part, _plain_text(answer), wanted, brand=brand, excluded=excluded)
+        accepted, why = judge(
+            part, _plain_text(answer), wanted, brand=brand, excluded=excluded, keep=keep
+        )
         if accepted is None:
             logger.info("section rewrite: part %s kept as drafted: %s", index + 1, why)
             return part
         return Part(part.kind, part.heading, accepted)
 
     rewritten = list(await asyncio.gather(*(one(i, part) for i, part in enumerate(parts))))
+    rewritten = hold_the_range(parts, rewritten, word_target)
     changed = sum(1 for before, after in zip(parts, rewritten, strict=True) if after is not before)
     return rewritten, {
         "parts": len(parts),
