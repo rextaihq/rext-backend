@@ -407,6 +407,59 @@ async def test_a_second_pillar_attempt_that_loses_a_main_section_keeps_the_first
     assert len(calls) == 2
 
 
+def _named(*sections):
+    return {
+        "title": "x",
+        "structure": {
+            "sections": [
+                {"heading": heading, "heading_level": level} for heading, level in sections
+            ]
+        },
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "topics",
+    [
+        ["Введение", "Стратегия", "Шаблоны", "Метрики", "Автоматизация"],
+        ["入门指南", "营销策略", "邮件模板", "效果衡量", "自动化流程"],
+    ],
+)
+async def test_main_sections_are_known_by_their_words_in_any_script(monkeypatch, topics):
+    first = _named(*[(topic, "H2") for topic in topics])
+    # Four H2s and H3s, with the first outline's last topic nowhere in it.
+    lost = _named(
+        (topics[0], "H2"),
+        ("a", "H3"),
+        ("b", "H3"),
+        (topics[1], "H2"),
+        (topics[2], "H2"),
+        (topics[3], "H2"),
+    )
+    kept = _named(
+        (topics[0], "H2"),
+        (topics[4], "H3"),
+        ("b", "H3"),
+        (topics[1], "H2"),
+        (topics[2], "H2"),
+        (topics[3], "H2"),
+    )
+
+    outline, _ = await _generate(monkeypatch, "pillar-content", [first, lost])
+    assert len(outline["structure"]["sections"]) == 5
+
+    outline, _ = await _generate(monkeypatch, "pillar-content", [first, kept])
+    assert [section["heading_level"] for section in outline["structure"]["sections"]] == [
+        "H2",
+        "H3",
+        "H3",
+        "H2",
+        "H2",
+        "H2",
+    ]
+
+
 @pytest.mark.unit
 async def test_a_second_pillar_attempt_with_fewer_than_four_main_sections_keeps_the_first(
     monkeypatch,
