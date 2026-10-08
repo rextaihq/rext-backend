@@ -163,33 +163,44 @@ def _without_separate_faqs(
     return kept
 
 
-def _writer_sections(outline: dict, content_type: str) -> list[OutlineBlock]:
-    """The H2 sections the writer is asked for, in order: the blocks the body model is built
-    from, less the planned subsections (H3 and H4) and the call to action, which is a line or
-    two and no section."""
+def _writer_blocks(outline: dict, content_type: str) -> list[OutlineBlock]:
+    """The blocks the article's body is assembled from, in order: what
+    build_structured_content_model keeps (a block a typed field of the content model owns,
+    such as a how-to guide's `steps`, is written through that field), each planned section a
+    block of its own, less the call to action, which is a line or two and no section."""
+    from src.flow.model.structure.contents import get_generated_content_model
+
+    base_model = get_generated_content_model(content_type)
+    reserved = set(base_model.model_fields) if base_model is not None else set()
+    resolved = [
+        block
+        for block in resolve_outline_structure(outline or {}, content_type)
+        if block.key not in reserved
+    ]
     blocks = _without_separate_faqs(
-        expand_section_containers(resolve_outline_structure(outline or {}, content_type)),
-        outline or {},
-        content_type,
+        expand_section_containers(resolved), outline or {}, content_type
     )
-    return [block for block in blocks if block.level == 2 and not is_cta_key(block.key)]
+    return [block for block in blocks if not is_cta_key(block.key)]
 
 
 def planned_section_count(outline: dict, content_type: str) -> int:
-    """How many H2 sections the writer is asked for. 0 when the outline resolves to none."""
-    return len(_writer_sections(outline, content_type))
+    """How many H2 sections the writer is asked for (planned subsections, H3 and H4, are part
+    of their section). 0 when the outline resolves to none."""
+    return sum(1 for block in _writer_blocks(outline, content_type) if block.level == 2)
 
 
 def early_body_sections(outline: dict, content_type: str, fraction: float) -> list[str]:
-    """The planned body sections that sit inside the first ``fraction`` of the article, by
+    """The planned parts of the body that sit inside the first ``fraction`` of the article, by
     their place in the plan: what "an early body section" means for this outline, by name.
 
     A writer told "inside the first 30% of the article" cannot measure it, and put the one
-    mention a section too late (31% on a ten-section guide, rext-control#760). At least the
-    first two H2 sections are looked at; the opening block and the FAQ are never among them.
+    mention a section too late (31% on a ten-section guide, rext-control#760). Sections and
+    planned subsections are counted alike, so a section that holds most of the article is not
+    named whole. At least the first two parts are looked at; the opening block and the FAQ are
+    never among them.
     """
-    sections = _writer_sections(outline, content_type)
-    inside = sections[: max(2, int(len(sections) * fraction))]
+    parts = _writer_blocks(outline, content_type)
+    inside = parts[: max(2, int(len(parts) * fraction))]
     return [
         block.heading
         for block in inside
