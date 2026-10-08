@@ -981,10 +981,19 @@ class WorkspacePipeline:
         except Exception:  # noqa: BLE001 - a line of progress is never worth the run
             logger.warning("Workspace pipeline: a progress event was not sent", exc_info=True)
 
-    async def _say_people(self) -> None:
+    async def _say_people(self, found: Optional[List[dict]] = None) -> None:
         """The people are saved from here on: said at once, since the brand-voice step's
-        own end came before them and the run's end is a competitor search away."""
-        people = getattr(self, "_extracted_personas", None) or []
+        own end came before them and the run's end is a competitor search away.
+
+        Only the people this run found (`found`, by name): a refresh keeps the personas a
+        person made by hand, and those were not read from the site.
+        """
+        names = {(person.get("name") or "").strip() for person in found or []} - {""}
+        people = [
+            persona
+            for persona in getattr(self, "_extracted_personas", None) or []
+            if (persona.get("name") or "").strip() in names
+        ]
         await self._say(
             "personas",
             f"Saved {len(people)} author personas",
@@ -1022,9 +1031,19 @@ class WorkspacePipeline:
             return "about"
         return kind
 
+    def _pages_read_count(self) -> int:
+        """How many pages were fetched, the ones past the listed 25 included."""
+        return sum("#" not in page for page in getattr(self, "_page_text_by_url", None) or {})
+
     def _pages_read(self) -> List[Dict[str, str]]:
         """The pages the scrape read, with what each is, the home page first."""
-        pages = getattr(self, "_page_text_by_url", None) or {}
+        # Fetched pages only: the index also holds entries made up for the extraction passes
+        # (a feed's authors as "<feed>#author=Name"), which are no page anyone can open.
+        pages = {
+            page: text
+            for page, text in (getattr(self, "_page_text_by_url", None) or {}).items()
+            if "#" not in page
+        }
         kinds = {page: self._page_kind(page, text) for page, text in pages.items()}
         listed = sorted(pages, key=lambda page: (kinds[page] != "home", page))
         return [{"page": page, "kind": kinds[page]} for page in listed[:MAX_PAGES_REPORTED]]
@@ -1067,10 +1086,7 @@ class WorkspacePipeline:
             await self._say(
                 "scrape",
                 f"Read {len(pages_read)} pages",
-                {
-                    "pages": pages_read,
-                    "count": len(getattr(self, "_page_text_by_url", None) or {}),
-                },
+                {"pages": pages_read, "count": self._pages_read_count()},
             )
 
         title = None
@@ -2393,7 +2409,7 @@ class WorkspacePipeline:
         saved_personas.sort(key=lambda p: position.get(p.name or "", len(position)))
         self._extracted_personas = [_format_persona_for_frontend(p) for p in saved_personas]
 
-        await self._say_people()
+        await self._say_people(personas_data)
 
         logger.info(
             "Persisted and formatted personas for frontend",

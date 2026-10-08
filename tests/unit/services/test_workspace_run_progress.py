@@ -161,6 +161,17 @@ def test_a_page_is_named_as_a_reader_would_name_it():
     )
 
 
+def test_an_entry_made_up_for_the_extraction_is_no_page_read():
+    pipeline = _pipeline()
+    pipeline._page_text_by_url = {
+        "https://acme.example/": "Acme.",
+        "https://acme.example/feed#author=Ana Ruiz": "Author profile: Ana Ruiz",
+    }
+
+    assert [page["page"] for page in pipeline._pages_read()] == ["https://acme.example/"]
+    assert pipeline._pages_read_count() == 1
+
+
 def test_the_list_of_pages_is_bounded():
     pipeline = _pipeline()
     pipeline._page_text_by_url = {
@@ -182,18 +193,36 @@ async def test_a_progress_event_that_cannot_be_sent_never_fails_the_run(monkeypa
 
 async def test_the_people_are_said_the_moment_they_are_saved(said):
     pipeline = _pipeline()
+    found = [{"name": f"Person {number}"} for number in range(MAX_PEOPLE_REPORTED + 3)]
     pipeline._extracted_personas = [
-        {"full_name": f"Person {number}", "professional_title": "Smith" if number == 0 else None}
-        for number in range(MAX_PEOPLE_REPORTED + 3)
+        {
+            "name": person["name"],
+            "full_name": person["name"],
+            "professional_title": "Smith" if person["name"] == "Person 0" else None,
+        }
+        for person in found
     ]
 
-    await pipeline._say_people()
+    await pipeline._say_people(found)
 
     step, _, payload = said[-1]
     assert step == "personas"
     assert payload["count"] == MAX_PEOPLE_REPORTED + 3
     assert len(payload["people"]) == MAX_PEOPLE_REPORTED
     assert payload["people"][0] == {"person": "Person 0", "title": "Smith"}
+
+
+async def test_a_persona_made_by_hand_is_not_said_to_be_read_from_the_site(said):
+    """A refresh keeps the personas a person made; only the ones this run found are said."""
+    pipeline = _pipeline()
+    pipeline._extracted_personas = [
+        {"name": "Ana Ruiz", "full_name": "Ana Ruiz", "professional_title": "Founder"},
+        {"name": "Our reader", "full_name": "Our reader", "professional_title": None},
+    ]
+
+    await pipeline._say_people([{"name": "Ana Ruiz"}])
+
+    assert said[-1][2] == {"people": [{"person": "Ana Ruiz", "title": "Founder"}], "count": 1}
 
 
 async def test_no_one_saved_is_said_too(said):
