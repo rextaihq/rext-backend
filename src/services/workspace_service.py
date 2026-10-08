@@ -170,6 +170,7 @@ async def _run_pipeline_recorded(
     url: Optional[str],
     description: Optional[str] = None,
     name: Optional[str] = None,
+    brand_name: Optional[str] = None,
 ) -> None:
     """One pipeline run with its outcome on the workspace's row: written as the run settles, before
     its terminal event goes out (so a read on that event sees it), and "failed" for a run cut off at
@@ -198,6 +199,7 @@ async def _run_pipeline_recorded(
             url=url,
             description=description,
             name=name,
+            brand_name=brand_name,
             on_finished=record,
         )
     )
@@ -267,6 +269,7 @@ class WorkspaceService:
         timezone: Optional[str],
         url: Optional[str],
         description: Optional[str] = None,
+        brand_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a workspace and trigger the background onboarding pipeline.
@@ -282,10 +285,13 @@ class WorkspaceService:
                 user_id=user_id, name=name, tz=timezone, url=url
             )
             await self.db.refresh(workspace)
-            if not url and description:
+            if not url and (description or brand_name):
                 # Kept with the workspace itself, in the owner's words: a run that a restart
-                # ends before it saves anything can then be run again from it.
-                self.db.add(BrandVoice(workspace_id=workspace.id, about=description))
+                # ends before it saves anything can then be run again from it. The business's
+                # name, when its owner typed one, is theirs too and no draft replaces it.
+                self.db.add(
+                    BrandVoice(workspace_id=workspace.id, about=description, brand_name=brand_name)
+                )
 
         with trace(name="Assign Roles & Permissions"):
             await self.create_workspace_member(
@@ -326,6 +332,7 @@ class WorkspaceService:
                             url=url,
                             description=description,
                             name=name,
+                            brand_name=brand_name,
                         )
                     except Exception as exc:
                         logger.error(
@@ -409,11 +416,13 @@ class WorkspaceService:
                 message="The workspace's website is still being read. Wait for it to finish.",
                 rule_name="workspace_pipeline_running",
             )
-        description = None
+        description, brand_name = None, None
         if not workspace.url:
             # No website to read. Only the retry of a run that failed or was interrupted drafts
             # the voice again, from the owner's description (rext-control#853).
-            description = await self._description_to_draft_from(workspace) if draft_again else None
+            description, brand_name = (
+                await self._description_to_draft_from(workspace) if draft_again else (None, None)
+            )
             if not description and draft_again:
                 nothing = "Describe the business, or add a website, to set the workspace up."
                 raise RextValidationException(
@@ -444,6 +453,7 @@ class WorkspaceService:
                         url=url,
                         description=description,
                         name=name,
+                        brand_name=brand_name,
                     )
                 except Exception as exc:
                     logger.error(
@@ -484,13 +494,35 @@ class WorkspaceService:
 
         return operation_id
 
-    async def _description_to_draft_from(self, workspace: WorkspaceModel) -> Optional[str]:
+    async def _description_to_draft_from(
+        self, workspace: WorkspaceModel
+    ) -> tuple[Optional[str], Optional[str]]:
         """What a workspace with no website is drafted from a second time: the owner's
-        description of the business, kept as its brand voice's About since it was created."""
-        about = await self.db.scalar(
-            select(BrandVoice.about).where(BrandVoice.workspace_id == workspace.id)
+        description of the business, kept as its brand voice's About since it was created, and
+        the business's name as the brand voice holds it."""
+        kept = (
+            await self.db.execute(
+                select(BrandVoice.about, BrandVoice.brand_name).where(
+                    BrandVoice.workspace_id == workspace.id
+                )
+            )
+        ).first()
+        about, brand_name = kept if kept else (None, None)
+        return (about or "").strip() or None, (brand_name or "").strip() or None
+
+    async def _keep_brand_name(self, workspace: WorkspaceModel, brand_name: str) -> None:
+        """Keep the business's name as its owner typed it: the brand voice's brand name, which no
+        draft replaces. For a workspace with no website (a site names its own brand)."""
+        if workspace.url:
+            return
+        voice = await self.db.scalar(
+            select(BrandVoice).where(BrandVoice.workspace_id == workspace.id)
         )
-        return (about or "").strip() or None
+        if voice is None:
+            self.db.add(BrandVoice(workspace_id=workspace.id, brand_name=brand_name))
+        else:
+            voice.brand_name = brand_name
+        await self.db.flush()
 
     async def _keep_description(self, workspace: WorkspaceModel, description: str) -> None:
         """Keep what the owner says of the business as the brand voice's About, word for word,
@@ -520,7 +552,11 @@ class WorkspaceService:
         await self.db.flush()
 
     async def retry_pipeline_for_user(
-        self, workspace_id: UUID, user_id: UUID, description: Optional[str] = None
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        description: Optional[str] = None,
+        brand_name: Optional[str] = None,
     ) -> str:
         """Run the workspace pipeline again after its last run failed or was interrupted (a
         restart or a deploy ends a run), or for the first time on a workspace made from a name
@@ -536,12 +572,16 @@ class WorkspaceService:
             )
         if description is not None:
             await self._keep_description(workspace, description)
+        if brand_name:
+            # After the description: other words clear what was drafted from the old ones, the
+            # name with it, and the name typed now is the one that stands.
+            await self._keep_brand_name(workspace, brand_name)
         # A voice that was drafted has been the owner's to edit since, so only this path (a run
         # that left nothing, or not all of it) drafts a workspace with no website again.
         operation_id = await self.refresh_brand_voice_for_user(
             workspace_id, user_id, draft_again=True
         )
-        if description is not None:
+        if description is not None or brand_name:
             # The detail's cached brand voice (ten minutes) would go on saying what it said
             # before. It is dropped once the new words are committed, not before: a read in
             # between would only put the old ones back.

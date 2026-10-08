@@ -40,7 +40,7 @@ from src.services.workspace_service import WorkspaceService, pipeline_state
 from src.utils.auth_utils import verify_current_user
 from src.utils.fast_scraper import WebsiteUnreachableError, check_website_reachable
 from src.utils.logger import logger
-from src.utils.name_utils import validate_workspace_name
+from src.utils.name_utils import validate_brand_name, validate_workspace_name
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
@@ -103,6 +103,9 @@ async def create_workspace(
     refused = description_refusal(description) if description else None
     if refused:
         raise RextValidationException(message=refused, field_errors={"description": [refused]})
+    # The business's name as its owner typed it, for a workspace with no site to read it from
+    # (rext-control#922).
+    brand_name = validate_brand_name(data.brand_name) if data.brand_name and not url else None
 
     if url:
         # Reject dead or made-up domains before any workspace row or pipeline exists.
@@ -120,6 +123,7 @@ async def create_workspace(
         timezone=data.timezone,
         url=url,
         description=description,
+        brand_name=brand_name,
     )
 
     from src.utils.audit_helper import create_audit_log_async
@@ -424,7 +428,12 @@ async def retry_workspace_pipeline(
     service = WorkspaceService(db)
     workspace = await service.get_workspace_by_id_or_slug_for_user(workspace_id, user_id)
     operation_id = await service.retry_pipeline_for_user(
-        workspace.id, user_id, description=payload.description if payload else None
+        workspace.id,
+        user_id,
+        description=payload.description if payload else None,
+        brand_name=validate_brand_name(payload.brand_name)
+        if payload and payload.brand_name
+        else None,
     )
     return success(
         data={"operation_id": operation_id},
