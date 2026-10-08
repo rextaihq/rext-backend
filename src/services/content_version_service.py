@@ -272,7 +272,8 @@ def went_live(content_status: Optional[str], results: Any) -> bool:
     scheduled (a Shopify article goes out at once when the WordPress post waits)."""
     if content_status == "published":
         return any(getattr(result, "success", False) for result in results)
-    return any(
+    # Only under "scheduled": a draft sent to Shopify gets an article id too, and is not out.
+    return content_status == "scheduled" and any(
         getattr(result, "success", False) and getattr(result, "shopify_article_id", None)
         for result in results
     )
@@ -300,4 +301,7 @@ def detail(version: ContentVersion, maker: Optional[str]) -> Dict[str, Any]:
         **summary(version, maker),
         "introduction": version.introduction,
         "body_markdown": version.body_markdown,
+        # A restore puts these back too, so the history can show that they differ.
+        "body_html": version.body_html,
+        "images_data": version.images_data,
     }

@@ -166,6 +166,8 @@ async def test_an_edit_is_listed_shown_and_put_back(session, monkeypatch):
     detail = shown.json()["data"]
     assert detail["body_markdown"] == generated
     assert detail["introduction"] == "Repotting takes ten minutes."
+    # What a restore puts back besides: there to be shown, empty for this article.
+    assert {"body_html", "images_data"} <= set(detail)
     assert detail["source"] == "generation"
 
     restored = await _call(

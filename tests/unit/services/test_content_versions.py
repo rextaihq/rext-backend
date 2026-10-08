@@ -450,6 +450,8 @@ def _site(success=True, shopify=None, wordpress=None):
         ("scheduled", [_site(shopify=3), _site(wordpress=None)], True),
         ("scheduled", [_site(wordpress=None)], False),
         ("draft", [_site(wordpress=7)], False),
+        # A draft sent to Shopify gets an article id and is not out.
+        ("draft", [_site(shopify=3)], False),
         ("scheduled", [_site(success=False, shopify=3)], False),
     ],
 )
