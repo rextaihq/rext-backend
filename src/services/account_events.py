@@ -124,6 +124,12 @@ async def _claim_out(owner_id: UUID) -> bool:
     return bool(await cache.redis.set(_out_mark(owner_id), "1", nx=True, ex=_OUT_MARK_SECONDS))
 
 
+async def _mark_out(owner_id: UUID) -> None:
+    """Mark the account out of credits, whatever mark is there (a charge's own crossing)."""
+    if cache.is_enabled() and cache.redis is not None:
+        await cache.redis.set(_out_mark(owner_id), "1", ex=_OUT_MARK_SECONDS)
+
+
 async def _owner_of(user_id: UUID, workspace_id: Optional[UUID]) -> UUID:
     """Whose credits a run in this workspace spends: the workspace's owner."""
     # credit_manager calls this module, so it is imported here and not at the top.
@@ -156,6 +162,14 @@ async def credits_charged(
     if not configured():
         return
     try:
+        # The mark first, before anything is sent: a charge went through, so the account
+        # had credits, and a mark still there is from an earlier crossing. Leaving nothing
+        # is a new crossing whatever the mark says; and a run refused a moment later must
+        # find this one's mark and say nothing more.
+        if balance_after <= 0:
+            await _mark_out(owner_id)
+        else:
+            await cache.delete(_out_mark(owner_id))
         about = {"occurred_at": occurred_at, "user_id": owner_id, "workspace_id": workspace_id}
         await report_event(
             "credits_spent",
@@ -171,12 +185,7 @@ async def credits_charged(
                 **about,
             )
         if balance_after <= 0:
-            if await _claim_out(owner_id):
-                await report_event("credits_out", {"action": action}, key=uuid.uuid4().hex, **about)
-        else:
-            # Credits again (a reset, a new plan, an admin's addition) and a charge went
-            # through: the next time it runs out is a new crossing.
-            await cache.delete(_out_mark(owner_id))
+            await report_event("credits_out", {"action": action}, key=uuid.uuid4().hex, **about)
     except Exception as error:  # noqa: BLE001 - analytics never fails the work it reports
         _failed("credits_spent", error)
 
