@@ -731,34 +731,43 @@ def _subsections_from_key_points(outline: dict) -> int:
     after it, in its own words, and leaves that section's key points, so it is planned once.
     Only a point that is shaped like a heading is used (a few words, one phrase): a sentence
     stays a key point of its section. An H2 with fewer than two such points is left whole.
-    Nothing is invented.
+    Nothing is invented: a subsection's purpose is the point as the model wrote it, so each has
+    its own line for the writer and for telling it from its neighbours in the article.
+
+    Only an outline that already has its main sections: with fewer than four H2s the holding
+    step that follows (outline_depth.py) raises H3s to H2 until there are four, and a key point
+    would stand as a main section.
     """
+    if _main_sections(outline) < MIN_MAIN_SECTIONS:
+        return 0
     sections = _outline_sections(outline)
     rebuilt: list = []
     made = 0
     for section in sections:
-        points = (
-            [str(point).strip().rstrip(".") for point in section.get("key_points") or []]
+        written = (
+            [str(point).strip() for point in section.get("key_points") or []]
             if isinstance(section, dict)
             else []
         )
-        points = [point for point in points if point]
+        written = [point for point in written if point.rstrip(".")]
         is_main = (
             isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
         )
-        headings = [point for point in points if _heading_shaped(point)][:_MAX_DERIVED_SUBSECTIONS]
-        if not is_main or len(headings) < 2:
+        chosen = [point for point in written if _heading_shaped(point.rstrip("."))][
+            :_MAX_DERIVED_SUBSECTIONS
+        ]
+        if not is_main or len(chosen) < 2:
             rebuilt.append(section)
             continue
         rebuilt.append(
-            {**section, "key_points": [point for point in points if point not in headings]}
+            {**section, "key_points": [point for point in written if point not in chosen]}
         )
-        for point in headings:
+        for point in chosen:
             rebuilt.append(
                 {
-                    "heading": point,
+                    "heading": point.rstrip("."),
                     "heading_level": "H3",
-                    "purpose": str(section.get("purpose") or ""),
+                    "purpose": point,
                     "key_points": [],
                 }
             )
