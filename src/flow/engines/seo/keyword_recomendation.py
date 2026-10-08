@@ -237,10 +237,13 @@ async def save_keyword_research(state: REXT, config, *, runtime) -> Any:
             research_snapshot,
         )
 
+        # Not indexed, like the item: it is read by its key, and the store's index would embed
+        # the whole snapshot with an OpenAI call on every analysis (#697).
         await store.aput(
             namespace=library_research_namespace(user_id, workspace_id),
             key=unique_key,
             value=research_snapshot(state, timestamp),
+            index=False,
         )
     except Exception as e:  # noqa: BLE001 - the item is saved; reuse is a saving, not a need
         logger.warning("The keyword's search results were not kept: %s", type(e).__name__)

@@ -35,6 +35,7 @@
     "RUN apk add --no-cache libnspr libnss dbus-libs glib libatk-1.0 libatk-bridge-2.0 at-spi2-core pango cairo fontconfig freetype harfbuzz ca-certificates curl bash alsa-lib libx11 libxcomposite libxdamage libxfixes libxrandr libxrender libxtst libxcursor libxi libsm libice libxkbcommon mesa-gles mesa-gbm cups-libs",
     "COPY pyproject.toml uv.lock /tmp/rext-lock/",
     "RUN cd /tmp/rext-lock && uv export --frozen --no-dev --no-emit-project --no-hashes --quiet -o requirements.txt && uv pip install --system --no-cache-dir -c /api/constraints.txt -r requirements.txt && rm -rf /tmp/rext-lock",
+    "RUN python -m nltk.downloader -d /usr/share/nltk_data punkt punkt_tab stopwords && python -c \"from nltk.corpus import stopwords; from nltk.tokenize import word_tokenize; stopwords.words('english'); word_tokenize('ok')\"",
     "RUN playwright install chromium --only-shell && rm -rf /root/.cache/ms-playwright/chromium-1243 /root/.cache/ms-playwright/ffmpeg-1011",
     "RUN crawl4ai-setup",
     "RUN crawl4ai-doctor"

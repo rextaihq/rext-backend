@@ -29,7 +29,7 @@ from src.api.schema.user_schema import (
     UserStatusRequest,
 )
 from src.api.security.dependencies import get_current_user
-from src.api.security.token_utils import verify_password
+from src.api.security.token_utils import verify_password_async
 from src.services.session_service import SessionService
 from src.services.subscription_service import SubscriptionService
 from src.services.user_service import UserService
@@ -244,7 +244,9 @@ async def deactivate_self(
         raise ResourceNotFoundException(resource_type="user", resource_id=str(user_id))
 
     # Verify the password submitted in the confirmation dialog
-    if not verify_password(password=deactivate_data.password, hashed_password=user.password_hash):
+    if not await verify_password_async(
+        password=deactivate_data.password, hashed_password=user.password_hash
+    ):
         raise RextAuthenticationException(
             message="Incorrect password. Please try again.", context={"user_id": str(user_id)}
         )

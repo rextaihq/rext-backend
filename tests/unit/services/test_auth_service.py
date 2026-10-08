@@ -94,8 +94,8 @@ async def test_register_user_uses_current_email_full_name_api() -> None:
         patch.object(service, "_get_trial_plan", AsyncMock(return_value=None)),
         patch("src.services.auth_service.validate_password_strength") as validate,
         patch(
-            "src.services.auth_service.hash_password",
-            return_value="hashed-password",
+            "src.services.auth_service.hash_password_async",
+            AsyncMock(return_value="hashed-password"),
         ),
         patch(
             "src.services.auth_service.create_verification_token",
@@ -153,7 +153,7 @@ async def test_login_creates_stable_session_claims_and_refresh_lifetime() -> Non
 
     with (
         patch("src.services.auth_service.get_settings", return_value=settings()),
-        patch("src.services.auth_service.verify_password", return_value=True),
+        patch("src.services.auth_service.verify_password_async", AsyncMock(return_value=True)),
         patch(
             "src.services.auth_service.create_access_token",
             return_value="access-token",
@@ -235,7 +235,7 @@ async def test_failed_login_updates_lockout_state_and_audit() -> None:
             "src.api.config.get_settings",
             return_value=settings(),
         ),
-        patch("src.services.auth_service.verify_password", return_value=False),
+        patch("src.services.auth_service.verify_password_async", AsyncMock(return_value=False)),
         pytest.raises(RextAuthenticationException, match="Invalid email or password"),
     ):
         await AuthService(db).login_user(
@@ -501,7 +501,7 @@ async def test_password_reset_uses_reset_token_and_current_decoder() -> None:
             return_value={"user_id": str(user.id)},
         ),
         patch("src.services.auth_service.validate_password_strength") as validate,
-        patch("src.services.auth_service.hash_password", return_value="new-hash"),
+        patch("src.services.auth_service.hash_password_async", AsyncMock(return_value="new-hash")),
     ):
         result = await service.complete_password_reset("reset-token", "New-strong-password-123!")
 

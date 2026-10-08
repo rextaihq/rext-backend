@@ -1,5 +1,6 @@
 import logging
 import re
+import threading
 
 # from nltk.stem import PorterStemmer
 from typing import Any, Dict, List, Tuple
@@ -12,25 +13,44 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 logger = logging.getLogger(__name__)
 
-# Download required NLTK data
-nltk.download("punkt", quiet=True)
-nltk.download("punkt_tab", quiet=True)
-nltk.download("stopwords", quiet=True)
+# The data the extractor needs; the image holds it (langgraph.json's dockerfile_lines).
+NLTK_DATA = ("punkt", "punkt_tab", "stopwords")
+_nltk_lock = threading.Lock()
+ENGLISH_STOP_WORDS: frozenset[str] | None = None
 
-# Loaded once, here, while the server starts on one thread. NLTK loads a corpus
-# lazily on first use, and that first load is not thread-safe; the clustering
-# step extracts keywords in worker threads, several runs at once
-# (rext-control#386). Once loaded, reading them from any thread is safe. If the
-# downloads above failed (no network at start), the server still starts: the
-# corpus is then loaded on first use, as it was before.
-try:
-    ENGLISH_STOP_WORDS: frozenset[str] | None = frozenset(stopwords.words("english"))
-    word_tokenize("warm the tokenizer")
-except LookupError as exc:
-    ENGLISH_STOP_WORDS = None
-    logger.warning(
-        "NLTK data not loaded at start; keyword extraction loads it on first use: %s", exc
-    )
+
+def load_nltk_data(*, download: bool) -> bool:
+    """Load the stop words and the tokenizer once; whether they're loaded.
+
+    NLTK loads a corpus lazily on first use, and that first load is not
+    thread-safe; the clustering step extracts keywords in worker threads, several
+    runs at once (rext-control#386). The lock makes the first load one thread's,
+    and once loaded, reading them from any thread is safe. `download` fetches what
+    isn't on disk (a checkout without the data) before loading it.
+    """
+    global ENGLISH_STOP_WORDS
+    with _nltk_lock:
+        if ENGLISH_STOP_WORDS is not None:
+            return True
+        try:
+            words = frozenset(stopwords.words("english"))
+            word_tokenize("warm the tokenizer")
+        except LookupError:
+            if not download:
+                return False
+            for name in NLTK_DATA:
+                nltk.download(name, quiet=True)
+            words = frozenset(stopwords.words("english"))
+            word_tokenize("warm the tokenizer")
+        ENGLISH_STOP_WORDS = words
+        return True
+
+
+# Loaded here, while the server starts on one thread, from disk only: the start
+# makes no network call (G39, rext-control#390). Without the data on disk, the
+# server still starts, and the first extraction downloads it.
+if not load_nltk_data(download=False):
+    logger.warning("NLTK data not on disk; the first keyword extraction downloads it")
 
 
 class KeywordExtractor:
@@ -46,9 +66,8 @@ class KeywordExtractor:
     """
 
     def __init__(self):
-        self.stop_words = set(
-            ENGLISH_STOP_WORDS if ENGLISH_STOP_WORDS is not None else stopwords.words("english")
-        )
+        load_nltk_data(download=True)
+        self.stop_words = set(ENGLISH_STOP_WORDS)
         # self.stemmer = PorterStemmer()
 
     def _clean_text(self, text: str) -> str:
