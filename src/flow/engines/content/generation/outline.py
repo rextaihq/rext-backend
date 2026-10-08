@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-import re
+import unicodedata
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -652,22 +652,42 @@ def _subsections(outline: dict) -> int:
 
 def _heading_key(section: dict) -> str:
     """A heading as compared between two attempts: its words, in any script, whatever its case
-    and marks. Empty for a heading with no letter or digit in it."""
-    return " ".join(re.findall(r"[^\W_]+", str(section.get("heading") or "").casefold()))
+    and punctuation. Letters, digits and the marks that belong to them are kept (a vowel sign
+    makes another word); empty for a heading with none of them."""
+    text = unicodedata.normalize("NFKC", str(section.get("heading") or "")).casefold()
+    words: list[str] = []
+    word: list[str] = []
+    for character in text:
+        if unicodedata.category(character)[0] in "LNM":
+            word.append(character)
+        elif word:
+            words.append("".join(word))
+            word = []
+    if word:
+        words.append("".join(word))
+    return " ".join(words)
 
 
 def _keeps_main_sections(first: dict, retried: dict) -> bool:
-    """Every H2 of ``first`` is still a heading of ``retried``, at any level: a section folded
-    under another is kept as its H3; one that is gone is a topic dropped. A heading with no
+    """Every H2 of ``first`` is still a heading of ``retried``, at any level and in the same
+    order: a section folded under another is kept as its H3; one that is gone is a topic
+    dropped, and one that moved is not the outline that was asked to be kept. A heading with no
     words is nothing to look for, and never stands for one that is kept."""
-    kept = {
-        _heading_key(section) for section in _outline_sections(retried) if isinstance(section, dict)
-    } - {""}
+    kept = iter(
+        key
+        for key in (
+            _heading_key(section)
+            for section in _outline_sections(retried)
+            if isinstance(section, dict)
+        )
+        if key
+    )
     wanted = [
         _heading_key(section)
         for section in _outline_sections(first)
         if isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
     ]
+    # Each one is looked for after the one before it: an ordered run through the retried list.
     return all(key in kept for key in wanted if key)
 
 
