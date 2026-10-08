@@ -26,14 +26,15 @@ def _level(section: dict) -> str:
     return str(section.get("heading_level") or "H2").upper()
 
 
-def _children(sections: list[dict], index: int) -> list[int]:
-    """The H3s directly under the H2 at ``index`` (their own H4s are theirs, not counted)."""
+def _children(sections: list[dict], index: int, skip: frozenset[int] = frozenset()) -> list[int]:
+    """The H3s directly under the H2 at ``index`` (their own H4s are theirs, not counted),
+    less the positions in ``skip``."""
     kids = []
     for position in range(index + 1, len(sections)):
         level = _level(sections[position])
         if level == "H2":
             break
-        if level == "H3":
+        if level == "H3" and position not in skip:
             kids.append(position)
     return kids
 
@@ -43,27 +44,54 @@ def raise_subsections(
 ) -> tuple[list[dict], int]:
     """``sections`` with at least ``least`` H2s where its H3s allow it, and how many were raised.
 
-    The H2 with the most H3s gives them up first, all of them together (they are siblings, and
-    stay siblings), as far as ``most`` H2s leave room. An H4 under a raised H3 becomes its H3.
-    A list with no H3s to raise is returned as it is: nothing is invented.
+    * A subsection with no section above it (the list opens on H3s, or holds nothing else) is
+      a main section that was given the wrong level: it is raised first.
+    * Then the H2 with the most H3s gives them up, all of them together (they are siblings, and
+      stay siblings). When only some fit under ``most`` H2s, the last ones are raised, so the
+      ones left stay under the H2 they were written under.
+    * An H4 under a raised H3 becomes its H3, and stays a detail: it is never raised in turn.
+
+    ``most`` limits what is raised, not what the model wrote: an outline that already has more
+    H2s than that is its schema's to accept or refuse. A list with nothing to raise is returned
+    as it is: nothing is invented.
     """
     sections = [dict(section) for section in sections if isinstance(section, dict)]
     raised = 0
-    while True:
-        main = [index for index, section in enumerate(sections) if _level(section) == "H2"]
-        room = most - len(main)
-        if len(main) >= least or room <= 0:
+    details: set[int] = set()
+
+    def lift(position: int) -> None:
+        nonlocal raised
+        sections[position]["heading_level"] = "H2"
+        raised += 1
+        follower = position + 1
+        while follower < len(sections) and _level(sections[follower]) == "H4":
+            sections[follower]["heading_level"] = "H3"
+            details.add(follower)
+            follower += 1
+
+    def main() -> list[int]:
+        return [index for index, section in enumerate(sections) if _level(section) == "H2"]
+
+    first = next(iter(main()), len(sections))
+    for position in range(first):
+        if len(main()) >= most:
             break
-        families = [kids for kids in (_children(sections, index) for index in main) if kids]
+        if _level(sections[position]) == "H3" and position not in details:
+            lift(position)
+
+    while True:
+        room = most - len(main())
+        if len(main()) >= least or room <= 0:
+            break
+        families = [
+            kids
+            for kids in (_children(sections, index, frozenset(details)) for index in main())
+            if kids
+        ]
         if not families:
             break
-        for position in max(families, key=len)[:room]:
-            sections[position]["heading_level"] = "H2"
-            raised += 1
-            follower = position + 1
-            while follower < len(sections) and _level(sections[follower]) == "H4":
-                sections[follower]["heading_level"] = "H3"
-                follower += 1
+        for position in max(families, key=len)[-room:]:
+            lift(position)
     return sections, raised
 
 
