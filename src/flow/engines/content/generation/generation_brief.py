@@ -20,6 +20,7 @@ from typing import Any, Literal, TypedDict
 
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
+    brand_kept_out_of_cta,
     brand_named_in,
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
@@ -27,7 +28,6 @@ from src.flow.engines.content.generation.word_count_utils import compute_word_ta
 Stage = Literal["writer", "rewrite", "repair"]
 
 MAX_READERS = 8
-MAX_SECONDARY_KEYWORDS = 20
 
 # What the article does under each brand choice, in the words the outline screen shows beside
 # the option (rext-admin, outline-brief.tsx) and the checks hold the article to.
@@ -66,9 +66,9 @@ class GenerationBrief(TypedDict):
     brand_name: str
     call_to_action: str
     call_to_action_links: bool
-    # The approved call to action names a brand the choice keeps out of it: the article
-    # carries its intent in new words, never its text.
-    call_to_action_reworded: bool
+    # The brand the approved call to action names though the choice keeps it out of one ("" when
+    # it names none): the article then carries its intent in new words, never its text.
+    call_to_action_without: str
 
 
 def _text(value: Any) -> str:
@@ -107,8 +107,11 @@ def build_generation_brief(spec: RequirementsSpec, outline: dict | None) -> Gene
     low, high = compute_word_target_band(target)
     choice, brand_name = _brand(spec, outline)
     call_to_action = _text((spec.get("outline_cta") or {}).get("text"))
-    # "None" and "Subtle" keep the brand out of the call to action, which then has no link.
-    brand_free = bool(call_to_action) and choice in ("none", "subtle")
+    # "None" and "Subtle" keep the brand out of the call to action, which then has no link. The
+    # spec decides (it is what the cleanup and the checks read), a keyphrase that is the
+    # brand's own included: the brief then has no brand line, and still a brand-free call to action.
+    brand_free = bool(call_to_action) and bool(spec.get("cta_without_link"))
+    kept_out = brand_kept_out_of_cta(outline) if brand_free else ""
     return GenerationBrief(
         title=_text(spec.get("selected_title")),
         content_type=_text(spec.get("content_type")),
@@ -118,14 +121,16 @@ def build_generation_brief(spec: RequirementsSpec, outline: dict | None) -> Gene
         min_words=low,
         max_words=high,
         focus_keyphrase=_text(spec.get("target_keyword")),
+        # Every one the spec holds, since every one is checked: a stage is never held to a
+        # keyword it was not told.
         secondary_keywords=[
             _text(keyword) for keyword in spec.get("secondary_keywords") or [] if _text(keyword)
-        ][:MAX_SECONDARY_KEYWORDS],
+        ],
         brand_choice=choice,
         brand_name=brand_name if choice else "",
         call_to_action=call_to_action,
         call_to_action_links=bool(call_to_action) and not brand_free,
-        call_to_action_reworded=brand_free and brand_named_in(call_to_action, brand_name),
+        call_to_action_without=kept_out if brand_named_in(call_to_action, kept_out) else "",
     )
 
 
@@ -171,11 +176,11 @@ def _call_to_action_line(brief: GenerationBrief) -> str:
     text = brief["call_to_action"]
     if not text:
         return ""
-    if brief["call_to_action_reworded"]:
-        # Quoting it would put the brand's name in front of a stage told to keep it out.
+    if brief["call_to_action_without"]:
+        # Quoting it as the text to use would ask for the name and for its absence at once.
         return (
             f'- Call to action: the same intent as the outline\'s ("{text}"), in new words '
-            f"without {brief['brand_name']}, and with no link"
+            f"without {brief['call_to_action_without']}, and with no link"
         )
     return f'- Call to action: "{text}"' + (
         "" if brief["call_to_action_links"] else " (with no link)"
