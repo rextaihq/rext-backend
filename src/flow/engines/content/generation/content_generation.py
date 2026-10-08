@@ -30,7 +30,7 @@ from src.flow.engines.content.generation.evidence_placement_policy import (
     resolve_evidence_placement_policy,
 )
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
-from src.flow.engines.content.generation.generation_brief import brief_for_stage
+from src.flow.engines.content.generation.generation_brief import LENGTH_LINE, brief_for_stage
 from src.flow.engines.content.generation.keyword_density import (
     build_density_prompt_instruction,
 )
@@ -361,17 +361,19 @@ def writer_message_opening(
     target_word_count: int,
     max_word_count: int,
 ) -> str:
-    """The first lines of the writer's message, up to the competitive landscape.
+    """The first lines of the writer's own message, up to the competitive landscape (the
+    verified facts of a run that has them are set before it, as they were).
 
-    With the article's brief, the brief leads and states the length: the range the article is
-    checked against, in the words the rewrite and the repair read after it. The message's own
-    length line is left out then: it gave the target as the least ("1500-1680 words"), which
-    the check does not ask for, so a second, different range stood beside the brief's.
-    Without a brief (it could not be built) the message opens as it did before.
+    With the article's brief, the brief opens it and states the length: the range the article
+    is checked against, in the words the rewrite and the repair read after it. The message's
+    own length line is left out then: it gave the target as the least ("1500-1680 words"),
+    which the check does not ask for, so a second, different range stood beside the brief's.
+    It stays whenever the brief says no length (an outline with no target, a brief that could
+    not be built): the writer is never left without one.
     """
     length = (
         ""
-        if brief
+        if f"\n{LENGTH_LINE}" in brief
         else f"Target Word Count: {target_word_count}-{max_word_count} words (stay within this "
         "range — do not go meaningfully under or over)\n"
     )
@@ -1003,7 +1005,7 @@ async def generate_content(state: REXT) -> dict:
         # One requirements spec for this node — brand context for research here,
         # subheading enforcement and link protection below.
         spec = build_requirements_spec(outline, content_type, focus_keyword, topic)
-        # The article's brief leads the writer's message: the lines the rewrite and the repair
+        # The article's brief opens the writer's message: the lines the rewrite and the repair
         # read after it, from the one spec the article is checked against (rext-control#702).
         human_message_content = (
             writer_message_opening(
