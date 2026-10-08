@@ -39,17 +39,21 @@ _JOINERS = "\u200c\u200d"
 
 
 def without_joiners_in_words(value: str) -> str:
-    """The value without the joiners that stand inside a word: between two letters or
-    combining marks of any script, where Persian and Indic writing puts them ("علی‌رضا", and
-    after a virama in Hindi). A joiner anywhere else stays, and is a hidden character to
-    every check here."""
+    """The value without the joiners that belong to a word: between two letters or combining
+    marks of any script, where Persian and Indic writing puts them ("علی‌رضا", and after a
+    virama in Hindi), and straight after a combining mark at a word's end, where the older
+    Malayalam spelling of a final consonant puts one. A joiner anywhere else stays, and is a
+    hidden character to every check here."""
     if not any(joiner in value for joiner in _JOINERS):
         return value
     kept = []
     for index, char in enumerate(value):
-        if char in _JOINERS and 0 < index < len(value) - 1:
-            around = (value[index - 1], value[index + 1])
-            if all(unicodedata.category(other)[0] in "LM" for other in around):
+        if char in _JOINERS and index > 0:
+            before = unicodedata.category(value[index - 1])[0]
+            after = unicodedata.category(value[index + 1])[0] if index + 1 < len(value) else ""
+            if before == "M" and after not in ("C",):
+                continue
+            if before == "L" and after in ("L", "M"):
                 continue
         kept.append(char)
     return "".join(kept)
