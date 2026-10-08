@@ -764,6 +764,32 @@ def test_a_how_to_guides_steps_reach_the_writing_screen_in_their_place():
     )
 
 
+def test_the_steps_are_sent_only_when_every_step_field_has_closed():
+    """An answer's fields may come in any order: the last step written first sends nothing,
+    and the section is sent whole when the step still missing closes."""
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    content = _how_to_content(steps=[])
+    stream = article_section_stream(built[1], HOW_TO_OUTLINE, "how-to-guide", content["title"])
+
+    early = json.dumps(
+        {"step_3": "Water it once.", "step_1": "Ease it out.", "hero": content["hero"]}
+    )
+    sent = stream.feed(early[:-1])
+    assert [section["key"] for section in sent] == ["hero"]
+
+    sent = stream.feed(
+        ', "step_2": "Add fresh mix.", "tools": ' + json.dumps(content["tools"]) + "}"
+    )
+    assert [section["key"] for section in sent] == ["steps", "tools"]
+    assert sent[0]["markdown"] == (
+        "1. **Remove the plant.** Ease it out.\n"
+        "2. **Prepare the new pot.** Add fresh mix.\n"
+        "3. **Water the plant.** Water it once."
+    )
+
+
 def test_the_writers_fields_stand_where_the_steps_do_in_the_approved_order():
     """The article is written in the order it is read: the step fields come after the section
     before the steps and before the one after."""

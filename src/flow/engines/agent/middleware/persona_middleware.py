@@ -794,7 +794,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # third of a section, or ten full steps would come on top of the target
         # (rext-control#817).
         steps = planned_step_count(outline or {}, content_type) if outline else 0
-        planned = sections + -(-steps // STEPS_PER_SECTION)
+        steps_weight = -(-steps // STEPS_PER_SECTION)
+        planned = sections + steps_weight
         (
             total_min,
             total_max,
@@ -815,11 +816,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
             else ""
         )
         if steps:
+            # The steps together hold what their share of the plan holds, rounded inward as
+            # the sections' average is: every section and every step at the low end still
+            # reaches the body's minimum, and at the high end stays under its maximum.
+            step_low = -(-steps_weight * average_low // steps)
+            step_high = max(step_low, steps_weight * average_high // steps)
             section_average_line += (
                 f"- Its {steps} steps (the `step_1` to `step_{steps}` fields) are part of that "
-                f"body, not extra: about {average_low // STEPS_PER_SECTION}-"
-                f"{average_high // STEPS_PER_SECTION} words each ON AVERAGE, full instructions "
-                f"in each. The H2 sections' average above already leaves room for them\n"
+                f"body, not extra: about {step_low}-{step_high} words each ON AVERAGE, full "
+                f"instructions in each. The H2 sections' average above already leaves room "
+                f"for them\n"
             )
 
         length_acceptance_block = (

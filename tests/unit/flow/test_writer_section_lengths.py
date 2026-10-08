@@ -265,12 +265,34 @@ def test_a_how_to_guides_steps_are_planned_inside_the_target_not_on_top_of_it():
 
     plan = plan_section_lengths(1500, 4 + 4)  # ten steps weigh as four sections (rounded up)
     assert f"about {plan.average_low}-{plan.average_high} words" in prompt
-    per_step = f"about {plan.average_low // 3}-{plan.average_high // 3} words each ON AVERAGE"
-    assert "Its 10 steps (the `step_1` to `step_10` fields)" in prompt and per_step in prompt
-    # Every section and every step at its average keeps the body inside its range.
-    assert 4 * plan.average_high + 10 * (plan.average_high // 3) <= plan.body_max
-    # And a step still has room for several sentences: 47 to 62 words here.
-    assert (plan.average_low // 3, plan.average_high // 3) == (47, 62)
+    # The ten steps together hold what four sections of the plan hold: 58 to 74 words each.
+    step_low, step_high = -(-4 * plan.average_low // 10), 4 * plan.average_high // 10
+    assert (step_low, step_high) == (58, 74)
+    assert "Its 10 steps (the `step_1` to `step_10` fields)" in prompt
+    assert f"about {step_low}-{step_high} words each ON AVERAGE" in prompt
+    # Every section and every step at the low end reaches the body's minimum, and at the
+    # high end stays under its maximum.
+    assert 4 * plan.average_low + 10 * step_low >= plan.body_min
+    assert 4 * plan.average_high + 10 * step_high <= plan.body_max
+
+
+@pytest.mark.parametrize(("target", "steps"), [(800, 5), (1500, 7), (2000, 10), (3000, 16)])
+def test_the_steps_and_the_sections_at_their_averages_keep_the_body_in_its_range(target, steps):
+    outline = _how_to(steps)
+    sections = planned_section_count(outline, "how-to-guide")
+    weight = -(-steps // 3)
+    plan = plan_section_lengths(target, sections + weight)
+    step_low, step_high = (
+        -(-weight * plan.average_low // steps),
+        weight * plan.average_high // steps,
+    )
+
+    prompt = PersonaInjectionMiddleware()._build_full_content_prompt(
+        None, outline, target_word_count=target, content_type="how-to-guide"
+    )
+
+    assert f"about {step_low}-{max(step_low, step_high)} words each ON AVERAGE" in prompt
+    assert sections * plan.average_low + steps * step_low >= plan.body_min
 
 
 def test_an_article_without_step_fields_is_told_nothing_about_steps():
