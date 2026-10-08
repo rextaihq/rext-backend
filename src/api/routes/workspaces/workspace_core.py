@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,12 +26,12 @@ from src.api.schema.response.workspace_responses import (
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.workspace_schema import (
-    DESCRIPTION_MAX_LENGTH,
-    DESCRIPTION_MIN_LENGTH,
+    WorkspacePipelineRetryRequest,
     WorkspaceResponseSchema,
     WorkspaceSchema,
     WorkspaceTransferOwnershipSchema,
     WorkspaceUpdateSchema,
+    description_refusal,
 )
 from src.api.security.dependencies import get_current_user
 from src.services import account_events
@@ -95,23 +95,14 @@ async def create_workspace(
         )
 
     # A website, or for a business that has none yet, its owner's description of it: the brand
-    # voice is drafted from one or the other (rext-control#853).
+    # voice is drafted from one or the other (rext-control#853). With neither, the workspace is
+    # made from its name alone and set up later, so nobody is stopped at this form
+    # (rext-control#905).
     url = str(data.url) if data.url else None
     description = None if url else data.description
-    if not url and not description:
-        raise RextValidationException(
-            message="Workspace URL is required",
-            field_errors={"url": ["URL must be provided and valid"]},
-        )
-    if description and len(description) < DESCRIPTION_MIN_LENGTH:
-        short = (
-            "Your description is too short. Say in a sentence or two what the business sells, "
-            "and to whom."
-        )
-        raise RextValidationException(message=short, field_errors={"description": [short]})
-    if description and len(description) > DESCRIPTION_MAX_LENGTH:
-        long = f"Your description is too long. Keep it to {DESCRIPTION_MAX_LENGTH:,} characters."
-        raise RextValidationException(message=long, field_errors={"description": [long]})
+    refused = description_refusal(description) if description else None
+    if refused:
+        raise RextValidationException(message=refused, field_errors={"description": [refused]})
 
     if url:
         # Reject dead or made-up domains before any workspace row or pipeline exists.
@@ -419,16 +410,21 @@ async def get_workspace_detail(
 async def retry_workspace_pipeline(
     workspace_id: str,
     request: Request,
+    payload: Optional[WorkspacePipelineRetryRequest] = Body(default=None),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """Read the website again after the last run failed or was interrupted (the pipeline runs
-    inside the API process, so a restart or a deploy ends it). Returns the new run's operation
-    id for the SSE stream; GET /workspaces/{id} shows its status as `pipeline`."""
+    inside the API process, so a restart or a deploy ends it), or set up a workspace that was
+    made from a name alone: with a `description` in the body, the voice is drafted from it.
+    Returns the new run's operation id for the SSE stream; GET /workspaces/{id} shows its
+    status as `pipeline`."""
     user_id = UUID(str(user.get("identity")))
     service = WorkspaceService(db)
     workspace = await service.get_workspace_by_id_or_slug_for_user(workspace_id, user_id)
-    operation_id = await service.retry_pipeline_for_user(workspace.id, user_id)
+    operation_id = await service.retry_pipeline_for_user(
+        workspace.id, user_id, description=payload.description if payload else None
+    )
     return success(
         data={"operation_id": operation_id},
         request=request,

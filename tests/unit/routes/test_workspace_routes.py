@@ -123,6 +123,21 @@ async def test_create_with_a_website_reads_the_website(client) -> None:
     reachable.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("description", [None, "   "])
+async def test_create_from_a_name_alone_is_passed_on_with_nothing_to_read(
+    client, description
+) -> None:
+    # Nobody is stopped at the form (revnix/rext-control#905): the workspace is set up later.
+    body = {"name": "Crumb and Crust"} | ({"description": description} if description else {})
+    response, create, reachable = await _create(client, body)
+
+    assert response.status_code == 201
+    sent = create.await_args.kwargs
+    assert (sent["url"], sent["description"]) == (None, None)
+    reachable.assert_not_awaited()
+
+
 # One request a test: the shared session's transaction ends with the request that commits it.
 
 
@@ -153,8 +168,6 @@ async def test_create_is_not_refused_for_a_description_it_does_not_use(client) -
 @pytest.mark.parametrize(
     ("body", "field"),
     [
-        ({"name": "Crumb and Crust"}, "url"),
-        ({"name": "Crumb and Crust", "description": "   "}, "url"),
         ({"name": "Crumb and Crust", "description": "We bake bread."}, "description"),
         ({"name": "Crumb and Crust", "description": "x" * 1001}, "description"),
     ],

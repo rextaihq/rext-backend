@@ -27,10 +27,14 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.brand_voice_schema import BrandSchema
-from src.api.schema.workspace_schema import DESCRIPTION_MAX_LENGTH, WorkspaceSchema
+from src.api.schema.workspace_schema import (
+    DESCRIPTION_MAX_LENGTH,
+    WorkspacePipelineState,
+    WorkspaceSchema,
+)
 from src.services import workspace_pipeline, workspace_service
 from src.services.workspace_pipeline import WorkspacePipeline
-from src.services.workspace_service import WorkspaceService
+from src.services.workspace_service import WorkspaceService, pipeline_state
 from tests.conftest import TEST_DATABASE_URL
 
 DESCRIPTION = "We bake sourdough bread and pastries for cafés and restaurants in Leeds."
@@ -256,7 +260,7 @@ async def test_with_no_about_left_there_is_nothing_to_draft_from(
     service = WorkspaceService(session)
     monkeypatch.setattr(service, "_ensure_active_user", AsyncMock())
 
-    with pytest.raises(RextValidationException, match="URL is required"):
+    with pytest.raises(RextValidationException, match="Describe the business, or add a website"):
         await service.retry_pipeline_for_user(workspace.id, user.id)
 
 
@@ -269,6 +273,173 @@ async def test_a_run_in_progress_is_not_started_twice(session, started_runs, mon
 
     with pytest.raises(BusinessRuleViolationException, match="failed or was interrupted"):
         await service.retry_pipeline_for_user(workspace.id, user.id)
+    assert started_runs == []
+
+
+# Made from a name alone, and set up later (revnix/rext-control#905)
+
+
+def _service(session, monkeypatch):
+    service = WorkspaceService(session)
+    monkeypatch.setattr(service, "_ensure_active_user", AsyncMock())
+    return service
+
+
+def _runs_given(monkeypatch, session):
+    """The run the service starts, awaited here in place of the pipeline: what it was given."""
+    given, started = {}, []
+
+    async def recorded(db, **kwargs):
+        given.update(kwargs)
+
+    def kept(coroutine):
+        started.append(coroutine)
+        return Mock()
+
+    class _Context:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, *_):
+            return False
+
+    monkeypatch.setattr(workspace_service, "create_task", kept)
+    monkeypatch.setattr(workspace_service, "_run_pipeline_recorded", recorded)
+    monkeypatch.setattr(workspace_service.event_stream_manager, "set_operation_owner", AsyncMock())
+    monkeypatch.setattr(workspace_service, "get_async_db_context", lambda: _Context())
+    return given, started
+
+
+def test_a_workspace_nothing_has_run_for_says_so():
+    state = pipeline_state(WorkspaceModel(pipeline_status="not_started"))
+
+    assert state == {"status": "not_started", "operation_id": None, "started_at": None}
+    assert WorkspacePipelineState(**state).status == "not_started"
+    # A name is all the request needs.
+    assert WorkspaceSchema(name="Crumb and Crust").url is None
+
+
+@pytest.mark.asyncio
+async def test_a_name_alone_makes_the_workspace_and_starts_nothing(
+    session, started_runs, monkeypatch
+):
+    user = await _user(session)
+    service = _service(session, monkeypatch)
+    monkeypatch.setattr(service, "create_workspace_member", AsyncMock())
+    monkeypatch.setattr(service, "_get_workspace_owner_role", AsyncMock(return_value=Mock()))
+    monkeypatch.setattr(service, "_assign_role_to_user", AsyncMock())
+    owner = AsyncMock()
+    monkeypatch.setattr(workspace_service.event_stream_manager, "set_operation_owner", owner)
+
+    created = await service.create_workspace_for_user(
+        user_id=user.id, name="Crumb and Crust", timezone=None, url=None
+    )
+
+    assert created["operation_id"] is None
+    assert created["workspace"]["pipeline"] == {
+        "status": "not_started",
+        "operation_id": None,
+        "started_at": None,
+    }
+    workspace = await session.get(WorkspaceModel, created["workspace"]["id"])
+    assert (workspace.url, workspace.pipeline_status) == (None, "not_started")
+    # Nothing is read or drafted, and no brand voice is made up for it.
+    assert started_runs == []
+    owner.assert_not_awaited()
+    voices = await session.execute(
+        select(BrandVoice).where(BrandVoice.workspace_id == workspace.id)
+    )
+    assert voices.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_a_description_sent_later_is_kept_and_drafted_from(session, monkeypatch):
+    user, workspace = await _workspace_without_a_site(session, status="not_started", about=None)
+    given, started = _runs_given(monkeypatch, session)
+
+    operation_id = await _service(session, monkeypatch).retry_pipeline_for_user(
+        workspace.id, user.id, description=DESCRIPTION
+    )
+    await started[0]
+
+    voice = (
+        await session.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace.id))
+    ).scalar_one()
+    assert voice.about == DESCRIPTION
+    assert (given["url"], given["description"], given["name"]) == (
+        None,
+        DESCRIPTION,
+        "Crumb and Crust",
+    )
+    await session.refresh(workspace)
+    assert (workspace.pipeline_status, workspace.pipeline_operation_id) == ("running", operation_id)
+
+
+@pytest.mark.asyncio
+async def test_a_description_replaces_the_about_of_a_run_that_failed(session, monkeypatch):
+    user, workspace = await _workspace_without_a_site(session, status="failed", about="Old words.")
+    given, started = _runs_given(monkeypatch, session)
+
+    await _service(session, monkeypatch).retry_pipeline_for_user(
+        workspace.id, user.id, description=DESCRIPTION
+    )
+    await started[0]
+
+    assert given["description"] == DESCRIPTION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("website", "description", "says"),
+    [
+        (None, "We bake bread.", "too short"),
+        (None, "x" * 1001, "too long"),
+        ("https://example.org", DESCRIPTION, "has a website"),
+        (None, None, "Describe the business, or add a website"),
+    ],
+)
+async def test_what_cant_be_drafted_from_is_refused_on_the_description(
+    session, started_runs, monkeypatch, website, description, says
+):
+    user, workspace = await _workspace_without_a_site(session, status="not_started", about=None)
+    workspace.url = website
+    await session.flush()
+
+    with pytest.raises(RextValidationException, match=says) as refused:
+        await _service(session, monkeypatch).retry_pipeline_for_user(
+            workspace.id, user.id, description=description
+        )
+
+    assert [detail["field"] for detail in refused.value.details] == ["description"]
+    assert started_runs == []
+    await session.refresh(workspace)
+    assert workspace.pipeline_status == "not_started"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("way", ["retry", "refresh"])
+async def test_a_website_added_later_is_read_in_the_usual_way(session, monkeypatch, way):
+    user, workspace = await _workspace_without_a_site(session, status="not_started", about=None)
+    workspace.url = "https://example.org"
+    await session.flush()
+    given, started = _runs_given(monkeypatch, session)
+    service = _service(session, monkeypatch)
+
+    if way == "retry":
+        await service.retry_pipeline_for_user(workspace.id, user.id)
+    else:
+        await service.refresh_brand_voice_for_user(workspace.id, user.id)
+    await started[0]
+
+    assert (given["url"], given["description"]) == ("https://example.org", None)
+
+
+@pytest.mark.asyncio
+async def test_a_refresh_before_any_website_is_still_refused(session, started_runs, monkeypatch):
+    user, workspace = await _workspace_without_a_site(session, status="not_started", about=None)
+
+    with pytest.raises(RextValidationException, match="URL is required"):
+        await _service(session, monkeypatch).refresh_brand_voice_for_user(workspace.id, user.id)
     assert started_runs == []
 
 

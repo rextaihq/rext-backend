@@ -46,6 +46,7 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.schema.workspace_schema import description_refusal
 from src.services.sse_service import emit_step_failure, event_stream_manager
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
@@ -70,7 +71,8 @@ _RECORD_RETRY_SECONDS = 2.0
 
 def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
     """The workspace's latest pipeline run, as the dashboard polls it: its status ("running",
-    "completed", "failed", or "interrupted" for a running row this process no longer runs), its
+    "completed", "failed", "interrupted" for a running row this process no longer runs, or
+    "not_started" for a workspace made from a name alone, which no run has touched), its
     operation id for the SSE stream, and when it started. None when no run is recorded, as for
     a workspace created before runs were: nothing on the row says whether that setup finished
     (a setup can complete and leave no brand voice), so nothing is claimed about it."""
@@ -93,6 +95,11 @@ def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
         "operation_id": workspace.pipeline_operation_id,
         "started_at": started_at.isoformat() if started_at else None,
     }
+
+
+# A workspace made from a name alone (rext-control#905): nothing has been read or drafted, and
+# nothing failed. It is set up later, by a website or by a description of the business.
+PIPELINE_NOT_STARTED = "not_started"
 
 
 def _mark_pipeline_started(workspace: WorkspaceModel, operation_id: str) -> None:
@@ -287,6 +294,16 @@ class WorkspaceService:
             owner_role = await self._get_workspace_owner_role()
             await self._assign_role_to_user(owner_role.id, user_id, workspace.id)
 
+        if not url and not description:
+            # Set up later: the workspace is there to work in at once, and nothing is read or
+            # drafted until its owner adds a website or describes the business.
+            workspace.pipeline_status = PIPELINE_NOT_STARTED
+            await self.db.flush()
+            logger.info(
+                "Workspace created from its name alone", extra={"workspace_id": str(workspace.id)}
+            )
+            return {"workspace": self._created(workspace), "operation_id": None}
+
         operation_id = str(uuid4())
         _mark_pipeline_started(workspace, operation_id)
         await self.db.flush()
@@ -356,10 +373,11 @@ class WorkspaceService:
             extra={"workspace_id": str(workspace.id), "operation_id": operation_id},
         )
 
-        return {
-            "workspace": self._serialize_workspace(workspace),
-            "operation_id": operation_id,
-        }
+        return {"workspace": self._created(workspace), "operation_id": operation_id}
+
+    def _created(self, workspace: WorkspaceModel) -> Dict[str, Any]:
+        """A workspace as its creation answers with it: itself and where its setup stands."""
+        return {**self._serialize_workspace(workspace), "pipeline": pipeline_state(workspace)}
 
     async def refresh_brand_voice_for_user(
         self,
@@ -396,6 +414,11 @@ class WorkspaceService:
             # No website to read. Only the retry of a run that failed or was interrupted drafts
             # the voice again, from the owner's description (rext-control#853).
             description = await self._description_to_draft_from(workspace) if draft_again else None
+            if not description and draft_again:
+                nothing = "Describe the business, or add a website, to set the workspace up."
+                raise RextValidationException(
+                    message=nothing, field_errors={"description": [nothing]}
+                )
             if not description:
                 raise RextValidationException(
                     message="Workspace URL is required to refresh brand voice",
@@ -469,17 +492,42 @@ class WorkspaceService:
         )
         return (about or "").strip() or None
 
-    async def retry_pipeline_for_user(self, workspace_id: UUID, user_id: UUID) -> str:
+    async def _keep_description(self, workspace: WorkspaceModel, description: str) -> None:
+        """Keep what the owner says of the business as the brand voice's About, word for word,
+        for the draft that follows. Only a workspace with no website is drafted from one."""
+        refused = (
+            "This workspace has a website, so its brand voice is read from it."
+            if workspace.url
+            else description_refusal(description)
+        )
+        if refused:
+            raise RextValidationException(message=refused, field_errors={"description": [refused]})
+        voice = await self.db.scalar(
+            select(BrandVoice).where(BrandVoice.workspace_id == workspace.id)
+        )
+        if voice is None:
+            self.db.add(BrandVoice(workspace_id=workspace.id, about=description))
+        else:
+            voice.about = description
+        await self.db.flush()
+
+    async def retry_pipeline_for_user(
+        self, workspace_id: UUID, user_id: UUID, description: Optional[str] = None
+    ) -> str:
         """Run the workspace pipeline again after its last run failed or was interrupted (a
-        restart or a deploy ends a run). Returns the new run's operation id."""
+        restart or a deploy ends a run), or for the first time on a workspace made from a name
+        alone. A `description` is for a workspace with no website: it is kept as the brand
+        voice's About and the voice is drafted from it. Returns the new run's operation id."""
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
         state = pipeline_state(workspace)
-        if not state or state["status"] not in ("failed", "interrupted"):
+        if not state or state["status"] not in ("failed", "interrupted", PIPELINE_NOT_STARTED):
             raise BusinessRuleViolationException(
                 message="Only a run that failed or was interrupted can be retried.",
                 rule_name="workspace_pipeline_not_retryable",
             )
+        if description:
+            await self._keep_description(workspace, description)
         # A voice that was drafted has been the owner's to edit since, so only this path (a run
         # that left nothing, or not all of it) drafts a workspace with no website again.
         return await self.refresh_brand_voice_for_user(workspace_id, user_id, draft_again=True)
