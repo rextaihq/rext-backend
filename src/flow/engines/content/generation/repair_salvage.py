@@ -11,9 +11,10 @@ by the same deterministic checks, with no model call:
 
 1. the prose as repaired, beside the lists the article already had;
 2. failing that, the article as it was, with the repair's changed blocks (paragraphs,
-   headings, lists) put in one at a time, each kept only if nothing that passed now fails;
-   then every kept block the fixes don't need is taken out again, so what stays is the fix
-   and not the rewording around it.
+   headings, lists) put in one at a time, each kept only if nothing that passed now fails,
+   and after them every other field the repair changed (the call to action, the meta
+   description), each a piece of its own; then every kept piece the fixes don't need is
+   taken out again, so what stays is the fix and not the rewording around it.
 
 A result is kept only when it fixes at least one of the failed checks: changes that merely
 do no harm are not worth keeping. Which checks an article fails is the caller's to say
@@ -88,13 +89,14 @@ def salvage_repair(
     failing: Failing,
     failed_before: set[str],
     ignore: Iterable[str] = (),
-) -> tuple[Optional[dict], dict[str, int | str]]:
+) -> tuple[Optional[dict], dict]:
     """What of `repaired` can stand: it breaks no check `article` passed, and fixes one.
 
     `failing(content)` names the checks a content fails; `failed_before` those `article`
     failed; `ignore` those that count neither as broken nor as fixed (another stage's).
     Returns the article to keep (None when no useful part of the repair could be kept) and
-    how it was reached: `{"how": "lists"}`, or `{"how": "blocks", "kept": n, "dropped": m}`.
+    how it was reached: `{"how": "lists"}`, or `{"how": "blocks", "kept": n, "dropped": m}`
+    with `"fields": [...]` when a field beside the prose was kept too.
     """
     ours = failed_before - set(ignore)
 
@@ -109,36 +111,53 @@ def salvage_repair(
     if not broken and fixed:
         return prose_only, {"how": "lists"}
 
-    # 2. The article as it was, taking the repair's changes one block at a time.
+    # 2. The article as it was, taking the repair's changes one piece at a time: each changed
+    # block of the prose, then each other field it changed (a repaired call to action is
+    # the fix for its check, and is not prose).
     plans = {
         field: _changes(article.get(field) or "", repaired.get(field) or "")
         for field in PROSE_FIELDS
     }
-    kept: dict[str, set[int]] = {field: set() for field in PROSE_FIELDS}
+    pieces: list[tuple[str, int | None]] = [
+        (field, index) for field in PROSE_FIELDS for index in range(len(plans[field][1]))
+    ]
+    pieces += [
+        (field, None)
+        for field in repaired
+        if field not in PROSE_FIELDS
+        and field not in ECHOED_LISTS
+        and repaired[field] != article.get(field)
+    ]
+    kept: set[tuple[str, int | None]] = set()
 
     def assembled() -> dict:
-        prose = {field: _apply(*plans[field], kept[field]) for field in PROSE_FIELDS}
-        return _with_lists_of(article, {**article, **prose})
+        prose = {
+            field: _apply(*plans[field], {index for name, index in kept if name == field})
+            for field in PROSE_FIELDS
+        }
+        fields = {name: repaired[name] for name, index in kept if index is None}
+        return _with_lists_of(article, {**article, **fields, **prose})
 
     dropped = 0
-    for field in PROSE_FIELDS:
-        for index in range(len(plans[field][1])):
-            kept[field].add(index)
-            if judge(assembled())[0]:
-                kept[field].discard(index)
-                dropped += 1
+    for piece in pieces:
+        kept.add(piece)
+        if judge(assembled())[0]:
+            kept.discard(piece)
+            dropped += 1
 
     _, fixed = judge(assembled())
-    if not fixed or not any(kept.values()):
+    if not fixed or not kept:
         # Nothing of the repair can stay, or what can stay fixes nothing.
         return None, {"how": "blocks", "kept": 0, "dropped": dropped}
 
-    # Out again with every change the fixes don't need.
-    for field in PROSE_FIELDS:
-        for index in sorted(kept[field]):
-            kept[field].discard(index)
-            if judge(assembled()) != (set(), fixed):
-                kept[field].add(index)
+    # Out again with every piece the fixes don't need.
+    for piece in [piece for piece in pieces if piece in kept]:
+        kept.discard(piece)
+        if judge(assembled()) != (set(), fixed):
+            kept.add(piece)
 
-    total = sum(len(indexes) for indexes in kept.values())
-    return assembled(), {"how": "blocks", "kept": total, "dropped": dropped}
+    fields = sorted(name for name, index in kept if index is None)
+    how: dict = {"how": "blocks", "kept": len(kept) - len(fields), "dropped": dropped}
+    if fields:
+        how["fields"] = fields
+    return assembled(), how

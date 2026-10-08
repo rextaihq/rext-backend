@@ -2210,6 +2210,19 @@ def check_placeholder_product_names(
     )
 
 
+def _unsupported_claims_in(final_content: dict, spec: RequirementsSpec) -> list:
+    text = "\n".join(
+        str(final_content.get(field) or "")
+        for field in ("meta_description", "introduction", "body_markdown")
+    )
+    return find_unsupported_claims(text, spec.get("claim_evidence") or {})
+
+
+def flagged_claim_sentences(final_content: dict, spec: RequirementsSpec) -> list[str]:
+    """The sentences `check_unsupported_claims` reports, each whole."""
+    return [claim.sentence for claim in _unsupported_claims_in(final_content, spec)]
+
+
 def check_unsupported_claims(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     """Prices, figures, versions/dates, invented experience, absolute verdicts,
     competitor weaknesses and brand capabilities that no evidence supports.
@@ -2226,11 +2239,7 @@ def check_unsupported_claims(final_content: dict, spec: RequirementsSpec) -> Val
     promotion itself is untouched — only the unsupported specifics inside it,
     so qualified positioning ("a strong fit for teams that...") survives.
     """
-    text = "\n".join(
-        str(final_content.get(field) or "")
-        for field in ("meta_description", "introduction", "body_markdown")
-    )
-    claims = find_unsupported_claims(text, spec.get("claim_evidence") or {})
+    claims = _unsupported_claims_in(final_content, spec)
     if not claims:
         return _pass(
             "unsupported_claims",
@@ -2628,9 +2637,9 @@ async def validate_content(state: REXT) -> dict:
     repairable = [c for c in failed_blocking if c["name"] not in HUMANIZATION_OWNED_CHECKS]
     deferred = [c for c in failed_blocking if c["name"] in HUMANIZATION_OWNED_CHECKS]
     # An attempt runs only for a check a repair can still do something about: not one an
-    # earlier attempt already worked on and left failing, and not the headings' own alone
-    # (repair_content.checks_worth_an_attempt). On seven real runs that is where the
-    # attempts that changed nothing went.
+    # earlier attempt already worked on and left exactly as it was, and not the headings'
+    # own alone (repair_content.checks_worth_an_attempt). On seven real runs that is where
+    # the attempts that changed nothing went.
     repair_required = bool(checks_worth_an_attempt(repairable, review.get("repair_history")))
 
     repair_attempts = review.get("repair_attempts", 0)

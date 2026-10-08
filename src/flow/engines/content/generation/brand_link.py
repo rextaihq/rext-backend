@@ -7,20 +7,22 @@ attempts were spent on it alone and both broke other checks.
 
 So it is fixed here before the checks run, in the two cases where the fix can't go wrong:
 
-- the brand's name is the whole of a link's words and that link points at the brand's site
-  under another spelling: the link is pointed at the approved address;
+- the brand's name is the whole of a link's words and that link points at the approved
+  address under another spelling (a trailing slash, a tracking tag): it is given the
+  approved spelling;
 - the brand's name stands in plain prose as a word of its own, written as the brand writes
   it: it is given the link.
 
 Everything else is left for the repair, as before: a name inside another word or an address,
 an ordinary word that only spells like the brand ("later" for Later), a name in a heading, a
-table, an image or code, or among the words of another link. No other link is touched.
+table, an image or code, or among the words of another link, and a link to another page of
+the brand's site (a deeper page, `http`, `www`): that link may be recorded in the article's
+link lists, which a change of address here would leave behind. No other link is touched.
 """
 
 import logging
 import re
 from typing import Optional
-from urllib.parse import urlsplit
 
 from src.flow.engines.content.generation.link_integrity import normalize_url
 
@@ -35,8 +37,10 @@ _OPENS = "(\"'“‘"
 _CLOSES = ".,;:!?)\"'’”"
 
 
-def _host(url: str) -> str:
-    return urlsplit(url or "").netloc.lower().removeprefix("www.")
+def _cut_short(url: str) -> bool:
+    """Whether the link pattern stopped inside this address: one that holds parentheses
+    ("/about_(company)") is matched only up to its first closing one."""
+    return url.count("(") > url.count(")")
 
 
 def _sentence_span(text: str, idx: int) -> tuple[int, int]:
@@ -85,17 +89,19 @@ def _linked_first_mention(text: str, idx: int, name: str, brand_url: str) -> Opt
     if _NOT_PROSE_RE.match(line) or _in_code(text, idx):
         return None
 
-    for link in _MD_LINK_RE.finditer(line):
+    links = list(_MD_LINK_RE.finditer(line))
+    if any(_cut_short(link.group(2)) for link in links):
+        return None  # where such a link ends can't be told here: the line is left as it is
+    for link in links:
         if not line_start + link.start() <= idx < line_start + link.end():
             continue
         # The name is inside this link. When it is all of the link's words and the link
-        # points at the brand's site under another spelling (a trailing slash, http, www, a
-        # tracking tag, a deeper page), only its address is off.
+        # points at the approved address under another spelling (a trailing slash, a
+        # tracking tag, a #section), only its spelling is off: the same page, so no entry
+        # of the link lists, which are matched on the same key, is left behind.
         url = link.group(2)
         its_words = link.group(1).strip().lower() == text[idx : idx + length].lower()
-        if its_words and (
-            normalize_url(url) == normalize_url(brand_url) or _host(url) == _host(brand_url)
-        ):
+        if its_words and normalize_url(url) == normalize_url(brand_url):
             at = line_start + link.start(2)
             return text[:at] + brand_url + text[at + len(url) :]
         return None  # among another link's words, or part of a link's address

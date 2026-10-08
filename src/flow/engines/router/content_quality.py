@@ -13,8 +13,8 @@ def validation_router(state: REXT) -> str:
         - "repair_content" if validation failed and repair attempts remain
         - "humanize_content" if validation passed, OR no failure is one a
           repair attempt is run for (word count is the rewrite's; a check an
-          earlier attempt worked on and left failing; the headings' own alone),
-          OR repair attempts are
+          earlier attempt worked on and left exactly as it was; the headings' own
+          alone), OR repair attempts are
           exhausted (best-effort — the pipeline still completes and publishes,
           flagged via validation.gave_up for a future manual-QA view, rather
           than hard-stopping)

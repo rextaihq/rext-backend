@@ -15,6 +15,7 @@ there is now a single place that knows how to call the repair model.
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -109,19 +110,20 @@ _LINK_RELATED_CHECKS = (
 
 
 def checks_already_tried(repair_history: Optional[list[dict]]) -> set[str]:
-    """The checks a repair has worked on, with its result kept, that still fail.
+    """The checks a repair has worked on, with its result kept, and left exactly as they were.
 
     Asking for the same thing again in the same words has not fixed one yet: on seven real
     runs every second attempt at such a check changed nothing (rext-control#818). A check
-    counts only when the repair really had its turn: not when the attempt was thrown away,
-    not when the model returned nothing, and not when the repair did fix it but the fix was
-    lost with a block that broke something else (`lost_checks`).
+    counts only when the repair really had its turn and did nothing for it
+    (`unchanged_checks`): not when the attempt was thrown away, not when the model returned
+    nothing, and not when the repair fixed some of what the check lists (two of three
+    missing links): what is left is then a different thing to ask for.
     """
     tried: set[str] = set()
     for entry in repair_history or []:
         if not entry.get("accepted") or entry.get("no_result"):
             continue
-        tried |= set(entry.get("unresolved_checks") or []) - set(entry.get("lost_checks") or [])
+        tried |= set(entry.get("unchanged_checks") or [])
     return tried
 
 
@@ -142,19 +144,33 @@ def checks_worth_an_attempt(
     ]
 
 
-def without_facts_removed_with_a_claim(before: dict, after: dict) -> dict:
-    """`after` without the facts whose words a repair took out of the prose.
+# How much of a fact's wording (or, for a short sentence, of the sentence's) the two must
+# share for the fact to be the one a flagged sentence stated. Shared wording alone is not
+# enough: in one real article "The average open rate for email marketing campaigns is
+# 30.41%" shared half its words with a flagged sentence about other figures. So every
+# number the fact gives must be in the sentence too.
+_FACT_OF_A_CLAIM_MIN_OVERLAP = 0.5
+_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _numbers(text: str) -> set[str]:
+    return {number.replace(",", "") for number in _NUMBER_RE.findall(text)}
+
+
+def without_facts_removed_with_a_claim(before: dict, after: dict, flagged: list[str]) -> dict:
+    """`after` without the facts a repair took out of the prose with a flagged claim.
 
     Asked to fix an unsupported claim, a repair removes or softens the sentence that made
     it. When that sentence carried a cited figure, its entry in `facts` stayed behind, the
     facts check read it as "never woven into the prose", and the fix was thrown away for it:
     3 of 3 replays of one real article (rext-control#818). A fact goes with its sentence: one
-    that was in the prose before the repair and is not after it is no longer a fact of the
-    article. Presence is judged as the facts check judges it, so exactly the entries it would
-    report are the ones dropped.
+    that a flagged sentence (`flagged`, the unsupported-claims check's own) stated before
+    the repair, and that the prose no longer states after it, is no longer a fact of the
+    article. Presence is judged as the facts check judges it. Any other fact that
+    disappears stays in the list, so the facts check still reports the loss.
     """
     facts = after.get("facts")
-    if not isinstance(facts, list) or not facts:
+    if not isinstance(facts, list) or not facts or not flagged:
         return after
     # Imported here: validation imports this module at load time.
     from src.flow.engines.content.generation.validation import (
@@ -165,11 +181,21 @@ def without_facts_removed_with_a_claim(before: dict, after: dict) -> dict:
     def stated(text: str, prose: str) -> bool:
         return text in prose or _word_overlap_ratio(text, prose) >= 0.2
 
+    def of_a_flagged_claim(text: str) -> bool:
+        return any(
+            text in sentence
+            or (
+                _numbers(text) <= _numbers(sentence)
+                and _word_overlap_ratio(text, sentence) >= _FACT_OF_A_CLAIM_MIN_OVERLAP
+            )
+            for sentence in flagged
+        )
+
     was, now = _combined_text(before), _combined_text(after)
     kept = []
     for fact in facts:
         text = (fact.get("text") or "").strip() if isinstance(fact, dict) else ""
-        if text and stated(text, was) and not stated(text, now):
+        if text and of_a_flagged_claim(text) and stated(text, was) and not stated(text, now):
             continue
         kept.append(fact)
     return after if len(kept) == len(facts) else {**after, "facts": kept}
@@ -544,6 +570,7 @@ async def repair_content(state: REXT) -> dict:
         from src.flow.engines.content.generation.validation import (
             apply_brand_exclusion,
             apply_density_report,
+            flagged_claim_sentences,
             merge_link_inventory,
             protected_links,
             run_checks,
@@ -560,7 +587,7 @@ async def repair_content(state: REXT) -> dict:
             spec.get("link_inventory"), protected_links(final_content, spec, searched_results)
         )
         # What the model is asked for: not the headings' own checks (their pass follows),
-        # and not what an earlier attempt already worked on and left failing.
+        # and not what an earlier attempt already worked on and left exactly as it was.
         article_checks = checks_worth_an_attempt(repair_targets, repair_history)
         asked = {c.get("name") for c in article_checks}
         targeted_checks = [
@@ -620,22 +647,37 @@ async def repair_content(state: REXT) -> dict:
         # the repair broke. Humanization-owned checks are excluded from "regressed":
         # length is corrected after this loop.
         failed_before = {c.get("name") for c in failed_checks}
+        flagged = (
+            flagged_claim_sentences(final_content, spec) if "unsupported_claims" in asked else []
+        )
 
         def settled(content: dict) -> dict:
             """The content as it would be kept: a fact goes with the claim a repair removed."""
-            if "unsupported_claims" not in asked:
-                return content
-            return without_facts_removed_with_a_claim(final_content, content)
+            return without_facts_removed_with_a_claim(final_content, content, flagged)
 
-        def failing(content: dict) -> set[str]:
+        def failures(content: dict) -> dict[str, str]:
+            """The checks the content fails, each with what it reports."""
             blocking, _ = run_checks(
                 apply_density_report(settled(content), spec), spec, searched_results
             )
-            return {c["name"] for c in blocking}
+            return {c["name"]: c.get("detail") or "" for c in blocking}
 
-        failed_after = failing(candidate)
+        def failing(content: dict) -> set[str]:
+            return set(failures(content))
+
+        as_returned = failures(candidate)
+        failed_after = set(as_returned)
         regressed = sorted(failed_after - failed_before - set(HUMANIZATION_OWNED_CHECKS))
         fixed_by_the_repair = [name for name in targeted_checks if name not in failed_after]
+        # What the repair as the model returned it left exactly as it was asked: the same
+        # check reporting the same thing. A check whose report changed (one of three
+        # missing links embedded) was worked on, and what is left of it gets its turn.
+        asked_for = {c.get("name"): c.get("detail") or "" for c in repair_targets}
+        unchanged = [
+            name
+            for name in targeted_checks
+            if name in as_returned and as_returned[name] == asked_for.get(name)
+        ]
         salvaged = None
         if regressed:
             kept, how = salvage_repair(
@@ -656,11 +698,11 @@ async def repair_content(state: REXT) -> dict:
             "accepted": accepted,
             "resolved_checks": resolved,
             "unresolved_checks": unresolved,
+            "unchanged_checks": unchanged,
             "regressed_checks": regressed,
         }
         if salvaged is not None:
-            # Kept in part: how, and which fixes went with the blocks that broke something
-            # (those have not had their turn; see checks_already_tried).
+            # Kept in part: how, and which fixes went with the pieces that broke something.
             history_entry["salvaged"] = salvaged
             history_entry["lost_checks"] = [n for n in fixed_by_the_repair if n in failed_after]
         if no_result:
