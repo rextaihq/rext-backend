@@ -611,6 +611,7 @@ WATCHED_CALLS = {
     "src/flow/engines/content/utils/eeat.py": 1,
     "src/flow/engines/content/generation/humanize_content.py": 1,
     "src/flow/engines/content/generation/repair_content.py": 1,
+    "src/services/workspace_pipeline.py": 4,  # a new workspace's brand and its people
 }
 
 
@@ -620,6 +621,13 @@ def test_the_structured_calls_of_a_run_are_made_under_the_watch(path, calls):
     assert source.count("ainvoke_watched(") == calls
     # A new structured call written as `await model.ainvoke(...)` would run unwatched.
     assert not re.search(r"await \w+\.ainvoke\(", source)
+
+
+def test_the_free_tools_structured_calls_are_made_under_the_watch():
+    # The tools' plain-text calls stay as they are: only an answer asked for as JSON runs away.
+    source = (Path(__file__).resolve().parents[3] / "src/api/tool/tools.py").read_text()
+    assert len(re.findall(r"ainvoke_watched\(\s*structured_llm,\s*prompt", source)) == 5
+    assert "structured_llm.ainvoke(" not in source
 
 
 def test_the_outline_is_asked_for_as_compact_json():
