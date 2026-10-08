@@ -1225,6 +1225,48 @@ async def test_a_trial_from_before_the_marker_that_converts_gets_its_month_when_
     assert (await _subscription_of(db, ls_id)).current_credits == 400
 
 
+@pytest.mark.parametrize("first", ["initial", "updated"])
+async def test_a_trial_that_converts_by_itself_gets_its_month_exactly_once(db, first):
+    """No plan change: the trial ends and its first payment brings the month, whichever name
+    the invoice carries. No later payment of either name brings it again: a retry of the
+    first, or a prorated invoice. The customer keeps what the spending left."""
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            growth.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=7),
+            status="on_trial",
+            renews_at=now + timedelta(days=30),
+        ),
+        None,
+        db,
+    )
+    assert (await _subscription_of(db, ls_id)).subscription_metadata["start_month_given"] is False
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now, billing_reason=first), None, db
+    )
+
+    converted = await _subscription_of(db, ls_id)
+    assert converted.current_credits == 1000
+    assert converted.subscription_metadata["start_month_given"] is True
+
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 300)
+    for minutes, again in enumerate(("initial", "updated"), 5):
+        await handle_subscription_payment_success(
+            _invoice_event(user, ls_id, at=now + timedelta(minutes=minutes), billing_reason=again),
+            None,
+            db,
+        )
+        assert await usage.get_credit_balance(user.id) == 700
+
+
 async def test_a_converted_trial_changing_plan_before_it_pays_keeps_its_balance(db):
     """Lemon Squeezy's update made the trial active; a plan change arrives before the first
     payment. The balance stays as it is, and the payment brings the new plan's month. After
