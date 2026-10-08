@@ -43,12 +43,13 @@ from src.flow.engines.content.generation.section_rewrite import (
     join_article,
     keyphrase_plan,
     keyword_lines,
+    lost_lines,
     rewrite_parts,
     secondary_plan,
     split_article,
     wanted_scale,
 )
-from src.flow.engines.content.generation.section_rewrite import words as count_words
+from src.flow.engines.content.generation.section_rewrite import words as part_words
 from src.flow.engines.content.generation.validation import (
     apply_brand_exclusion,
     check_brand_placement_policy,
@@ -472,7 +473,7 @@ async def _rewrite_by_section(
         parts,
         focus_keyphrase,
         content_type,
-        wanted_scale(sum(count_words(part.text) for part in parts), word_target),
+        wanted_scale(sum(part_words(part.text) for part in parts), word_target),
         # Where the density check counts the keyphrase beside the introduction and the body.
         elsewhere="\n".join(
             str(original_payload.get(field) or "")
@@ -483,7 +484,9 @@ async def _rewrite_by_section(
     cta = original_payload.get("cta")
     call_to_action = ((cta.get("text") if isinstance(cta, dict) else "") or "").strip()
 
-    def messages_for(part: Part, index: int, low: int, high: int) -> list:
+    def messages_for(
+        part: Part, index: int, low: int, high: int, lost: tuple[str, ...] = ()
+    ) -> list:
         return prompt.format_messages(
             voice_instruction=voice,
             brief=brief,
@@ -506,10 +509,11 @@ async def _rewrite_by_section(
                         new_phrases=new_phrases.get(index),
                     ),
                     call_to_action_lines(part.text, call_to_action),
+                    lost_lines(lost),
                 )
                 if line
             ),
-            words=count_words(part.text),
+            words=part_words(part.text),
             low=low,
             high=high,
             text=part.text,
@@ -603,7 +607,7 @@ async def humanize_content(state: REXT) -> dict:
     parts = split_article(original_payload.get("introduction") or "", body_markdown)
     if sum(1 for part in parts if part.kind == SECTION and part.level == 2) >= (
         MIN_SECTIONS_TO_SPLIT
-    ) and any(count_words(part.text) >= MIN_WORDS_TO_REWRITE for part in parts):
+    ) and any(part_words(part.text) >= MIN_WORDS_TO_REWRITE for part in parts):
         merged_payload = await _rewrite_by_section(
             original_payload,
             parts,

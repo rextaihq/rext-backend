@@ -574,7 +574,8 @@ async def test_valid_links_survive_validation_repair_humanization_and_final_vali
     final_validation = out["content"]["review"]["final_validation"]
     assert "links_preserved" not in _failing(final_validation["failed_checks"])
     assert repairer.calls == []  # restored deterministically, no repair call needed
-    assert len(humanizer.calls) == PARTS  # one rewrite: each part once
+    # One rewrite: each part once, and the two that came back without a link once more.
+    assert len(humanizer.calls) == PARTS + 2
 
 
 def _one_section_body() -> str:
@@ -627,7 +628,14 @@ async def test_a_part_whose_rewrite_loses_a_link_is_kept_as_drafted_and_needs_no
     assert CITATION_SENTENCE in final["body_markdown"]
     assert "Habits beat features, every time." not in final["body_markdown"]
     assert repairer.calls == []
-    assert len(humanizer.calls) == PARTS
+    # The part was asked once more, told which link it had left out, and left it out again.
+    assert len(humanizer.calls) == PARTS + 1
+    asked_again = [
+        call for call in humanizer.calls if "Your last answer to this left out" in _human_text(call)
+    ]
+    assert len(asked_again) == 1 and normalize_url(CITATION) in normalize_url(
+        _human_text(asked_again[0]).split("left out: ", 1)[1].split(". Every", 1)[0]
+    )
 
 
 async def test_link_lost_before_humanization_stays_reported_after_it():

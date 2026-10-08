@@ -92,6 +92,27 @@ def _images(text: str) -> Counter:
     return Counter(target.rstrip("/") for target in _IMAGE.findall(text or ""))
 
 
+LOST_A_LINK = "a link or an image was lost"
+
+
+def lost_embeds(drafted: str, rewritten: str) -> list[str]:
+    """Where the links and images point that the drafted text has and the rewritten has not."""
+    return sorted(
+        (_targets(drafted) - _targets(rewritten)) | set(_images(drafted) - _images(rewritten))
+    )
+
+
+def lost_lines(lost: tuple[str, ...] | list[str]) -> str:
+    """What a part is told when it is asked a second time because its first answer left out
+    links or images."""
+    if not lost:
+        return ""
+    return (
+        "- Your last answer to this left out: " + ", ".join(lost) + ". Every link and every "
+        "image of the part stays, each at its own address, inside a sentence of the part."
+    )
+
+
 def _items(text: str) -> tuple[int, int, int]:
     """(numbered steps, bullets, table rows) in the text."""
     return len(_STEP.findall(text)), len(_BULLET.findall(text)), len(_ROW.findall(text))
@@ -284,8 +305,8 @@ def judge(
         return None, f"too short ({count} words for {round(wanted)} wanted)"
     # A link or an image the part had and its rewrite has not: put back afterwards it would
     # land at the article's end, on a line of its own, and fail the check on woven-in links.
-    if _targets(part.text) - _targets(text) or _images(part.text) - _images(text):
-        return None, "a link or an image was lost"
+    if lost_embeds(part.text, text):
+        return None, LOST_A_LINK
     # A step dropped from a how-to, a product from a table, a list told as prose: the facts
     # went with them, and nothing after the rewrite compares the lists.
     if any(now < was for was, now in zip(_items(part.text), _items(text), strict=True)):
@@ -475,11 +496,12 @@ def keyword_lines(
                 f"{has}. The article has it too often: use it exactly {wanted} time(s) in the "
                 "text, and say the same thing in plain words where one is dropped."
             )
-    lowered = text.lower()
+    # As the check reads the article: a phrase written with emphasis or a hyphen inside it
+    # ("content **calendar**") is there, and is named to the part that holds it.
     kept = [
         keyword.strip()
         for keyword in secondary_keywords or []
-        if isinstance(keyword, str) and keyword.strip() and keyword.strip().lower() in lowered
+        if isinstance(keyword, str) and keyword.strip() and _keyword_appears(text, keyword)
     ]
     if kept:
         lines.append(f"- Keep each of these phrases as written, at least once: {', '.join(kept)}.")
@@ -522,9 +544,9 @@ def brand_lines(
     name = ((brand_context or {}).get("brand_name") or "").strip()
     if not name:
         return ""
-    uses = len(
-        re.findall(r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])", text, re.IGNORECASE)
-    )
+    # As a reader sees them, which is how the guard counts them: a one-word brand whose link's
+    # address holds its name ("[Acme](https://acme.test)") is named once, not twice.
+    uses = _mentions(text, name)
     if not uses:
         return f'- This part does not name "{name}". Do not bring it in.'
     url = ((brand_context or {}).get("brand_url") or "").strip()
@@ -580,9 +602,10 @@ async def rewrite_parts(
 ) -> tuple[list[Part], dict[str, int]]:
     """Every part rewritten at once, each kept as drafted when its rewrite cannot be used.
 
-    ``messages_for(part, index, low, high)`` gives the model's messages for one part. Returns
-    the parts in their order and the counts (parts, rewritten, kept as drafted, words before
-    and after).
+    ``messages_for(part, index, low, high)`` gives the model's messages for one part, and
+    ``messages_for(part, index, low, high, lost)`` the messages for asking it once more, with
+    the addresses its first answer left out. Returns the parts in their order and the counts
+    (parts, rewritten, kept as drafted, words before and after).
     """
     total = sum(words(part.text) for part in parts)
     scale = wanted_scale(total, word_target)
@@ -594,11 +617,28 @@ async def rewrite_parts(
             return part
         wanted = count * scale
         low, high = stated_range(wanted, cutting=scale < 1)
-        try:
+
+        async def ask(*lost: str) -> tuple[Optional[str], str, str]:
+            messages = (
+                messages_for(part, index, low, high, lost)
+                if lost
+                else messages_for(part, index, low, high)
+            )
             async with gate:
-                answer = await ainvoke_watched(
-                    model, messages_for(part, index, low, high), stage="humanize"
-                )
+                answer = _plain_text(await ainvoke_watched(model, messages, stage="humanize"))
+            return (
+                *judge(part, answer, wanted, brand=brand, excluded=excluded, keep=keep),
+                answer,
+            )
+
+        try:
+            accepted, why, answer = await ask()
+            if accepted is None and why == LOST_A_LINK:
+                # A list of products comes back without one of its links time and again, and
+                # kept as drafted it is the part an over-long article most needs shortened.
+                # Told which link it left out, the model keeps it: asked once more, no more.
+                logger.info("section rewrite: part %s lost a link; asked once more", index + 1)
+                accepted, why, _ = await ask(*lost_embeds(part.text, answer))
         except Exception as error:  # noqa: BLE001 - one part's failure keeps that part's draft
             logger.warning(
                 "section rewrite: part %s failed (%s); kept as drafted",
@@ -606,9 +646,6 @@ async def rewrite_parts(
                 type(error).__name__,
             )
             return part
-        accepted, why = judge(
-            part, _plain_text(answer), wanted, brand=brand, excluded=excluded, keep=keep
-        )
         if accepted is None:
             logger.info("section rewrite: part %s kept as drafted: %s", index + 1, why)
             return part
