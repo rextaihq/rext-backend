@@ -68,6 +68,10 @@ class DataCleanupService:
         is, and kept. "fetch" takes the deleted rows out of the session too, so
         a caller that loaded one doesn't still see it.
 
+        It ends with the first batch that deletes nothing. A batch can delete
+        fewer rows than it picked (the kept ones above) while more wait beyond
+        its limit, so a short batch is not the end.
+
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
@@ -97,7 +101,7 @@ class DataCleanupService:
                 f"(total: {deleted_total})"
             )
 
-            if deleted_batch < batch_size:
+            if deleted_batch <= 0:
                 return deleted_total
 
     def _log_result(self, count: int, records: str, **context) -> None:
@@ -204,9 +208,9 @@ class DataCleanupService:
         Args:
             retention_days: Number of days to retain (default from config)
             logs_older_than: Also take the events whose email log is older than this.
-                cleanup_all passes the email logs' cutoff: a real run has just deleted
-                those logs (orphaning their events), and a dry run, which hasn't, then
-                counts the same events.
+                cleanup_all's dry run passes the email logs' cutoff: a real run has
+                just deleted those logs (orphaning their events), and the dry run,
+                which hasn't, then counts the same events.
 
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
@@ -382,7 +386,13 @@ class DataCleanupService:
             ("email_logs", self.cleanup_email_logs),
             (
                 "email_events",
-                lambda: self.cleanup_email_events(logs_older_than=email_logs_cutoff),
+                # A real run has just deleted the old logs, and the database unlinked
+                # their events: they are orphans by now. Only the dry run, which
+                # deleted nothing, has to be told which events those would be. And when
+                # the logs' step failed, the events of the logs still there stay.
+                lambda: self.cleanup_email_events(
+                    logs_older_than=email_logs_cutoff if self.dry_run else None
+                ),
             ),
             ("error_logs", self.cleanup_error_logs),
             ("user_sessions", self.cleanup_inactive_sessions),
