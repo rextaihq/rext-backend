@@ -8,8 +8,6 @@ and webhook handling.
 Documentation: https://docs.lemonsqueezy.com/api
 """
 
-import hashlib
-import hmac
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -40,6 +38,7 @@ from src.providers.payment.base_provider import (
     PaymentProvider,
     SubscriptionData,
 )
+from src.utils.lemonsqueezy_webhook import signed_with_one_of, signing_secrets
 from src.utils.logger import logger
 
 
@@ -990,13 +989,8 @@ class LemonSqueezyProvider(PaymentProvider):
             logger.error("No webhook secret configured", operation="webhook_verification")
             return False
 
-        # LemonSqueezy uses HMAC SHA-256
-        expected_signature = hmac.new(
-            webhook_secret.encode("utf-8"), payload, hashlib.sha256
-        ).hexdigest()
-
-        # Timing-safe comparison
-        is_valid = hmac.compare_digest(expected_signature, signature)
+        # LemonSqueezy uses HMAC SHA-256. The setting may hold two secrets while it is changed.
+        is_valid = signed_with_one_of(payload, signature, signing_secrets(webhook_secret))
 
         if is_valid:
             logger.info("Webhook signature verified successfully", operation="webhook_verification")
