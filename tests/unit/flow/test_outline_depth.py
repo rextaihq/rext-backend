@@ -122,14 +122,14 @@ def test_a_section_without_subsections_gets_a_whole_budget():
         _section("Intro to the tools", "H2", 100),
         _section("Free tools", "H3", 100),
         _section("Pricing", "H2", 120),
-        _section("Takeaways", "H2", 200),
+        _section("Takeaways", "H2", 250),
     ]
 
     sections, lifted = fill_main_budgets(outline)
 
     assert lifted == 1
     # The H2 that introduces its H3s keeps its short budget; the H3 keeps its own.
-    assert [s["suggested_word_count"] for s in sections] == [100, 100, 150, 200]
+    assert [s["suggested_word_count"] for s in sections] == [100, 100, 200, 250]
 
 
 def test_a_generated_outline_is_held_in_place_and_stays_valid():
@@ -139,7 +139,7 @@ def test_a_generated_outline_is_held_in_place_and_stays_valid():
 
     sections = outline["structure"]["sections"]
     assert (raised, lifted) == (6, 8)
-    assert sum(s["suggested_word_count"] for s in sections) == 8 * 150
+    assert sum(s["suggested_word_count"] for s in sections) == 8 * 200
     ContentStructure(sections=sections)  # still a blog's structure: at most 8 H2s, 16 entries
 
 
@@ -171,6 +171,30 @@ def test_the_prompt_keeps_the_short_budget_for_an_h2_that_has_h3s_only():
     rule = outline_subsection_rule("blog")
 
     assert "An H2 that has H3s keeps a short budget of its own" in rule
-    assert "An H2 WITHOUT H3s is a whole section and keeps a whole budget: 150 to 400 words" in rule
+    assert "An H2 WITHOUT H3s is a whole section and keeps a whole budget: 200 to 400 words" in rule
     # The types whose schema fixes the structure are told nothing about H2 counts.
     assert "MAIN SECTIONS COME FIRST" not in outline_subsection_rule("how-to-guide")
+
+
+def test_the_five_outlines_measured_before_the_change_come_out_longer():
+    """Budgets as five real outlines had them on 8 October (all H2s but where marked): each was
+    planned at the type's minimum of 800 words or little more."""
+    before = {
+        "email newsletter ideas": [150, 100, 100, 120, 150],
+        "benefits of standing desks": [120, 100, 100, 100],
+        "remote work productivity tips": [125, ("H3", 100), ("H3", 100), 150, 150, 150, 100, 100],
+    }
+    for keyword, budgets in before.items():
+        sections = [
+            _section(f"{keyword} {index}", *(b if isinstance(b, tuple) else ("H2", b)))
+            for index, b in enumerate(budgets)
+        ]
+        outline = {"structure": {"sections": sections}}
+
+        hold_main_sections(outline)
+
+        held = outline["structure"]["sections"]
+        total = sum(s["suggested_word_count"] for s in held)
+        assert sum(1 for s in held if s["heading_level"] == "H2") >= 4, keyword
+        assert total >= 200 * 4, keyword
+        assert total > sum(b[1] if isinstance(b, tuple) else b for b in budgets), keyword
