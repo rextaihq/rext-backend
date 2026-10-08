@@ -4,6 +4,8 @@ Who an event may name, what it may carry, and that sending never reaches the wor
 reports. PostHog is a fake client here; nothing leaves the machine.
 """
 
+import asyncio
+import threading
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -19,6 +21,7 @@ from src.services.server_events import (
     event_context,
     plan_properties,
     send_server_event,
+    send_soon,
 )
 
 
@@ -221,3 +224,54 @@ async def test_a_context_that_cant_be_read_is_anonymous_and_planless():
             raise RuntimeError("connection closed")
 
     assert await event_context(Broken(), uuid4()) == EventContext()
+
+
+@pytest.mark.asyncio
+async def test_a_send_started_and_not_awaited_still_runs(monkeypatch):
+    monkeypatch.setattr(server_events.loop_registry, "get", lambda: None)
+    done = asyncio.Event()
+
+    async def sending():
+        done.set()
+
+    send_soon(sending())
+
+    await asyncio.wait_for(done.wait(), timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_a_send_from_another_loop_runs_on_the_servers(monkeypatch):
+    """A graph node runs on a loop of its own; the send goes to the server's."""
+    servers_loop = asyncio.get_running_loop()
+    monkeypatch.setattr(server_events.loop_registry, "get", lambda: servers_loop)
+    ran_on = []
+    done = asyncio.Event()
+
+    async def sending():
+        ran_on.append(asyncio.get_running_loop())
+        done.set()
+
+    def a_node():
+        async def node():
+            send_soon(sending())
+
+        asyncio.run(node())
+
+    worker = threading.Thread(target=a_node)
+    worker.start()
+    await asyncio.wait_for(done.wait(), timeout=2)
+    worker.join(timeout=2)
+
+    assert ran_on == [servers_loop]
+
+
+def test_with_no_loop_at_all_nothing_is_sent_and_nothing_raises(monkeypatch):
+    monkeypatch.setattr(server_events.loop_registry, "get", lambda: None)
+    started = []
+
+    async def sending():
+        started.append(True)
+
+    send_soon(sending())
+
+    assert started == []

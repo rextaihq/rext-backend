@@ -21,12 +21,13 @@ one the dashboard uses; staging has none). A failure to send is logged and never
 reaches the caller.
 """
 
+import asyncio
 import os
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Coroutine, Dict, Optional, Set
 
 import httpx
 from sqlalchemy import case, select
@@ -39,6 +40,7 @@ from src.api.models.subscription_models.subscriptions import (
     subscription_grants_access,
 )
 from src.api.models.user_models.users import Users
+from src.utils import loop_registry
 from src.utils.logger import logger
 
 DEFAULT_HOST = "https://eu.i.posthog.com"
@@ -179,7 +181,8 @@ async def send_server_event(
         properties: Its own properties: numbers, booleans and short words.
         key: What makes this event this one (a row's id, a run's thread id); the
             event's own id is derived from the name and the key, so a retry sends
-            the same event again and PostHog keeps one.
+            the same event again. PostHog keeps one of two that also agree on the
+            time: pass ``occurred_at`` for an event that may be sent twice.
         user_id: The account. Sent as the distinct id only with ``identified``.
         workspace_id: The workspace, where there is one.
         identified: Whether the person's answer allows their id (``allows_identity``,
@@ -233,3 +236,36 @@ async def send_server_event(
             extra={"event": name, "error": type(error).__name__},
         )
         return False
+
+
+# Sends started by send_soon on the running loop: a task nobody holds can be collected
+# before it ends.
+_in_flight: Set["asyncio.Task[Any]"] = set()
+
+
+def send_soon(sending: Coroutine[Any, Any, Any]) -> None:
+    """
+    Start a send and don't wait for it. Never raises.
+
+    For a caller that must not be held up by analytics (a charge inside a run, a
+    graph node). The send runs on the server's own loop when the caller is on
+    another one: a node's loop can end before a request does, and the database
+    pool belongs to the server's. With no loop at all, nothing is sent.
+    """
+    try:
+        main_loop = loop_registry.get()
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if main_loop is not None and main_loop is not running and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(sending, main_loop)
+        elif running is not None:
+            task = running.create_task(sending)
+            _in_flight.add(task)
+            task.add_done_callback(_in_flight.discard)
+        else:
+            sending.close()
+    except Exception as error:  # noqa: BLE001 - analytics never fails the work it reports
+        sending.close()
+        logger.warning("Server event not started", extra={"error": type(error).__name__})
