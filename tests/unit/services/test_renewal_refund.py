@@ -583,6 +583,54 @@ async def test_a_partial_refund_of_the_invoice_that_ended_a_trial_shrinks_the_mo
 
 
 @pytest.mark.asyncio
+async def test_a_partial_refund_of_that_invoice_takes_back_the_first_payments_bonus(
+    session, outside, monkeypatch
+):
+    """The refund is kept under the invoice, the first payment's promotional bonus under
+    the subscription's order: the refund forfeits it all the same, and leaves a bonus
+    that came with another order alone."""
+    row = await _trial_ended_by_a_plan_change(session, monkeypatch)
+    row.lemonsqueezy_order_id = "order-first"
+
+    async def bonus(order: str, credits: int) -> CreditGrant:
+        # A subscription has one grant per promotion.
+        promotion = Promotion(
+            code=f"launch-{uuid4().hex[:8]}",
+            label="Launch bonus",
+            credit_multiplier=2,
+            starts_at=NOW - timedelta(days=1),
+            ends_at=NOW + timedelta(days=6),
+        )
+        session.add(promotion)
+        await session.flush()
+        grant = CreditGrant(
+            subscription_id=row.id,
+            source="promotion",
+            promotion_id=promotion.id,
+            lemonsqueezy_order_id=order,
+            amount=credits,
+            remaining=credits,
+            expires_at=NOW + timedelta(days=25),
+        )
+        session.add(grant)
+        await session.flush()
+        return grant
+
+    with_the_payment = await bonus("order-first", 300)
+    with_another_order = await bonus("order-other", 70)
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-first", billing_reason="updated", refunded=PRICE // 2),
+        None,
+        session,
+    )
+
+    assert (with_the_payment.remaining, with_the_payment.forfeited) == (0, 300)
+    assert (with_another_order.remaining, with_another_order.forfeited) == (70, 0)
+    assert row.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.asyncio
 async def test_recording_a_refund_holds_the_orders_lock_until_the_transaction_ends(session):
     # Two events for one refund (a first payment's order_refunded and
     # subscription_payment_refunded) run in their own transactions. The second waits on
