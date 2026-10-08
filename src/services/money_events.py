@@ -27,6 +27,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.models.subscription_models.orders import Order
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
@@ -57,39 +58,67 @@ _INVOICE_EVENTS = frozenset(
         "subscription_payment_refunded",
     }
 )
-# An amount arrives in the currency's smallest unit, and that isn't always a hundredth:
-# these currencies have none (599 is 599 yen), and these have thousandths.
-_NO_DECIMALS = frozenset("BIF CLP DJF GNF JPY KMF KRW MGA PYG RWF UGX VND VUV XAF XOF XPF".split())
-_THREE_DECIMALS = frozenset("BHD JOD KWD OMR TND".split())
+# An invoice for a plan change is paid while the subscription may still be on the plan
+# being left: its own webhook can arrive first.
+_PLAN_CHANGE = "updated"
 
 
-def _amount(smallest: Any, currency: Any = "USD") -> Optional[float]:
-    """An amount in its currency's own unit, from Lemon Squeezy's count of its smallest."""
-    if isinstance(smallest, bool):
+def _amount(cents: Any) -> Optional[float]:
+    """
+    A Lemon Squeezy amount as the backend's own books read it (the orders, the refunds,
+    the payment handler): hundredths, whatever the currency. An event's figure is then
+    the one the books hold. Across currencies a chart adds up `amount_usd`, which the
+    provider always gives in cents of a dollar.
+    """
+    if isinstance(cents, bool):
         return None
-    code = currency.upper() if isinstance(currency, str) else ""
-    decimals = 0 if code in _NO_DECIMALS else 3 if code in _THREE_DECIMALS else 2
     try:
-        return round(int(smallest) / 10**decimals, decimals)
+        return round(int(cents) / 100, 2)
     except (TypeError, ValueError):
         return None
 
 
 def _held_by(event_type: str, payload: Dict[str, Any]) -> Optional[tuple]:
-    """Which column finds the subscription this webhook is about, and the value to look for."""
+    """
+    How to find the subscription a webhook is about: by a subscription's id or by an
+    order's, and the id. None when the webhook names neither, or when what the backend
+    holds can't be trusted to be the plan it means.
+    """
     data = payload.get("data") or {}
+    attributes = data.get("attributes") or {}
     if event_type in _INVOICE_EVENTS:
-        column, value = (
-            "lemonsqueezy_subscription_id",
-            (data.get("attributes") or {}).get("subscription_id"),
-        )
+        if attributes.get("billing_reason") == _PLAN_CHANGE:
+            return None
+        found_by, value = "subscription", attributes.get("subscription_id")
     elif event_type.startswith("subscription_"):
-        column, value = "lemonsqueezy_subscription_id", data.get("id")
+        found_by, value = "subscription", data.get("id")
     elif event_type.startswith("order_"):
-        column, value = "lemonsqueezy_order_id", data.get("id")
+        found_by, value = "order", data.get("id")
     else:
         return None
-    return (column, str(value)) if value else None
+    return (found_by, str(value)) if value else None
+
+
+def _plan_queries(found_by: str, value: str) -> list:
+    """The reads that find a subscription's plan and period, the surest first."""
+    held = select(SubscriptionPlan.name, UserSubscription.billing_period).join(
+        SubscriptionPlan, SubscriptionPlan.id == UserSubscription.plan_id
+    )
+    newest = UserSubscription.created_at.desc()
+    if found_by == "subscription":
+        return [
+            held.where(UserSubscription.lemonsqueezy_subscription_id == value)
+            .order_by(newest)
+            .limit(1)
+        ]
+    # An order is tied to its subscription in the orders table; the subscription's own
+    # copy of the order's id is filled in on some rows only, so it comes second.
+    return [
+        held.join(Order, Order.subscription_id == UserSubscription.id)
+        .where(Order.lemonsqueezy_order_id == value)
+        .limit(1),
+        held.where(UserSubscription.lemonsqueezy_order_id == value).order_by(newest).limit(1),
+    ]
 
 
 def money_event(
@@ -132,8 +161,7 @@ def money_event(
         if isinstance(value, str) and value:
             properties[ours] = value
 
-    currency = attributes.get("currency")
-    amount = _amount(attributes.get("total"), currency)
+    amount = _amount(attributes.get("total"))
     if amount is not None and "total" in attributes:
         properties["amount"] = amount
         # The same amount in one currency for every event, so a chart can add them up.
@@ -143,7 +171,7 @@ def money_event(
     # Lemon Squeezy gives what has been refunded so far, not what this refund returned: a
     # second partial refund repeats the first one's amount inside its own. Sent under a name
     # that says so, with whether everything is back; never to be added up across events.
-    refunded = _amount(attributes.get("refunded_amount"), currency)
+    refunded = _amount(attributes.get("refunded_amount"))
     if refunded is not None and attributes.get("refunded_amount"):
         properties["refunded_total"] = refunded
         if amount is not None and "total" in attributes:
@@ -282,22 +310,18 @@ async def _held_plan(
     """
     The plan and billing period of the subscription a webhook is about, as the backend
     holds it now (after the webhook's own work). None when it holds none, or can't say:
-    the event then goes without a plan.
+    the event then goes without a plan. A plan change's invoice is one of those: it
+    names no plan, and the one held at that moment may be the one being left.
     """
     held_by = _held_by(event_type, payload)
     if held_by is None:
         return None
-    column, value = held_by
+    row = None
     try:
-        row = (
-            await db.execute(
-                select(SubscriptionPlan.name, UserSubscription.billing_period)
-                .join(SubscriptionPlan, SubscriptionPlan.id == UserSubscription.plan_id)
-                .where(getattr(UserSubscription, column) == value)
-                .order_by(UserSubscription.created_at.desc())
-                .limit(1)
-            )
-        ).first()
+        for query in _plan_queries(*held_by):
+            row = (await db.execute(query)).first()
+            if row is not None:
+                break
     except Exception as error:  # noqa: BLE001 - analytics never fails a webhook
         logger.warning("Money event's plan not read", extra={"error": type(error).__name__})
         try:
