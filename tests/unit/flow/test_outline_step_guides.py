@@ -226,12 +226,15 @@ def test_a_blog_without_subsections_is_not_thin():
 
 @pytest.mark.unit
 async def test_a_pillar_outline_of_h2s_only_is_asked_for_once_more(monkeypatch):
-    second = _pillar("H2", "H3", "H3", "H2", marker="second")
+    # Four main sections, as a pillar outline has: with fewer, the holding step that follows
+    # (outline_depth.py) raises H3s to H2 until there are four, and this is about the retry.
+    first = _pillar("H2", "H2", "H2", "H2")
+    second = _pillar("H2", "H3", "H3", "H2", "H2", "H2", marker="second")
 
-    outline, calls = await _generate(monkeypatch, "pillar-content", [_pillar("H2", "H2"), second])
+    outline, calls = await _generate(monkeypatch, "pillar-content", [first, second])
 
     levels = [section["heading_level"] for section in outline["structure"]["sections"]]
-    assert levels == ["H2", "H3", "H3", "H2"]
+    assert levels == ["H2", "H3", "H3", "H2", "H2", "H2"]
     assert len(calls) == 2
     note = calls[1][-1].content
     assert calls[1][:-1] == calls[0]
@@ -241,10 +244,34 @@ async def test_a_pillar_outline_of_h2s_only_is_asked_for_once_more(monkeypatch):
 
 @pytest.mark.unit
 async def test_a_pillar_outline_with_subsections_costs_one_call(monkeypatch):
-    outline, calls = await _generate(monkeypatch, "pillar-content", [_pillar("H2", "H3", "H2")])
+    pillar = _pillar("H2", "H3", "H2", "H2", "H2")
 
-    assert len(outline["structure"]["sections"]) == 3
+    outline, calls = await _generate(monkeypatch, "pillar-content", [pillar])
+
+    levels = [section["heading_level"] for section in outline["structure"]["sections"]]
+    assert levels == ["H2", "H3", "H2", "H2", "H2"]
     assert len(calls) == 1
+
+
+@pytest.mark.unit
+async def test_a_retried_pillar_outline_short_of_four_main_sections_is_still_held(monkeypatch):
+    """The retry and the holding step in their order: the second attempt takes the first one's
+    place for its subsections, and is then held to four main sections like any first outline."""
+    second = _pillar("H2", "H3", "H3", "H2", "H3", "H3", marker="second")
+
+    outline, calls = await _generate(monkeypatch, "pillar-content", [_pillar("H2", "H2"), second])
+
+    sections = outline["structure"]["sections"]
+    assert [section["heading"] for section in sections] == [f"second {i}" for i in range(6)]
+    assert [section["heading_level"] for section in sections] == [
+        "H2",
+        "H2",
+        "H2",
+        "H2",
+        "H3",
+        "H3",
+    ]
+    assert len(calls) == 2
 
 
 @pytest.mark.unit
