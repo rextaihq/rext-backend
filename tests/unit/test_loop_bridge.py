@@ -38,7 +38,7 @@ class _ServerLoop:
         self.loop.close()
 
 
-def _on_a_worker_loop(make_coroutine):
+def _on_a_worker_loop(make_coroutine, thread_name="bg-loop-0_0"):
     """Run ``make_coroutine()`` to its end on a loop of its own in a worker thread, as the
     runtime runs a job; returns (result, error, the worker's loop)."""
     box = {}
@@ -53,7 +53,8 @@ def _on_a_worker_loop(make_coroutine):
         finally:
             loop.close()
 
-    thread = threading.Thread(target=work)
+    # Named as the runtime names the threads it runs jobs on.
+    thread = threading.Thread(target=work, name=thread_name)
     thread.start()
     thread.join(timeout=20)
     assert not thread.is_alive(), "the worker never finished"
@@ -102,6 +103,27 @@ def test_a_worker_thread_whose_main_loop_never_appears_fails_loudly_and_runs_not
     # Never started, on any loop, and closed: not left as a coroutine nobody awaited.
     assert started == []
     assert inspect.getcoroutinestate(work) == inspect.CORO_CLOSED
+
+
+def test_a_thread_that_is_not_one_of_the_runtimes_runs_its_work_where_it_is():
+    """A test client runs the app on a loop in a thread of its own, and a script may too:
+    with no main loop registered, that loop is the only one there is. Only the runtime's
+    job threads are known to be beside a server whose loop owns the pool."""
+    ran_on, error, own_loop = _on_a_worker_loop(
+        lambda: run_on_main_loop(_which_loop()), thread_name="asyncio-portal-1"
+    )
+
+    assert error is None and ran_on is own_loop
+
+
+def test_the_runtime_still_names_its_job_threads_as_the_bridge_expects():
+    """The bridge knows a job's thread by the runtime's name for it. Read from the runtime's
+    own source, so an upgrade that renames them fails here."""
+    import langgraph_runtime_inmem.queue as runtime_queue
+
+    assert f'thread_name_prefix=f"{loop_bridge.JOB_THREAD_PREFIX}' in inspect.getsource(
+        runtime_queue
+    )
 
 
 async def test_on_the_main_thread_with_no_main_loop_the_work_runs_where_it_is():
