@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Integer,
@@ -26,6 +27,12 @@ from src.utils.role_display import (
 # -------------------------
 class Users(Base, SerializableMixin, SoftDeleteMixin):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            "analytics_consent IN ('granted', 'denied')", name="ck_users_analytics_consent"
+        ),
+        CheckConstraint("analytics_region IN ('eea', 'other')", name="ck_users_analytics_region"),
+    )
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
@@ -53,6 +60,13 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     registration_device_fingerprint = Column(
         String(16), index=True
     )  # Hash of IP + User-Agent at signup, see get_device_fingerprint()
+    # The person's answer on usage analytics, as their browser last told it (task 712):
+    # "granted", "denied" or NULL for no answer yet, and where they were asked from ("eea" or
+    # "other"). src/services/server_events.py reads them to decide whether an event may
+    # carry the account's id.
+    analytics_consent = Column(String(10))
+    analytics_region = Column(String(10))
+    analytics_consent_at = Column(DateTime(timezone=True))
     created_at = Column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -185,7 +199,14 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""
         if "exclude" not in kwargs:
-            kwargs["exclude"] = ["password_hash", "reset_token"]
+            # The analytics answer has a route of its own; it isn't part of a user's card.
+            kwargs["exclude"] = [
+                "password_hash",
+                "reset_token",
+                "analytics_consent",
+                "analytics_region",
+                "analytics_consent_at",
+            ]
         data = super().to_dict(**kwargs)
         data["initials"] = self.initials
         from sqlalchemy import inspect as sa_inspect
