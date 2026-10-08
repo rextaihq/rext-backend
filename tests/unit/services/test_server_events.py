@@ -292,7 +292,7 @@ async def test_only_a_2xx_answer_counts_as_taken(monkeypatch, status):
 
     async with httpx.AsyncClient(transport=_transport(requests, status)) as client:
         taken = await money_events.send_server_event(
-            "credits_spent", {"credits": 1}, key="row-1", client=client
+            "credits_spent", {"credits": 1}, key="row-1", occurred_at=AT, client=client
         )
 
     assert taken is False
@@ -306,7 +306,7 @@ async def test_a_borrowed_client_with_no_time_limit_is_still_given_the_senders(m
 
     async with httpx.AsyncClient(transport=_transport(requests), timeout=None) as client:
         taken = await money_events.send_server_event(
-            "credits_spent", {"credits": 1}, key="row-1", client=client
+            "credits_spent", {"credits": 1}, key="row-1", occurred_at=AT, client=client
         )
 
     assert taken is True

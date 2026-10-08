@@ -31,7 +31,7 @@ from src.api.models.subscription_models.subscriptions import (
     subscription_grants_access,
 )
 from src.api.models.user_models.users import Users
-from src.providers.payment.base_provider import PaymentChangeUnconfirmed
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed, PaymentChangeUnknown
 from src.providers.payment.providers.lemonsqueezy import LemonSqueezyAPIError
 from src.services.audit_logger import audit_logger
 from src.services.subscription_service import SubscriptionService
@@ -329,6 +329,72 @@ async def test_a_change_lemon_squeezy_took_but_did_not_confirm_is_not_called_ref
     # Nothing is recorded here: Lemon Squeezy's own update brings the plan in line.
     assert row.plan_id == starter.id
     assert await _audit(session, user) == []
+
+
+async def test_a_change_lemon_squeezy_never_answered_is_not_called_refused(session, lemon):
+    # A timeout or a dropped connection on the request: Lemon Squeezy may have changed the
+    # plan, and with charge_now invoiced it. "Nothing was changed" would be a guess.
+    starter, growth, _ = await _world(session)
+    user, row = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    lemon.update_subscription.side_effect = PaymentChangeUnknown("The update got no answer")
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await _change(session, user, admin, growth, billing="charge_now")
+
+    message = refused.value.message
+    assert "didn't answer" in message and "isn't known" in message
+    assert "Nothing was changed" not in message
+    alert = subscription_service_module.trigger_payment_alert.call_args.kwargs
+    assert alert["alert_type"] == "admin_plan_change_unknown"
+    assert alert["context"]["charged_now"] is True
+    # Nothing is recorded here: if it did change, Lemon Squeezy's update brings the plan.
+    assert row.plan_id == starter.id
+    assert await _audit(session, user) == []
+
+
+async def test_a_change_that_fails_here_after_lemon_squeezy_took_it_alerts_a_person(
+    session, lemon, monkeypatch
+):
+    # Past Lemon Squeezy's yes, the work on the row fails: the plan there has changed, and
+    # neither it nor an audit entry will be kept here.
+    starter, growth, _ = await _world(session)
+    user, row = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    monkeypatch.setattr(
+        subscription_service_module,
+        "change_plan_credits",
+        MagicMock(side_effect=RuntimeError("the row could not be written")),
+    )
+
+    with pytest.raises(RuntimeError):
+        await _change(session, user, admin, growth, billing="charge_now")
+
+    lemon.update_subscription.assert_awaited_once()
+    alert = module.trigger_payment_alert.call_args.kwargs
+    assert alert["alert_type"] == "admin_plan_change_unrecorded"
+    assert alert["user_id"] == str(user.id)
+    assert alert["context"] == {
+        "admin_id": str(admin.id),
+        "old_plan": starter.name,
+        "new_plan": growth.name,
+        "billing": "charge_now",
+    }
+
+
+async def test_a_failure_before_lemon_squeezy_is_asked_alerts_no_one(session, lemon, monkeypatch):
+    starter, growth, _ = await _world(session)
+    user, _ = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    monkeypatch.setattr(
+        SubscriptionService, "calculate_usage", AsyncMock(side_effect=RuntimeError("no count"))
+    )
+
+    with pytest.raises(RuntimeError):
+        await _change(session, user, admin, growth)
+
+    lemon.update_subscription.assert_not_awaited()
+    module.trigger_payment_alert.assert_not_called()
 
 
 async def test_a_user_lemon_squeezy_does_not_bill_is_changed_here_only(session, lemon):

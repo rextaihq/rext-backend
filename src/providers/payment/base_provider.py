@@ -52,6 +52,11 @@ class PaymentChangeUnconfirmed(Exception):
     stands there, and what it left is unknown here until the provider's own update arrives."""
 
 
+class PaymentChangeUnknown(Exception):
+    """A change was sent and no answer came back (a timeout, a dropped connection, a server
+    error): the provider may have applied it or not, and nothing here can tell which."""
+
+
 class PaymentProvider(ABC):
     """Abstract payment provider interface that all providers must implement"""
 

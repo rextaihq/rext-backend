@@ -710,9 +710,18 @@ class MonitoringService:
                 error_metadata=redactor._redact_json(metadata or {}),
             )
 
-            async with AsyncSessionLocal() as session:
-                session.add(entry)
-                await session.commit()
+            async def _write() -> None:
+                async with AsyncSessionLocal() as session:
+                    session.add(entry)
+                    await session.commit()
+
+            # The pool belongs to the server's loop, and this is called from the pipeline's
+            # nodes too (a run refused for credits, a failed search lookup, a failed model
+            # call), each on a loop of its own: written from there, the row took a pooled
+            # connection on the wrong loop (rext-control#858).
+            from src.utils.loop_bridge import run_on_main_loop
+
+            await run_on_main_loop(_write())
         except Exception as exc:  # noqa: BLE001 - never propagate
             logger.warning(f"Failed to persist error log: {exc}")
 

@@ -21,6 +21,7 @@ from src.flow.model.runaway import ainvoke_watched
 from src.services.sse_service import (
     emit_pipeline_complete,
     emit_step_failure,
+    emit_step_progress,
     emit_step_start,
     emit_step_success,
 )
@@ -98,6 +99,9 @@ PERSIST_RESERVE_SECONDS = 5.0
 PIPELINE_BUDGET_SECONDS = 90.0
 EXTRACTION_BUDGET_SECONDS = 35.0
 _ARTICLES_PER_AUTHOR = 2
+# A progress event lists what was found, within a bound: the stream is for a screen.
+MAX_PAGES_REPORTED = 25
+MAX_PEOPLE_REPORTED = 12
 _FEED_BUDGET_SECONDS = 4.0
 _BROWSER_START_DELAY_SECONDS = 4.0
 _BROWSER_CANCEL_GRACE_SECONDS = 5.0
@@ -958,6 +962,92 @@ class WorkspacePipeline:
             )
             return None
 
+    async def _say(self, step: str, message: str, payload: Dict[str, Any]) -> None:
+        """What a step has found so far, as a progress event on the operation's stream.
+
+        For the screen that shows the workspace taking shape while the run goes on
+        (revnix/rext-control#845). It reports; it never fails the run, and it never
+        ends a step: a client that reads only started, completed and failed ignores it.
+        """
+        try:
+            await emit_step_progress(
+                operation_id=self.operation_id,
+                scope=self.scope,
+                step=step,
+                message=message,
+                payload=payload,
+                user_id=self.user_id,
+            )
+        except Exception:  # noqa: BLE001 - a line of progress is never worth the run
+            logger.warning("Workspace pipeline: a progress event was not sent", exc_info=True)
+
+    async def _say_people(self, found: Optional[List[dict]] = None) -> None:
+        """The people are saved from here on: said at once, since the brand-voice step's
+        own end came before them and the run's end is a competitor search away.
+
+        Only the people this run found (`found`, by name): a refresh keeps the personas a
+        person made by hand, and those were not read from the site.
+        """
+        names = {(person.get("name") or "").strip() for person in found or []} - {""}
+        people = [
+            persona
+            for persona in getattr(self, "_extracted_personas", None) or []
+            if (persona.get("name") or "").strip() in names
+        ]
+        await self._say(
+            "personas",
+            f"Saved {len(people)} author personas",
+            {
+                "people": [
+                    {"person": persona.get("full_name"), "title": persona.get("professional_title")}
+                    for persona in people[:MAX_PEOPLE_REPORTED]
+                ],
+                "count": len(people),
+            },
+        )
+
+    def _page_kind(self, page: str, text: str) -> str:
+        """What a page is, for a reader: home, about, team, article or other.
+
+        `classify_page` sorts pages for the extraction passes, which read an about page
+        with the team's and have no word for the home page; a list of what was read
+        names both.
+        """
+        from urllib.parse import urlparse
+
+        from src.utils.fast_scraper import PAGE_ARTICLE, classify_page
+
+        def _address(url: str) -> Tuple[str, str]:
+            parsed = urlparse(url)
+            return (parsed.netloc or "").lower().removeprefix("www."), parsed.path.strip("/")
+
+        if _address(page) == _address(self.url) or not _address(page)[1]:
+            return "home"
+        kind = classify_page(page, text)
+        segments = _address(page)[1].lower().split("/")
+        if kind != PAGE_ARTICLE and any(
+            segment == "about" or segment.startswith("about-") for segment in segments
+        ):
+            return "about"
+        return kind
+
+    def _pages_read_count(self) -> int:
+        """How many pages were fetched, the ones past the listed 25 included."""
+        return sum("#" not in page for page in getattr(self, "_page_text_by_url", None) or {})
+
+    def _pages_read(self) -> List[Dict[str, str]]:
+        """The pages the scrape read, with what each is, the home page first."""
+        # Fetched pages only: the index also holds entries made up for the extraction passes
+        # (a feed's authors as "<feed>#author=Name"), which are no page anyone can open.
+        pages = {
+            page: text
+            for page, text in (getattr(self, "_page_text_by_url", None) or {}).items()
+            if "#" not in page
+        }
+        kinds = {page: self._page_kind(page, text) for page, text in pages.items()}
+        listed = sorted(pages, key=lambda page: (kinds[page] != "home", page))
+        return [{"page": page, "kind": kinds[page]} for page in listed[:MAX_PAGES_REPORTED]]
+
     async def _scrape_website(self) -> _ScrapeResult:
         await emit_step_start(
             operation_id=self.operation_id,
@@ -988,6 +1078,16 @@ class WorkspacePipeline:
                 user_id=self.user_id,
             )
             raise
+
+        # Which pages were read, said before the slower checks below: the first thing the
+        # screen can show of the run's own work.
+        pages_read = self._pages_read()
+        if pages_read:
+            await self._say(
+                "scrape",
+                f"Read {len(pages_read)} pages",
+                {"pages": pages_read, "count": self._pages_read_count()},
+            )
 
         title = None
         if raw_html:
@@ -1505,8 +1605,13 @@ class WorkspacePipeline:
             user_id=self.user_id,
         )
 
+        async def _progress(progress: Dict[str, Any]) -> None:
+            # Where the search is (searching, then checking the candidates): the step is
+            # the run's longest and said nothing until its end.
+            await self._say("competitor_discovery", "Discovering competitors", progress)
+
         try:
-            analysis = await discover_competitors(site_url=self.url)
+            analysis = await discover_competitors(site_url=self.url, on_progress=_progress)
         except Exception as exc:  # noqa: BLE001 - non-fatal to the overall pipeline
             logger.error(
                 "Competitor discovery failed",
@@ -1550,6 +1655,9 @@ class WorkspacePipeline:
         self, brand_voice_schema: Optional[BrandSchema]
     ) -> Optional[BrandVoice]:
         if brand_voice_schema is None:
+            # No voice means no one is saved either: said, so a screen need not wait for
+            # people through the competitor search.
+            await self._say_people()
             return None
 
         data = brand_voice_schema.model_dump()
@@ -2300,6 +2408,8 @@ class WorkspacePipeline:
         position = {(p.get("name") or ""): i for i, p in enumerate(personas_data)}
         saved_personas.sort(key=lambda p: position.get(p.name or "", len(position)))
         self._extracted_personas = [_format_persona_for_frontend(p) for p in saved_personas]
+
+        await self._say_people(personas_data)
 
         logger.info(
             "Persisted and formatted personas for frontend",
