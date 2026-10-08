@@ -504,12 +504,37 @@ async def test_an_address_past_the_first_hundred_is_still_found(providers, monke
     assert (signed_in.email, signed_in.email_verified) == ("late@example.com", True)
 
 
-def test_linking_is_counted_like_a_sign_in():
+@pytest.mark.asyncio
+async def test_linking_is_counted_per_signed_in_user():
     import inspect
 
     from src.api.routes.users import auth as routes
 
-    assert "oauth_rate_limit()" in inspect.getsource(inspect.unwrap(routes.link_oauth))
+    # The limit's dependency follows the one that names the caller, in that order.
+    parameters = list(inspect.signature(inspect.unwrap(routes.link_oauth)).parameters)
+    assert parameters.index("_counted_as") < parameters.index("_rate_limit")
+    request = SimpleNamespace(state=SimpleNamespace())
+
+    await routes._counted_as_the_signed_in_user(request, current_user={"identity": "user-1"})
+
+    assert request.state.rate_limit_identity == "oauth-link:user-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("spelled", ["Google", " google ", "GOOGLE"])
+async def test_a_provider_goes_on_under_its_one_name(providers, spelled):
+    signed_in = await checked_sign_in(spelled, "108000000000000000001", "ana@example.com", TOKEN)
+
+    assert signed_in.provider == "google"
+
+
+def test_both_routes_store_the_provider_under_its_one_name():
+    import inspect
+
+    from src.api.routes.users import auth as routes
+
+    for route in (routes.oauth_login, routes.link_oauth):
+        assert "provider=oauth_data.provider," not in inspect.getsource(inspect.unwrap(route))
 
 
 # The call that carries the dashboard's key says so

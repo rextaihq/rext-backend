@@ -230,6 +230,8 @@ async def provider_identity(provider: str, access_token: Optional[str]) -> Provi
 class CheckedSignIn:
     """What a provider sign-in goes ahead with."""
 
+    # The provider under its one name ("google", "github"), however the request spelled it.
+    provider: str
     account_id: str
     email: str
     # An existing account is linked by its email only when this is true.
@@ -257,7 +259,10 @@ async def checked_sign_in(
     """
     reporting = get_settings().PROVIDER_SIGN_IN_CHECK == "report"
     claimed = CheckedSignIn(
-        account_id=claimed_account_id, email=_lower(claimed_email), email_verified=True
+        provider=_lower(provider),
+        account_id=claimed_account_id,
+        email=_lower(claimed_email),
+        email_verified=True,
     )
     try:
         identity = await provider_identity(provider, access_token)
@@ -278,7 +283,12 @@ async def checked_sign_in(
 
     email = _lower(claimed_email)
     if email and email in identity.verified_emails:
-        return CheckedSignIn(account_id=identity.account_id, email=email, email_verified=True)
+        return CheckedSignIn(
+            provider=_lower(provider),
+            account_id=identity.account_id,
+            email=email,
+            email_verified=True,
+        )
     if reporting and email and email != (identity.email or ""):
         logger.warning(
             "A provider sign-in names an email the provider does not vouch for (reporting only)",
@@ -288,6 +298,7 @@ async def checked_sign_in(
     # No address the provider vouches for: the account can still sign in where it is already
     # linked (that goes by its id), and nothing is created or linked on an address unvouched.
     return CheckedSignIn(
+        provider=_lower(provider),
         account_id=identity.account_id,
         email=identity.email or email,
         email_verified=bool(identity.email) and identity.email_verified,

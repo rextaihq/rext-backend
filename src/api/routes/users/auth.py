@@ -596,7 +596,7 @@ async def oauth_login(
     signed_in = await _as_the_provider_says(oauth_data)
 
     new_user, tokens = await oauth_service.oauth_login_or_register(
-        provider=oauth_data.provider,
+        provider=signed_in.provider,
         provider_account_id=signed_in.account_id,
         provider_email=signed_in.email,
         email_verified=signed_in.email_verified,
@@ -961,6 +961,13 @@ async def verify_account_recovery(
     )
 
 
+async def _counted_as_the_signed_in_user(
+    request: Request, current_user: dict = Depends(get_current_user)
+) -> None:
+    """Names the caller for the rate limit that follows: the signed-in user, not an address."""
+    request.state.rate_limit_identity = f"oauth-link:{current_user.get('identity')}"
+
+
 @router.post("/oauth/link", response_model=SuccessResponse[OAuthAccountResponse])
 @db_transaction_handler("link oauth account", auto_commit=True)
 async def link_oauth(
@@ -968,7 +975,9 @@ async def link_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
-    # Each call asks the provider, so it is counted like a sign-in.
+    # Each call asks the provider, so it is counted like a sign-in: per signed-in user, whatever
+    # address the call comes from.
+    _counted_as: None = Depends(_counted_as_the_signed_in_user),
     _rate_limit: None = Depends(oauth_rate_limit()),
 ):
     """
@@ -991,7 +1000,7 @@ async def link_oauth(
 
     oauth_account = await oauth_service.link_oauth_account(
         user_id=user_id,
-        provider=oauth_data.provider,
+        provider=checked.provider,
         provider_account_id=checked.account_id,
         provider_email=checked.email,
         provider_username=oauth_data.provider_username,
