@@ -651,21 +651,24 @@ def _subsections(outline: dict) -> int:
 
 
 def _heading_key(section: dict) -> str:
-    """A heading as compared between two attempts: its words, whatever its case and marks."""
-    return " ".join(re.findall(r"[a-z0-9]+", str(section.get("heading") or "").lower()))
+    """A heading as compared between two attempts: its words, in any script, whatever its case
+    and marks. Empty for a heading with no letter or digit in it."""
+    return " ".join(re.findall(r"[^\W_]+", str(section.get("heading") or "").casefold()))
 
 
 def _keeps_main_sections(first: dict, retried: dict) -> bool:
     """Every H2 of ``first`` is still a heading of ``retried``, at any level: a section folded
-    under another is kept as its H3; one that is gone is a topic dropped."""
+    under another is kept as its H3; one that is gone is a topic dropped. A heading with no
+    words is nothing to look for, and never stands for one that is kept."""
     kept = {
         _heading_key(section) for section in _outline_sections(retried) if isinstance(section, dict)
-    }
-    return all(
-        _heading_key(section) in kept
+    } - {""}
+    wanted = [
+        _heading_key(section)
         for section in _outline_sections(first)
         if isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
-    )
+    ]
+    return all(key in kept for key in wanted if key)
 
 
 def _structure_count(content_type: str, outline: dict) -> int:
