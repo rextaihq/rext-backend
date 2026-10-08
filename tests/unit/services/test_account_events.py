@@ -256,6 +256,35 @@ async def test_after_credits_come_back_running_out_again_is_a_new_crossing(world
 
 
 @pytest.mark.asyncio
+async def test_a_charge_that_leaves_nothing_is_a_new_crossing_whatever_mark_is_left(world):
+    """Out, then given exactly what the next stage costs (an admin's one credit): no charge
+    left a balance to clear the mark, and the charge that spends it must still tell."""
+    await _refuse(world, owner=world.owner)
+    await _charge(balance_after=0, owner=world.owner, action="serp_seo")
+    await _refuse(world, owner=world.owner)
+
+    outs = [p for name, p, _ in world.sent if name == "credits_out"]
+    assert outs == [{"action": "generate_outline"}, {"action": "serp_seo"}]
+
+
+@pytest.mark.asyncio
+async def test_a_charge_marks_the_account_out_before_it_sends_anything(world, monkeypatch):
+    """A run refused while the charge's events are still on their way finds the mark."""
+    seen = []
+
+    async def report(name, properties, **kwargs):
+        seen.append((name, dict(world.marks)))
+        return True
+
+    monkeypatch.setattr(account_events, "report_event", report)
+
+    await _charge(balance_after=0, owner=world.owner)
+
+    assert seen[0][0] == "credits_spent"
+    assert seen[0][1] != {}
+
+
+@pytest.mark.asyncio
 async def test_without_redis_there_is_no_mark_and_every_refusal_is_told(world):
     world.redis = False
 
