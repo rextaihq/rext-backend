@@ -28,7 +28,7 @@ from src.flow.engines.content.generation.word_count_utils import compute_word_ta
 
 logger = logging.getLogger(__name__)
 
-Stage = Literal["writer", "rewrite", "repair"]
+Stage = Literal["writer", "rewrite", "repair", "section"]
 
 # What the article does under each brand choice, in the words the outline screen shows beside
 # the option (rext-admin, outline-brief.tsx) and the checks hold the article to.
@@ -48,6 +48,10 @@ _STAGE_LINES: dict[str, str] = {
     "writer": "Write the article this brief describes.",
     "rewrite": "The article below was written to this brief. Rewrite its words; the brief stands.",
     "repair": "The article below was written to this brief. Fix the listed issues; the brief stands.",
+    "section": (
+        "The article this part belongs to was written to this brief. Rewrite the part's words; "
+        "the brief stands."
+    ),
 }
 
 
@@ -143,10 +147,18 @@ def build_generation_brief(spec: RequirementsSpec, outline: dict | None) -> Gene
 
 
 def render_generation_brief(brief: GenerationBrief, *, stage: Stage) -> str:
-    """The brief in words. The same lines at every stage, but for two: the stage's own line, and
-    the length, which a repair is not given. A repair keeps the article at the length it has
-    (the rewrite that follows owns the length), and the target beside that would be a second
-    length to obey."""
+    """The brief in words. The same lines at every stage, but for the stage's own line and what
+    a stage is not given:
+
+    * a repair is not given the length. It keeps the article at the length it has (the rewrite
+      that follows owns the length), and the target beside that would be a second length to obey;
+    * one part of the article, rewritten on its own (section_rewrite.py), is given what holds
+      for every part: the title, the type, the reader and the tone. The article's length, its
+      keywords, its brand choice and its call to action are the whole article's: said to each
+      of ten parts, "each keyword at least once" and "one mention early in the body" would be
+      asked for ten times. A part is told its own length, keyword uses and brand mentions.
+    """
+    whole = stage != "section"
     lines = [
         "========================",
         "THE ARTICLE'S BRIEF",
@@ -160,16 +172,16 @@ def render_generation_brief(brief: GenerationBrief, *, stage: Stage) -> str:
             f"{LENGTH_LINE}about {brief['target_words']} words; the introduction and the body "
             f"together between {brief['min_words']} and {brief['max_words']}"
         )
-        if brief["target_words"] and stage != "repair"
+        if brief["target_words"] and stage not in ("repair", "section")
         else "",
         f'- Focus keyphrase (exact wording): "{brief["focus_keyphrase"]}"'
-        if brief["focus_keyphrase"]
+        if brief["focus_keyphrase"] and whole
         else "",
         f"- Secondary keywords (each at least once): {', '.join(brief['secondary_keywords'])}"
-        if brief["secondary_keywords"]
+        if brief["secondary_keywords"] and whole
         else "",
-        _brand_line(brief),
-        _call_to_action_line(brief),
+        _brand_line(brief) if whole else "",
+        _call_to_action_line(brief) if whole else "",
     ]
     return "\n".join(line for line in lines if line)
 

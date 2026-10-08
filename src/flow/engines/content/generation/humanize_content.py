@@ -32,6 +32,21 @@ from src.flow.engines.content.generation.link_integrity import (
 from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
+from src.flow.engines.content.generation.section_rewrite import (
+    INTRODUCTION,
+    OPENING,
+    SECTION,
+    Part,
+    brand_lines,
+    join_article,
+    keyphrase_plan,
+    keyword_lines,
+    rewrite_parts,
+    secondary_plan,
+    split_article,
+    wanted_scale,
+)
+from src.flow.engines.content.generation.section_rewrite import words as count_words
 from src.flow.engines.content.generation.validation import (
     apply_brand_exclusion,
     check_brand_placement_policy,
@@ -43,7 +58,7 @@ from src.flow.engines.content.generation.word_count_utils import compute_word_ta
 from src.flow.model.llm_manager import load_humanize_model
 from src.flow.model.runaway import ainvoke_watched
 from src.flow.model.structure.contents import get_generated_content_model
-from src.flow.prompts.human.humanize import get_humanize_prompt
+from src.flow.prompts.human.humanize import get_humanize_prompt, get_section_rewrite_prompt
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -52,6 +67,9 @@ DEFAULT_WORD_TARGET = 3000
 SECTION_MIN_FRACTION = (
     0.5  # a section is "too short" if under 50% of its proportional share of the target
 )
+
+# With fewer H2 sections than this, a body is rewritten whole: there is nothing to split.
+MIN_SECTIONS_TO_SPLIT = 2
 
 HUMANIZED_FIELDS = {
     "introduction",
@@ -396,6 +414,111 @@ def _repair_fixed(
     return brand_fixed or lost_after < lost_before
 
 
+_PART_NAMES = {
+    INTRODUCTION: (
+        "the introduction (the paragraphs before the first heading). It has no heading: "
+        "return paragraphs only."
+    ),
+    OPENING: (
+        "what the body opens with, before its first heading. It has no heading of its own: "
+        "add none."
+    ),
+}
+
+
+def _section_name(part: Part, parts: list[Part], index: int) -> str:
+    """What a section's part is called in its message: the section, or one sub-section of a
+    long section, with the section it stands under."""
+    if part.level == 2:
+        return f'the section "{part.title}", with everything under it.'
+    above = next((p.title for p in reversed(parts[:index]) if p.level == 2), "")
+    return f'the sub-section "{part.title}"' + (f' of the section "{above}".' if above else ".")
+
+
+async def _rewrite_by_section(
+    original_payload: dict[str, Any],
+    parts: list[Part],
+    *,
+    spec: dict,
+    outline: dict,
+    content_type: str,
+    word_target: int,
+    article_voice: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """``original_payload`` with its introduction and body rewritten part by part, or None when
+    no part's rewrite could be used (the caller keeps the article as drafted, as it does when
+    the whole-article rewrite fails)."""
+    prompt = get_section_rewrite_prompt()
+    brief = brief_for_stage(spec, outline, stage="section")
+    voice = format_voice_for_rewrite(article_voice)
+    title = original_payload.get("title") or ""
+    # The article's H2s: a long section's H3s, rewritten one by one, are not listed apart.
+    sections = "\n".join(
+        f"{number}. {part.title}"
+        for number, part in enumerate((p for p in parts if p.kind == SECTION and p.level == 2), 1)
+    )
+    focus_keyphrase = spec.get("target_keyword") or ""
+    uses = keyphrase_plan(
+        parts,
+        focus_keyphrase,
+        content_type,
+        wanted_scale(sum(count_words(part.text) for part in parts), word_target),
+    )
+    new_phrases = secondary_plan(parts, spec.get("secondary_keywords"))
+
+    def messages_for(part: Part, index: int, low: int, high: int) -> list:
+        return prompt.format_messages(
+            voice_instruction=voice,
+            brief=brief,
+            title=title,
+            sections=sections,
+            which=_PART_NAMES.get(part.kind) or _section_name(part, parts, index),
+            brand_instruction=brand_lines(
+                part.text,
+                brand_context=spec.get("brand_context"),
+                excluded_brand=spec.get("excluded_brand"),
+            ),
+            keyword_instruction=keyword_lines(
+                part.text,
+                focus_keyphrase,
+                spec.get("secondary_keywords"),
+                wanted_uses=uses.get(index),
+                new_phrases=new_phrases.get(index),
+            ),
+            words=count_words(part.text),
+            low=low,
+            high=high,
+            text=part.text,
+        )
+
+    logger.info("humanize_content: rewriting %d parts, each on its own.", len(parts))
+    try:
+        rewritten, counts = await rewrite_parts(
+            parts,
+            model=load_humanize_model(),
+            messages_for=messages_for,
+            word_target=word_target,
+            brand=spec.get("brand_context"),
+            excluded=spec.get("excluded_brand"),
+        )
+    except Exception:
+        logger.exception("humanize_content: the rewrite failed; keeping pre-humanize content.")
+        return None
+    logger.info(
+        "humanize_content: %d of %d parts rewritten, %d kept as drafted; %d words became %d",
+        counts["rewritten"],
+        counts["parts"],
+        counts["kept"],
+        counts["words_before"],
+        counts["words_after"],
+    )
+    if not counts["rewritten"]:
+        logger.warning("humanize_content: no part's rewrite could be used; keeping the draft.")
+        return None
+    introduction, body = join_article(rewritten)
+    return {**original_payload, "introduction": introduction, "body_markdown": body}
+
+
 async def humanize_content(state: REXT) -> dict:
     """Rewrite introduction/body_markdown for human tone, after the quality gate has passed.
 
@@ -447,24 +570,45 @@ async def humanize_content(state: REXT) -> dict:
         excluded_brand=spec.get("excluded_brand"),
         brief=brief_for_stage(spec, outline, stage="rewrite"),
     )
-    model = load_humanize_model().with_structured_output(schema)
-    messages = get_humanize_prompt().format_messages(**prompt_data)
-
-    logger.info("humanize_content: invoking humanization model.")
-    try:
-        humanized_obj = await ainvoke_watched(model, messages, stage="humanize")
-    except Exception:
-        logger.exception(
-            "humanize_content: humanization model failed; keeping pre-humanize content."
+    # An article of several sections is rewritten one section at a time, each told its own
+    # length (section_rewrite.py): told the whole article's, the model wrote to a length of
+    # its own. A body with fewer than two H2s has nothing to split and is rewritten whole.
+    parts = split_article(original_payload.get("introduction") or "", body_markdown)
+    if sum(1 for part in parts if part.kind == SECTION and part.level == 2) >= (
+        MIN_SECTIONS_TO_SPLIT
+    ):
+        merged_payload = await _rewrite_by_section(
+            original_payload,
+            parts,
+            spec=spec,
+            outline=outline,
+            content_type=content_type,
+            word_target=word_target,
+            article_voice=generation_meta.get("article_voice"),
         )
-        return {}
+        if merged_payload is None:
+            return {}
+    else:
+        model = load_humanize_model().with_structured_output(schema)
+        messages = get_humanize_prompt().format_messages(**prompt_data)
 
-    humanized_payload = _to_dict(humanized_obj)
-    if not humanized_payload:
-        logger.warning("humanize_content: empty humanized payload; keeping pre-humanize content.")
-        return {}
+        logger.info("humanize_content: invoking humanization model.")
+        try:
+            humanized_obj = await ainvoke_watched(model, messages, stage="humanize")
+        except Exception:
+            logger.exception(
+                "humanize_content: humanization model failed; keeping pre-humanize content."
+            )
+            return {}
 
-    merged_payload = _merge_humanized(original_payload, humanized_payload)
+        humanized_payload = _to_dict(humanized_obj)
+        if not humanized_payload:
+            logger.warning(
+                "humanize_content: empty humanized payload; keeping pre-humanize content."
+            )
+            return {}
+
+        merged_payload = _merge_humanized(original_payload, humanized_payload)
 
     # Humanization is told to keep every link, but not trusted blindly: a
     # protected link it dropped is put back on its anchor (or the sentence that
