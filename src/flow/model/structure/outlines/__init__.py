@@ -130,16 +130,31 @@ _DEFAULT_WORD_COUNT_RANGE = (100, 15000)
 WRITER_MAX_TARGET_WORDS = 8000
 
 
+# The most the product shows for a type, where that is less than its outline model allows. A
+# blog is 800 to 2,000 words on the content-type step and beside the outline's Target words;
+# its model inherits the base bound (5,000). Held here and not on the model: structured output
+# is not strict, and a run whose model wrote a larger target would fail on a tighter bound.
+# By model, so a type nobody knows, which is given the blog's model, is held as a blog.
+_SHOWN_MAX_WORDS: dict[type, int] = {BlogOutline: 2000}
+
+
+def plan_ceiling(content_type: str) -> int | None:
+    """The most a type's plan may add up to when the product's range is narrower than its
+    outline model's own bound; None for a type whose model already declares its range."""
+    return _SHOWN_MAX_WORDS.get(get_outline_model(content_type))
+
+
 def target_word_count_range(content_type: str) -> tuple[int, int]:
     """The article length a content type accepts: the bounds its outline model declares on
-    `target_word_count`. The dashboard offers the same range per type, so a length the screen
-    allowed (a 300-word pricing page, a 12,000-word white paper) is one the gate keeps."""
+    `target_word_count`, and no more than the product shows for the type. The dashboard offers
+    the same range per type, so a length the screen allowed (a 300-word pricing page, a
+    12,000-word white paper) is one the gate keeps, and one it refused is not let in here."""
     low, high = _DEFAULT_WORD_COUNT_RANGE
     field = get_outline_model(content_type).model_fields.get("target_word_count")
     for constraint in getattr(field, "metadata", None) or []:
         low = getattr(constraint, "ge", None) or low
         high = getattr(constraint, "le", None) or high
-    return low, high
+    return low, min(high, plan_ceiling(content_type) or high)
 
 
 def get_outline_display_name(content_type: str) -> str:
@@ -154,6 +169,7 @@ def get_outline_display_name(content_type: str) -> str:
 __all__ = [
     "get_outline_model",
     "target_word_count_range",
+    "plan_ceiling",
     "WRITER_MAX_TARGET_WORDS",
     "normalize_content_type",
     "CONTENT_TYPE_TO_MODEL",
