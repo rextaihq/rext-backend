@@ -140,12 +140,49 @@ async def test_a_new_workspace_is_the_first_when_the_account_made_no_other(world
     world.creations = creations
     user_id, workspace_id = uuid4(), uuid4()
 
-    await account_events.workspace_created(user_id, workspace_id, AT)
+    await account_events.workspace_created(user_id, workspace_id, AT, "website")
 
     name, properties, sent_with = world.sent[0]
-    assert (name, properties) == ("workspace_created", {"first_workspace": first})
+    assert (name, properties) == (
+        "workspace_created",
+        {"first_workspace": first, "way": "website"},
+    )
     assert (sent_with["user_id"], sent_with["workspace_id"]) == (user_id, workspace_id)
     assert sent_with["occurred_at"] == AT
+
+
+@pytest.mark.parametrize(
+    ("website", "description", "way"),
+    [
+        ("https://acme.example", None, "website"),
+        ("https://acme.example", "We sell anvils.", "website"),
+        (None, "We sell anvils.", "description"),
+        (None, None, "skipped"),
+        ("", "", "skipped"),
+    ],
+)
+def test_the_way_is_read_from_what_the_request_gave(website, description, way):
+    assert account_events.workspace_way(website, description) == way
+    assert way in account_events.WORKSPACE_WAYS
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("way", "told"),
+    [
+        ("website", "website"),
+        ("description", "description"),
+        ("skipped", "skipped"),
+        ("something else", None),
+        (None, None),
+    ],
+)
+async def test_a_new_workspace_says_which_way_it_was_made(world, way, told):
+    """From a website, from a description, or from a name alone: the three the browser's
+    event names too. Anything else is not told."""
+    await account_events.workspace_created(uuid4(), uuid4(), AT, way)
+
+    assert world.sent[0][1]["way"] == told
 
 
 async def _charge(

@@ -28,6 +28,10 @@ from src.services.server_events import report_event, send_soon
 from src.utils.logger import logger
 
 SIGNUP_METHODS = ("credentials", "google", "github", "invitation")
+# How a workspace was made: from a website, from its owner's description of the
+# business, or from a name alone with the rest skipped for now. The browser's event
+# says the same, under the same name.
+WORKSPACE_WAYS = ("website", "description", "skipped")
 # The audit action the workspace route records for a creation.
 WORKSPACE_CREATED = "workspace.create"
 
@@ -83,8 +87,18 @@ async def user_signed_up(user_id: UUID, method: Optional[str], occurred_at: date
         _failed("user_signed_up", error)
 
 
-async def workspace_created(user_id: UUID, workspace_id: UUID, occurred_at: datetime) -> None:
-    """The workspace's row is committed. Says whether it is the account's first."""
+def workspace_way(website: Optional[str], description: Optional[str]) -> str:
+    """Which way a workspace was made, from what its request gave (WORKSPACE_WAYS)."""
+    if website:
+        return "website"
+    return "description" if description else "skipped"
+
+
+async def workspace_created(
+    user_id: UUID, workspace_id: UUID, occurred_at: datetime, way: Optional[str] = None
+) -> None:
+    """The workspace's row is committed. Says whether it is the account's first, and
+    which way it was made (WORKSPACE_WAYS)."""
     if not configured():
         return
     try:
@@ -101,7 +115,7 @@ async def workspace_created(user_id: UUID, workspace_id: UUID, occurred_at: date
             ).scalar_one()
         await report_event(
             "workspace_created",
-            {"first_workspace": made <= 1},
+            {"first_workspace": made <= 1, "way": way if way in WORKSPACE_WAYS else None},
             key=_key("workspace_created", workspace_id),
             occurred_at=occurred_at,
             user_id=user_id,

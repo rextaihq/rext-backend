@@ -63,7 +63,7 @@ PLAN_PROPERTIES: FrozenSet[str] = frozenset({"plan", "plan_status", "billing_per
 # that isn't here isn't sent; a property that isn't here is left out.
 EVENT_PROPERTIES: Dict[str, FrozenSet[str]] = {
     "user_signed_up": frozenset({"method"}),
-    "workspace_created": frozenset({"first_workspace"}),
+    "workspace_created": frozenset({"first_workspace", "way"}),
     "credits_spent": frozenset({"action", "credits", "balance_after"}),
     "credits_low": frozenset({"balance", "threshold"}),
     "credits_out": frozenset({"action"}),

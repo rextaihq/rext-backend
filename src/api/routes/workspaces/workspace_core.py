@@ -143,6 +143,7 @@ async def create_workspace(
         user_id,
         UUID(str(workspace_id)),
         datetime.now(timezone.utc),
+        account_events.workspace_way(url, description),
     )
 
     return created(
