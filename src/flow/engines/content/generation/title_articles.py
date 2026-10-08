@@ -119,9 +119,17 @@ def _is_english(words: list[str]) -> bool:
     return own >= 1 and own + len(lowered & _BORROWED) >= 2
 
 
-def reads_as_english(title: str) -> bool:
-    """Whether the title's words say it is in English, as the article pass decides it."""
-    return _is_english((title or "").split())
+def reads_as_another_language(title: str) -> bool:
+    """Whether the title is surely not in English: it has a word only another language writes,
+    or most of its letters are not Latin ones. A title that merely shows no English word
+    ("Install Docker on Ubuntu") is not."""
+    title = title or ""
+    lowered = {word.strip(_LEADING + _TRAILING).lower() for word in title.split()}
+    if lowered & _OTHER:
+        return True
+    letters = [char for char in title if char.isalpha()]
+    latin = sum(1 for char in letters if _base_letter(char))
+    return bool(letters) and latin * 2 < len(letters)
 
 
 def _base_letter(char: str) -> str | None:

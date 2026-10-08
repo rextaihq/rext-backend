@@ -71,7 +71,10 @@ from src.flow.engines.content.generation.subheading_seo import (
     subheading_report,
 )
 from src.flow.engines.content.generation.title_subject import find_subject_mismatch
-from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.engines.content.generation.word_count_utils import (
+    compute_word_target_band,
+    typed_section_allowance,
+)
 from src.flow.model.structure.outlines.product_names import find_placeholder_names_in_text
 from src.flow.states.content import ContentValidation, ValidationCheckResult
 from src.flow.states.rext import REXT
@@ -444,6 +447,12 @@ def check_word_count_band(final_content: dict, spec: RequirementsSpec) -> Valida
         return _pass("word_count_band", "No target word count in outline; skipping.")
     total_words = len(_combined_text(final_content).split())
     min_words, max_words = compute_word_target_band(target)
+    # A section assembly rendered from a typed field (a how-to guide's steps) was no part of
+    # what the writer was asked to fit in the target, so its words, as counted when it was
+    # rendered, come on top of the maximum. The rewrite goes on asking for the plain band
+    # (humanize_content._build_prompt_data): a stricter instruction with a more lenient check
+    # is the safe way round, so the two are not to be brought into line.
+    max_words += typed_section_allowance(final_content)
     if min_words <= total_words <= max_words:
         return _pass(
             "word_count_band", f"{total_words} words within target band {min_words}-{max_words}."

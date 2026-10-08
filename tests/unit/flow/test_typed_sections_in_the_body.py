@@ -12,6 +12,7 @@ import pytest
 
 from src.flow.engines.content.generation.structured_body import (
     STRUCTURED_BLOCKS_KEY,
+    _typed_heading,
     assemble_structured_payload,
     build_structured_content_model,
     typed_section_blocks,
@@ -20,6 +21,12 @@ from src.flow.engines.content.generation.subheading_seo import (
     extract_subheadings,
     heading_length_issue,
     subheading_report,
+)
+from src.flow.engines.content.generation.validation import check_word_count_band
+from src.flow.engines.content.generation.word_count_utils import (
+    TYPED_SECTION_WORDS_KEY,
+    compute_word_target_band,
+    typed_section_allowance,
 )
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.contents.base import ContentBlock, blocks_to_body_markdown
@@ -138,6 +145,32 @@ def test_a_step_without_a_title_or_without_a_text_is_still_a_numbered_step():
         "2. Add fresh mix to the new pot.\n"
         "3. **Water it.** Once, then let it drain." in body
     )
+
+
+@pytest.mark.parametrize(
+    ("written", "shown"),
+    [
+        ("Step 2: Mix the soil", "Mix the soil."),
+        ("step 10 - Rest the plant", "Rest the plant."),
+        ("Step 3 Water it", "Water it."),
+        ("2) Fill the pot", "Fill the pot."),
+        ("**4. Press the soil down**", "Press the soil down."),
+        # A number the title starts with is no numbering.
+        ("10-minute soak", "10-minute soak."),
+        ("24-hour rest", "24-hour rest."),
+        ("3 ways to loosen the roots", "3 ways to loosen the roots."),
+        ("1.5 litres of water", "1.5 litres of water."),
+        # An asterisk inside the title is the writer's, and is shown as one.
+        ("Run SELECT * to inspect the table", "Run SELECT \\* to inspect the table."),
+        ("Match *.log files", "Match \\*.log files."),
+    ],
+)
+def test_a_steps_title_loses_its_own_numbering_and_nothing_else(written, shown):
+    steps = [{"title": written, "description": "Then go on."}]
+
+    body = _assemble(HOW_TO_OUTLINE, "how-to-guide", _how_to_content(steps))["body_markdown"]
+
+    assert f"\n1. **{shown}** Then go on.\n" in body
 
 
 def test_assembling_a_second_time_adds_nothing():
@@ -338,6 +371,32 @@ def test_the_heading_leaves_the_keyphrase_out_when_too_many_headings_carry_it():
     assert "Step by Step" not in body
 
 
+@pytest.mark.parametrize(
+    ("title", "has_a_heading"),
+    [
+        # No word proves these English, and none says otherwise: they keep their heading.
+        ("Install Docker on Ubuntu", True),
+        ("Python Web Scraping Tutorial", True),
+        ("Wie man eine Zimmerpflanze umtopft", False),
+        ("観葉植物の植え替え方法", False),
+        ("Как пересадить комнатное растение", False),
+    ],
+)
+def test_only_a_title_surely_in_another_language_loses_the_heading(title, has_a_heading):
+    content = {
+        "title": title,
+        "hero": _block(None, "Scrape a page in an afternoon."),
+        "skill_context": _block("Who This Scraping Tutorial Is For", "Beginners."),
+        "modules": _block("Set Up the Scraping Project", "Create a folder."),
+        "prerequisites": ["Python 3.11"],
+    }
+
+    body = _assemble(TUTORIAL_OUTLINE, "tutorial", content, keyphrase="")["body_markdown"]
+
+    assert "- Python 3.11" in body
+    assert ("## What You Need Before You Start\n\n- Python 3.11" in body) is has_a_heading
+
+
 def test_a_title_that_is_not_english_gets_the_list_without_an_english_heading():
     content = _how_to_content()
     content["title"] = "Cómo trasplantar una planta de interior paso a paso"
@@ -348,3 +407,140 @@ def test_a_title_that_is_not_english_gets_the_list_without_an_english_heading():
 
     assert "Look at the roots first.\n\n1. **Remove the plant.** Ease it out of its pot.\n" in body
     assert "Step by Step" not in body and "Follow These Steps" not in body
+
+
+# ── The length check: the section's words come on top of the maximum ──────────────────────
+
+TARGET = 300
+SPEC = {"target_word_count": TARGET}
+
+
+def _words(payload):
+    return len(f"{payload.get('introduction') or ''}\n\n{payload['body_markdown']}".split())
+
+
+def _how_to_at_its_maximum():
+    """A how-to guide whose article, as main assembles it, has exactly the band's last word."""
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    content = _how_to_content()
+    content["introduction"] = "Repotting is a short job when the roots are ready for it."
+    as_main = assemble_structured_payload(copy.deepcopy(content), built[1])
+    room = compute_word_target_band(TARGET)[1] - _words(as_main)
+    content["tools"]["markdown"] += " " + " ".join(["soil"] * room)
+    return content, assemble_structured_payload(copy.deepcopy(content), built[1])
+
+
+def test_a_how_to_guide_at_its_maximum_on_main_still_passes_with_its_steps():
+    content, as_main = _how_to_at_its_maximum()
+    _, maximum = compute_word_target_band(TARGET)
+    assert _words(as_main) == maximum
+    assert check_word_count_band(as_main, SPEC)["passed"]
+
+    payload = _assemble(HOW_TO_OUTLINE, "how-to-guide", content)
+
+    added = _words(payload) - maximum
+    assert added > 0
+    assert payload[TYPED_SECTION_WORDS_KEY] == added == typed_section_allowance(payload)
+    result = check_word_count_band(payload, SPEC)
+    assert result["passed"], result["detail"]
+    assert f"-{maximum + added}." in result["detail"]
+
+
+def test_the_room_stays_after_a_rewrite_reworded_the_steps_and_never_grows():
+    content, _ = _how_to_at_its_maximum()
+    payload = _assemble(HOW_TO_OUTLINE, "how-to-guide", content)
+    was = "1. **Remove the plant.** Ease it out of its pot."
+    assert was in payload["body_markdown"]
+
+    # The rewrite hands back the body whole, the list in other words; the record is as it was.
+    reworded = {
+        **payload,
+        "body_markdown": payload["body_markdown"].replace(
+            was, "1. **Lift the plant.** Slide it from the old pot."
+        ),
+    }
+    assert _words(reworded) == _words(payload)
+    assert check_word_count_band(reworded, SPEC)["passed"]
+
+    padded = {
+        **payload,
+        "body_markdown": payload["body_markdown"].replace(was, was + " Slowly."),
+    }
+    assert not check_word_count_band(padded, SPEC)["passed"]
+
+
+@pytest.mark.parametrize("recorded", [..., None, 0, -5, True, "40", 12.5])
+def test_without_a_recorded_count_there_is_no_room(recorded):
+    content, _ = _how_to_at_its_maximum()
+    payload = _assemble(HOW_TO_OUTLINE, "how-to-guide", content)
+    if recorded is ...:
+        del payload[TYPED_SECTION_WORDS_KEY]
+    else:
+        payload[TYPED_SECTION_WORDS_KEY] = recorded
+
+    assert typed_section_allowance(payload) == 0
+    result = check_word_count_band(payload, SPEC)
+    assert not result["passed"]
+    assert result["severity"] == "blocking"
+
+
+def test_a_blogs_band_is_unchanged():
+    payload = _assemble(BLOG_OUTLINE, "blog", BLOG_CONTENT, keyphrase="content marketing roi")
+    assert TYPED_SECTION_WORDS_KEY not in payload
+    assert typed_section_allowance(payload) == 0
+
+    low, high = compute_word_target_band(TARGET)
+    filler = " ".join(["word"] * (high - _words(payload)))
+    at_the_maximum = {**payload, "body_markdown": f"{payload['body_markdown']} {filler}"}
+    assert _words(at_the_maximum) == high
+    assert check_word_count_band(at_the_maximum, SPEC)["passed"]
+    one_more = {**at_the_maximum, "body_markdown": at_the_maximum["body_markdown"] + " word"}
+    assert not check_word_count_band(one_more, SPEC)["passed"]
+
+
+def test_assembling_a_second_time_keeps_the_recorded_count():
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    typed = typed_section_blocks(HOW_TO_OUTLINE, "how-to-guide")
+    once = _assemble(HOW_TO_OUTLINE, "how-to-guide", _how_to_content())
+
+    twice = assemble_structured_payload(
+        copy.deepcopy(once), built[1], typed=typed, keyphrase=KEYPHRASE, content_type="how-to-guide"
+    )
+
+    assert twice[TYPED_SECTION_WORDS_KEY] == once[TYPED_SECTION_WORDS_KEY] > 0
+
+
+# ── The heading never turns a passing subheading check into a failing one ─────────────────
+
+
+def _body_with(matching, others):
+    carrying = [f"## How to Repot a Houseplant: Part {n} of Many" for n in range(matching)]
+    plain = [f"## Tools and Materials, Shelf Number {n}" for n in range(others)]
+    return "\n\n".join(f"{heading}\n\nSome text." for heading in carrying + plain)
+
+
+@pytest.mark.parametrize("total", range(1, 31))
+def test_a_passing_share_of_keyphrase_headings_still_passes_with_the_sections_heading(total):
+    for matching in range(total + 1):
+        body = _body_with(matching, total - matching)
+        before = subheading_report(body, KEYPHRASE, "how-to-guide")["keyphrase"]
+        assert (before["total"], before["matching"]) == (total, matching)
+        if before["status"] != "ok":
+            continue
+
+        heading = _typed_heading(
+            "{keyphrase}: Step by Step",
+            "Follow These Steps in Order",
+            KEYPHRASE,
+            "How to Repot a Houseplant: A Step-by-Step Guide",
+            body,
+            "how-to-guide",
+        )
+
+        after = subheading_report(f"{body}\n\n## {heading}\n", KEYPHRASE, "how-to-guide")
+        assert after["keyphrase"]["status"] == "ok", (total, matching, heading)
+        assert after["length_violations"] == []
