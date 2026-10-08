@@ -101,6 +101,19 @@ class Settings(HidesSecrets, BaseSettings):
     API_KEY: Optional[str] = Field(default=None, description="API key for service authentication")
     API_KEY_NAME: Optional[str] = Field(default="X-API-Key", description="API key header name")
 
+    # The dashboard's server (src/api/security/dashboard_server.py)
+    DASHBOARD_SERVER_KEY: Optional[str] = Field(
+        default=None,
+        description="The key the dashboard's server sends with its Google and GitHub sign-in "
+        "call (header X-Rext-Dashboard-Key); the same value on both services, at least 32 "
+        "characters",
+    )
+    REQUIRE_DASHBOARD_SERVER_KEY: bool = Field(
+        default=False,
+        description="Refuse a Google or GitHub sign-in call that does not carry "
+        "DASHBOARD_SERVER_KEY; switch on once the dashboard sends it",
+    )
+
     # Auth Security Settings
     AUTH_MAX_LOGIN_ATTEMPTS: int = Field(
         default=5, description="Maximum failed login attempts before lockout"

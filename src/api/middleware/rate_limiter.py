@@ -414,8 +414,13 @@ class EndpointRateLimiter:
         # Base key is IP-based
         client_key = f"ip:{client_ip}"
 
+        # A caller the route has identified itself, in a way the caller cannot write
+        # (src/api/security/dashboard_server.py sets it only for a proven call).
+        identity = getattr(request.state, "rate_limit_identity", None)
+        if identity:
+            client_key = f"id:{identity}"
         # If authenticated, use user identity
-        if user_id:
+        elif user_id:
             client_key = f"user:{user_id}"
         # For unauthenticated sensitive requests, try to include email in the key
         # to prevent one user's failed attempts from blocking everyone on the same IP.
