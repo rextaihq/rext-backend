@@ -41,6 +41,7 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
+from src.api.schema.response_schemas import ErrorCode
 from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
@@ -65,13 +66,10 @@ class OAuthService:
         self.db = db
 
     @staticmethod
-    def _the_one_with_this_email(users: List[Users], email: str) -> Optional[Users]:
+    def _the_one_with_this_email(users: List[Users]) -> Optional[Users]:
         """The user a provider's email belongs to, among those whose address matches it in any
-        case: the one written exactly so, else the only one. Two users whose addresses differ
-        only by case and neither exact: nobody is picked for them."""
-        exact = [user for user in users if user.email == email]
-        if exact:
-            return exact[0]
+        case: the only one. Two users whose addresses differ only by case are nobody's to pick
+        between, whichever spelling the provider used."""
         if len(users) > 1:
             raise RextAuthenticationException(
                 message=(
@@ -80,6 +78,33 @@ class OAuthService:
                 )
             )
         return users[0] if users else None
+
+    @staticmethod
+    def _may_sign_in(user: Users) -> None:
+        """An account that is deleted, suspended, banned or deactivated signs in through no
+        provider either: the password sign-in's own rule, in its own words."""
+        if user.deleted_at is not None:
+            raise RextAuthenticationException(
+                message="This account has been deleted and is scheduled for permanent removal. To ask for it back, submit a recovery request at /account-recovery — an administrator will review it and email you the decision.",
+            )
+        if user.status == "suspended":
+            raise RextAuthenticationException(
+                message="Your account has been suspended. Contact support to have it reviewed.",
+                error_code=ErrorCode.ACCOUNT_SUSPENDED,
+                context={"status": user.status},
+            )
+        if user.status == "banned":
+            raise RextAuthenticationException(
+                message="Your account has been banned. Please contact support for assistance.",
+                error_code=ErrorCode.ACCOUNT_BANNED,
+                context={"status": user.status},
+            )
+        if user.status == "inactive":
+            raise RextAuthenticationException(
+                message="This account has been deactivated. Confirm the emailed link to reactivate it.",
+                error_code=ErrorCode.ACCOUNT_DEACTIVATED,
+                context={"requires_reactivation": True, "requires_email_verification": True},
+            )
 
     async def oauth_login_or_register(
         self,
@@ -129,7 +154,7 @@ class OAuthService:
                 selectinload(OAuthAccount.user)
             )  # Eagerly load user to avoid async lazy loading
             .where(
-                OAuthAccount.provider == provider,
+                func.lower(func.trim(OAuthAccount.provider)) == provider.strip().lower(),
                 OAuthAccount.provider_account_id == provider_account_id,
             )
         )
@@ -138,6 +163,7 @@ class OAuthService:
         if oauth_account:
             # OAuth account exists - login existing user
             user = oauth_account.user
+            self._may_sign_in(user)
 
             # Update OAuth account info
             oauth_account.provider_account_email = provider_email
@@ -178,9 +204,10 @@ class OAuthService:
                 .where(func.lower(Users.email) == provider_email.lower())
                 .order_by(Users.created_at)
             )
-            user = self._the_one_with_this_email(result.scalars().all(), provider_email)
+            user = self._the_one_with_this_email(result.scalars().all())
 
             if user:
+                self._may_sign_in(user)
                 # User exists - link this OAuth account to their account
                 logger.info(
                     f"Linking OAuth account to existing user: {user.id}",
@@ -405,7 +432,7 @@ class OAuthService:
         # Check if this OAuth account is already linked to another user
         result = await self.db.execute(
             select(OAuthAccount).where(
-                OAuthAccount.provider == provider,
+                func.lower(func.trim(OAuthAccount.provider)) == provider.strip().lower(),
                 OAuthAccount.provider_account_id == provider_account_id,
             )
         )
@@ -466,7 +493,8 @@ class OAuthService:
         """
         result = await self.db.execute(
             select(OAuthAccount).where(
-                OAuthAccount.user_id == user_id, OAuthAccount.provider == provider
+                OAuthAccount.user_id == user_id,
+                func.lower(func.trim(OAuthAccount.provider)) == provider.strip().lower(),
             )
         )
         oauth_account = result.scalar_one_or_none()

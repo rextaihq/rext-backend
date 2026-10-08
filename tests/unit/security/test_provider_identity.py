@@ -379,7 +379,12 @@ async def test_nothing_is_linked_or_opened_on_an_unconfirmed_email(existing_user
 @pytest.mark.asyncio
 async def test_an_existing_user_is_found_by_email_in_any_case(monkeypatch):
     registered = SimpleNamespace(
-        id="ana", email="Ana@example.com", login_count=0, last_login_at=None, is_active=True
+        id="ana",
+        email="Ana@example.com",
+        status="active",
+        deleted_at=None,
+        login_count=0,
+        last_login_at=None,
     )
     service, db = _service_finding(linked=None, user=registered)
     # The link is as far as this looks: what follows it (sessions, tokens) is the service's own.
@@ -396,36 +401,64 @@ async def test_an_existing_user_is_found_by_email_in_any_case(monkeypatch):
 
     # "Ana@example.com" registered by hand is the same person: the link is made, no second user.
     assert "lower(users.email)" in db.asked[1]
+    # The link is looked for under any spelling the provider was stored with.
+    assert "lower(trim(oauth_accounts.provider))" in db.asked[0]
     (linked,) = (call.args[0] for call in db.add.call_args_list)
     assert linked.user_id == "ana"
 
 
-def _user(id, email):
-    return SimpleNamespace(id=id, email=email)
+def _user(id, email="ana@example.com", status="active", deleted_at=None):
+    return SimpleNamespace(id=id, email=email, status=status, deleted_at=deleted_at)
+
+
+def test_the_user_an_email_belongs_to_is_the_only_one_that_matches():
+    assert OAuthService._the_one_with_this_email([]) is None
+    assert OAuthService._the_one_with_this_email([_user("ana", "Ana@example.com")]).id == "ana"
+
+
+def test_two_users_by_case_are_nobodys_to_pick_between():
+    # Whichever spelling the provider used: the exact one is no safer a guess than the other.
+    users = [_user("one", "Ana@example.com"), _user("two", "ana@example.com")]
+
+    with pytest.raises(RextAuthenticationException, match="More than one account"):
+        OAuthService._the_one_with_this_email(users)
 
 
 @pytest.mark.parametrize(
-    ("stored", "picked"),
+    ("account", "says"),
     [
-        ([], None),
-        ([("ana", "Ana@example.com")], "ana"),
-        # Two addresses that differ by case only: the one written exactly as the provider's.
-        ([("old", "Ana@example.com"), ("exact", "ana@example.com")], "exact"),
+        (_user("gone", deleted_at="2026-10-01"), "has been deleted"),
+        (_user("held", status="suspended"), "suspended"),
+        (_user("out", status="banned"), "banned"),
+        (_user("off", status="inactive"), "deactivated"),
     ],
 )
-def test_the_user_an_email_belongs_to(stored, picked):
-    users = [_user(*one) for one in stored]
-
-    found = OAuthService._the_one_with_this_email(users, "ana@example.com")
-
-    assert (found.id if found else None) == picked
+def test_an_account_that_may_not_sign_in_signs_in_through_no_provider(account, says):
+    with pytest.raises(RextAuthenticationException, match=says):
+        OAuthService._may_sign_in(account)
 
 
-def test_two_users_by_case_and_neither_exact_is_nobodys_to_pick():
-    users = [_user("one", "Ana@example.com"), _user("two", "ANA@example.com")]
+def test_an_active_account_may():
+    OAuthService._may_sign_in(_user("ana"))
 
-    with pytest.raises(RextAuthenticationException, match="More than one account"):
-        OAuthService._the_one_with_this_email(users, "ana@example.com")
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("where", ["already linked", "found by email"])
+async def test_a_suspended_account_is_refused_before_anything_is_linked_or_issued(where):
+    held = _user("held", status="suspended")
+    linked = SimpleNamespace(user=held) if where == "already linked" else None
+    service, db = _service_finding(linked=linked, user=None if linked else held)
+
+    with pytest.raises(RextAuthenticationException, match="suspended"):
+        await service.oauth_login_or_register(
+            provider="google",
+            provider_account_id="108000000000000000001",
+            provider_email="ana@example.com",
+            provider_name="Ana",
+            email_verified=True,
+        )
+
+    db.add.assert_not_called()
 
 
 @pytest.mark.asyncio
