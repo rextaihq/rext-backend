@@ -23,7 +23,13 @@ from src.api.schema.response.admin_plan_responses import (
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription.admin_schemas import AdminPlanChange, AdminTrialExtension
 from src.api.security.dependencies import get_current_user
-from src.services.admin_plan_changes import change_plan, extend_trial, plan_options
+from src.services.admin_plan_changes import (
+    NOT_BILLED,
+    alert_unrecorded,
+    change_plan,
+    extend_trial,
+    plan_options,
+)
 from src.utils import rbac_utils
 from src.utils.rbac_utils import assert_target_manageable_by
 from src.utils.response_utils import success
@@ -114,7 +120,24 @@ async def change_user_plan(
         billing=body.billing,
         reason=body.reason,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # For a subscription Lemon Squeezy bills, it has taken the change by now; with the
+        # commit lost, neither the plan nor the audit entry is here. A change it doesn't
+        # bill was made here alone, and a failed commit means it wasn't made at all. A
+        # commit can also fail after the database took it (its answer lost on the way),
+        # so the alert asks for a look at the audit log before anything is recorded again.
+        if result["billing"] != NOT_BILLED:
+            alert_unrecorded(
+                user_id=user_id,
+                admin_id=admin_user_id,
+                old_plan=result["old_plan"]["name"],
+                new_plan=result["new_plan"]["name"],
+                billing=result["billing"],
+                failed="saving it here failed, or the save's answer was lost (look in the audit log first)",
+            )
+        raise
 
     return success(data=result, request=request, message="Plan changed.")
 

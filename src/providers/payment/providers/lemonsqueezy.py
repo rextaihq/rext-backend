@@ -11,10 +11,11 @@ Documentation: https://docs.lemonsqueezy.com/api
 import hashlib
 import hmac
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from tenacity import (
+    RetryCallState,
     before_sleep_log,
     retry,
     retry_if_exception_type,
@@ -35,6 +36,7 @@ from src.providers.payment.base_provider import (
     CheckoutSession,
     CustomerData,
     PaymentChangeUnconfirmed,
+    PaymentChangeUnknown,
     PaymentProvider,
     SubscriptionData,
 )
@@ -63,6 +65,24 @@ class LemonSqueezyTransientError(LemonSqueezyError):
     def __init__(self, message: str, status_code: Optional[int] = None):
         self.status_code = status_code
         super().__init__(message)
+
+
+def _note_unanswered(retry_state: RetryCallState) -> None:
+    """
+    After each failed attempt of a request: add the attempt to the caller's
+    ``unanswered`` list when it got no answer (a timeout, a dropped connection, a
+    server error).
+
+    A caller sees only the last attempt's error. A write that went unanswered once may
+    have been applied, whatever a later attempt was told; a caller that needs to know
+    hands ``_make_request`` a list.
+    """
+    unanswered = retry_state.kwargs.get("unanswered")
+    error = retry_state.outcome.exception() if retry_state.outcome else None
+    if unanswered is None or not isinstance(error, LemonSqueezyTransientError):
+        return
+    if error.status_code != 429:
+        unanswered.append(error)
 
 
 # A subscription's statuses in Lemon Squeezy's API.
@@ -116,6 +136,7 @@ class LemonSqueezyProvider(PaymentProvider):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type(LemonSqueezyTransientError),
+        after=_note_unanswered,
         before_sleep=before_sleep_log(logger, 20),  # INFO level
         reraise=True,
     )
@@ -125,6 +146,7 @@ class LemonSqueezyProvider(PaymentProvider):
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
+        unanswered: Optional[List[Exception]] = None,
     ) -> Dict[str, Any]:
         """
         Make HTTP request to LemonSqueezy API with automatic retry on transient errors.
@@ -139,6 +161,8 @@ class LemonSqueezyProvider(PaymentProvider):
             endpoint: API endpoint (e.g., "/customers")
             data: Request body data
             params: Query parameters
+            unanswered: A caller's list (by keyword). Every attempt that got no answer
+                (a timeout, a dropped connection, a server error) is added to it
 
         Returns:
             Dict containing response data
@@ -746,9 +770,27 @@ class LemonSqueezyProvider(PaymentProvider):
             subscription_id=subscription_id,
             new_variant_id=price_id,
         ) as ctx:
-            await self._make_request(
-                method="PATCH", endpoint=f"/subscriptions/{subscription_id}", data=update_data
-            )
+            unanswered: List[Exception] = []
+            try:
+                await self._make_request(
+                    method="PATCH",
+                    endpoint=f"/subscriptions/{subscription_id}",
+                    data=update_data,
+                    unanswered=unanswered,
+                )
+            except LemonSqueezyError as exc:
+                # An answer is a refusal: a 4xx, too many requests among them. It answers
+                # the attempt it came back on, though: when an earlier attempt of the same
+                # update went unanswered, that one may have been applied.
+                refused = isinstance(exc, LemonSqueezyAPIError) or (
+                    isinstance(exc, LemonSqueezyTransientError) and exc.status_code == 429
+                )
+                if refused and not unanswered:
+                    raise
+                # No answer, a server error or a connection that broke part-way: the
+                # request may have been applied all the same (and, invoiced at once,
+                # charged). Not a refusal, and a caller must not take it for one.
+                raise PaymentChangeUnknown("The update got no answer") from exc
             ctx["updated"] = True
 
         logger.info(

@@ -50,8 +50,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.config.payment_config import payment_settings
-from src.config.plan_rules import TRIAL_DURATION_DAYS
-from src.providers.payment.base_provider import PaymentChangeUnconfirmed
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed, PaymentChangeUnknown
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import as_utc, change_plan_credits
@@ -191,6 +190,9 @@ class SubscriptionService:
         """
         self.db = db
         self.payment_provider = get_payment_provider_singleton()
+        # Set by upgrade() once the provider has taken a plan change: what follows it here
+        # can still fail, and by then the change can't be taken back there.
+        self.provider_change_accepted = False
 
     async def count_non_paid_accounts_for_device(self, fingerprint: str) -> int:
         """
@@ -218,109 +220,6 @@ class SubscriptionService:
         )
         result = await self.db.execute(stmt)
         return result.scalar() or 0
-
-    async def subscribe(
-        self,
-        user_id: UUID,
-        plan_id: UUID,
-        billing_period: BillingPeriod,
-        payment_method_id: Optional[str] = None,
-    ) -> UserSubscription:
-        """
-        Create new subscription with plan validation.
-
-        Business Rules:
-        - User cannot have duplicate active subscriptions
-        - Plan must exist and be active
-        - Free plans: Activated immediately
-        - Paid plans: Start with the trial's days (TRIAL_DURATION_DAYS)
-        - Usage reset date set to 30 days from start
-
-        Args:
-            user_id: User UUID
-            plan_id: Subscription plan UUID
-            billing_period: monthly, yearly, or lifetime
-            payment_method_id: Optional payment method (for payment provider integration)
-
-        Returns:
-            UserSubscription object
-
-        Raises:
-            DuplicateResourceException: If user already has active subscription
-            ResourceNotFoundException: If plan not found or inactive
-        """
-        # Check if user already has an active subscription. get_subscription_by_user()
-        # also returns a cancelled subscription still in its paid-through grace period
-        # (so credit/plan-limit checks keep working) - that must NOT block a fresh
-        # subscribe here, otherwise a cancelled user could never resubscribe until
-        # their old grace period fully expired.
-        await self._refuse_while_a_subscription_is_unfinished(user_id)
-        existing_subscription = await self.get_subscription_by_user(user_id)
-        if existing_subscription and existing_subscription.status != SubscriptionStatus.CANCELLED:
-            raise DuplicateResourceException(
-                message="User already has an active subscription. Use upgrade endpoint to change plans.",
-                resource_type="subscription",
-                conflicting_field="user_id",
-                conflicting_value=str(user_id),
-            )
-
-        # Get the plan and validate it's active
-        plan = await self._get_plan_or_404(plan_id, active_only=True)
-
-        # Determine if this is a trial (a paid plan starts with the trial's length)
-        is_trial = plan.price_monthly > 0 or plan.price_yearly > 0
-        trial_days = TRIAL_DURATION_DAYS if is_trial else 0
-
-        # Create subscription
-        new_subscription = UserSubscription(
-            user_id=user_id,
-            plan_id=plan_id,
-            status=SubscriptionStatus.TRIAL if is_trial else SubscriptionStatus.ACTIVE,
-            billing_period=billing_period,
-            start_date=datetime.now(timezone.utc),
-            trial_end_date=datetime.now(timezone.utc) + timedelta(days=trial_days)
-            if is_trial
-            else None,
-            current_api_calls=0,
-            usage_reset_date=add_months(datetime.now(timezone.utc), 1),
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-        )
-
-        self.db.add(new_subscription)
-        await self.db.flush()
-        await self.db.refresh(new_subscription)
-
-        # Invalidate subscription tier cache
-        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
-
-        logger.info(
-            f"User {user_id} subscribed to plan: {plan.name} ({billing_period.value})",
-            extra={"user_id": str(user_id), "plan_id": str(plan_id), "is_trial": is_trial},
-        )
-
-        # Audit log
-        if is_trial:
-            await audit_logger.log_trial_started(
-                user_id=user_id,
-                subscription_id=new_subscription.id,
-                plan_name=plan.name,
-                trial_days=trial_days,
-                trial_end_date=new_subscription.trial_end_date,
-                db=self.db,
-            )
-        else:
-            await audit_logger.log_subscription_created(
-                user_id=user_id,
-                subscription_id=new_subscription.id,
-                plan_id=plan_id,
-                plan_name=plan.name,
-                billing_period=billing_period.value,
-                is_trial=False,
-                db=self.db,
-            )
-
-        return new_subscription
 
     async def create_checkout(
         self,
@@ -658,6 +557,7 @@ class SubscriptionService:
                             ),
                             rule_name="admin_plan_unchanged_at_provider",
                         )
+                    self.provider_change_accepted = True
 
                     logger.info(
                         f"Updated subscription {provider_sub_id} with payment provider to variant {new_variant_id}",
@@ -708,6 +608,37 @@ class SubscriptionService:
                         logger.warning(
                             f"LemonSqueezy API call failed for test/sandbox ID '{provider_sub_id}'. Proceeding with local plan update for testing.",
                             extra={"user_id": str(user_id), "provider_sub_id": provider_sub_id},
+                        )
+                    elif by_admin and isinstance(e, PaymentChangeUnknown):
+                        # No answer came back: Lemon Squeezy may have changed the plan (and,
+                        # charged now, invoiced) or not. Telling the admin that nothing
+                        # changed would be a guess, so a person looks, and the plan here
+                        # follows Lemon Squeezy's update if it did.
+                        trigger_payment_alert(
+                            alert_type="admin_plan_change_unknown",
+                            message=(
+                                "An admin's plan change was sent to Lemon Squeezy and got "
+                                "no answer: look at the subscription there. If it changed, "
+                                "the plan here follows Lemon Squeezy's update; record who "
+                                "changed it and why"
+                            ),
+                            severity="high",
+                            context={
+                                "subscription": provider_sub_id,
+                                "old_plan": current_plan.name,
+                                "new_plan": new_plan.name,
+                                "charged_now": prorate,
+                            },
+                            user_id=str(user_id),
+                            operation="admin_plan_change",
+                        )
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy didn't answer, so it isn't known whether the "
+                                "plan changed. Look at the subscription in Lemon Squeezy "
+                                "before trying again; the team has been alerted."
+                            ),
+                            rule_name="admin_plan_unknown",
                         )
                     elif by_admin and isinstance(e, PaymentChangeUnconfirmed):
                         # Lemon Squeezy took the change and only its answer was lost: it
@@ -1598,7 +1529,9 @@ class SubscriptionService:
 
         # The version is part of the key: raise it when the plan's columns change, so a
         # deploy never rebuilds a plan from a cached row that has columns it no longer has.
-        cache_key = f"subscription:plan:v3:{plan_id}:active={active_only}"
+        # v4: the cached plan no longer carries the API-call quota (v3 was the plan fields
+        # the admin's plan change added).
+        cache_key = f"subscription:plan:v4:{plan_id}:active={active_only}"
 
         if cache.is_enabled:
             cached_plan = await cache.get(cache_key)
@@ -1635,7 +1568,6 @@ class SubscriptionService:
                 "price_yearly": float(plan.price_yearly) if plan.price_yearly is not None else 0.0,
                 "max_workspaces": plan.max_workspaces,
                 "max_members_per_workspace": plan.max_members_per_workspace,
-                "max_api_calls_per_month": plan.max_api_calls_per_month,
                 "lemonsqueezy_variant_id_monthly": plan.lemonsqueezy_variant_id_monthly,
                 "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
                 # A plan change works the balance out from these: left out, a plan read

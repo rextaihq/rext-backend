@@ -8,6 +8,7 @@ from langgraph.constants import TAG_NOSTREAM
 from src.api.config import get_settings
 from src.flow.model.provider_outage import provider_outage, report_provider_outage
 from src.flow.model.runaway import WhitespaceRunaway
+from src.utils import loop_registry
 from src.utils.loop_local_http import SHARED_ASYNC_CLIENT
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,9 @@ class _SyncAIProviderFailureReporter(BaseCallbackHandler):
     def on_llm_error(self, error: BaseException, **kwargs) -> None:
         if _stopped_on_purpose(error):
             return
-        loop = _MAIN_LOOP
+        # The server's own loop, where it is known. The loop captured where the models are
+        # built is a run's own when a node builds them, and is closed once that run ends.
+        loop = loop_registry.get() or _MAIN_LOOP
         if loop is None or loop.is_closed():
             logger.warning("AI provider call failed (no loop to record it): %s", error)
             _alert_if_outage(self.service, error)

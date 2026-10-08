@@ -12,7 +12,7 @@ Contains automated subscription management tasks that should run daily:
 
 1. **`check_and_notify_expiring_trials()`** - Sends email notifications to users 3 days before their trial ends
 2. **`expire_ended_trials()`** - Marks expired trials as EXPIRED status and sends notification
-3. **`reset_monthly_usage()`** - Resets API call counters monthly
+3. **`reset_monthly_usage()`** - Resets each paid plan's monthly credits when its billing period rolls over
 4. **`run_daily_subscription_tasks()`** - Convenience function to run all tasks
 
 ### Setup with Cron

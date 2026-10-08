@@ -25,7 +25,6 @@ from src.api.middleware.rate_limiter import (
     subscription_cancel_rate_limit,
     subscription_update_rate_limit,
 )
-from src.api.models.subscription_models.licenses import License
 from src.api.models.subscription_models.orders import Order
 from src.api.models.subscription_models.refund_requests import (
     REFUND_REQUEST_WINDOW_DAYS,
@@ -389,7 +388,6 @@ async def get_my_subscription(
     response_data["plan_limits"] = {
         "max_workspaces": plan.max_workspaces,
         "max_members_per_workspace": plan.max_members_per_workspace,
-        "max_api_calls_per_month": plan.max_api_calls_per_month,
     }
 
     # Add current_period_end as alias for renews_at (frontend compatibility)
@@ -416,7 +414,6 @@ async def get_my_subscription(
         current_usage = await service.calculate_usage(user_id)
         response_data["current_usage"] = {
             "workspaces": current_usage["workspaces"],
-            "api_calls": subscription.current_api_calls,
         }
 
     # Add available plans for discovery
@@ -425,12 +422,6 @@ async def get_my_subscription(
         include_inactive=False, include_private=False, is_admin=False
     )
     response_data["plans"] = available_plans.get("plans", [])
-
-    # Add user licenses
-    license_result = await db.execute(select(License).where(License.user_id == user_id))
-    licenses = license_result.scalars().all()
-    response_data["licenses"] = [lic.to_dict() for lic in licenses]
-    response_data["activations_count"] = sum(lic.activation_count for lic in licenses)
 
     # Schedule expiring notification if renewal is near (within 3 days)
     if subscription.renews_at:

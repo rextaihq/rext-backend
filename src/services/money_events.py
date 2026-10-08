@@ -1,16 +1,17 @@
 """
 Money events for product analytics (rext-control task 712, step C).
 
-A subscription that starts, renews, is cancelled, expires, fails a payment or is
-refunded is something no browser sees happen: Lemon Squeezy tells this backend, in
-a webhook. Once that webhook's work is committed, one event goes to PostHog from
+A subscription that starts, is paid for, is cancelled, expires, fails a payment or
+is refunded is something no browser sees happen: Lemon Squeezy tells this backend,
+in a webhook. Once that webhook's work is committed, one event goes to PostHog from
 here, so the counts and the amounts are the ones the books have.
 
 An event carries no identity: no user, no email, no order or subscription id.
 Whether a person allows usage analytics is known only to their browser (the
 dashboard's consent rule), so the backend can't tell, and it sends what needs
-no answer: that a plan was started or ended, and for how much. Each event has an
-id of its own derived from the webhook's, so a retry is the same event again.
+no answer: that a plan was started, paid for or ended, and for how much. Each event
+has an id of its own derived from the webhook's and carries the webhook's own time,
+so a retry is the same event again.
 
 Nothing is sent unless POSTHOG_PROJECT_KEY is set (the project's public key, the
 one the dashboard uses), and never for a sandbox (test mode) purchase. A failure
@@ -23,9 +24,11 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.utils.logger import logger
 
@@ -35,6 +38,9 @@ SEND_TIMEOUT_SECONDS = 3.0
 # Lemon Squeezy's event -> ours (the thing first, past tense, as the dashboard's).
 _EVENT_NAMES = {
     "subscription_created": "subscription_started",
+    # Every invoice that was paid, whatever it was for: `billing_reason` says whether it is
+    # the first payment ("initial"), a renewal or a plan change's charge ("updated").
+    "subscription_payment_success": "subscription_payment_succeeded",
     "subscription_cancelled": "subscription_cancelled",
     "subscription_expired": "subscription_expired",
     "subscription_payment_failed": "subscription_payment_failed",
@@ -43,54 +49,132 @@ _EVENT_NAMES = {
     "order_refunded": "subscription_refunded",
     "subscription_payment_refunded": "subscription_payment_refunded",
 }
-# A payment that went through is a renewal only when Lemon Squeezy says so: the first
-# payment is the start, and a charge for a plan change is neither.
-_RENEWAL = "renewal"
+# The webhooks that carry an invoice: it names its subscription, and no plan.
+_INVOICE_EVENTS = frozenset(
+    {
+        "subscription_payment_success",
+        "subscription_payment_failed",
+        "subscription_payment_refunded",
+    }
+)
+# An invoice for a plan change is paid while the subscription may still be on the plan
+# being left: its own webhook can arrive first.
+_PLAN_CHANGE = "updated"
 
 
 def _amount(cents: Any) -> Optional[float]:
-    """Lemon Squeezy's amounts are in cents; ours in the currency's unit."""
+    """
+    A Lemon Squeezy amount as the backend's own books read it (the orders, the refunds,
+    the payment handler): hundredths, whatever the currency. An event's figure is then
+    the one the books hold. Across currencies a chart adds up `amount_usd`, which the
+    provider always gives in cents of a dollar.
+    """
+    if isinstance(cents, bool):
+        return None
     try:
         return round(int(cents) / 100, 2)
     except (TypeError, ValueError):
         return None
 
 
-def money_event(event_type: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _plan_source(event_type: str, payload: Dict[str, Any]) -> Optional[tuple]:
+    """
+    Where a webhook's plan is read from, and the id to look for: the variant that was
+    bought, where the webhook names it (a subscription's own, an order's first item's),
+    or the subscription an invoice belongs to. None when the webhook names neither, or
+    when the subscription held now can't be trusted to be on the plan the invoice means:
+    a plan change's invoice, and a refund that doesn't say what its invoice was for.
+    """
+    data = payload.get("data") or {}
+    attributes = data.get("attributes") or {}
+    if event_type in _INVOICE_EVENTS:
+        reason = attributes.get("billing_reason")
+        unsure = not reason and event_type == "subscription_payment_refunded"
+        if reason == _PLAN_CHANGE or unsure:
+            return None
+        found_by, value = "subscription", attributes.get("subscription_id")
+    elif event_type.startswith("subscription_"):
+        found_by, value = "variant", attributes.get("variant_id")
+    elif event_type.startswith("order_"):
+        item = attributes.get("first_order_item")
+        found_by, value = "variant", item.get("variant_id") if isinstance(item, dict) else None
+    else:
+        return None
+    return (found_by, str(value)) if value else None
+
+
+def _plan_query(found_by: str, value: str) -> Any:
+    """
+    The read that names a plan and tells its billing period. By the variant bought, it
+    is the plan as it was sold: a later plan change doesn't relabel an order's refund.
+    """
+    if found_by == "variant":
+        return (
+            select(SubscriptionPlan.name, SubscriptionPlan.lemonsqueezy_variant_id_yearly)
+            .where(
+                or_(
+                    SubscriptionPlan.lemonsqueezy_variant_id_monthly == value,
+                    SubscriptionPlan.lemonsqueezy_variant_id_yearly == value,
+                )
+            )
+            .limit(1)
+        )
+    return (
+        select(SubscriptionPlan.name, UserSubscription.billing_period)
+        .join(SubscriptionPlan, SubscriptionPlan.id == UserSubscription.plan_id)
+        .where(UserSubscription.lemonsqueezy_subscription_id == value)
+        .order_by(UserSubscription.created_at.desc())
+        .limit(1)
+    )
+
+
+def money_event(
+    event_type: str, payload: Dict[str, Any], held: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
     """
     The analytics event for one webhook, or None when it has none.
 
     Reads a short list of fields and nothing else: what plan, in what state, how
-    much, in what currency. Never who.
+    much, in what currency. Never who. `held` is what the backend's own subscription
+    says (`plan`, `billing_period`), where there is one: an invoice names no plan.
     """
     meta = payload.get("meta") or {}
     attributes = (payload.get("data") or {}).get("attributes") or {}
     if meta.get("test_mode") or attributes.get("test_mode"):
         return None
 
-    if event_type == "subscription_payment_success":
-        if attributes.get("billing_reason") != _RENEWAL:
-            return None
-        name = "subscription_renewed"
-    else:
-        name = _EVENT_NAMES.get(event_type)
-        if name is None:
-            return None
+    name = _EVENT_NAMES.get(event_type)
+    if name is None:
+        return None
 
+    # A subscription names its product and variant itself; an order keeps them on its
+    # first item; an invoice has neither.
+    item = attributes.get("first_order_item")
+    named = {**(item if isinstance(item, dict) else {}), **attributes}
     properties: Dict[str, Any] = {}
     for ours, theirs in (
-        ("plan", "variant_name"),
         ("product", "product_name"),
+        ("variant", "variant_name"),
         ("status", "status"),
         ("currency", "currency"),
         ("billing_reason", "billing_reason"),
     ):
-        value = attributes.get(theirs)
+        value = named.get(theirs)
         if isinstance(value, str) and value:
             properties[ours] = value
+    # The plan under the backend's own name for it, as every other event of the app's has it.
+    for ours in ("plan", "billing_period"):
+        value = (held or {}).get(ours)
+        if isinstance(value, str) and value:
+            properties[ours] = value
+
     amount = _amount(attributes.get("total"))
     if amount is not None and "total" in attributes:
         properties["amount"] = amount
+        # The same amount in one currency for every event, so a chart can add them up.
+        in_usd = _amount(attributes.get("total_usd"))
+        if in_usd is not None and "total_usd" in attributes:
+            properties["amount_usd"] = in_usd
     # Lemon Squeezy gives what has been refunded so far, not what this refund returned: a
     # second partial refund repeats the first one's amount inside its own. Sent under a name
     # that says so, with whether everything is back; never to be added up across events.
@@ -120,8 +204,8 @@ async def send_server_event(
     properties: Dict[str, Any],
     *,
     key: str,
+    occurred_at: Optional[datetime],
     person_id: Optional[str] = None,
-    occurred_at: Optional[datetime] = None,
     client: Optional[httpx.AsyncClient] = None,
 ) -> bool:
     """
@@ -129,10 +213,15 @@ async def send_server_event(
 
     For every server-side event, not only the money ones. Call it after the work is
     committed. `key` names the thing that happened (a webhook's id, a run's id, a
-    ledger row's id): the event's own id is made from it, so a retry is the same event
-    again. `person_id` is the account's id, and is given only when that person's answer
-    on usage analytics allows it; without it the event is anonymous and no person is
-    made for it. Every event says it is the app's, from the server, and which deploy.
+    ledger row's id): the event's own id is made from it. `occurred_at` is when it
+    happened, read once where it happened (the row's own time, never the moment of
+    sending): PostHog keeps one of two deliveries only when their id and their time
+    are both the same, so with both a retry is the same event again. It has to be
+    given; None is for a thing with no time of its own, and such an event must not
+    be retried. `person_id` is the account's id, and is given only when that person's
+    answer on usage analytics allows it; without it the event is anonymous and no
+    person is made for it. Every event says it is the app's, from the server, and
+    which deploy.
     Never put an email, a name, a keyword, a title or any typed or generated text in
     `properties`.
     """
@@ -198,12 +287,13 @@ async def send_money_event(
     payload: Dict[str, Any],
     occurred_at: Optional[datetime] = None,
     client: Optional[httpx.AsyncClient] = None,
+    held: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Send one webhook's event, anonymous. True when PostHog took it; never raises."""
     if not os.getenv("POSTHOG_PROJECT_KEY"):
         return False
     try:
-        event = money_event(event_type, payload)
+        event = money_event(event_type, payload, held)
     except Exception as error:  # noqa: BLE001 - analytics never fails a webhook
         logger.warning(
             "Money event not read",
@@ -219,6 +309,37 @@ async def send_money_event(
         occurred_at=occurred_at,
         client=client,
     )
+
+
+async def _held_plan(
+    db: AsyncSession, event_type: str, payload: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """
+    The plan and billing period a webhook is about, under the backend's own name for the
+    plan: from the variant the webhook names, or for an invoice from the subscription
+    held now. None when neither can say, and the event then goes without a plan.
+    """
+    source = _plan_source(event_type, payload)
+    if source is None:
+        return None
+    found_by, value = source
+    try:
+        row = (await db.execute(_plan_query(found_by, value))).first()
+    except Exception as error:  # noqa: BLE001 - analytics never fails a webhook
+        logger.warning("Money event's plan not read", extra={"error": type(error).__name__})
+        try:
+            # The caller's session goes on being used: a failed read must not leave it broken.
+            await db.rollback()
+        except Exception:  # noqa: BLE001 - nothing more to do for it here
+            pass
+        return None
+    if row is None:
+        return None
+    if found_by == "variant":
+        yearly = str(row.lemonsqueezy_variant_id_yearly or "") == value
+        return {"plan": row.name, "billing_period": "yearly" if yearly else "monthly"}
+    period = getattr(row.billing_period, "value", row.billing_period)
+    return {"plan": row.name, "billing_period": period}
 
 
 async def record_money_event(db: AsyncSession, event_id: Optional[str]) -> bool:
@@ -246,4 +367,8 @@ async def record_money_event(db: AsyncSession, event_id: Optional[str]) -> bool:
         return False
     if row is None or not isinstance(row.payload, dict):
         return False
-    return await send_money_event(str(event_id), row.event_name, row.payload, row.created_at)
+    event_name, payload, created_at = row.event_name, row.payload, row.created_at
+    if event_name not in _EVENT_NAMES:
+        return False
+    held = await _held_plan(db, event_name, payload)
+    return await send_money_event(str(event_id), event_name, payload, created_at, held=held)

@@ -21,6 +21,7 @@ from src.flow.model.runaway import ainvoke_watched
 from src.services.sse_service import (
     emit_pipeline_complete,
     emit_step_failure,
+    emit_step_progress,
     emit_step_start,
     emit_step_success,
 )
@@ -98,6 +99,9 @@ PERSIST_RESERVE_SECONDS = 5.0
 PIPELINE_BUDGET_SECONDS = 90.0
 EXTRACTION_BUDGET_SECONDS = 35.0
 _ARTICLES_PER_AUTHOR = 2
+# A progress event lists what was found, within a bound: the stream is for a screen.
+MAX_PAGES_REPORTED = 25
+MAX_PEOPLE_REPORTED = 12
 _FEED_BUDGET_SECONDS = 4.0
 _BROWSER_START_DELAY_SECONDS = 4.0
 _BROWSER_CANCEL_GRACE_SECONDS = 5.0
@@ -136,6 +140,10 @@ _BOUNDED_TEXT = {"name": 255, "full_name": 255, "professional_title": 255, "tone
 _BOUNDED_URL = {"linkedin_url": 500, "avatar_url": 500, "email": 320}
 _REFUSED_RENDER_MIN_SECONDS = 8.0
 _REFUSED_RENDER_MAX_SECONDS = 20.0
+# A workspace with no website: how long its run waits for the brand-voice row the create request
+# writes (the request commits as it answers, the run starts just before).
+_ABOUT_ROW_TRIES = 40
+_ABOUT_ROW_WAIT_SECONDS = 0.5
 
 _NAME_TITLES = {
     "dr",
@@ -784,7 +792,9 @@ class WorkspacePipeline:
         operation_id: str,
         workspace_id: UUID,
         user_id: UUID,
-        url: str,
+        url: Optional[str],
+        description: Optional[str] = None,
+        name: Optional[str] = None,
         scraper: Optional[ScrapeCallable] = None,
         brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
         on_finished: Optional[FinishedCallable] = None,
@@ -794,9 +804,15 @@ class WorkspacePipeline:
         self.operation_id = operation_id
         self.workspace_id = workspace_id
         self.url = url
+        # A business with no website yet (rext-control#853): what its owner says of it, and
+        # what the workspace was called. The voice is drafted from these and no site is read.
+        self.description = (description or "").strip()
+        self.name = (name or "").strip()
         self.user_id = user_id
         self._scraper = scraper or self._default_scraper
-        self._brand_voice_generator = brand_voice_generator or self._default_brand_voice_generator
+        self._brand_voice_generator = brand_voice_generator or (
+            self._default_brand_voice_generator if url else self._description_voice_generator
+        )
         # The per-person analysis calls the same model, so it runs only with
         # the default extraction, never under an injected generator.
         self._use_default_llm = brand_voice_generator is None
@@ -814,21 +830,30 @@ class WorkspacePipeline:
         try:
             started = asyncio.get_event_loop().time()
             self._started = started
-            scrape_result = await self._scrape_website()
-            brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
-            await self._persist_brand_voice(brand_voice_schema)
-            await self._embed_brand_voice(brand_voice_schema)
+            replaced_favicon = None
+            if not self.url:
+                # No website: the brand-voice step is the whole run, drafted from the owner's
+                # description. No site is read, so there are no people, competitors or
+                # favicon to find, and none of those steps is announced.
+                brand_voice_schema = await self._extract_brand_voice(self.description)
+                await self._persist_drafted_voice(brand_voice_schema)
+                await self._embed_brand_voice(brand_voice_schema)
+            else:
+                scrape_result = await self._scrape_website()
+                brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
+                await self._persist_brand_voice(brand_voice_schema)
+                await self._embed_brand_voice(brand_voice_schema)
 
-            # Runs strictly after the brand-voice flow above completes, as a fully
-            # independent step — not concurrent with it — so it can never affect
-            # brand-voice extraction's behavior, timing, or SSE step reporting.
-            discovered_competitors = await self._discover_competitors()
-            if discovered_competitors is not None:
-                await self._persist_competitors([c["domain"] for c in discovered_competitors])
+                # Runs strictly after the brand-voice flow above completes, as a fully
+                # independent step — not concurrent with it — so it can never affect
+                # brand-voice extraction's behavior, timing, or SSE step reporting.
+                discovered_competitors = await self._discover_competitors()
+                if discovered_competitors is not None:
+                    await self._persist_competitors([c["domain"] for c in discovered_competitors])
 
-            # The site's favicon for the workspace switcher: best-effort and
-            # independent, like the competitor step; it never fails the pipeline.
-            replaced_favicon = await self._store_favicon()
+                # The site's favicon for the workspace switcher: best-effort and
+                # independent, like the competitor step; it never fails the pipeline.
+                replaced_favicon = await self._store_favicon()
 
             payload: Dict[str, Any] = {"workspace_id": str(self.workspace_id)}
             if brand_voice_schema:
@@ -937,6 +962,92 @@ class WorkspacePipeline:
             )
             return None
 
+    async def _say(self, step: str, message: str, payload: Dict[str, Any]) -> None:
+        """What a step has found so far, as a progress event on the operation's stream.
+
+        For the screen that shows the workspace taking shape while the run goes on
+        (revnix/rext-control#845). It reports; it never fails the run, and it never
+        ends a step: a client that reads only started, completed and failed ignores it.
+        """
+        try:
+            await emit_step_progress(
+                operation_id=self.operation_id,
+                scope=self.scope,
+                step=step,
+                message=message,
+                payload=payload,
+                user_id=self.user_id,
+            )
+        except Exception:  # noqa: BLE001 - a line of progress is never worth the run
+            logger.warning("Workspace pipeline: a progress event was not sent", exc_info=True)
+
+    async def _say_people(self, found: Optional[List[dict]] = None) -> None:
+        """The people are saved from here on: said at once, since the brand-voice step's
+        own end came before them and the run's end is a competitor search away.
+
+        Only the people this run found (`found`, by name): a refresh keeps the personas a
+        person made by hand, and those were not read from the site.
+        """
+        names = {(person.get("name") or "").strip() for person in found or []} - {""}
+        people = [
+            persona
+            for persona in getattr(self, "_extracted_personas", None) or []
+            if (persona.get("name") or "").strip() in names
+        ]
+        await self._say(
+            "personas",
+            f"Saved {len(people)} author personas",
+            {
+                "people": [
+                    {"person": persona.get("full_name"), "title": persona.get("professional_title")}
+                    for persona in people[:MAX_PEOPLE_REPORTED]
+                ],
+                "count": len(people),
+            },
+        )
+
+    def _page_kind(self, page: str, text: str) -> str:
+        """What a page is, for a reader: home, about, team, article or other.
+
+        `classify_page` sorts pages for the extraction passes, which read an about page
+        with the team's and have no word for the home page; a list of what was read
+        names both.
+        """
+        from urllib.parse import urlparse
+
+        from src.utils.fast_scraper import PAGE_ARTICLE, classify_page
+
+        def _address(url: str) -> Tuple[str, str]:
+            parsed = urlparse(url)
+            return (parsed.netloc or "").lower().removeprefix("www."), parsed.path.strip("/")
+
+        if _address(page) == _address(self.url) or not _address(page)[1]:
+            return "home"
+        kind = classify_page(page, text)
+        segments = _address(page)[1].lower().split("/")
+        if kind != PAGE_ARTICLE and any(
+            segment == "about" or segment.startswith("about-") for segment in segments
+        ):
+            return "about"
+        return kind
+
+    def _pages_read_count(self) -> int:
+        """How many pages were fetched, the ones past the listed 25 included."""
+        return sum("#" not in page for page in getattr(self, "_page_text_by_url", None) or {})
+
+    def _pages_read(self) -> List[Dict[str, str]]:
+        """The pages the scrape read, with what each is, the home page first."""
+        # Fetched pages only: the index also holds entries made up for the extraction passes
+        # (a feed's authors as "<feed>#author=Name"), which are no page anyone can open.
+        pages = {
+            page: text
+            for page, text in (getattr(self, "_page_text_by_url", None) or {}).items()
+            if "#" not in page
+        }
+        kinds = {page: self._page_kind(page, text) for page, text in pages.items()}
+        listed = sorted(pages, key=lambda page: (kinds[page] != "home", page))
+        return [{"page": page, "kind": kinds[page]} for page in listed[:MAX_PAGES_REPORTED]]
+
     async def _scrape_website(self) -> _ScrapeResult:
         await emit_step_start(
             operation_id=self.operation_id,
@@ -967,6 +1078,16 @@ class WorkspacePipeline:
                 user_id=self.user_id,
             )
             raise
+
+        # Which pages were read, said before the slower checks below: the first thing the
+        # screen can show of the run's own work.
+        pages_read = self._pages_read()
+        if pages_read:
+            await self._say(
+                "scrape",
+                f"Read {len(pages_read)} pages",
+                {"pages": pages_read, "count": self._pages_read_count()},
+            )
 
         title = None
         if raw_html:
@@ -1484,8 +1605,13 @@ class WorkspacePipeline:
             user_id=self.user_id,
         )
 
+        async def _progress(progress: Dict[str, Any]) -> None:
+            # Where the search is (searching, then checking the candidates): the step is
+            # the run's longest and said nothing until its end.
+            await self._say("competitor_discovery", "Discovering competitors", progress)
+
         try:
-            analysis = await discover_competitors(site_url=self.url)
+            analysis = await discover_competitors(site_url=self.url, on_progress=_progress)
         except Exception as exc:  # noqa: BLE001 - non-fatal to the overall pipeline
             logger.error(
                 "Competitor discovery failed",
@@ -1529,6 +1655,9 @@ class WorkspacePipeline:
         self, brand_voice_schema: Optional[BrandSchema]
     ) -> Optional[BrandVoice]:
         if brand_voice_schema is None:
+            # No voice means no one is saved either: said, so a screen need not wait for
+            # people through the competitor search.
+            await self._say_people()
             return None
 
         data = brand_voice_schema.model_dump()
@@ -1611,6 +1740,43 @@ class WorkspacePipeline:
             logger.error("Failed to persist brand voice and personas: %s", exc)
             raise
 
+    async def _persist_drafted_voice(self, drafted: Optional[BrandSchema]) -> None:
+        """Save a voice drafted from the owner's description: the brand voice's own fields and
+        nothing else. No persona is touched (none was read, and the owner may have added some),
+        and the About stays as the owner wrote it."""
+        if drafted is None:
+            return
+        data = drafted.model_dump()
+        try:
+            record = None
+            for _ in range(_ABOUT_ROW_TRIES):
+                result = await self.db.execute(
+                    select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
+                )
+                record = result.scalar_one_or_none()
+                if record is not None:
+                    break
+                # The create request writes the row with the description and commits as it
+                # answers; a run that got here first waits for it.
+                await asyncio.sleep(_ABOUT_ROW_WAIT_SECONDS)
+            if record is None:
+                # Never a row of its own: nothing keeps a workspace to one brand voice, so a
+                # second, once the request did commit, would break every read of it. The run
+                # fails instead, and a retry drafts again from the row that is there by then.
+                raise RuntimeError("The workspace's brand voice was not there to draft into")
+            record.brand_name = data.get("brand_name") or record.brand_name
+            record.about = record.about or data.get("about")
+            record.customer_profile = data.get("customer_profile") or record.customer_profile
+            record.selling_position = data.get("selling_position") or record.selling_position
+            record.target_audience = data.get("target_audience") or record.target_audience or []
+            record.brand_voice = data.get("brand_voice") or record.brand_voice or []
+            record.content_pillar = data.get("content_pillar") or record.content_pillar or []
+            await self.db.flush()
+        except Exception as exc:
+            await self.db.rollback()
+            logger.error("Failed to persist the drafted brand voice: %s", exc)
+            raise
+
     async def _persist_competitors(self, competitors: List[str]) -> None:
         try:
             result = await self.db.execute(
@@ -1640,7 +1806,9 @@ class WorkspacePipeline:
             await svc.upsert_brand_voice_embedding(
                 workspace_id=self.workspace_id,
                 brand_data=brand_voice_schema.model_dump(),
-                workspace_name=workspace.name if workspace else None,
+                # With no website the workspace's name is only a label: when the draft gave no
+                # brand name, none is embedded in its place.
+                workspace_name=workspace.name if workspace and self.url else None,
             )
         except Exception:
             pass
@@ -2241,6 +2409,8 @@ class WorkspacePipeline:
         saved_personas.sort(key=lambda p: position.get(p.name or "", len(position)))
         self._extracted_personas = [_format_persona_for_frontend(p) for p in saved_personas]
 
+        await self._say_people(personas_data)
+
         logger.info(
             "Persisted and formatted personas for frontend",
             extra={
@@ -2252,6 +2422,40 @@ class WorkspacePipeline:
     @staticmethod
     async def _default_scraper(url: str) -> Tuple[List[Any], List[Any]]:
         return await web_page_scraper(urls=[url])
+
+    async def _description_voice_generator(self, content: str) -> Optional[BrandSchema]:
+        """The brand voice of a business with no website yet, drafted from its owner's own
+        description of it (rext-control#853). The description is kept word for word as the
+        About; there are no people and no competitors, since no site was read."""
+        described = content.strip()
+        if not described:
+            return None
+        system_prompt = """You draft a brand profile for a business that has no website yet, from its owner's own description of it.
+Use only what the description says or plainly implies. Never invent a fact: no numbers, prices, awards, places, years, customers, products or people that the description does not give.
+Fill these fields:
+- brand_name: the business's name, only when the description states it, or when the workspace's name below reads as a business's name. A generic label ("My company", "My workspace", "Test", "Client 2") is not a name: leave brand_name empty then.
+- customer_profile: who buys from this business and what they want from it, in two or three sentences.
+- selling_position: what sets the business apart as far as the description shows, in one or two sentences. When the description gives no reason, say plainly what it offers rather than make a claim.
+- target_audience: two to four short audience segments.
+- brand_voice: three to five words or short phrases for the tone its writing should take with those readers.
+- content_pillar: three to five subjects it could write about for those readers.
+Leave about, competitors and personas empty: the owner's description is kept as it is, and no people or competitors are known yet.
+Write in the language of the description."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        model = load_model(temperature=0).with_structured_output(BrandSchema)
+        drafted = await ainvoke_watched(
+            model,
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(
+                    content=f"The workspace's name: {self.name or '(none given)'}\n\n"
+                    f"The owner's description of the business:\n{described}"
+                ),
+            ],
+            stage="workspace_brand",
+        )
+        return drafted.model_copy(update={"about": described, "competitors": [], "personas": []})
 
     async def _default_brand_voice_generator(self, content: str) -> Optional[BrandSchema]:
         if not content.strip():
@@ -2385,7 +2589,9 @@ async def run_workspace_pipeline(
     operation_id: str,
     workspace_id: UUID,
     user_id: UUID,
-    url: str,
+    url: Optional[str],
+    description: Optional[str] = None,
+    name: Optional[str] = None,
     scraper: Optional[ScrapeCallable] = None,
     brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
     on_finished: Optional[FinishedCallable] = None,
@@ -2396,6 +2602,8 @@ async def run_workspace_pipeline(
         workspace_id=workspace_id,
         user_id=user_id,
         url=url,
+        description=description,
+        name=name,
         scraper=scraper,
         brand_voice_generator=brand_voice_generator,
         on_finished=on_finished,

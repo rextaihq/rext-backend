@@ -190,7 +190,7 @@ async def seed_database():
     if not run_migrations():
         sys.exit(1)
 
-    # Run all seed scripts (permissions, email templates, subscription plans & credits)
+    # Run all seed scripts (permissions, subscription plans, promotions, the super admin)
     print("\n🌱 Running data seed scripts...")
     from scripts.seeds.run_all import run_all_seeds
 

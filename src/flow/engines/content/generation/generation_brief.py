@@ -51,6 +51,11 @@ _STAGE_LINES: dict[str, str] = {
 }
 
 
+# How the brief's line about the length begins. A brief without a target has no such line,
+# and a stage that leaves its own length line to the brief looks for this one first.
+LENGTH_LINE = "- Length: "
+
+
 class GenerationBrief(TypedDict):
     title: str
     content_type: str
@@ -152,7 +157,7 @@ def render_generation_brief(brief: GenerationBrief, *, stage: Stage) -> str:
         f"- Written for: {', '.join(brief['readers'])}" if brief["readers"] else "",
         f"- Tone: {brief['tone']}" if brief["tone"] else "",
         (
-            f"- Length: about {brief['target_words']} words; the introduction and the body "
+            f"{LENGTH_LINE}about {brief['target_words']} words; the introduction and the body "
             f"together between {brief['min_words']} and {brief['max_words']}"
         )
         if brief["target_words"] and stage != "repair"

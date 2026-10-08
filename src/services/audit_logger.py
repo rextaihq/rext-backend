@@ -80,12 +80,6 @@ class AuditEventType(str, Enum):
     ADMIN_CREDITS_ADJUSTED = "admin.credits_adjusted"
     ADMIN_TRIAL_EXTENDED = "admin.trial_extended"
 
-    # License events
-    LICENSE_CREATED = "license.created"
-    LICENSE_ACTIVATED = "license.activated"
-    LICENSE_DEACTIVATED = "license.deactivated"
-    LICENSE_REVOKED = "license.revoked"
-
     # Trial events
     TRIAL_STARTED = "trial.started"
     TRIAL_CONVERTED = "trial.converted"
@@ -136,7 +130,7 @@ class AuditLogger:
             event_type: Type of event (from AuditEventType enum)
             user_id: ID of user affected by the action
             admin_id: ID of admin performing the action (if applicable)
-            resource_type: Type of resource (subscription, payment, license, refund, etc.)
+            resource_type: Type of resource (subscription, payment, refund, etc.)
             resource_id: ID of the resource
             changes: Dictionary of changes (before/after values)
             metadata: Additional contextual information
@@ -1054,52 +1048,6 @@ class AuditLogger:
                 **(metadata or {}),
             },
             private_metadata={"reason": reason},
-            db=db,
-        )
-
-    # License audit methods
-
-    async def log_license_activated(
-        self,
-        user_id: UUID,
-        license_id: UUID,
-        instance_id: str,
-        instance_name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        db: Optional[AsyncSession] = None,
-    ) -> None:
-        """Log license activation."""
-        await self._log_event(
-            event_type=AuditEventType.LICENSE_ACTIVATED,
-            user_id=user_id,
-            resource_type="license",
-            resource_id=license_id,
-            metadata={
-                "instance_id": instance_id,
-                "instance_name": instance_name,
-                **(metadata or {}),
-            },
-            db=db,
-        )
-
-    async def log_license_deactivated(
-        self,
-        user_id: UUID,
-        license_id: UUID,
-        instance_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        db: Optional[AsyncSession] = None,
-    ) -> None:
-        """Log license deactivation."""
-        await self._log_event(
-            event_type=AuditEventType.LICENSE_DEACTIVATED,
-            user_id=user_id,
-            resource_type="license",
-            resource_id=license_id,
-            metadata={
-                "instance_id": instance_id,
-                **(metadata or {}),
-            },
             db=db,
         )
 

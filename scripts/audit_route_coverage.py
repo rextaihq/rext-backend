@@ -94,7 +94,6 @@ class RouteAuditor:
             "/payment/quick",  # Health check
             # Public subscription endpoints
             "/public",  # Public subscription plans
-            "/validate",  # License validation (public for external systems)
             # Email unsubscribe (email link)
             "/unsubscribe",  # Email preferences
             # Development/testing

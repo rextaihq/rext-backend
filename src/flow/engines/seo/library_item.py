@@ -123,8 +123,11 @@ def _owner(state: REXT, config) -> str:
 
 
 def _refused(
-    error_code: str = LIBRARY_ITEM_MISSING, message: str = LIBRARY_ITEM_MESSAGE
+    state: REXT, error_code: str = LIBRARY_ITEM_MISSING, message: str = LIBRARY_ITEM_MESSAGE
 ) -> Dict[str, Any]:
+    from src.services.generation_events import ANALYSIS, REFUSED, announce_failed
+
+    announce_failed(state, stage=ANALYSIS, reason=REFUSED)
     try:
         from langgraph.config import get_stream_writer
 
@@ -176,7 +179,7 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
 
     if not item or not item.get("original_query"):
         logger.info("Library start refused: the named item is not in this user's Library")
-        return _refused()
+        return _refused(state)
 
     query = item["original_query"]
 
@@ -191,7 +194,7 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
         )
 
         logger.info("Library start refused: the item's keyword is longer than a title can be")
-        return _refused(TOPICS_FAILED_CODE, KEYWORD_TOO_LONG_MESSAGE)
+        return _refused(state, TOPICS_FAILED_CODE, KEYWORD_TOO_LONG_MESSAGE)
 
     # The research is for one market: its country, stored with items made since
     # E17; an older item takes the start's.
@@ -204,6 +207,9 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
     # analysis's search results are fresh, else once a fresh SERP has results,
     # as the keyword analysis is, so a start whose search finds nothing costs nothing.
     await _announce_start(owner, workspace_id, query)
+    from src.services.generation_events import announce_started
+
+    announce_started(state, country=country)
 
     research = await _fresh_research(runtime.store, owner, workspace_id, str(key))
     if research:

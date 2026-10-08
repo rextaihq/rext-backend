@@ -43,16 +43,40 @@ class AddWorkspaceMemberRequest(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"email": "teammate@example.com"}})
 
 
+# What a business with no website yet says of itself, in place of the site (rext-control#853).
+DESCRIPTION_MIN_LENGTH = 20
+DESCRIPTION_MAX_LENGTH = 1000
+
+
+def _tidy_description(value: Optional[str]) -> Optional[str]:
+    """Trimmed, and nothing at all when only spaces were sent."""
+    return (value or "").strip() or None
+
+
 # FIXED: Removed brand voice fields - only workspace core fields
 class WorkspaceSchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Workspace title")
     timezone: Optional[str] = Field(
         None, description="IANA timezone identifier (e.g., 'America/New_York', 'UTC')"
     )
-    url: HttpUrl = Field(..., description="Workspace URL")
+    url: Optional[HttpUrl] = Field(
+        None,
+        description="The website to read. Without one, `description` is required",
+    )
+    # Its length is judged by the route, on the trimmed text and only when it is used: a
+    # request with a website has always been free to carry a description it doesn't need.
+    description: Optional[str] = Field(
+        None,
+        description=(
+            "For a business with no website yet: what it sells and to whom, in the owner's "
+            "words, 20 to 1,000 characters once trimmed. The brand voice is drafted from it, "
+            "and it is kept as the brand voice's `about`. Ignored when `url` is sent"
+        ),
+    )
 
     _validate_url = field_validator("url")(_validate_workspace_url)
     _validate_name = field_validator("name")(validate_workspace_name)
+    _tidy_description = field_validator("description")(_tidy_description)
 
     model_config = {
         "json_schema_extra": {

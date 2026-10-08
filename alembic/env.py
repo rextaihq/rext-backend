@@ -27,7 +27,6 @@ from src.api.models.admin_models import (  # noqa: E402, F401
     AccountCreationIpAllowlist,
     ApiUsageHourly,
     ApiUsageRollupState,
-    CustomerNote,
     ErrorLog,
     PlatformAdminInvitations,
 )
@@ -47,8 +46,6 @@ from src.api.models.notification.notification_model import Notification  # noqa:
 from src.api.models.subscription_models import (  # noqa: E402, F401
     CreditGrant,
     DiscountUsage,
-    License,
-    LicenseActivation,
     PaymentMethod,
     Promotion,
     Refund,
@@ -76,7 +73,6 @@ from src.api.models.user_models import (  # noqa: E402, F401
 from src.api.models.user_models.impersonation_session import (  # noqa: E402
     ImpersonationSession,  # noqa: F401
 )
-from src.api.models.workspace_models.email_template import EmailTemplate  # noqa: E402, F401
 from src.api.models.workspace_models.workspace_integration import (  # noqa: E402
     WorkspaceIntegration,  # noqa: F401
 )

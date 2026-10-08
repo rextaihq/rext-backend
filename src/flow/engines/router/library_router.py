@@ -70,6 +70,9 @@ async def library_router(state: REXT) -> str:
                 )
             except Exception as exc:
                 logger.warning("library_router: the start notification failed: %s", exc)
+            from src.services.generation_events import announce_started
+
+            announce_started(state)
 
     is_library = serp_payload.get("is_library", False)
 

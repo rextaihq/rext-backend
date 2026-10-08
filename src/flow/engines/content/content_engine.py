@@ -72,7 +72,22 @@ def create_content_engine():
         outage_route = unless_outage(next_node)
 
         def route(state: REXT) -> str:
-            return END if out_of_credits_route(state) == END else outage_route(state)
+            if out_of_credits_route(state) == END:
+                from src.services.generation_events import (
+                    ARTICLE,
+                    OUTLINE,
+                    REFUSED,
+                    announce_failed,
+                )
+
+                # The run ends here with no node of its own to say so.
+                announce_failed(
+                    state,
+                    stage=OUTLINE if next_node == "review_outline" else ARTICLE,
+                    reason=REFUSED,
+                )
+                return END
+            return outage_route(state)
 
         route.__name__ = f"to_{next_node}_unless_stopped"
         return route

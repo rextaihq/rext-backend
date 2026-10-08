@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from src.api.database.async_database import get_async_db
-from src.api.models.subscription_models.licenses import License
 from src.api.models.subscription_models.orders import Order, OrderStatus
 from src.api.models.subscription_models.refund_requests import (
     RefundRequest,
@@ -1225,8 +1224,8 @@ async def create_refund(
 
     # If we still don't have user_id, resolve the order id against our records.
     # orders is checked first because it is the only table that holds *every*
-    # LemonSqueezy order: licenses covers LTDs alone, and
-    # user_subscriptions.lemonsqueezy_order_id is only populated on some rows.
+    # LemonSqueezy order; user_subscriptions.lemonsqueezy_order_id is only
+    # populated on some rows.
     if not user_id:
         order_record = await OrderService(db).get_by_lemonsqueezy_id(lemonsqueezy_order_id)
 
@@ -1234,33 +1233,21 @@ async def create_refund(
             user_id = order_record.user_id
             subscription_id = subscription_id or order_record.subscription_id
         else:
-            license_stmt = select(License).where(
-                License.lemonsqueezy_order_id == lemonsqueezy_order_id
+            # Try subscription by order_id
+            sub_stmt = select(UserSubscription).where(
+                UserSubscription.lemonsqueezy_order_id == lemonsqueezy_order_id
             )
-            license_result = await db.execute(license_stmt)
-            license_record = license_result.scalar_one_or_none()
+            sub_result = await db.execute(sub_stmt)
+            subscription_record = sub_result.scalar_one_or_none()
 
-            if license_record:
-                user_id = license_record.user_id
+            if subscription_record:
+                user_id = subscription_record.user_id
+                subscription_id = subscription_record.id
             else:
-                # Try subscription by order_id
-                sub_stmt = select(UserSubscription).where(
-                    UserSubscription.lemonsqueezy_order_id == lemonsqueezy_order_id
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No order or subscription found for order {lemonsqueezy_order_id}",
                 )
-                sub_result = await db.execute(sub_stmt)
-                subscription_record = sub_result.scalar_one_or_none()
-
-                if subscription_record:
-                    user_id = subscription_record.user_id
-                    subscription_id = subscription_record.id
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=(
-                            f"No order, subscription or license found for order "
-                            f"{lemonsqueezy_order_id}"
-                        ),
-                    )
 
     # Create refund via LemonSqueezy API. _issue_refund reads the order back
     # from LemonSqueezy first, so the refundable balance it validates against

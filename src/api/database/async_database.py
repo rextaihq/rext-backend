@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, DisconnectionError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
@@ -228,6 +228,62 @@ LanggraphAsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+# ---------------------------------------------------------------------------
+# No request on a connection that is still inside a transaction
+# ---------------------------------------------------------------------------
+#
+# A pooled connection must be idle between requests. If one goes back to the pool inside a
+# transaction the engine knows nothing of, the driver turns every later request's BEGIN into
+# a SAVEPOINT and its COMMIT into a RELEASE: the request is answered as done, its rows are
+# visible on that one connection only, and they are gone when the process ends
+# (revnix/rext-control#858: sign-ins answered 200 whose session no other request could find,
+# a workspace created with a 201 that never became a row). SQLAlchemy's own return-to-pool
+# rollback does not cover it, because it only ends transactions it began itself.
+#
+# So the pool is checked at both doors. A connection returned inside a transaction is
+# dropped there, with the stack of whoever returned it in the log; and one found so when it
+# is asked for is dropped and another is handed out.
+
+
+def _inside_a_transaction(dbapi_connection) -> bool:
+    """Whether the driver's connection is inside a transaction: by the server's last word,
+    or by the driver's own record of one it began."""
+    driver = getattr(dbapi_connection, "driver_connection", None)
+    if driver is None:
+        return False
+    try:
+        return bool(driver.is_in_transaction()) or getattr(driver, "_top_xact", None) is not None
+    except Exception:  # noqa: BLE001 - a closed or foreign connection is not this guard's
+        return False
+
+
+def guard_pool_against_open_transactions(engine) -> None:
+    """Keep `engine`'s pool from handing a request a connection that is inside a transaction."""
+
+    @event.listens_for(engine.sync_engine, "checkin")
+    def _drop_a_connection_returned_inside_a_transaction(dbapi_connection, connection_record):
+        if dbapi_connection is not None and _inside_a_transaction(dbapi_connection):
+            logger.error(
+                "DB_GUARD: a connection went back to the pool inside a transaction; it is dropped",
+                stack_info=True,
+            )
+            connection_record.invalidate()
+
+    @event.listens_for(engine.sync_engine, "checkout")
+    def _never_hand_out_a_connection_inside_a_transaction(
+        dbapi_connection, connection_record, connection_proxy
+    ):
+        if _inside_a_transaction(dbapi_connection):
+            logger.error(
+                "DB_GUARD: a pooled connection was inside a transaction when asked for; "
+                "it is dropped and another is used"
+            )
+            raise DisconnectionError("a pooled connection was still inside a transaction")
+
+
+guard_pool_against_open_transactions(async_engine)
 
 
 # ---------------------------------------------------------------------------
