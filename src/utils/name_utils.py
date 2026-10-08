@@ -2,7 +2,7 @@ import re
 import unicodedata
 
 from src.api.middleware.exceptions import RextValidationException
-from src.utils.input_safety import find_markup
+from src.utils.input_safety import find_markup, has_hidden_characters, without_joiners_in_words
 
 # Full-name policy for sign-up (email/password and invitation registration).
 # rext-admin's signupFullNameSchema (schemas/auth-schemas.ts) should hold the
@@ -15,9 +15,6 @@ from src.utils.input_safety import find_markup
 # no markup, no hidden or control character and no web address written as one.
 FULL_NAME_MAX_LENGTH = 100  # the column holds 200
 
-# The joiners some scripts write inside a word (Persian, Hindi, Sinhala): hidden characters
-# anywhere else, a part of the name between two letters.
-_JOINER_IN_A_WORD_RE = re.compile(r"(?<=\w)[\u200c\u200d](?=\w)")
 # A web address written as one. The name is printed in emails to other people (an invitation
 # says who sent it), and no name holds either of these.
 _WEB_ADDRESS_RE = re.compile(r"://|\bwww\.", re.IGNORECASE)
@@ -87,9 +84,13 @@ def validate_signup_full_name(full_name: str) -> str:
     if not name:
         errors.append("Full name is required")
     else:
-        markup_error = find_markup(_JOINER_IN_A_WORD_RE.sub("", name), "Full name")
+        # The joiners Persian and Indic scripts write inside a word are part of the name
+        # there, and hidden characters anywhere else.
+        markup_error = find_markup(without_joiners_in_words(name), "Full name")
         if markup_error:
             errors.append(markup_error)
+        elif has_hidden_characters(name):
+            errors.append("Full name cannot contain hidden or control characters")
         elif _WEB_ADDRESS_RE.search(name):
             errors.append("Full name cannot contain a web address")
         elif not any(char.isalpha() for char in name):
