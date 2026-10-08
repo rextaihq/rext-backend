@@ -80,6 +80,18 @@ _ADDED_AFTER = re.compile(
 _PLACED_AFTER = re.compile(r"^\s+(?:under|beneath|below|for|in|within|per|on)\s+\w+", re.IGNORECASE)
 
 _PARTS = "steps, stages, types, options, tools, or pros and cons"
+# With H3s allowed, outlines came back with one or two H2s and every other topic under them,
+# and with the short budget of an H2 that only introduces its H3s on every section
+# (rext-control#837). outline_depth.py holds both rules when the model does not.
+_MAIN_SECTIONS = (
+    "MAIN SECTIONS COME FIRST: 4 to 8 H2s, always. An H3 never stands in for a main section: a "
+    "topic a reader would look for in the table of contents is an H2. One or two H2s with "
+    "everything else nested under them is wrong."
+)
+_FULL_BUDGET = (
+    "An H2 WITHOUT H3s is a whole section and keeps a whole budget: 150 to 400 words, never "
+    "the short one."
+)
 _PLACEMENT = (
     "An H3 comes directly after its H2 or after a sibling H3, never first and never on its own."
 )
@@ -143,6 +155,7 @@ def outline_subsection_rule(
     if policy == _EXPECTED:
         lines = [
             "H3 SUBSECTIONS: EXPECTED for this content type.",
+            f"- {_MAIN_SECTIONS}",
             f"- Wherever an H2 covers two or more distinct parts ({_PARTS}), give each part its "
             "own H3 under that H2.",
             "- A pillar guide's main sections nearly always have parts: plan H3s under at least "
@@ -152,6 +165,7 @@ def outline_subsection_rule(
     elif policy == _BY_SHAPE:
         lines = [
             "H3 SUBSECTIONS: decide by the article's shape.",
+            f"- {_MAIN_SECTIONS}",
             "- A long blog or guide (a complete or ultimate guide, or a plan past about 1,200 "
             f"words): EXPECTED. Wherever an H2 covers two or more distinct parts ({_PARTS}), give "
             "each part its own H3 under that H2.",
@@ -163,7 +177,7 @@ def outline_subsection_rule(
             "most 16 entries in all.",
             "- An H2 that has H3s keeps a short budget of its own (about 80-120 words, its "
             "introduction) and its H3s carry the rest, so the plan's total stays the length "
-            "this article needs.",
+            f"this article needs. {_FULL_BUDGET}",
             f"- {_PLACEMENT}",
         ]
     elif raw == "listicle":

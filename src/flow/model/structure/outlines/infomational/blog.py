@@ -143,7 +143,8 @@ class ContentStructure(BaseModel):
         description=(
             "4-8 H2 sections covering the topic end to end, including a closing "
             "summary/takeaways section, each followed by its H3 subsections where "
-            "it has distinct parts: at most 16 entries in all. An H3 comes "
+            "it has distinct parts: at most 16 entries in all. At least 4 of the "
+            "entries are H2s; an H3 never replaces a main section. An H3 comes "
             "directly after its H2 or a sibling H3."
         )
     )
