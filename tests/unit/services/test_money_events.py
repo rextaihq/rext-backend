@@ -14,6 +14,7 @@ import pytest
 from src.services import money_events
 from src.services.money_events import (
     _held_by,
+    _plan_queries,
     money_event,
     record_money_event,
     send_money_event,
@@ -94,26 +95,17 @@ def test_every_paid_invoice_is_counted_with_what_it_was_for(reason):
     assert event["properties"]["amount"] == 49.0
 
 
-@pytest.mark.parametrize(
-    ("currency", "smallest", "amount"),
-    [
-        ("USD", 4900, 49.0),
-        ("eur", 4999, 49.99),
-        ("JPY", 599, 599.0),  # no hundredths: 599 is 599 yen
-        ("KRW", 12000, 12000.0),
-        ("KWD", 1500, 1.5),  # thousandths
-        (None, 4900, 49.0),
-    ],
-)
-def test_an_amount_is_read_by_its_currency_s_smallest_unit(currency, smallest, amount):
+@pytest.mark.parametrize("currency", ["USD", "EUR", "JPY", "KWD", None])
+def test_an_amount_is_read_as_the_books_read_it_with_the_dollar_figure_beside_it(currency):
+    # Hundredths whatever the currency, as the orders and the refunds are kept: the event's
+    # figure is the books' figure. What a chart adds up across currencies is amount_usd.
     event = money_event(
         "subscription_payment_success",
-        _invoice(currency=currency, total=smallest, total_usd=4100, refunded_amount=smallest),
+        _invoice(currency=currency, total=4999, total_usd=4100, refunded_amount=1000),
     )
 
-    assert event["properties"]["amount"] == amount
-    assert event["properties"]["refunded_total"] == amount
-    # The dollar figure is always in cents.
+    assert event["properties"]["amount"] == 49.99
+    assert event["properties"]["refunded_total"] == 10.0
     assert event["properties"]["amount_usd"] == 41.0
 
 
@@ -169,28 +161,45 @@ def test_a_refunded_order_names_its_product_from_its_first_item():
 @pytest.mark.parametrize(
     ("event_type", "payload", "found"),
     [
-        (
-            "subscription_created",
-            {"data": {"id": "ls_sub_1"}},
-            ("lemonsqueezy_subscription_id", "ls_sub_1"),
-        ),
+        ("subscription_created", {"data": {"id": "ls_sub_1"}}, ("subscription", "ls_sub_1")),
         (
             "subscription_payment_success",
             {"data": {"id": "ls_inv_1", "attributes": {"subscription_id": 9}}},
-            ("lemonsqueezy_subscription_id", "9"),
+            ("subscription", "9"),
         ),
         (
             "subscription_payment_refunded",
             {"data": {"id": "ls_inv_1", "attributes": {"subscription_id": 9}}},
-            ("lemonsqueezy_subscription_id", "9"),
+            ("subscription", "9"),
         ),
-        ("order_refunded", {"data": {"id": 501}}, ("lemonsqueezy_order_id", "501")),
+        ("order_refunded", {"data": {"id": 501}}, ("order", "501")),
         ("subscription_payment_success", {"data": {"id": "ls_inv_1", "attributes": {}}}, None),
         ("license_key_created", {"data": {"id": "1"}}, None),
     ],
 )
 def test_the_subscription_a_webhook_is_about_is_found_by_what_it_names(event_type, payload, found):
     assert _held_by(event_type, payload) == found
+
+
+def test_a_plan_change_s_invoice_names_no_plan():
+    # Its webhook can arrive before the one that moves the subscription to the new plan, so
+    # what the backend holds may be the plan being left: better none than the wrong one.
+    changed = {"data": {"attributes": {"subscription_id": 9, "billing_reason": "updated"}}}
+    renewed = {"data": {"attributes": {"subscription_id": 9, "billing_reason": "renewal"}}}
+
+    assert _held_by("subscription_payment_success", changed) is None
+    assert _held_by("subscription_payment_success", renewed) == ("subscription", "9")
+
+
+def test_an_order_s_plan_is_looked_for_in_the_orders_table_first():
+    by_order = [str(query) for query in _plan_queries("order", "501")]
+    by_subscription = [str(query) for query in _plan_queries("subscription", "9")]
+
+    assert len(by_order) == 2 and len(by_subscription) == 1
+    assert "JOIN orders" in by_order[0] and "orders.lemonsqueezy_order_id" in by_order[0]
+    assert "orders" not in by_order[1]
+    assert "user_subscriptions.lemonsqueezy_order_id" in by_order[1]
+    assert "user_subscriptions.lemonsqueezy_subscription_id" in by_subscription[0]
 
 
 @pytest.mark.parametrize(
@@ -478,6 +487,22 @@ async def test_recording_sends_without_a_plan_when_none_is_held_or_the_read_fail
     assert [call.kwargs for call in send.await_args_list] == [{"held": None}, {"held": None}]
     # The caller goes on using its session: a failed read is rolled back, not left broken.
     failing.rollback.assert_awaited_once()
+
+
+async def test_recording_finds_a_refunded_order_s_plan_by_the_second_read(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    payload = {"meta": {}, "data": {"id": 501, "attributes": {"total": 4900}}}
+    row = MagicMock(event_name="order_refunded", payload=payload, created_at=AT)
+    plan = MagicMock(billing_period="monthly")
+    plan.name = "starter"
+    # The orders table has no row for it; the subscription's own copy of the order's id does.
+    db = _rows(row, None, plan)
+
+    with patch.object(money_events, "send_money_event", new=AsyncMock(return_value=True)) as send:
+        assert await record_money_event(db, "evt_1") is True
+
+    assert db.execute.await_count == 3
+    assert send.await_args.kwargs == {"held": {"plan": "starter", "billing_period": "monthly"}}
 
 
 async def test_recording_reads_no_plan_for_a_webhook_with_no_event(monkeypatch):
