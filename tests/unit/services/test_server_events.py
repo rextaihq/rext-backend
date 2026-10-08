@@ -206,6 +206,65 @@ async def test_an_event_without_the_persons_yes_names_no_one_and_no_workspace(po
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("identified", [True, False])
+async def test_the_teams_own_account_is_marked_named_or_not(posthog, identified):
+    """The mark the team's browsers send, so the charts leave both out. It names nobody,
+    so it rides on an anonymous event too."""
+    posthog.context = EventContext(identified=identified, plan=PLAN, internal=True)
+
+    await report_event(
+        "credits_spent",
+        {"action": "serp_seo", "credits": 1, "balance_after": 9},
+        key="charge-team",
+        occurred_at=AT,
+        user_id=uuid4(),
+    )
+
+    assert posthog.sent[0].properties["internal"] is True
+    assert (posthog.sent[0].person_id is not None) is identified
+
+
+@pytest.mark.asyncio
+async def test_a_customers_event_has_no_such_property_at_all(posthog):
+    """Left out, never false: the browser leaves it out too, and the charts filter on it."""
+    await report_event(
+        "credits_spent",
+        {"action": "serp_seo", "credits": 1, "balance_after": 9, "internal": True},
+        key="charge-customer",
+        occurred_at=AT,
+        user_id=uuid4(),
+    )
+
+    # Nor can a caller set it: only the account's standing does.
+    assert "internal" not in posthog.sent[0].properties
+
+
+@pytest.mark.parametrize(
+    ("email", "internal"),
+    [
+        ("it+plan-1008@revnix.com", True),
+        ("Someone@REVNIX.com", True),
+        ("someone@gmail.com", False),
+        ("someone@notrevnix.com", False),
+        ("someone@mail.revnix.com", False),
+        ("revnix.com@gmail.com", False),
+        ("no-at-sign", False),
+        (None, False),
+    ],
+)
+def test_an_address_on_the_companys_own_domain_is_the_teams(email, internal):
+    assert server_events.on_internal_domain(email) is internal
+
+
+def test_the_companys_domains_are_a_setting(monkeypatch):
+    monkeypatch.setenv("ANALYTICS_INTERNAL_DOMAINS", " Example.org, @second.example ,")
+
+    assert server_events.internal_domains() == {"example.org", "second.example"}
+    assert server_events.on_internal_domain("a@example.org")
+    assert not server_events.on_internal_domain("a@revnix.com")
+
+
+@pytest.mark.asyncio
 async def test_a_caller_that_has_read_the_standing_passes_it_and_nothing_is_read(posthog):
     """Code on a sync session (a graph node) reads the answer itself."""
     user_id = uuid4()

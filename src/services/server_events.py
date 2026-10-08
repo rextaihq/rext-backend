@@ -14,6 +14,9 @@ what stands in front of it for an event about a person:
   email, a name, a keyword, a title, any text a person typed or the app generated,
   an error's message or a token: a property that isn't on the list is left out,
   whatever it holds.
+- Whose: an event of the team's own account (an admin's, or one on the company's own
+  domain) says ``internal: true``, the mark the team's browsers send, so the charts
+  can leave both out. The boolean alone: never the address or a part of it.
 - How: ``report_event`` reads the person's standing in a session of its own, so a
   failed read can't touch the caller's transaction, and never raises;
   ``send_soon`` starts it without waiting.
@@ -26,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Coroutine, Dict, FrozenSet, Optional, Set
 
-from sqlalchemy import case, select
+from sqlalchemy import case, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -36,11 +39,14 @@ from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     subscription_grants_access,
 )
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.services import money_events
 from src.utils import loop_registry
 from src.utils.logger import logger
 from src.utils.loop_bridge import on_worker_thread
+from src.utils.rbac_utils import ADMIN_HIERARCHY_THRESHOLD
 
 GRANTED = "granted"
 DENIED = "denied"
@@ -88,6 +94,21 @@ def allows_identity(answer: Optional[str], region: Optional[str]) -> bool:
     return region == REGION_OTHER
 
 
+def internal_domains() -> FrozenSet[str]:
+    """The company's own email domains (``ANALYTICS_INTERNAL_DOMAINS``, comma-separated)."""
+    listed = os.getenv("ANALYTICS_INTERNAL_DOMAINS", "revnix.com")
+    return frozenset(
+        domain.strip().lower().lstrip("@") for domain in listed.split(",") if domain.strip()
+    )
+
+
+def on_internal_domain(email: Optional[str]) -> bool:
+    """Whether the address is on one of the company's own domains (not a subdomain of one)."""
+    if not email or "@" not in email:
+        return False
+    return email.rsplit("@", 1)[1].strip().lower() in internal_domains()
+
+
 def _value(member: Any) -> Any:
     return getattr(member, "value", member)
 
@@ -114,17 +135,32 @@ def plan_properties(subscription: Optional[UserSubscription]) -> Dict[str, Any]:
 
 @dataclass(frozen=True)
 class EventContext:
-    """What an event says about its person: whether it may name them, and their plan."""
+    """What an event says about its person: whether it may name them, their plan, and
+    whether the account is the team's own."""
 
     identified: bool = False
     plan: Dict[str, Any] = field(default_factory=dict)
+    internal: bool = False
 
 
 async def read_event_context(db: AsyncSession, user_id: Any) -> EventContext:
     """One person's standing for an event, in two reads on the given session."""
+    # An admin's or a super admin's account: a system role, held outside any workspace.
+    # A customer's roles (owner, admin of their own workspace) are below that level.
+    is_admin = exists().where(
+        UserRole.user_id == Users.id,
+        UserRole.workspace_id.is_(None),
+        UserRole.role_id == Role.id,
+        Role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD,
+    )
     answer = (
         await db.execute(
-            select(Users.analytics_consent, Users.analytics_region).where(Users.id == user_id)
+            select(
+                Users.analytics_consent,
+                Users.analytics_region,
+                Users.email,
+                is_admin.label("is_admin"),
+            ).where(Users.id == user_id)
         )
     ).first()
     # The subscription the person is on now, as SubscriptionService.get_subscription_by_user
@@ -142,7 +178,10 @@ async def read_event_context(db: AsyncSession, user_id: Any) -> EventContext:
     identified = answer is not None and allows_identity(
         answer.analytics_consent, answer.analytics_region
     )
-    return EventContext(identified=identified, plan=plan_properties(subscription))
+    internal = answer is not None and (bool(answer.is_admin) or on_internal_domain(answer.email))
+    return EventContext(
+        identified=identified, plan=plan_properties(subscription), internal=internal
+    )
 
 
 async def event_context(user_id: Any) -> EventContext:
@@ -249,6 +288,10 @@ async def _report(
     # one person's events together, and to a named member's. Only a named event has it.
     if workspace_id is not None and person_id is not None:
         sent["workspace_id"] = str(workspace_id)
+    # The team's own account, named or not: the mark names nobody. Left out for everyone
+    # else, as the browser leaves it out.
+    if context.internal:
+        sent["internal"] = True
     return await money_events.send_server_event(
         name, sent, key=key, person_id=person_id, occurred_at=occurred_at
     )
