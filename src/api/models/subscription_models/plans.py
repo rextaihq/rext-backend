@@ -71,7 +71,12 @@ class SubscriptionPlan(Base, SerializableMixin):
     # Relationships
     subscriptions = relationship("UserSubscription", back_populates="plan")
     trial_conversions = relationship("TrialConversion", back_populates="plan")
-    # to_dict() inherited from SerializableMixin
+
+    def to_dict(self, **kwargs):
+        """The mixin's, without the legacy quota: mapped until its column is dropped, read by
+        nothing, and no part of a plan any more."""
+        exclude = [*(kwargs.pop("exclude", None) or []), "max_api_calls_per_month"]
+        return super().to_dict(exclude=exclude, **kwargs)
 
     @property
     def features_list(self) -> list:
