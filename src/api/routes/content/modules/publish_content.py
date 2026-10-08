@@ -70,8 +70,12 @@ async def save_content(
     # Ensure status is 'draft' for this endpoint
     data.status = "draft"
 
+    # A save of an article its generation run already stored is the person's edit of it.
     content = await service.create_content(
-        workspace_id=workspace.id, user_id=UUID(user_id), data=data
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        data=data,
+        version_as=ContentVersionSource.EDIT,
     )
 
     return success(
@@ -114,8 +118,12 @@ async def save_and_publish(
 
     # Save content first
     service = ContentService(db)
+    # A save of an article its generation run already stored is the person's edit of it.
     content = await service.create_content(
-        workspace_id=workspace.id, user_id=UUID(user_id), data=data
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        data=data,
+        version_as=ContentVersionSource.EDIT,
     )
 
     # Scheduled posts must follow the account's selected timezone, not the

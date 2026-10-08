@@ -49,7 +49,7 @@ from src.services.content_activity import (
 )
 from src.services.content_checklist import build_checklist
 from src.services.content_embedding_service import ContentEmbeddingService
-from src.services.content_version_service import ContentVersionService, text_of
+from src.services.content_version_service import ContentVersionService, text_of, went_live
 from src.utils.datetime_utils import resolve_scheduled_datetime
 from src.utils.image_placeholder import strip_unresolved_placeholders
 from src.utils.logger import logger
@@ -234,7 +234,11 @@ class ContentService:
         return (await self.db.execute(query.limit(1))).first() is not None
 
     async def create_content(
-        self, workspace_id: UUID, user_id: UUID, data: ContentCreate
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        data: ContentCreate,
+        version_as: Optional[ContentVersionSource] = None,
     ) -> Content:
         """Create new content with nested SEO data.
 
@@ -274,12 +278,15 @@ class ContentService:
                     schema_markup=data.schema_markup,
                     persona_id=persona_id,
                 )
+                # A person's save of an article the run already stored is an edit of it, and
+                # kept as a version (`version_as`); the run's own save of its article is not.
                 return await self.update_content(
                     existing_by_thread.id,
                     workspace_id,
                     user_id,
                     update_payload,
                     _skip_activity_log=True,
+                    version_as=version_as,
                 )
 
         # A title must be new in the workspace only for an article written by hand. A generated
@@ -1215,7 +1222,7 @@ class ContentService:
 
         # The text as it went out to a site is a version of its own (the editor's history).
         # Not for a draft sent to the site or a publish only scheduled: nothing is out yet.
-        if content.status == "published" and any(r.success for r in results):
+        if went_live(content.status, results):
             await ContentVersionService(self.db).record(
                 content, text_of(content), user_id, ContentVersionSource.PUBLISH
             )
