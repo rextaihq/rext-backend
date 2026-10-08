@@ -123,38 +123,48 @@ def ran_away(error: BaseException) -> str | None:
 
 
 def answer_before_runaway(text: str, schema: type[BaseModel] | None) -> BaseModel | None:
-    """The answer a stopped call had already written, when it is whole but for its closing brace.
+    """The answer a stopped call had already written, when it is whole, or whole but for its
+    closing brace.
 
-    Only that: the text must end between two fields of the answer's own object (every list and
-    inner object closed), and what it holds must fit the schema, so every required field is
-    there and only fields with defaults are missing. Anything else is asked for again.
+    Only that: the text must be the answer's own object, closed, or ending between two of its
+    fields (every list and inner object closed), and what it holds must fit the schema, so every
+    required field is there and only fields with defaults are missing. Anything else is asked
+    for again.
     """
     if schema is None or not text:
         return None
-    body = text.rstrip().rstrip(",").rstrip()
-    try:
-        data = json.loads(body + "}")
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
-        return None
-    try:
-        return schema.model_validate(data)
-    except ValidationError:
-        return None
+    body = text.rstrip()
+    for written in (body, body.rstrip(",").rstrip() + "}"):
+        try:
+            data = json.loads(written)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            return None
+        try:
+            return schema.model_validate(data)
+        except ValidationError:
+            return None
+    return None
 
 
 async def ainvoke_watched(
-    runnable: Any, messages: Any, *, stage: str, schema: type[BaseModel] | None = None
+    runnable: Any,
+    messages: Any,
+    *,
+    stage: str,
+    schema: type[BaseModel] | None = None,
+    attempts: int = 2,
 ) -> Any:
     """`runnable.ainvoke(messages)` under the whitespace watch.
 
     A call that ran away is answered from what it had written when that is the whole answer
     (`schema` given: the structured output's own); otherwise, and when the answer was cut off at
     the token limit, it is asked once more. A second failure, and any other error, is the
-    caller's.
+    caller's. `attempts=1` for a call that is itself a second attempt: it is watched, and its
+    answer kept when whole, but not asked for again.
     """
-    for attempt in (1, 2):
+    for attempt in range(1, attempts + 1):
         watching = _watch.set(WhitespaceWatch())
         try:
             return await runnable.ainvoke(messages)
@@ -170,7 +180,7 @@ async def ainvoke_watched(
             )
             if answer is not None:
                 return answer
-            if attempt == 2:
+            if attempt == attempts:
                 raise
         finally:
             _watch.reset(watching)
