@@ -187,6 +187,48 @@ async def test_an_edit_is_listed_shown_and_put_back(session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_restore_takes_the_editors_unsaved_text_with_it(session, monkeypatch):
+    _permission(monkeypatch, True)
+    user, workspace, article = await _workspace_with_an_article(session)
+    generated = article.body_markdown
+    await _call(
+        session, user, "PATCH", str(article.id), workspace.id, json={"body_markdown": "Saved."}
+    )
+    listed = await _call(session, user, "GET", f"{article.id}/versions", workspace.id)
+    first = listed.json()["data"]["versions"][-1]["id"]
+
+    restored = await _call(
+        session,
+        user,
+        "POST",
+        f"{article.id}/versions/{first}/restore",
+        workspace.id,
+        json={"body_markdown": "Typed and never saved."},
+    )
+
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["data"]["body_markdown"] == generated
+    listed = await _call(session, user, "GET", f"{article.id}/versions", workspace.id)
+    versions = listed.json()["data"]["versions"]
+    assert [version["source"] for version in versions] == ["restore", "edit", "edit", "generation"]
+    typed = await _call(
+        session, user, "GET", f"{article.id}/versions/{versions[1]['id']}", workspace.id
+    )
+    assert typed.json()["data"]["body_markdown"] == "Typed and never saved."
+
+    # A field the text does not have is refused before anything is restored.
+    refused = await _call(
+        session,
+        user,
+        "POST",
+        f"{article.id}/versions/{first}/restore",
+        workspace.id,
+        json={"status": "published"},
+    )
+    assert refused.status_code == 422, refused.text
+
+
+@pytest.mark.asyncio
 async def test_without_the_permission_to_edit_each_route_is_refused(session, monkeypatch):
     user, workspace, article = await _workspace_with_an_article(session)
     _permission(monkeypatch, True)

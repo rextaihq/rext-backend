@@ -136,6 +136,20 @@ _VALID_CONTENT_STATUSES = {
 }
 
 
+class ContentVersionRestore(BaseModel):
+    """The editor's unsaved text, sent with a restore so that it is kept in the history before
+    the version is put back. Every field is optional: send those the editor holds unsaved,
+    each whole."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = None
+    introduction: Optional[str] = None
+    body_markdown: Optional[str] = None
+    body_html: Optional[str] = None
+    images_data: Optional[Any] = None
+
+
 class ContentUpdate(BaseModel):
     """Schema for updating content with nested data"""
 

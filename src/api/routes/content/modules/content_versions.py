@@ -1,10 +1,11 @@
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.schema.content_schema import ContentResponse
+from src.api.schema.content_schema import ContentResponse, ContentVersionRestore
 from src.api.schema.response.content_responses import (
     ContentVersionDetailResponse,
     ContentVersionListResponse,
@@ -73,15 +74,21 @@ async def restore_content_version(
     version_id: UUID,
     request: Request,
     workspace_id: str,
+    data: Optional[ContentVersionRestore] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """Put a version's text back on the article. The text as it stood is kept as a version
-    first; the answer is the article, as a save of it answers."""
+    first; the answer is the article, as a save of it answers. The body is optional: the text
+    the editor holds unsaved, kept as a version too before the restore, in one transaction."""
     user_id = UUID(user.get("identity"))
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, user_id)
     content = await ContentService(db).restore_version(
-        content_id=content_id, version_id=version_id, workspace_id=workspace.id, user_id=user_id
+        content_id=content_id,
+        version_id=version_id,
+        workspace_id=workspace.id,
+        user_id=user_id,
+        unsaved=data.model_dump(exclude_unset=True) if data else None,
     )
     return success(
         data=content.to_dict(include_relationships=["seo_data"]),

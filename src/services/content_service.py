@@ -50,6 +50,7 @@ from src.services.content_activity import (
 from src.services.content_checklist import build_checklist
 from src.services.content_embedding_service import ContentEmbeddingService
 from src.services.content_version_service import (
+    TEXT_FIELDS,
     ContentVersionService,
     record_published,
     text_of,
@@ -481,7 +482,12 @@ class ContentService:
         return content
 
     async def restore_version(
-        self, content_id: UUID, version_id: UUID, workspace_id: UUID, user_id: UUID
+        self,
+        content_id: UUID,
+        version_id: UUID,
+        workspace_id: UUID,
+        user_id: UUID,
+        unsaved: Optional[Dict[str, Any]] = None,
     ) -> Content:
         """Put a version's text back on the article (the editor's history, FB2.25).
 
@@ -489,29 +495,48 @@ class ContentService:
         the restored text then becomes the newest version. A version of another article or
         workspace is not found. The title follows the rule of any rename: one written by hand
         can't take a title another live article of the workspace has.
+
+        ``unsaved`` is what the editor holds and has not saved (any of the text's fields): it
+        is kept as an edit of the caller's before the version is put back, here, in the
+        restore's own transaction. Saved by a request of its own first, it could open a new
+        sitting on an article that already has its full count of versions, and the trim would
+        take the very version about to be restored.
         """
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
         versions = ContentVersionService(self.db)
         version, _ = await versions.get(content_id, version_id, workspace_id)
+        # The version's text, held before anything is kept: keeping trims to the newest, and
+        # the version being restored may be the oldest.
+        restored = text_of(version)
         await versions.keep_as_it_is(content, user_id)
+        typed = {
+            field: value
+            for field, value in (unsaved or {}).items()
+            if field in TEXT_FIELDS and value != getattr(content, field)
+        }
+        if typed:
+            await versions.keep_text(
+                content, {**text_of(content), **typed}, ContentVersionSource.EDIT, user_id
+            )
         before = text_of(content)
 
-        renamed = bool(version.title) and version.title != content.title
+        title = restored["title"]
+        renamed = bool(title) and title != content.title
         if renamed:
             if not content.langgraph_thread_id and await self._title_taken(
-                workspace_id, version.title, exclude_id=content_id
+                workspace_id, title, exclude_id=content_id
             ):
                 raise DuplicateResourceException(
                     resource_type="Content",
                     conflicting_field="title",
-                    conflicting_value=version.title,
+                    conflicting_value=title,
                 )
-            content.title = version.title
+            content.title = title
         # A version holds the whole text: a field it has empty is empty again.
-        content.introduction = version.introduction
-        content.body_markdown = version.body_markdown
-        content.body_html = version.body_html
-        content.images_data = version.images_data
+        content.introduction = restored["introduction"]
+        content.body_markdown = restored["body_markdown"]
+        content.body_html = restored["body_html"]
+        content.images_data = restored["images_data"]
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         if renamed:
