@@ -160,11 +160,13 @@ async def send_server_event(
             body["timestamp"] = occurred_at.isoformat()
         host = (os.getenv("POSTHOG_HOST") or DEFAULT_HOST).rstrip("/")
         if client is not None:
-            response = await client.post(f"{host}/i/v0/e/", json=body)
+            # A borrowed client keeps its own settings for everything but the wait.
+            response = await client.post(f"{host}/i/v0/e/", json=body, timeout=SEND_TIMEOUT_SECONDS)
         else:
             async with httpx.AsyncClient(timeout=SEND_TIMEOUT_SECONDS) as own:
                 response = await own.post(f"{host}/i/v0/e/", json=body)
-        if response.status_code >= 400:
+        # A redirect isn't followed, so it is no more "taken" than a refusal.
+        if not 200 <= response.status_code < 300:
             logger.warning(
                 "Server event not accepted",
                 extra={"event": event, "key": key, "status": response.status_code},
