@@ -482,6 +482,34 @@ async def test_accepting_gives_the_invited_account_the_role_once(session, call, 
     assert (await _validate(call, token)).json()["data"]["valid"] is False
 
 
+async def test_accepting_drops_the_accounts_cached_permissions_once_the_role_is_stored(
+    session, call, outbox, monkeypatch
+):
+    """Or the new admin is refused until the cache runs out. Dropped before the role is
+    stored, a request in between would cache the old set again."""
+    _, account, token, _ = await _invited(session, call, outbox, "support")
+    someone_else = await _person(session)
+    steps = []
+    commit = AsyncSession.commit
+
+    async def stored(self):
+        await commit(self)
+        steps.append("stored")
+
+    async def dropped(pattern):
+        steps.append(pattern)
+        return 0
+
+    monkeypatch.setattr(AsyncSession, "commit", stored)
+    monkeypatch.setattr("src.api.routes.admin.admin_invitation_routes.invalidate_cache", dropped)
+
+    assert (await _accept(call, someone_else, token)).status_code == 400
+    assert steps == []
+
+    assert (await _accept(call, account, token)).status_code == 200
+    assert steps[:2] == ["stored", f"user:permissions:{account.id}:*"]
+
+
 async def test_an_account_with_another_address_cant_accept(session, call, outbox):
     _, account, token, _ = await _invited(session, call, outbox, "super_admin")
     someone_else = await _person(session)

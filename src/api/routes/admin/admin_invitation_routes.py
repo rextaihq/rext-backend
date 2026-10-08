@@ -25,6 +25,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.cache.decorators import invalidate_cache
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
@@ -445,15 +446,13 @@ async def accept_admin_invitation(
         )
 
     service = AdminInvitationService(db)
+    user_id = UUID(current_user["identity"])
 
-    invitation = await service.accept_admin_invitation(
-        token=data.token,
-        user_id=UUID(current_user["identity"]),
-    )
+    invitation = await service.accept_admin_invitation(token=data.token, user_id=user_id)
 
     await create_audit_log_async(
         db=db,
-        user_id=UUID(current_user["identity"]),
+        user_id=user_id,
         action="admin_invitation.accept",
         resource_type="admin_invitation",
         resource_id=str(invitation.id),
@@ -464,7 +463,15 @@ async def accept_admin_invitation(
     # TODO: Send acceptance notification to inviter
     # await send_admin_invitation_accepted_email(invitation)
 
-    return success(data=_invitation_to_response(invitation), request=request)
+    answer = success(data=_invitation_to_response(invitation), request=request)
+
+    # The account's cached permissions were read before it held the role, and would
+    # refuse the new admin until they run out. They go once the role is stored, not
+    # before: a request in between would cache the old set again.
+    await db.commit()
+    await invalidate_cache(f"user:permissions:{user_id}:*")
+
+    return answer
 
 
 @public_router.post("/decline", response_model=SuccessResponse[GenericResponse])
