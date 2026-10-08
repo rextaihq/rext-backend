@@ -198,9 +198,12 @@ async def test_the_answer_is_not_part_of_a_users_card(user):
     user.analytics_consent, user.analytics_region = "denied", "eea"
     user.analytics_consent_at = datetime.now(timezone.utc)
 
-    card = user.to_dict(include_nulls=True)
-
-    assert not {"analytics_consent", "analytics_region", "analytics_consent_at"} & set(card)
+    kept_out = {"analytics_consent", "analytics_region", "analytics_consent_at"}
+    assert not kept_out & set(user.to_dict(include_nulls=True))
+    # A caller's own list of what to leave out doesn't put them back.
+    for exclude in ([], ["email"], None):
+        assert not kept_out & set(user.to_dict(include_nulls=True, exclude=exclude))
+    assert "password_hash" not in user.to_dict(include_nulls=True)
 
 
 @pytest.mark.asyncio

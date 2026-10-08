@@ -199,14 +199,15 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""
         if "exclude" not in kwargs:
-            # The analytics answer has a route of its own; it isn't part of a user's card.
-            kwargs["exclude"] = [
-                "password_hash",
-                "reset_token",
-                "analytics_consent",
-                "analytics_region",
-                "analytics_consent_at",
-            ]
+            kwargs["exclude"] = ["password_hash", "reset_token"]
+        # The analytics answer has a route of its own; it is never part of a user's card,
+        # whatever else a caller leaves out.
+        kwargs["exclude"] = [
+            *(kwargs["exclude"] or []),
+            "analytics_consent",
+            "analytics_region",
+            "analytics_consent_at",
+        ]
         data = super().to_dict(**kwargs)
         data["initials"] = self.initials
         from sqlalchemy import inspect as sa_inspect
