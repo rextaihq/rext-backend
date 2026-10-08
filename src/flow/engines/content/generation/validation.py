@@ -1388,9 +1388,9 @@ def _where_early_is(body: str, max_fraction: float) -> str:
     if len(inside) > 1:
         inside = inside[1:]
     if not inside:
-        # No section ends inside the window: its start is in the first one or two.
-        later = headings[1] if len(headings) > 1 else headings[0]
-        return f' Put it in the first paragraphs of "{later.group(1).strip()}", or before it.'
+        # No section ends inside the window, so the window lies inside the first one.
+        first = headings[0].group(1).strip()
+        return f' In this article that means the opening paragraphs of "{first}".'
     named = " or ".join(f'"{heading}"' for heading in inside[:3])
     return (
         f" In this article that means the section {named}: move the sentence that names it there."

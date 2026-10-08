@@ -1145,9 +1145,11 @@ Write the full article now. Every third-party claim must have an inline [text](u
         ]
         if ranked_list_injection:
             lines.append(ranked_list_injection.strip())
-        if not policy.get("prefers_top"):
+        if not policy.get("prefers_top") and policy.get("intensity") != "none":
             # A body mention has a window (the first 30% by default). Named by section, since
-            # nobody writing can measure a percentage.
+            # nobody writing can measure a percentage. Not for a type that takes no promotion
+            # by nature (documentation, a login guide): its one allowed mention is a closing
+            # note, and the placement check grades no position there.
             window = policy.get("body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION)
             early = early_body_sections(outline, content_type, window)
             if early:
