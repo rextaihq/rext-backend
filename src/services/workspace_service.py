@@ -154,7 +154,14 @@ async def _record_pipeline_end(
 
 
 async def _run_pipeline_recorded(
-    db: AsyncSession, *, operation_id: str, workspace_id: UUID, user_id: UUID, url: str
+    db: AsyncSession,
+    *,
+    operation_id: str,
+    workspace_id: UUID,
+    user_id: UUID,
+    url: Optional[str],
+    description: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> None:
     """One pipeline run with its outcome on the workspace's row: written as the run settles, before
     its terminal event goes out (so a read on that event sees it), and "failed" for a run cut off at
@@ -181,6 +188,8 @@ async def _run_pipeline_recorded(
             workspace_id=workspace_id,
             user_id=user_id,
             url=url,
+            description=description,
+            name=name,
             on_finished=record,
         )
     )
@@ -248,10 +257,14 @@ class WorkspaceService:
         user_id: UUID,
         name: str,
         timezone: Optional[str],
-        url: str,
+        url: Optional[str],
+        description: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a workspace and trigger the background onboarding pipeline.
+
+        With no website, `description` is what the owner says of the business: it is kept as
+        the brand voice's `about`, and the pipeline drafts the rest of the voice from it.
 
         Returns immediately with workspace metadata and an SSE operation ID.
         """
@@ -261,6 +274,10 @@ class WorkspaceService:
                 user_id=user_id, name=name, tz=timezone, url=url
             )
             await self.db.refresh(workspace)
+            if not url and description:
+                # Kept with the workspace itself, in the owner's words: a run that a restart
+                # ends before it saves anything can then be run again from it.
+                self.db.add(BrandVoice(workspace_id=workspace.id, about=description))
 
         with trace(name="Assign Roles & Permissions"):
             await self.create_workspace_member(
@@ -289,6 +306,8 @@ class WorkspaceService:
                             workspace_id=workspace.id,
                             user_id=user_id,
                             url=url,
+                            description=description,
+                            name=name,
                         )
                     except Exception as exc:
                         logger.error(
@@ -345,6 +364,8 @@ class WorkspaceService:
         self,
         workspace_id: UUID,
         user_id: UUID,
+        *,
+        draft_again: bool = False,
     ) -> str:
         """
         Re-run the workspace onboarding pipeline to refresh brand voice data.
@@ -359,12 +380,6 @@ class WorkspaceService:
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
 
-        if not workspace.url:
-            raise RextValidationException(
-                message="Workspace URL is required to refresh brand voice",
-                field_errors={"url": ["Workspace must have a valid URL before refreshing"]},
-            )
-
         # The row stays locked until this request commits, so a second request at the same
         # moment waits here and then sees this run.
         await self.db.refresh(workspace, with_for_update=True)
@@ -375,11 +390,21 @@ class WorkspaceService:
                 message="The workspace's website is still being read. Wait for it to finish.",
                 rule_name="workspace_pipeline_running",
             )
+        description = None
+        if not workspace.url:
+            # No website to read. Only the retry of a run that failed or was interrupted drafts
+            # the voice again, from the owner's description (rext-control#853).
+            description = await self._description_to_draft_from(workspace) if draft_again else None
+            if not description:
+                raise RextValidationException(
+                    message="Workspace URL is required to refresh brand voice",
+                    field_errors={"url": ["Workspace must have a valid URL before refreshing"]},
+                )
 
         operation_id = str(uuid4())
         _mark_pipeline_started(workspace, operation_id)
         await self.db.flush()
-        workspace_id, url = workspace.id, workspace.url
+        workspace_id, url, name = workspace.id, workspace.url, workspace.name
 
         # Register ownership so only this user can publish events to this operation
         await event_stream_manager.set_operation_owner(operation_id, user_id)
@@ -393,6 +418,8 @@ class WorkspaceService:
                         workspace_id=workspace_id,
                         user_id=user_id,
                         url=url,
+                        description=description,
+                        name=name,
                     )
                 except Exception as exc:
                     logger.error(
@@ -433,6 +460,14 @@ class WorkspaceService:
 
         return operation_id
 
+    async def _description_to_draft_from(self, workspace: WorkspaceModel) -> Optional[str]:
+        """What a workspace with no website is drafted from a second time: the owner's
+        description of the business, kept as its brand voice's About since it was created."""
+        about = await self.db.scalar(
+            select(BrandVoice.about).where(BrandVoice.workspace_id == workspace.id)
+        )
+        return (about or "").strip() or None
+
     async def retry_pipeline_for_user(self, workspace_id: UUID, user_id: UUID) -> str:
         """Run the workspace pipeline again after its last run failed or was interrupted (a
         restart or a deploy ends a run). Returns the new run's operation id."""
@@ -444,7 +479,9 @@ class WorkspaceService:
                 message="Only a run that failed or was interrupted can be retried.",
                 rule_name="workspace_pipeline_not_retryable",
             )
-        return await self.refresh_brand_voice_for_user(workspace_id, user_id)
+        # A voice that was drafted has been the owner's to edit since, so only this path (a run
+        # that left nothing, or not all of it) drafts a workspace with no website again.
+        return await self.refresh_brand_voice_for_user(workspace_id, user_id, draft_again=True)
 
     async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""

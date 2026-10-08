@@ -61,3 +61,80 @@ async def test_create_workspace_returns_operation_id(client) -> None:
     assert body["data"]["operation_id"] == expected_payload["operation_id"]
     assert "Background processing initiated" in body["message"]
     mock_service.create_workspace_for_user.assert_awaited_once()
+
+
+# A workspace for a business with no website yet (revnix/rext-control#853): the request carries
+# the owner's description in place of an address.
+
+DESCRIPTION = "We bake sourdough bread and pastries for cafés and restaurants in Leeds."
+
+
+async def _create(client, body):
+    """POST the create request as a signed-in user, with the service and the reachability check
+    replaced. Returns the response, the service's create and the check."""
+    app.dependency_overrides[get_current_user] = lambda: {"identity": str(uuid4())}
+    created = {"workspace": {"id": str(uuid4()), "name": body.get("name")}, "operation_id": "op-1"}
+    try:
+        with (
+            patch("src.api.routes.workspaces.workspace_core.WorkspaceService") as service_cls,
+            patch(
+                "src.api.routes.workspaces.workspace_core.check_website_reachable",
+                new=AsyncMock(return_value=None),
+            ) as reachable,
+            patch("src.utils.audit_helper.create_audit_log_async", new=AsyncMock()),
+        ):
+            create = service_cls.return_value.create_workspace_for_user = AsyncMock(
+                return_value=created
+            )
+            response = await client.post("/api/v1/workspaces/", json=body)
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    return response, create, reachable
+
+
+@pytest.mark.asyncio
+async def test_create_takes_a_description_when_there_is_no_website(client) -> None:
+    response, create, reachable = await _create(
+        client, {"name": "Crumb and Crust", "description": f"  {DESCRIPTION} "}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["operation_id"] == "op-1"
+    sent = create.await_args.kwargs
+    assert sent["url"] is None
+    assert sent["description"] == DESCRIPTION
+    # No address, so nothing to reach.
+    reachable.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_with_a_website_reads_the_website(client) -> None:
+    response, create, reachable = await _create(
+        client,
+        {"name": "Crumb and Crust", "url": "https://example.com", "description": DESCRIPTION},
+    )
+
+    assert response.status_code == 201
+    sent = create.await_args.kwargs
+    assert sent["url"].rstrip("/") == "https://example.com"
+    # The site says what the business is; a description sent with it is not drafted from.
+    assert sent["description"] is None
+    reachable.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "field"),
+    [
+        ({"name": "Crumb and Crust"}, "url"),
+        ({"name": "Crumb and Crust", "description": "   "}, "url"),
+        ({"name": "Crumb and Crust", "description": "We bake bread."}, "description"),
+    ],
+)
+async def test_create_says_which_field_is_missing_or_too_short(client, body, field) -> None:
+    response, create, _ = await _create(client, body)
+
+    assert response.status_code == 422
+    create.assert_not_awaited()
+    # The refusal names the field, so the form can say it beside it.
+    assert f"'field': '{field}'" in str(response.json())
