@@ -464,10 +464,11 @@ async def _changed_to_a_plan_of(db, subscription, monthly, *, period_before=_AS_
     db.add(other)
     await db.flush()
     old_plan_id = subscription.plan_id
+    old_monthly = (await db.get(SubscriptionPlan, old_plan_id)).credits_per_month
     subscription.plan_id = other.id
     change_plan_credits(
         subscription,
-        PLAN_CREDITS,
+        old_monthly,
         monthly,
         period_before=(
             subscription.credits_reset_date if period_before is _AS_STORED else period_before
@@ -592,6 +593,47 @@ async def test_a_reset_then_a_downgrade_keeps_what_was_used(session):
     assert subscription.current_credits == 400
     assert period_admin_adjustment(subscription) == 400
     assert await _used(session, _order(user, subscription)) == 400
+
+
+@pytest.mark.asyncio
+async def test_a_swallowed_deduction_stands_again_on_a_larger_plan(session):
+    # 50 used of 1,000, then 900 deducted: 50 left. A plan of 400 a month shows 350 of the
+    # deduction (0 left where 350 would be). Back on 1,000 a month the whole 900 stand again,
+    # and the 50 are still all that was used.
+    user, subscription = await _subscription(session, credits=950)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 900)
+
+    await _changed_to_a_plan_of(session, subscription, 400)
+    assert subscription.current_credits == 0
+    assert period_admin_adjustment(subscription) == -350
+    assert await _used(session, _order(user, subscription)) == 50
+
+    await _changed_to_a_plan_of(session, subscription, 1000)
+    assert subscription.current_credits == 50
+    assert period_admin_adjustment(subscription) == -900
+    assert await _used(session, _order(user, subscription)) == 50
+
+
+@pytest.mark.asyncio
+async def test_a_reset_after_a_swallowed_deduction_keeps_used_true_through_the_next_change(
+    session,
+):
+    # As above, but support resets the month on the smaller plan (400 again) before the change
+    # back. The reset's 400 stay with the customer; the 50 are still all that was used.
+    user, subscription = await _subscription(session, credits=950)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 900)
+    await _changed_to_a_plan_of(session, subscription, 400)
+    await _adjust(session, user, admin, "reset")
+    assert subscription.current_credits == 400
+    assert await _used(session, _order(user, subscription)) == 50
+
+    await _changed_to_a_plan_of(session, subscription, 1000)
+
+    assert subscription.current_credits == 450
+    assert period_admin_adjustment(subscription) == -500
+    assert await _used(session, _order(user, subscription)) == 50
 
 
 @pytest.mark.asyncio
