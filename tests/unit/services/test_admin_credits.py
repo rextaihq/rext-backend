@@ -452,25 +452,34 @@ async def test_an_adjustment_is_read_only_on_the_plan_it_was_recorded_for(sessio
 # --- a plan change inside the period (F8g, rext-control #849) --------------------------
 
 
-async def _changed_to_a_plan_of_2000(db, subscription, *, period_before=None):
+_AS_STORED = object()
+
+
+async def _changed_to_a_plan_of(db, subscription, monthly, *, period_before=_AS_STORED):
     """What a plan change does to the row: the new plan's id, then the credits worked out
     from what was used (change_plan_credits, as the webhook and the dashboard call it)."""
-    bigger = SubscriptionPlan(
-        name=f"pro-{uuid4().hex[:8]}", display_name="Pro", credits_per_month=2000
+    other = SubscriptionPlan(
+        name=f"other-{uuid4().hex[:8]}", display_name="Other", credits_per_month=monthly
     )
-    db.add(bigger)
+    db.add(other)
     await db.flush()
     old_plan_id = subscription.plan_id
-    subscription.plan_id = bigger.id
+    subscription.plan_id = other.id
     change_plan_credits(
         subscription,
         PLAN_CREDITS,
-        2000,
-        period_before=period_before or subscription.credits_reset_date,
+        monthly,
+        period_before=(
+            subscription.credits_reset_date if period_before is _AS_STORED else period_before
+        ),
         old_plan_id=old_plan_id,
     )
     await db.flush()
     await db.refresh(subscription, ["plan"])
+
+
+async def _changed_to_a_plan_of_2000(db, subscription, *, period_before=_AS_STORED):
+    await _changed_to_a_plan_of(db, subscription, 2000, period_before=period_before)
 
 
 @pytest.mark.asyncio
@@ -535,6 +544,72 @@ async def test_a_plan_change_that_opens_a_new_period_carries_no_adjustment(sessi
 
     assert subscription.current_credits == 2000
     assert period_admin_adjustment(subscription) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_deduction_a_downgrade_swallows_is_not_carried(session):
+    # 500 used of 1,000, then support deducts 400: 100 left. On a plan of 400 a month the
+    # 500 used leave nothing with or without the deduction, so none of it is carried: the 500
+    # must not read as unused (the refund rule would then take the month for untouched).
+    user, subscription = await _subscription(session, credits=500)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 400)
+    assert subscription.current_credits == 100
+
+    await _changed_to_a_plan_of(session, subscription, 400)
+
+    assert subscription.current_credits == 0
+    assert period_admin_adjustment(subscription) == 0
+    assert "admin_credit_adjustment" not in subscription.subscription_metadata
+    assert await _used(session, _order(user, subscription)) == 400
+
+
+@pytest.mark.asyncio
+async def test_a_downgrade_carries_the_part_of_a_deduction_its_balance_still_shows(session):
+    # 100 used of 1,000, then 400 deducted: 500 left. On a plan of 400 a month the 100 used
+    # would leave 300; the deduction takes them, so 300 of it is still in the balance.
+    user, subscription = await _subscription(session, credits=900)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 400)
+
+    await _changed_to_a_plan_of(session, subscription, 400)
+
+    assert subscription.current_credits == 0
+    assert period_admin_adjustment(subscription) == -300
+    assert await _used(session, _order(user, subscription)) == 100
+
+
+@pytest.mark.asyncio
+async def test_a_reset_then_a_downgrade_keeps_what_was_used(session):
+    # 500 used of 1,000, then a reset: 1,000 again. On a plan of 400 a month the customer
+    # has the whole 400, where the 500 used would have left none: all 400 are the reset's.
+    user, subscription = await _subscription(session, credits=500)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "reset")
+
+    await _changed_to_a_plan_of(session, subscription, 400)
+
+    assert subscription.current_credits == 400
+    assert period_admin_adjustment(subscription) == 400
+    assert await _used(session, _order(user, subscription)) == 400
+
+
+@pytest.mark.asyncio
+async def test_an_adjustment_recorded_without_a_reset_date_follows_the_plan_change(session):
+    # An old row with no reset date records its adjustment without a period. The change gives
+    # the row its first reset date, and finds the adjustment by its missing one.
+    user, subscription = await _subscription(session, credits=600)
+    admin = await _user(session)
+    subscription.credits_reset_date = None
+    await session.flush()
+    await _adjust(session, user, admin, "deduct", 300)
+    assert period_admin_adjustment(subscription) == -300
+    subscription.credits_reset_date = NOW + timedelta(days=30)
+
+    await _changed_to_a_plan_of_2000(session, subscription, period_before=None)
+
+    assert subscription.current_credits == 1300
+    assert period_admin_adjustment(subscription) == -300
 
 
 @pytest.mark.asyncio
