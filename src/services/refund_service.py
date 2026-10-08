@@ -138,10 +138,11 @@ class RefundService:
         racing the admin's refund that caused it). The second waits here, then
         reads what the first committed and records nothing.
 
-        ``record_provider_refund`` takes it itself. A handler that also locks the
-        subscription's row takes this first, as the recorders that write the
-        subscription afterwards do: in the other order, two handlers of one refund
-        would each hold what the other waits for.
+        ``record_provider_refund`` takes it itself. A handler that also locks or
+        writes the order's or the subscription's row takes this first, as the
+        recorders that write those rows afterwards do (the admin's refund writes
+        both): in the other order, two handlers of one refund would each hold what
+        the other waits for.
         """
         await self.db.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),

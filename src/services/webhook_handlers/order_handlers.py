@@ -192,6 +192,12 @@ async def handle_order_refunded(
                 provider_refunded_total = total_amount
     user_email = order_data.get("user_email")
 
+    # One recorder at a time per order, from before the first row this handler locks or
+    # writes. The admin's refund takes this lock and then writes the order and the
+    # subscription: taken here after either row, each would hold what the other waits for.
+    refund_service = RefundService(db)
+    await refund_service.lock_order(lemonsqueezy_order_id)
+
     # Find and expire associated subscription
     stmt = select(UserSubscription).where(
         UserSubscription.lemonsqueezy_order_id == lemonsqueezy_order_id
@@ -246,7 +252,6 @@ async def handle_order_refunded(
     # The webhook is the source of truth for money actually returned. Recording
     # is delta-based against LemonSqueezy's cumulative total, so a replay of
     # this event writes nothing and the totals stay correct.
-    refund_service = RefundService(db)
     new_refund = await refund_service.record_provider_refund(
         lemonsqueezy_order_id=lemonsqueezy_order_id,
         user_id=user_id,
