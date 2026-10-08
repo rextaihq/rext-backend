@@ -16,13 +16,20 @@ from sqlalchemy.pool import NullPool
 from src.api.database.base import Base
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.content_models.publishing_result import ContentPublishingResult
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.content_service import ContentService, _host_of
 from tests.conftest import TEST_DATABASE_URL
 
-READ_TABLES = [WorkspaceModel, Content, ContentSEOData, WorkspaceIntegration]
+READ_TABLES = [
+    WorkspaceModel,
+    Content,
+    ContentSEOData,
+    ContentPublishingResult,
+    WorkspaceIntegration,
+]
 
 
 def _with_their_references(models):
@@ -83,7 +90,9 @@ async def _article(
     wordpress=False,
     shopify=False,
 ):
-    """An article; `meta` left out means no SEO row at all."""
+    """An article; `meta` left out means no SEO row at all. `wordpress` and `shopify`: published
+    there (True), or the state its publishing result is left in ("deleted"): the article keeps
+    the site's id either way, as a publish leaves it."""
     article = Content(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -101,6 +110,21 @@ async def _article(
     await session.flush()
     if meta is not ...:
         session.add(ContentSEOData(content_id=article.id, meta_description=meta))
+        await session.flush()
+    for native_id, state in (("wp_post_id", wordpress), ("shopify_article_id", shopify)):
+        if not state:
+            continue
+        site = WorkspaceIntegration(workspace_id=workspace.id, is_active=True)
+        session.add(site)
+        await session.flush()
+        session.add(
+            ContentPublishingResult(
+                content_id=article.id,
+                site_id=site.id,
+                status="published" if state is True else state,
+                **{native_id: 1},
+            )
+        )
         await session.flush()
     return article
 
@@ -195,6 +219,8 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
         ({"body": "Read [this part](./guide.html#part)."}, True),
         ({"body": "A [page](Guide.HTML?from=article) of ours."}, True),
         ({"body": "The [setup notes](docs/setup.md)."}, True),
+        ({"body": "The [guide](guide.en.html) in English."}, True),
+        ({"body": None, "html": '<a href="release.v2.html">The release</a>'}, True),
         ({"body": None, "html": '<a href="pricing">Pricing</a>'}, True),
         ({"body": None, "html": "<a href='plans/pro'>Pro</a>"}, True),
         # An attribute without quotes, relative or from the root.
@@ -214,6 +240,8 @@ async def test_an_article_linking_to_none_of_the_workspaces_sites_is_counted(ses
         ({"body": "From [another site](www.other.com/page)."}, False),
         ({"body": "From [another site](other.com/x), or [this one](other.com)."}, False),
         ({"body": "Write to [them](hi@other.com)."}, False),
+        ({"body": "Write to [support](support+blog@other.com)."}, False),
+        ({"body": "Write to [her](first_last@other.com)."}, False),
         # Round brackets that open no link, and an image beside the article.
         ({"body": "Plain text (pricing) and [square] (pricing)."}, False),
         ({"body": "![Hero](hero.jpg) and text."}, False),
@@ -245,11 +273,20 @@ async def test_an_article_is_read_as_its_site_was_sent_it(session):
     await _article(session, user, workspace, body="No link.", html=plain, **both)
     # On WordPress alone, as with no site recorded: Markdown first.
     await _article(session, user, workspace, body="No link.", html=linked, wordpress=True)
+    # A post deleted on its site is live there no more, though the article keeps its id: with
+    # the Shopify one gone, the HTML body's link is on no site.
+    gone = {"shopify": "deleted", "wordpress": True}
+    await _article(session, user, workspace, body="No link.", html=linked, **gone)
+    await _article(session, user, workspace, body="No link.", html=linked, shopify="deleted")
+    # And with the WordPress one gone, Shopify's HTML body is the article.
+    await _article(
+        session, user, workspace, body="No link.", html=linked, shopify=True, wordpress="trashed"
+    )
 
     health = await ContentService(session).content_health(workspace.id)
 
-    assert health["published"] == 7
-    assert health["no_internal_links"] == 3
+    assert health["published"] == 10
+    assert health["no_internal_links"] == 5
 
 
 @pytest.mark.asyncio
