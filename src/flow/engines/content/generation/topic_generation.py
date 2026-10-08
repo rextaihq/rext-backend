@@ -80,7 +80,21 @@ KEYWORD_TOO_LONG_MESSAGE = (
 _FILLER_EXAMPLES = '"Essential Tips Here", "Read This Now", "All You Need", "Learn More Today"'
 
 
-def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
+class _ProviderDown(Exception):
+    """The title model's provider could not serve the call. The step ends as any failed title
+    step does, with the same message; this says whose failure it was, for the counts."""
+
+
+def _topics_failed(
+    state: REXT, message: str = TOPICS_FAILED_MESSAGE, *, reason: Optional[str] = None
+) -> Dict[str, Any]:
+    """End the title step without titles: the message for the person, and the failed event,
+    said here because only the step knows why (the run's end, topics_failed, says no more).
+    A keyword too long for any title is the person's to change; a provider that could not
+    serve the title model is the provider's; anything else is ours."""
+    from src.services.generation_events import INTERNAL, TITLES, announce_failed
+
+    announce_failed(state, stage=TITLES, reason=reason or INTERNAL)
     # The keyphrase is cleared, not pinned: `content` deep-merges, and a pinned
     # phrase outranks the keyword chosen next (resolve_focus_keyword), so a
     # shorter keyword picked after this message would still fail on it. None
@@ -141,13 +155,7 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("topics_failed stream emit failed: %s", exc)
 
-    from src.services.generation_events import INTERNAL, REFUSED, TITLES, announce_failed
-
-    # A keyword too long for any title is the person's to change; no titles from the model
-    # is ours.
-    announce_failed(
-        state, stage=TITLES, reason=REFUSED if message == KEYWORD_TOO_LONG_MESSAGE else INTERNAL
-    )
+    # The failed event was said by the step that ended without titles (_topics_failed).
     return {}
 
 
@@ -532,9 +540,13 @@ async def _generate_and_validate_topics(
 
         return results
 
-    except Exception:
+    except Exception as error:
         logger.exception("Topic generation failed for query=%r.", query)
+        from src.flow.model.provider_outage import provider_outage
 
+        outage = provider_outage(error)
+        if outage is not None and outage.kind != "step_failed":
+            raise _ProviderDown from error
         return None
 
 
@@ -774,14 +786,14 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
             normalized_result["error"],
         )
 
-        return _topics_failed()
+        return _topics_failed(state)
 
     query = _topic_query(state)
 
     if not query:
         logger.warning("No query found")
 
-        return _topics_failed()
+        return _topics_failed(state)
 
     # -- Resolve the EXACT user-entered focus keyphrase -----------------
     #
@@ -798,7 +810,9 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
             len(keyphrase),
             TITLE_MAX_CHARS_CEILING,
         )
-        return _topics_failed(KEYWORD_TOO_LONG_MESSAGE)
+        from src.services.generation_events import REFUSED
+
+        return _topics_failed(state, KEYWORD_TOO_LONG_MESSAGE, reason=REFUSED)
 
     # -- Resolve intent and content type -------------------------------
     serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
@@ -853,16 +867,20 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
             )
         )
 
-    results = await _generate_and_validate_topics(
-        model=model,
-        messages=messages,
-        query=query,
-        keyphrase=keyphrase,
-        regenerating=regenerating,
-        # A title left short by its filler word may take ": A Guide" only where the article
-        # is a guide or an explanation.
-        guide_endings=takes_a_guide_ending(selected_content_type, selected_intent),
-    )
+    provider_down = False
+    try:
+        results = await _generate_and_validate_topics(
+            model=model,
+            messages=messages,
+            query=query,
+            keyphrase=keyphrase,
+            regenerating=regenerating,
+            # A title left short by its filler word may take ": A Guide" only where the
+            # article is a guide or an explanation.
+            guide_endings=takes_a_guide_ending(selected_content_type, selected_intent),
+        )
+    except _ProviderDown:
+        results, provider_down = None, True
 
     if results is None:
         if regenerating:
@@ -874,7 +892,9 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
 
         logger.error("Unable to generate a valid topic set for query=%r.", query)
 
-        return _topics_failed()
+        from src.services.generation_events import PROVIDER
+
+        return _topics_failed(state, reason=PROVIDER if provider_down else None)
 
     topics, recommended_topic, recommendation_reason = _extract_topics(results)
 
