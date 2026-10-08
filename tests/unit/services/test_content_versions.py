@@ -30,6 +30,7 @@ from src.services.content_version_service import (
     SITTING,
     ContentVersionService,
     count_words,
+    record_published,
     text_of,
 )
 from tests.conftest import TEST_DATABASE_URL
@@ -358,6 +359,36 @@ async def test_a_publish_is_a_version_of_its_own_once(session):
         "edit",
         "publish",
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_scheduled_publish_keeps_the_text_as_it_went_out_with_no_maker(session):
+    user, _, article = await _setup(session)
+    await _save(session, article, user, body_markdown="Edited before the schedule ran.")
+
+    # The scheduler has published it: no request, so nobody is the version's maker.
+    await record_published(session, article)
+    await record_published(session, article)  # the same text again: one version
+
+    newest, *older = await _versions(session, article)
+    assert (newest["source"], newest["created_by"]) == ("publish", None)
+    assert [v["source"] for v in older] == ["edit", "generation"]
+
+
+@pytest.mark.asyncio
+async def test_a_version_that_cannot_be_kept_does_not_stop_the_publish(session, monkeypatch):
+    user, _, article = await _setup(session)
+    article.status = "published"
+    monkeypatch.setattr(
+        ContentVersionService, "record", AsyncMock(side_effect=RuntimeError("no room"))
+    )
+
+    await record_published(session, article)
+
+    # The caller's own work is still there to be saved.
+    await session.flush()
+    assert (await session.get(Content, article.id)).status == "published"
+    assert await _versions(session, article) == []
 
 
 @pytest.mark.asyncio

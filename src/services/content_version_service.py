@@ -20,6 +20,7 @@ from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_version import ContentVersion, ContentVersionSource
 from src.api.models.user_models.users import Users
+from src.utils.logger import logger
 
 KEPT = 20
 SITTING = timedelta(minutes=5)
@@ -199,6 +200,27 @@ class ContentVersionService:
                 resource_type="Content version", resource_id=str(version_id)
             )
         return row[0], row[1]
+
+
+async def record_published(
+    db: AsyncSession, content: Content, user_id: Optional[UUID] = None
+) -> None:
+    """Keep the text as it went out to a site, for a publish that has no request behind it
+    (the scheduler's): nobody is its maker unless one is named.
+
+    For a caller whose own work must not fail with it: the version is written inside a
+    savepoint, and a failure is logged and leaves the caller's transaction as it was.
+    """
+    try:
+        async with db.begin_nested():
+            await ContentVersionService(db).record(
+                content, text_of(content), user_id, ContentVersionSource.PUBLISH
+            )
+    except Exception:
+        logger.exception(
+            "The published text could not be kept as a version",
+            extra={"content_id": str(content.id)},
+        )
 
 
 def _aware(moment: datetime) -> datetime:

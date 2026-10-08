@@ -64,6 +64,7 @@ from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.config.cleanup_config import cleanup_config
+from src.services.content_version_service import record_published
 from src.services.data_cleanup_service import DataCleanupService
 from src.services.digest_service import run_digest_task
 from src.services.email_helpers import send_content_publish_failed_email
@@ -368,6 +369,9 @@ async def run_scheduled_publish_task() -> None:
                     content.wordpress_url = rec.external_url
                     content.wordpress_published_at = datetime.now(timezone.utc)
                     content.status = "published"
+                    # The text as it went out is a version of its own, as a publish made
+                    # at once records it (ContentService.publish_to_sites).
+                    await record_published(db, content)
                     published_notifications.append(
                         {**item["notification_ctx"], "url": rec.external_url}
                     )
