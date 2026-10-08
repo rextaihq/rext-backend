@@ -91,6 +91,22 @@ def offered_content_types(intent_types: list[str]) -> list[str]:
     return [*intent_types, *(t for t in ARTICLE_TYPES_FOR_ANY_INTENT if t not in intent_types)]
 
 
+def intent_of_choice(chosen: str, intent: str) -> str:
+    """The intent the rest of the run is written for, once the customer has chosen a type.
+
+    A type of the keyword's own intent leaves it. A type of another intent (an article for a
+    keyword read as navigational) is the customer saying what the page is, and that type's
+    intent takes over: left at "navigational", the titles are asked to name a destination or
+    a brand for what is to be a blog. A choice no intent lists (free text) leaves it."""
+    intent = (intent or "").strip().lower()
+    chosen = (chosen or "").strip().lower()
+    if chosen in INTENT_TO_CONTENT_TYPES.get(intent, []):
+        return intent
+    return next(
+        (name for name, types in INTENT_TO_CONTENT_TYPES.items() if chosen in types), intent
+    )
+
+
 def recommended_among(intent_types: list[str], serp_evidence: dict | None) -> list[str]:
     """The types the recommendation is made among: the intent's own, and an article type the
     search results themselves lead with. A keyword read as navigational whose results are
@@ -186,4 +202,20 @@ def content_type(state: REXT) -> REXT:
     content_type_selected = final_selection or "article"
     logger.info(f"Content type selected: {content_type_selected}")
 
-    return {"content": {"content_type": content_type_selected}}
+    update: dict = {"content": {"content_type": content_type_selected}}
+    intent = intent_of_choice(content_type_selected, search_intent)
+    if intent != search_intent.strip().lower():
+        # Written into the run as the keyword step writes an intent the customer picked
+        # there: the titles and the outline read it from here.
+        logger.info(
+            "Content type %s is not one of %s intent: the run goes on as %s",
+            content_type_selected,
+            search_intent,
+            intent,
+        )
+        seo_result = state.get("seo_result") or {}
+        update["seo_result"] = {
+            "intent_type": intent,
+            "serp_backlinks": {**(seo_result.get("serp_backlinks") or {}), "main_intent": intent},
+        }
+    return update
