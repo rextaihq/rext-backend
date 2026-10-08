@@ -216,6 +216,11 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
             )
         # Add other types as needed
 
+        # The email service only flushes its log row. Without this the row is rolled
+        # back when the session closes: no record that the buyer was written to, and
+        # nothing to retry a failed send from.
+        await email_db.commit()
+
 
 @router.post("/lemonsqueezy", status_code=status.HTTP_200_OK)
 # NOTE: Not migrated — acts as a webhook receiver (LemonSqueezy)
