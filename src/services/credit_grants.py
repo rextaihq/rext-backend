@@ -151,20 +151,34 @@ def change_plan_credits(
     if opens_a_period:
         left, period_before = old_monthly, None
     earlier = (subscription.subscription_metadata or {}).get(_PLAN_CHANGE) or {}
-    if earlier.get("period") and earlier.get("period") in (period, key(period_before)):
+    same_period = bool(earlier.get("period")) and earlier.get("period") in (
+        period,
+        key(period_before),
+    )
+    if same_period:
         used = max(0, earlier["used"] + earlier["left"] - left)
     elif old_monthly is not None:
         used = max(0, old_monthly - left)
     else:
         used = 0
     subscription.current_credits = max(0, new_monthly - used)
+    record = {"period": period, "used": used, "left": subscription.current_credits}
+    if old_plan_id is not None and not opens_a_period:
+        swallowed = _carry_admin_adjustment(
+            subscription,
+            old_plan_id,
+            ends_found,
+            used,
+            new_monthly,
+            int(earlier.get("swallowed") or 0) if same_period else 0,
+        )
+        if swallowed:
+            record["swallowed"] = swallowed
     # Reassigned, not mutated in place: SQLAlchemy doesn't track a plain JSONB's insides.
     subscription.subscription_metadata = {
         **(subscription.subscription_metadata or {}),
-        _PLAN_CHANGE: {"period": period, "used": used, "left": subscription.current_credits},
+        _PLAN_CHANGE: record,
     }
-    if old_plan_id is not None and not opens_a_period:
-        _carry_admin_adjustment(subscription, old_plan_id, ends_found, used, new_monthly)
 
 
 def split_cost(
@@ -557,9 +571,11 @@ def _carry_admin_adjustment(
     period_ends: Sequence[Optional[str]],
     used: int,
     new_monthly: int,
-) -> None:
+    swallowed_before: int = 0,
+) -> int:
     """Move the period's admin adjustment from the old plan's key to the plan the
-    subscription is on now (change_plan_credits).
+    subscription is on now (change_plan_credits). Returns the part of it that no balance
+    shows any more, for the plan change's own record.
 
     ``period_ends`` are the ends the period was found under, as ISO strings: Lemon Squeezy's
     renews_at and the stored reset date can differ by the time a change arrives. A row that
@@ -568,25 +584,31 @@ def _carry_admin_adjustment(
     What moves is what the admin's change still adds to or takes from the balance on the new
     plan: the balance as it is now, against what it would be had the admin changed nothing.
     ``used`` is what the change counted as used, the admin's change included, so the credits
-    really used are ``used`` plus the recorded change. On most changes that is the recorded
-    change whole. On a downgrade whose balance stops at 0 it is less: a deduction the smaller
-    plan has swallowed is no longer in the balance, and carried whole it would make credits
-    that were used read as unused.
+    really used are ``used`` plus the admin's change. On most changes all of it moves. On a
+    downgrade whose balance stops at 0 less does: a deduction the smaller plan has swallowed
+    is no longer in the balance, and carried whole it would make credits that were used read
+    as unused.
+
+    The swallowed part is not forgotten: ``used`` keeps counting it through the period's later
+    changes, so it is handed back here (``swallowed_before``, from the earlier change's
+    record) and put with what is recorded now. Back on a larger plan the whole deduction
+    stands again, and "credits used" still reads what was really used.
     """
     meta = {**(subscription.subscription_metadata or {})}
-    recorded = meta.get(ADMIN_CREDIT_ADJUSTMENT)
-    if not recorded or not recorded.get("delta"):
-        return
+    recorded = meta.get(ADMIN_CREDIT_ADJUSTMENT) or {}
     old_keys = {f"{end}|{old_plan_id}" if end else None for end in period_ends}
-    if recorded.get("period") not in old_keys:
-        return
-    without = max(0, new_monthly - max(0, used + int(recorded["delta"])))
+    found = bool(recorded.get("delta")) and recorded.get("period") in old_keys
+    whole = (int(recorded["delta"]) if found else 0) + swallowed_before
+    if not whole:
+        return 0
+    without = max(0, new_monthly - max(0, used + whole))
     carried = (subscription.current_credits or 0) - without
     if carried:
         meta[ADMIN_CREDIT_ADJUSTMENT] = {"period": _period_key(subscription), "delta": carried}
     else:
-        meta.pop(ADMIN_CREDIT_ADJUSTMENT)
+        meta.pop(ADMIN_CREDIT_ADJUSTMENT, None)
     subscription.subscription_metadata = meta
+    return whole - carried
 
 
 async def active_promotion(db: AsyncSession, now: Optional[datetime] = None) -> Optional[Promotion]:
