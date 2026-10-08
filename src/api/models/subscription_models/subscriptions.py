@@ -104,6 +104,10 @@ class UserSubscription(Base, SerializableMixin):
 
     # Usage tracking (reset monthly)
     usage_reset_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # Read by nothing since the API-call quota went. Still mapped, so a new row gets 0 until the
+    # column is dropped: the release before this one answers /subscriptions/current with it,
+    # and has to keep working if it is rolled back to.
+    current_api_calls = Column(Integer, default=0)
 
     # Credit tracking (new credit-based billing)
     current_credits = Column(Integer, default=0, server_default="0", nullable=False)

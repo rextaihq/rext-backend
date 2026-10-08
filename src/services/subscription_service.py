@@ -1494,7 +1494,9 @@ class SubscriptionService:
 
         # The version is part of the key: raise it when the plan's columns change, so a
         # deploy never rebuilds a plan from a cached row that has columns it no longer has.
-        cache_key = f"subscription:plan:v3:{plan_id}:active={active_only}"
+        # v4: the cached plan no longer carries the API-call quota (v3 was the plan fields
+        # the admin's plan change added).
+        cache_key = f"subscription:plan:v4:{plan_id}:active={active_only}"
 
         if cache.is_enabled:
             cached_plan = await cache.get(cache_key)
