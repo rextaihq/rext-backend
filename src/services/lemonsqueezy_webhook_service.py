@@ -102,7 +102,10 @@ class LemonSqueezyWebhookService:
         """
         # Step 1: Verify signature
         is_valid = verify_webhook_signature(
-            payload=payload, signature=signature, secret=self.webhook_secret
+            payload=payload,
+            signature=signature,
+            secret=self.webhook_secret,
+            previous=payment_settings.lemonsqueezy_webhook_secret_previous,
         )
 
         if not is_valid:

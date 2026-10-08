@@ -272,7 +272,10 @@ async def handle_lemonsqueezy_webhook(
     from src.config.payment_config import payment_settings
 
     is_valid = verify_webhook_signature(
-        payload=body, signature=signature, secret=payment_settings.lemonsqueezy_webhook_secret
+        payload=body,
+        signature=signature,
+        secret=payment_settings.lemonsqueezy_webhook_secret,
+        previous=payment_settings.lemonsqueezy_webhook_secret_previous,
     )
 
     if not is_valid:

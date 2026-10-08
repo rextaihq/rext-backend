@@ -40,6 +40,11 @@ class PaymentSettings(HidesSecrets, BaseSettings):
     lemonsqueezy_api_key: Optional[str] = os.getenv("LEMONSQUEEZY_API_KEY")
     lemonsqueezy_store_id: Optional[str] = os.getenv("LEMONSQUEEZY_STORE_ID")
     lemonsqueezy_webhook_secret: Optional[str] = os.getenv("LEMONSQUEEZY_WEBHOOK_SECRET")
+    # Set only while the secret above is being changed: the one it replaces, still accepted
+    # until the provider signs with the new one (src/utils/lemonsqueezy_webhook.py).
+    lemonsqueezy_webhook_secret_previous: Optional[str] = os.getenv(
+        "LEMONSQUEEZY_WEBHOOK_SECRET_PREVIOUS"
+    )
 
     # Webhook Security
     # Disabled by default: LemonSqueezy does not publish an official webhook
@@ -68,6 +73,7 @@ class PaymentSettings(HidesSecrets, BaseSettings):
         "lemonsqueezy_api_key",
         "lemonsqueezy_store_id",
         "lemonsqueezy_webhook_secret",
+        "lemonsqueezy_webhook_secret_previous",
         mode="before",
     )
     @classmethod
