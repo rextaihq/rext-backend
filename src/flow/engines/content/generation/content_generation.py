@@ -48,6 +48,7 @@ from src.flow.engines.content.generation.repair_content import enforce_subheadin
 from src.flow.engines.content.generation.requirements_spec import (
     brand_kept_out_of_cta,
     brand_named_in,
+    brand_without_address,
     build_requirements_spec,
     excluded_brand_of,
     resolve_outline_cta,
@@ -878,6 +879,14 @@ async def generate_content(state: REXT) -> dict:
                 if cta_brand
                 else ""
             )
+            no_address = brand_without_address(outline)
+            if not cta_brand and no_address:
+                # A workspace made without a website: there is no address for the call to
+                # action to go to, and one made up would send readers nowhere.
+                cta_link_rule = (
+                    f"{no_address} has no website: the call to action has no address to go to. "
+                    f"{_CTA_WITHOUT_A_LINK}"
+                )
             cta_str = (
                 f"\n========================\n"
                 f"CALL-TO-ACTION — REQUIRED\n"
