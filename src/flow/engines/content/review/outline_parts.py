@@ -26,6 +26,7 @@ from typing import Any
 
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
+    humanize_key,
     item_heading_field,
     resolve_expected_headings,
     resolve_outline_structure,
@@ -132,6 +133,10 @@ def _ranked_entries(data: Any) -> list[dict] | None:
             for value in group.values()
             if isinstance(value, list) and value and all(isinstance(i, dict) for i in value)
         ]
+        if not lists:
+            # A group with no entries (the schema allows one) has nothing to list; the
+            # others keep theirs.
+            continue
         if len(lists) != 1:
             return None
         group_name = next(
@@ -160,10 +165,19 @@ def _ranked_entries(data: Any) -> list[dict] | None:
     return items or None
 
 
+def _switched_on(data: Any) -> list[dict]:
+    """A block of switches (a login guide's `modern_auth`: passkeys, single sign-on) as one
+    item per switch that is on: the reader has no item for a flag, and the block is still a
+    section the writer is given."""
+    if not isinstance(data, dict):
+        return []
+    return [{"label": humanize_key(key), "points": []} for key, on in data.items() if on is True]
+
+
 def _items(block: OutlineBlock) -> list[dict]:
     """What a part covers, to read: at most MAX_ITEMS items of MAX_POINTS short points."""
     data = _without_facts(block.data)
-    raw = _ranked_entries(data) or block_items(data)
+    raw = _ranked_entries(data) or block_items(data) or _switched_on(data)
     items = []
     for item in raw:
         label = _short(item.get("label"), MAX_LABEL_LENGTH)

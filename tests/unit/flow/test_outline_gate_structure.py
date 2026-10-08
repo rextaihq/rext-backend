@@ -247,6 +247,42 @@ def test_the_picks_are_the_products_the_article_reviews():
     ]
 
 
+def test_a_group_with_no_picks_keeps_the_others_listed():
+    outline = _roundup_outline()
+    outline["best_picks"]["groups"].insert(
+        0, {"group_name": "Best premium", "description": "None made the cut.", "products": []}
+    )
+    picks = _part(gate_structure(outline, "product-roundup"), "best_picks")
+
+    assert [item["label"] for item in picks["items"]] == [
+        "Quick Kettle",
+        "Small Kettle",
+        "Fold Kettle",
+    ]
+
+
+def test_a_block_of_switches_lists_the_ones_that_are_on():
+    outline = _blog_outline()
+    # A block the schema doesn't name is kept as a part, as the writer keeps it.
+    outline["modern_auth"] = {"passkeys_enabled": True, "social_login": True, "magic_link": False}
+    part = _part(gate_structure(outline, "blog"), "modern_auth")
+
+    assert part["items"] == [
+        {"label": "Passkeys Enabled", "points": []},
+        {"label": "Social Login", "points": []},
+    ]
+    outline["modern_auth"] = {"passkeys_enabled": False}
+    assert "modern_auth" not in {part["key"] for part in gate_structure(outline, "blog")}
+
+
+def test_a_page_about_its_values_keeps_them():
+    outline = _blog_outline()
+    outline["values"] = {"values": [{"name": "Honest tests", "description": "No paid picks."}]}
+    part = _part(gate_structure(outline, "blog"), "values")
+
+    assert part["list"] == "values.values" or part["items"][0]["label"] == "Honest tests"
+
+
 def test_best_tools_lists_its_ranked_tools():
     rankings = _part(gate_structure(_tools_outline(), "best-tools"), "rankings")
 
