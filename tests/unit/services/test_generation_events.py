@@ -74,14 +74,53 @@ async def _run(waiting):
         ("united kingdom", "GB"),
         ("us", "US"),
         ("GB", "GB"),
+        # A supported market the search provider's list of codes does not have.
+        ("Andorra", "AD"),
+        ("Democratic Republic of the Congo", "CD"),
+        ("São Tomé and Príncipe", "ST"),
         ("Global", None),
         ("Atlantis", None),
+        # Two letters that are no market of ours are not passed on.
+        ("zz", None),
         ("", None),
         (None, None),
     ],
 )
 def test_a_runs_country_is_sent_as_its_two_letter_code(country, code):
     assert events.country_code(country) == code
+
+
+def test_every_supported_market_has_a_code_of_its_own():
+    """Review round 1: 74 supported countries had none, and their runs were sent without one."""
+    import typing
+
+    from src.flow.states.countries import SUPPORTED_COUNTRIES
+
+    markets = [name for name in typing.get_args(SUPPORTED_COUNTRIES) if name != "Global"]
+    codes = {name: events.country_code(name) for name in markets}
+
+    assert [name for name, code in codes.items() if not code] == []
+    assert all(len(code) == 2 and code.isalpha() and code.isupper() for code in codes.values())
+    assert len(set(codes.values())) == len(markets)
+
+
+@pytest.mark.parametrize(
+    ("answered", "sent_as"),
+    [
+        ("blog", "blog"),
+        ("How-To Guide", "how-to-guide"),
+        ("landing_page", "landing-page"),
+        # Not a type the product offers: whatever a changed client sent stays here.
+        ("customer-x-roadmap", None),
+        ("sk-secret", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_only_an_offered_content_type_is_ever_sent(answered, sent_as):
+    """Review round 1: the content-type step takes its answer as sent, and a short word is
+    what the sender lets through."""
+    assert events.offered_content_type(answered) == sent_as
 
 
 async def test_a_started_run_says_where_it_came_from_and_its_country(sent):
@@ -141,6 +180,22 @@ async def test_a_saved_article_says_its_type_words_seconds_and_repairs(sent):
     # The same save again (it is idempotent by thread) is the same event at the same time.
     assert taken[0]["occurred_at"] == saved_at
     assert taken[0]["key"] == f"{THREAD}:{BEGAN.isoformat()}"
+
+
+async def test_a_thread_started_again_is_counted_at_its_own_save_not_the_first_runs(sent):
+    """Review round 1: the second run saves into the row the first made, whose time is before
+    this run began."""
+    taken, waiting = sent
+    first_runs_row = BEGAN - timedelta(hours=3)
+
+    events.announce_completed(
+        _state(), thread_id=THREAD, content_type="blog", word_count=1500, saved_at=first_runs_row
+    )
+    await _run(waiting)
+
+    saved = taken[0]["occurred_at"]
+    assert datetime.now(timezone.utc) - saved < timedelta(seconds=5)
+    assert taken[0]["properties"]["seconds"] == round((saved - BEGAN).total_seconds())
 
 
 async def test_an_article_with_no_repairs_and_no_start_mark_still_counts(sent):

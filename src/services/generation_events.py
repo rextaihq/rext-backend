@@ -52,16 +52,56 @@ INTERNAL = "internal"
 # Under the run's `content`: when the run began, set by the graph's first node.
 RUN_STARTED_AT = "run_started_at"
 
-_CODE_OF_COUNTRY = {name.lower(): code.upper() for code, name in ISO_TO_COUNTRY.items()}
+# The supported markets ISO_TO_COUNTRY has no code for (it lists the ones the search provider
+# is asked for by code): their ISO 3166-1 codes, so every market a run can have is counted.
+_MORE_CODES = {
+    "American Samoa": "AS", "Andorra": "AD", "Angola": "AO", "Antigua and Barbuda": "AG",
+    "Armenia": "AM", "Aruba": "AW", "Bahamas": "BS", "Barbados": "BB", "Benin": "BJ",
+    "Bermuda": "BM", "Bhutan": "BT", "Burkina Faso": "BF", "Burundi": "BI", "Cape Verde": "CV",
+    "Central African Republic": "CF", "Chad": "TD", "Comoros": "KM",
+    "Republic of the Congo": "CG", "Democratic Republic of the Congo": "CD",
+    "Cook Islands": "CK", "Ivory Coast": "CI", "Cuba": "CU", "Curaçao": "CW", "Djibouti": "DJ",
+    "Dominica": "DM", "Equatorial Guinea": "GQ", "Eritrea": "ER", "Eswatini": "SZ", "Fiji": "FJ",
+    "Gabon": "GA", "Gambia": "GM", "Gibraltar": "GI", "Greenland": "GL", "Grenada": "GD",
+    "Guadeloupe": "GP", "Guam": "GU", "Guinea": "GN", "Guinea-Bissau": "GW", "Kiribati": "KI",
+    "Lesotho": "LS", "Liberia": "LR", "Liechtenstein": "LI", "Marshall Islands": "MH",
+    "Micronesia": "FM", "Monaco": "MC", "Montserrat": "MS", "Nauru": "NR",
+    "New Caledonia": "NC", "Niue": "NU", "North Macedonia": "MK", "Palau": "PW",
+    "Pitcairn Islands": "PN", "Réunion": "RE", "Saint Barthélemy": "BL", "Saint Helena": "SH",
+    "Saint Kitts and Nevis": "KN", "Saint Lucia": "LC", "Saint Martin": "MF",
+    "Saint Pierre and Miquelon": "PM", "Saint Vincent and the Grenadines": "VC", "Samoa": "WS",
+    "San Marino": "SM", "São Tomé and Príncipe": "ST", "Seychelles": "SC", "Sint Maarten": "SX",
+    "Solomon Islands": "SB", "Suriname": "SR", "Timor-Leste": "TL", "Tokelau": "TK",
+    "Tonga": "TO", "Turks and Caicos Islands": "TC", "Tuvalu": "TV", "Vanuatu": "VU",
+    "Wallis and Futuna": "WF",
+}  # fmt: skip
+_CODE_OF_COUNTRY = {
+    **{name.lower(): code for name, code in _MORE_CODES.items()},
+    **{name.lower(): code.upper() for code, name in ISO_TO_COUNTRY.items()},
+}
+_CODES = set(_CODE_OF_COUNTRY.values())
 
 
 def country_code(country: Any) -> Optional[str]:
     """The two-letter code of a run's country, which arrives as a code or as its name.
-    None for "Global" and for a name the list doesn't have."""
+    None for "Global" and for anything that is not a supported market: a code is sent only
+    when it is one of the list's own, never what a client typed."""
     text = str(country or "").strip()
-    if len(text) == 2 and text.lower() in ISO_TO_COUNTRY:
+    if len(text) == 2 and text.upper() in _CODES:
         return text.upper()
     return _CODE_OF_COUNTRY.get(text.lower())
+
+
+def offered_content_type(content_type: Any) -> Optional[str]:
+    """The article's type as its canonical key, or None when it is not one the product offers.
+
+    The content-type step takes its answer as sent, so a changed client can put any short
+    text there, and a short word is what the sender lets through: only the keys the outline
+    models are registered under ever leave as ``content_type``."""
+    from src.flow.model.structure.outlines import CONTENT_TYPE_TO_MODEL, normalize_content_type
+
+    key = normalize_content_type(str(content_type or "")) if content_type else ""
+    return key if key in CONTENT_TYPE_TO_MODEL else None
 
 
 def run_start_mark() -> dict:
@@ -168,17 +208,22 @@ def announce_completed(
 ) -> None:
     """The article is saved. ``saved_at`` is the saved row's own time when it has one: a
     save that runs twice (it is idempotent by thread) is then the same event."""
+    started = run_started_at(state)
+    if saved_at is not None and saved_at.tzinfo is None:
+        saved_at = saved_at.replace(tzinfo=timezone.utc)
+    if saved_at is not None and started is not None and saved_at < started:
+        # A thread started again saves into the row it already has: that row's time is the
+        # earlier run's. This run's article was saved now.
+        saved_at = None
     ended = saved_at or datetime.now(timezone.utc)
-    if ended.tzinfo is None:
-        ended = ended.replace(tzinfo=timezone.utc)
     review = ((state or {}).get("content") or {}).get("review") or {}
     repairs = review.get("repair_attempts")
     _announce(
         COMPLETED,
         {
-            "content_type": content_type,
+            "content_type": offered_content_type(content_type),
             "word_count": int(word_count),
-            "seconds": _seconds(run_started_at(state), ended),
+            "seconds": _seconds(started, ended),
             "repairs": repairs if isinstance(repairs, int) and not isinstance(repairs, bool) else 0,
         },
         state,
