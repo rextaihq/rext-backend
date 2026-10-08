@@ -22,6 +22,8 @@ from src.flow.engines.content.generation.section_rewrite import (
     _plain_text,
     accept,
     brand_lines,
+    call_to_action_lines,
+    hold_the_range,
     join_article,
     judge,
     keyphrase_plan,
@@ -222,10 +224,114 @@ def test_a_part_kept_as_drafted_says_why():
     )
     assert judge(part, f"## Fill the Calendar\n\n{_text(70)}", 150)[1].startswith("too short")
     assert judge(part, f"## One\n\n{_text(70)}\n\n## Two\n\n{_text(70)}", 150)[1] == (
-        "a heading was added"
+        "its headings changed"
     )
     taken, why = judge(part, f"## Fill the Calendar\n\n{_text(148)}", 150)
     assert taken is not None and why == ""
+
+
+def test_a_sections_sub_headings_are_the_drafted_ones_whatever_came_back():
+    """Review round 1: only a section's own heading was put back. Under it a sub-heading could
+    be reworded, dropped, added or moved, and nothing after the rewrite compares them with the
+    outline the person approved."""
+    heading = "## Plan the Month"
+    part = Part(
+        SECTION,
+        heading,
+        f"{heading}\n\n{_text(60)}\n\n### Pick the Themes\n\n{_text(50)}\n\n"
+        f"### Set the Dates\n\n{_text(50)}",
+    )
+
+    def back(*sub_headings, own=heading):
+        blocks = [f"{own}\n\n{_text(58)}"] if own else [_text(58)]
+        return "\n\n".join(blocks + [f"{sub}\n\n{_text(48)}" for sub in sub_headings])
+
+    reworded = accept(part, back("### Choosing Your Themes", "### When to Publish"), 168)
+    own_left_off = accept(part, back("### Pick the Themes", "### Set the Dates", own=""), 168)
+
+    assert [line for line in reworded.splitlines() if line.startswith("#")] == [
+        heading,
+        "### Pick the Themes",
+        "### Set the Dates",
+    ]
+    assert own_left_off.startswith(f"{heading}\n\n") and "### Set the Dates" in own_left_off
+    for changed, why in (
+        (back("### Pick the Themes"), "one dropped"),
+        (back("### Pick the Themes", "### Set the Dates", "### One More"), "one added"),
+        (back("### Pick the Themes", "## Set the Dates"), "one raised to a section"),
+    ):
+        assert judge(part, changed, 168)[1] == "its headings changed", why
+    # The parts with no heading of their own take none, of any level.
+    introduction = Part(INTRODUCTION, "", _text(70))
+    assert accept(introduction, f"{_text(30)}\n\n### A Detail\n\n{_text(36)}", 70) is None
+
+
+def test_an_image_stays_an_image_as_often_as_it_stood():
+    """Review round 1: an image turned into a link still points where it did, and one of two
+    alike is gone without its address being; the links' own check does not read images."""
+    heading = "## Fill the Calendar"
+    image = "![A calendar](https://img.test/calendar.png)"
+    part = Part(SECTION, heading, f"{heading}\n\n{image}\n\n{_text(100)}\n\n{image}\n\n{_text(40)}")
+
+    as_a_link = f"{heading}\n\n[A calendar](https://img.test/calendar.png)\n\n{_text(98)}\n\n{image}\n\n{_text(40)}"
+    one_gone = f"{heading}\n\n{image}\n\n{_text(138)}"
+    both_there = f"{heading}\n\n{image}\n\n{_text(96)}\n\n{image}\n\n{_text(42)}"
+
+    assert judge(part, as_a_link, 150)[1] == "a link or an image was lost"
+    assert judge(part, one_gone, 150)[1] == "a link or an image was lost"
+    assert accept(part, both_there, 150) is not None
+
+
+def test_a_list_or_a_table_keeps_its_items():
+    """Review round 1: the message asks that lists stay lists with their items, and nothing
+    held it: a step dropped from a how-to, or a table's row, took its facts with it."""
+    heading = "## Set It Up"
+    steps = "1. Open the planner.\n2. Pick a month.\n3. Add each post."
+    bullets = "- Themes\n- Dates\n- Owners"
+    table = "| Tool | Price |\n|---|---|\n| Planner | $9 |\n| Sheets | $0 |"
+    part = Part(
+        SECTION,
+        heading,
+        f"{heading}\n\n{_text(40)}\n\n{steps}\n\n{bullets}\n\n{table}\n\n{_text(40)}",
+    )
+
+    def back(steps=steps, bullets=bullets, table=table):
+        return f"{heading}\n\n{_text(38)}\n\n{steps}\n\n{bullets}\n\n{table}\n\n{_text(38)}"
+
+    reworded = back(steps="1. Start the planner.\n2. Choose your month.\n3. Put in each post.")
+    assert accept(part, reworded, words(part.text)) is not None
+    for changed, why in (
+        (back(steps="1. Open the planner.\n2. Add each post."), "a step dropped"),
+        (back(bullets="Themes, dates and owners all go in."), "a list told as prose"),
+        (back(table="| Tool | Price |\n|---|---|\n| Planner | $9 |"), "a row dropped"),
+    ):
+        assert judge(part, changed, words(part.text))[1] == "a list or a table lost items", why
+
+
+def test_the_part_that_carries_the_call_to_action_keeps_its_words():
+    """Review round 1: the brief's call-to-action line is the whole article's and goes to no
+    part, so the one part that holds it could reword it away from the call to action saved
+    with the article. That part is told, and held to it."""
+    heading = "## Start Today"
+    cta = "Start planning your garden today"
+    part = Part(
+        SECTION, heading, f"{heading}\n\n{_text(60)} [{cta}](https://site.test/start). {_text(20)}"
+    )
+
+    told = call_to_action_lines(part.text, cta)
+    kept = f"{heading}\n\n{_text(56)} Ready? [{cta}](https://site.test/start). {_text(20)}"
+    reworded = f"{heading}\n\n{_text(58)} [Begin your garden plan now](https://site.test/start). {_text(20)}"
+
+    assert f'carries the article\'s call to action, "{cta}"' in told
+    assert (
+        call_to_action_lines(_text(80), cta) == "" and call_to_action_lines(part.text, None) == ""
+    )
+    assert accept(part, kept, 88, keep=[cta]) is not None
+    assert judge(part, reworded, 88, keep=[cta])[1] == "the call to action's words changed"
+    # A part that never held it is not held to it.
+    assert (
+        accept(_section(150), f"## Fill the Calendar\n\n{_text(148)}", 150, keep=[cta]) is not None
+    )
 
 
 def test_the_introduction_and_the_opening_take_no_heading():
@@ -328,6 +434,20 @@ def test_an_article_with_the_keyphrase_too_often_is_planned_fewer_where_it_has_t
 
     assert sum(plan.values()) == most
     assert plan[2] < spread[2] and plan[0] <= 1
+
+
+def test_the_plan_reaches_the_count_wanted_however_the_uses_are_spread():
+    """Review round 1: each part was moved by one at most, so an article with all its excess in
+    one section stayed over, and one that needed more than it has parts stayed under."""
+    least, most = _range_for(_planned_article([0, 0, 0, 0, 0]))
+
+    all_in_one = _planned_article([0, 0, most + 3, 0, 0])
+    plan = keyphrase_plan(all_in_one, KEYPHRASE, "blog", 1.0)
+    assert sum(plan.values()) == most and plan[2] == most
+
+    none_at_all = _planned_article([0, 0, 0, 0, 0])
+    plan = keyphrase_plan(none_at_all, KEYPHRASE, "blog", 1.0)
+    assert sum(plan.values()) == min(least + 1, most)
 
 
 def test_a_part_is_told_plainly_when_its_uses_are_to_change():
@@ -462,6 +582,9 @@ def test_an_answer_wrapped_in_a_fence_or_sent_in_pieces_is_read_as_its_text():
     )
 
     assert _plain_text(fenced) == "## Fill the Calendar\n\nText."
+    # Review round 1: a tilde fence is a fence too; left on, the section went in as a code block.
+    tilde = SimpleNamespace(content="~~~markdown\n## Fill the Calendar\n\nText.\n~~~")
+    assert _plain_text(tilde) == "## Fill the Calendar\n\nText."
     assert _plain_text(pieces) == "One. Two."
 
 
@@ -565,6 +688,58 @@ async def test_a_part_that_comes_back_naming_the_brand_anew_is_kept_as_drafted()
     assert rewritten[index] is parts[index]
     assert not any("Acme Tools" in part.text for part in rewritten)
     assert any("Map one week" in part.text for part in rewritten)
+
+
+def _rewritten(parts, grow):
+    """Each part as a rewrite ``grow`` words longer (or shorter) than it was drafted."""
+    return [
+        Part(part.kind, part.heading, " ".join(part.text.split()[: words(part.text) + change]))
+        if change < 0
+        else Part(part.kind, part.heading, f"{part.text} {_text(change)}" if change else part.text)
+        for part, change in zip(parts, grow, strict=True)
+    ]
+
+
+def test_parts_each_a_little_long_do_not_take_the_article_out_of_its_range():
+    """Review round 1: a part may come back a fifth over what was wanted of it and an article
+    is allowed 12%, so every part 15% long was an article outside its range that no part's
+    guard saw. The parts that grew the most go back to their drafts until it is inside."""
+    parts = [_section(200, f"## Part {n}") for n in range(1, 6)]
+    target = sum(words(part.text) for part in parts)  # 1,015: inside its range as drafted
+    most = round(target * 1.12)
+
+    all_long = _rewritten(parts, [30, 34, 26, 32, 28])  # each about 15% over: 1,165 in all
+    held = hold_the_range(parts, all_long, target)
+
+    assert sum(words(part.text) for part in all_long) > most
+    assert sum(words(part.text) for part in held) <= most
+    # The largest growth went back first, and no more parts than it took.
+    assert held[1] is parts[1] and held[2] is all_long[2]
+    assert sum(1 for before, after in zip(parts, held, strict=True) if after is before) == 1
+
+    # Inside the range, every rewrite stays; and one that came out short gets back the parts
+    # that shrank the most.
+    fine = _rewritten(parts, [10, -10, 5, 0, -5])
+    assert hold_the_range(parts, fine, target) == fine
+    all_short = _rewritten(parts, [-40, -50, -30, -45, -35])
+    held = hold_the_range(parts, all_short, target)
+    assert sum(words(part.text) for part in held) >= round(target * 0.88)
+    assert held[1] is parts[1] and held[2] is all_short[2]
+
+
+async def test_the_articles_range_is_held_after_every_part_is_back():
+    parts = split_article("", "\n\n".join(f"## Part {n}\n\n{_text(200)}" for n in range(1, 6)))
+    target = sum(words(part.text) for part in parts)
+
+    def answer(messages):
+        return f"{messages['part'].text} {_text(36)}"  # every part 18% over, inside its own guard
+
+    rewritten, counts = await rewrite_parts(
+        parts, model=_Model(answer), messages_for=_messages_for, word_target=target
+    )
+
+    assert counts["words_after"] <= round(target * 1.12)
+    assert 0 < counts["kept"] < len(parts)
 
 
 async def test_a_long_article_never_has_more_than_a_few_calls_running():
