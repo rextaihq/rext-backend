@@ -32,7 +32,6 @@ def _message(response) -> str:
     """The error's text: the app's envelope puts it under "message"."""
     return response.json()["message"].lower()
 
-
 class TestResendWebhookSecurity:
     """Test Resend email webhook signature validation using Svix."""
 
