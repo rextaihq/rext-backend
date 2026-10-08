@@ -437,13 +437,14 @@ async def test_main_sections_are_known_by_their_words_in_any_script(monkeypatch,
         (topics[2], "H2"),
         (topics[3], "H2"),
     )
+    # The second topic folded under the first, the order as it was.
     kept = _named(
         (topics[0], "H2"),
-        (topics[4], "H3"),
+        (topics[1], "H3"),
         ("b", "H3"),
-        (topics[1], "H2"),
         (topics[2], "H2"),
         (topics[3], "H2"),
+        (topics[4], "H2"),
     )
 
     outline, _ = await _generate(monkeypatch, "pillar-content", [first, lost])
@@ -458,6 +459,43 @@ async def test_main_sections_are_known_by_their_words_in_any_script(monkeypatch,
         "H2",
         "H2",
     ]
+
+
+@pytest.mark.unit
+async def test_a_second_pillar_attempt_that_reorders_the_main_sections_keeps_the_first(
+    monkeypatch,
+):
+    first = _named(("Plan", "H2"), ("Write", "H2"), ("Send", "H2"), ("Measure", "H2"))
+    moved = _named(
+        ("Plan", "H2"),
+        ("a", "H3"),
+        ("b", "H3"),
+        ("Send", "H2"),
+        ("Write", "H2"),
+        ("Measure", "H2"),
+    )
+
+    outline, calls = await _generate(monkeypatch, "pillar-content", [first, moved])
+
+    assert [section["heading"] for section in outline["structure"]["sections"]] == [
+        "Plan",
+        "Write",
+        "Send",
+        "Measure",
+    ]
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+def test_a_heading_keeps_the_marks_that_make_its_words():
+    """A vowel sign makes another word: two topics never fall together, and case and
+    punctuation never keep two wordings of one apart."""
+    key = outline_module._heading_key
+    assert key({"heading": "कला"}) != key({"heading": "कल"})
+    assert key({"heading": "Email Marketing: Tips & Tricks"}) == key(
+        {"heading": "email marketing tips tricks"}
+    )
+    assert key({"heading": "  —  "}) == ""
 
 
 @pytest.mark.unit
