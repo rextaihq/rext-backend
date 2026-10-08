@@ -32,6 +32,7 @@ from src.api.cache.decorators import invalidate_cache
 from src.api.cache.redis_client import cache
 from src.api.lib.sentry_config import capture_payment_exception
 from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
@@ -540,7 +541,13 @@ class SubscriptionService:
         return checkout
 
     async def upgrade(
-        self, user_id: UUID, new_plan_id: UUID, billing_period: Optional[BillingPeriod] = None
+        self,
+        user_id: UUID,
+        new_plan_id: UUID,
+        billing_period: Optional[BillingPeriod] = None,
+        *,
+        prorate: bool = True,
+        by_admin: bool = False,
     ) -> UserSubscription:
         """
         Upgrade subscription to higher tier.
@@ -556,6 +563,12 @@ class SubscriptionService:
             user_id: User UUID
             new_plan_id: New plan UUID
             billing_period: Optional new billing period
+            prorate: Lemon Squeezy invoices the prorated difference now. False: no
+                proration, the new price from the next renewal.
+            by_admin: A super admin's change (src/services/admin_plan_changes.py),
+                which has checked what an admin may do. Lemon Squeezy must agree
+                before anything changes here, with no local-only fallback, and the
+                caller writes the audit entry (with the admin and the reason).
 
         Returns:
             Updated UserSubscription object
@@ -631,7 +644,7 @@ class SubscriptionService:
 
                     # Update subscription with payment provider
                     await self.payment_provider.update_subscription(
-                        subscription_id=provider_sub_id, price_id=new_variant_id
+                        subscription_id=provider_sub_id, price_id=new_variant_id, prorate=prorate
                     )
 
                     logger.info(
@@ -675,16 +688,38 @@ class SubscriptionService:
                         )
                     )
 
-                    if is_test_id:
+                    # An admin's change is never made here alone: Lemon Squeezy would go on
+                    # billing the old plan and its next update would undo it.
+                    if is_test_id and not by_admin:
                         logger.warning(
                             f"LemonSqueezy API call failed for test/sandbox ID '{provider_sub_id}'. Proceeding with local plan update for testing.",
                             extra={"user_id": str(user_id), "provider_sub_id": provider_sub_id},
+                        )
+                    elif by_admin:
+                        # The admin reads the status, never Lemon Squeezy's own words.
+                        status = getattr(e, "status_code", None)
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy didn't accept the change"
+                                + (f" (status {status})" if status else "")
+                                + ". Nothing was changed."
+                            ),
+                            rule_name="admin_plan_provider",
                         )
                     else:
                         raise RextValidationException(
                             message="Failed to update subscription with payment provider. Please try again.",
                             field_errors={"payment_provider": [str(e)]},
                         )
+            elif by_admin:
+                # Changed here alone, Lemon Squeezy would go on billing the old plan.
+                raise BusinessRuleViolationException(
+                    message=(
+                        f"{new_plan.display_name} has no {new_billing_period.value} price at "
+                        "Lemon Squeezy. Nothing was changed."
+                    ),
+                    rule_name="admin_plan_variant",
+                )
             else:
                 logger.warning(
                     f"No variant ID found for plan {new_plan.name} with billing period {new_billing_period.value}",
@@ -809,8 +844,10 @@ class SubscriptionService:
             },
         )
 
-        # Audit log
-        if is_downgrade:
+        # Audit log (an admin's change is audited by its caller, with the admin and the reason)
+        if by_admin:
+            pass
+        elif is_downgrade:
             await audit_logger.log_subscription_downgraded(
                 user_id=user_id,
                 subscription_id=current_subscription.id,
