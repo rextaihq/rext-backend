@@ -164,6 +164,39 @@ async def test_a_slow_sites_address_is_logged_without_what_it_carries(site, capl
 
 
 @pytest.mark.asyncio
+async def test_a_site_where_no_server_answers_is_still_refused(site):
+    site["resolves"].add("tea.example.com")
+    site["answer"] = httpx.ConnectTimeout("nobody there")
+
+    with pytest.raises(WebsiteUnreachableError, match="not responding"):
+        await check_website_reachable("https://tea.example.com/")
+
+
+def test_the_twin_keeps_what_came_before_the_host():
+    twin = fast_scraper._www_twin("https://user:pass@tea.example.com:8443/shop?x=1")
+
+    assert twin == "https://user:pass@www.tea.example.com:8443/shop?x=1"
+    assert fast_scraper._www_twin("https://www.tea.example.com/") == "https://tea.example.com/"
+
+
+@pytest.mark.parametrize(
+    ("name", "slug"),
+    [
+        ("Acme (UK)", "acme-uk"),
+        ("Tom’s Bakery", "toms-bakery"),
+        ("Café Zoë", "cafe-zoe"),
+        ("É", "e"),
+        ("茶", "workspace"),
+        ("茶屋 2", "2"),
+    ],
+)
+def test_every_accepted_name_has_an_address(name, slug):
+    from src.services.workspace_service import WorkspaceService
+
+    assert WorkspaceService(None)._slugify(validate_workspace_name(name)) == slug
+
+
+@pytest.mark.asyncio
 async def test_a_site_that_refuses_the_connection_is_still_refused(site):
     site["resolves"].add("tea.example.com")
     site["answer"] = httpx.ConnectError("refused")

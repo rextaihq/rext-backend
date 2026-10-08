@@ -103,6 +103,10 @@ def _www_twin(url: str) -> Optional[str]:
     if not host or "." not in twin:
         return None
     netloc = f"{twin}:{parts.port}" if parts.port else twin
+    # Whatever came before the host (a protected site's sign-in) stays with the address.
+    userinfo = parts.netloc.rpartition("@")[0]
+    if userinfo:
+        netloc = f"{userinfo}@{netloc}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
@@ -119,9 +123,9 @@ async def check_website_reachable(url: str) -> str:
 
     Many sites answer at `www.` and not at the bare domain, or the reverse. An address that
     doesn't resolve is tried at its twin before the site is said not to exist, and the twin
-    is returned when it is the one that does. A site that keeps our server waiting is let
-    through: it is somebody's site, and the read that follows has its own patience, and its
-    own words when it can't finish.
+    is returned when it is the one that does. A site that connects and then keeps our server
+    waiting is let through: it is somebody's site, and the read that follows has its own
+    patience, and its own words when it can't finish. One that never connects is refused.
 
     Raises:
         WebsiteUnreachableError: with a user-facing message.
@@ -163,8 +167,15 @@ async def check_website_reachable(url: str) -> str:
     except SSRFValidationError as exc:
         # A redirect to a private or reserved address.
         raise WebsiteUnreachableError("This URL is not allowed.") from exc
+    except httpx.ConnectTimeout as exc:
+        # No server answered at all: that is the dead site this check is for.
+        logger.info("Website reachability check found no server at %s", loggable_url(url))
+        raise WebsiteUnreachableError(
+            "This website is not responding. Please check the URL and try again."
+        ) from exc
     except httpx.TimeoutException:
-        # Let through, unless what it did send before stalling is a parking page (below).
+        # A server that answered and then kept us waiting. Let through, unless what it did
+        # send before stalling is a parking page (below).
         logger.info("Website reachability check timed out for %s: let through", loggable_url(url))
     except httpx.HTTPError as exc:
         logger.info("Website reachability check failed for %s: %s", url, exc)
