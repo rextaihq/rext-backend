@@ -41,6 +41,7 @@ from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
     expand_section_containers,
     faq_section_heading,
+    is_cta_key,
     is_faq_section,
     render_section_plan,
     resolve_outline_structure,
@@ -152,6 +153,41 @@ def _without_separate_faqs(
             content_type,
         )
     return kept
+
+
+def _writer_sections(outline: dict, content_type: str) -> list[OutlineBlock]:
+    """The H2 sections the writer is asked for, in order: the blocks the body model is built
+    from, less the planned subsections (H3 and H4) and the call to action, which is a line or
+    two and no section."""
+    blocks = _without_separate_faqs(
+        expand_section_containers(resolve_outline_structure(outline or {}, content_type)),
+        outline or {},
+        content_type,
+    )
+    return [block for block in blocks if block.level == 2 and not is_cta_key(block.key)]
+
+
+def planned_section_count(outline: dict, content_type: str) -> int:
+    """How many H2 sections the writer is asked for. 0 when the outline resolves to none."""
+    return len(_writer_sections(outline, content_type))
+
+
+def early_body_sections(outline: dict, content_type: str, fraction: float) -> list[str]:
+    """The planned body sections that sit inside the first ``fraction`` of the article, by
+    their place in the plan: what "an early body section" means for this outline, by name.
+
+    A writer told "inside the first 30% of the article" cannot measure it, and put the one
+    mention a section too late (31% on a ten-section guide, rext-control#760). At least the
+    first two H2 sections are looked at; the opening block and the FAQ are never among them.
+    """
+    sections = _writer_sections(outline, content_type)
+    inside = sections[: max(2, int(len(sections) * fraction))]
+    return [
+        block.heading
+        for block in inside
+        if block.key not in ("hero", "faq", "faqs")
+        and not (isinstance(block.data, dict) and is_faq_section(block.data))
+    ]
 
 
 def _field_description(block: OutlineBlock) -> str:

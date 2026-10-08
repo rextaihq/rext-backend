@@ -1344,12 +1344,46 @@ def check_brand_placement_policy(
             "blocking",
             f"'{brand_name}' first appears at {int(first.position_fraction * 100)}% through the body, past "
             f"the first {pct}% where readers actually are. Move that first mention into an earlier body "
-            f"section — later mentions are fine, but the first one must land early.",
+            f"section — later mentions are fine, but the first one must land early."
+            f"{_where_early_is(body, max_fraction)}",
         )
 
     return _pass(
         "brand_placement_policy",
         "Brand mention sits in an early body section, out of the introduction and the closing section.",
+    )
+
+
+_H2_LINE_RE = re.compile(r"^##(?!#)[ \t]*(.+?)[ \t]*$", re.MULTILINE)
+
+
+def _where_early_is(body: str, max_fraction: float) -> str:
+    """Which of the article's own sections sit inside the window, for the repair to act on.
+
+    "Move it earlier" left a repair to guess how far: a mention at 31% of a ten-section guide
+    stayed where it was through two attempts (rext-control#760). Positions are read on the
+    same text the mention's own position is read on. The opening section is left out when
+    another one qualifies, since several placements keep the brand out of the opening.
+    """
+    text = _normalize_for_mentions(body)
+    headings = list(_H2_LINE_RE.finditer(text))
+    if not text or not headings:
+        return ""
+    ends = [match.start() for match in headings[1:]] + [len(text)]
+    inside = [
+        match.group(1).strip()
+        for match, end in zip(headings, ends, strict=True)
+        if end / len(text) <= max_fraction
+    ]
+    if len(inside) > 1:
+        inside = inside[1:]
+    if not inside:
+        # No section ends inside the window: its start is in the first one or two.
+        later = headings[1] if len(headings) > 1 else headings[0]
+        return f' Put it in the first paragraphs of "{later.group(1).strip()}", or before it.'
+    named = " or ".join(f'"{heading}"' for heading in inside[:3])
+    return (
+        f" In this article that means the section {named}: move the sentence that names it there."
     )
 
 
