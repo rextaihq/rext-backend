@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.lib.sentry_config import trigger_payment_alert
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.subscription_models.subscriptions import BillingPeriod
 from src.api.models.user_models.users import Users
@@ -24,7 +23,13 @@ from src.api.schema.response.admin_plan_responses import (
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription.admin_schemas import AdminPlanChange, AdminTrialExtension
 from src.api.security.dependencies import get_current_user
-from src.services.admin_plan_changes import change_plan, extend_trial, plan_options
+from src.services.admin_plan_changes import (
+    NOT_BILLED,
+    alert_unrecorded,
+    change_plan,
+    extend_trial,
+    plan_options,
+)
 from src.utils import rbac_utils
 from src.utils.rbac_utils import assert_target_manageable_by
 from src.utils.response_utils import success
@@ -118,26 +123,18 @@ async def change_user_plan(
     try:
         await db.commit()
     except Exception:
-        # Lemon Squeezy has taken the change by now (for a subscription it bills); with
-        # the commit lost, neither the plan nor the audit entry is here. The plan follows
-        # Lemon Squeezy's update; who changed it and why is told to a person instead.
-        trigger_payment_alert(
-            alert_type="admin_plan_change_unrecorded",
-            message=(
-                "An admin's plan change went through at Lemon Squeezy and could not be "
-                "saved here: the plan follows Lemon Squeezy's update; record who changed "
-                "it and why"
-            ),
-            severity="high",
-            context={
-                "old_plan": result["old_plan"]["name"],
-                "new_plan": result["new_plan"]["name"],
-                "billing": result["billing"],
-                "admin": str(admin_user_id),
-            },
-            user_id=str(user_id),
-            operation="admin_plan_change",
-        )
+        # For a subscription Lemon Squeezy bills, it has taken the change by now; with the
+        # commit lost, neither the plan nor the audit entry is here. A change it doesn't
+        # bill was made here alone, and a failed commit means it wasn't made at all.
+        if result["billing"] != NOT_BILLED:
+            alert_unrecorded(
+                user_id=user_id,
+                admin_id=admin_user_id,
+                old_plan=result["old_plan"]["name"],
+                new_plan=result["new_plan"]["name"],
+                billing=result["billing"],
+                failed="the change could not be saved",
+            )
         raise
 
     return success(data=result, request=request, message="Plan changed.")

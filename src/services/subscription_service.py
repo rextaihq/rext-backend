@@ -190,6 +190,9 @@ class SubscriptionService:
         """
         self.db = db
         self.payment_provider = get_payment_provider_singleton()
+        # Set by upgrade() once the provider has taken a plan change: what follows it here
+        # can still fail, and by then the change can't be taken back there.
+        self.provider_change_accepted = False
 
     async def count_non_paid_accounts_for_device(self, fingerprint: str) -> int:
         """
@@ -554,6 +557,7 @@ class SubscriptionService:
                             ),
                             rule_name="admin_plan_unchanged_at_provider",
                         )
+                    self.provider_change_accepted = True
 
                     logger.info(
                         f"Updated subscription {provider_sub_id} with payment provider to variant {new_variant_id}",

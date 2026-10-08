@@ -353,6 +353,50 @@ async def test_a_change_lemon_squeezy_never_answered_is_not_called_refused(sessi
     assert await _audit(session, user) == []
 
 
+async def test_a_change_that_fails_here_after_lemon_squeezy_took_it_alerts_a_person(
+    session, lemon, monkeypatch
+):
+    # Past Lemon Squeezy's yes, the work on the row fails: the plan there has changed, and
+    # neither it nor an audit entry will be kept here.
+    starter, growth, _ = await _world(session)
+    user, row = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    monkeypatch.setattr(
+        subscription_service_module,
+        "change_plan_credits",
+        MagicMock(side_effect=RuntimeError("the row could not be written")),
+    )
+
+    with pytest.raises(RuntimeError):
+        await _change(session, user, admin, growth, billing="charge_now")
+
+    lemon.update_subscription.assert_awaited_once()
+    alert = module.trigger_payment_alert.call_args.kwargs
+    assert alert["alert_type"] == "admin_plan_change_unrecorded"
+    assert alert["user_id"] == str(user.id)
+    assert alert["context"] == {
+        "admin_id": str(admin.id),
+        "old_plan": starter.name,
+        "new_plan": growth.name,
+        "billing": "charge_now",
+    }
+
+
+async def test_a_failure_before_lemon_squeezy_is_asked_alerts_no_one(session, lemon, monkeypatch):
+    starter, growth, _ = await _world(session)
+    user, _ = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    monkeypatch.setattr(
+        SubscriptionService, "calculate_usage", AsyncMock(side_effect=RuntimeError("no count"))
+    )
+
+    with pytest.raises(RuntimeError):
+        await _change(session, user, admin, growth)
+
+    lemon.update_subscription.assert_not_awaited()
+    module.trigger_payment_alert.assert_not_called()
+
+
 async def test_a_user_lemon_squeezy_does_not_bill_is_changed_here_only(session, lemon):
     starter, growth, _ = await _world(session)
     user, row = await _subscribed(session, starter, left=100, billed=False)
