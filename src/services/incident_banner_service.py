@@ -128,14 +128,34 @@ async def set_banner(
     }
 
 
-async def restore_banner(previous: Dict[str, Any]) -> None:
+async def restore_banner(previous: Dict[str, Any], written: Optional[Dict[str, Any]]) -> None:
     """
     Put back what was showing before a switch that then couldn't be recorded (its audit entry
     failed): the earlier banner for the time it had left, or none. So a switch nobody can find in
-    the audit log doesn't stay on every page. Best effort: it logs and never raises, since it runs
-    while another error is already on its way to the caller.
+    the audit log doesn't stay on every page.
+
+    Only when Redis still holds what that switch left there: `written` is the banner it set, or
+    None for a switch-off. If someone else has switched the banner since, theirs is recorded and
+    stays. The look and the write are two steps, not one, which is close enough for two people
+    switching a banner in the same instant while the database fails for one of them.
+
+    Best effort: it logs and never raises, since it runs while another error is already on its
+    way to the caller.
     """
     try:
+        showing = await read_banner()
+        if written is None:
+            still_mine = not showing["active"]
+        else:
+            still_mine = (
+                showing["active"]
+                and showing["message"] == written["message"]
+                and showing["started_at"] == written["started_at"]
+            )
+        if not still_mine:
+            logger.warning("Incident banner was switched again before it could be put back")
+            return
+
         expires_at = previous.get("expires_at")
         if previous.get("active") and isinstance(expires_at, datetime):
             remaining = int((expires_at - _now()).total_seconds())
