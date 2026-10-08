@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logging_config import (
@@ -39,6 +39,7 @@ from src.api.lib.sentry_config import (
     set_payment_context,
     trigger_payment_alert,
 )
+from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.discount_usage import DiscountUsage
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -49,7 +50,7 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
-from src.services.audit_logger import audit_logger
+from src.services.audit_logger import AuditEventType, audit_logger
 from src.services.credit_grants import (
     as_utc,
     change_plan_credits,
@@ -226,6 +227,45 @@ def _payment_gives_a_month(billing_reason: Optional[str], start_month_given: boo
     if billing_reason in ("initial", "updated"):
         return not start_month_given
     return True
+
+
+async def _is_first_payment(
+    db: AsyncSession,
+    subscription: UserSubscription,
+    billing_reason: Optional[str],
+    start_month_given: bool,
+    last_paid_at: Optional[datetime],
+) -> bool:
+    """Whether a paid invoice is the subscription's first payment, whatever it is called.
+
+    Lemon Squeezy calls the first invoice "initial", but a trial ended by a plan change pays
+    one labelled "updated", and that payment is the first all the same. So the row decides, as
+    it stood before this payment: the start's month not yet given and no payment credited.
+
+    A row from before those records that fell behind on a renewal reads the same way (its
+    status says unpaid, and nothing says it once paid), so for it the payments in the audit
+    log decide: a subscription that has paid before is not making its first payment. The log
+    can say "never paid" only of a subscription that started after its first payment record:
+    an older one may have paid before the log began, and is not taken for a first payment.
+    """
+    if billing_reason == "initial":
+        return True
+    if start_month_given or last_paid_at is not None:
+        return False
+    payments = (
+        AuditLog.action == AuditEventType.PAYMENT_SUCCEEDED.value,
+        AuditLog.resource_type == "payment",
+    )
+    if await db.scalar(
+        select(exists().where(*payments, AuditLog.resource_id == str(subscription.id)))
+    ):
+        return False
+    records_begin = await db.scalar(select(func.min(AuditLog.created_at)).where(*payments))
+    if records_begin is None:
+        return True  # nobody has paid yet
+    return subscription.start_date is not None and as_utc(subscription.start_date) > as_utc(
+        records_begin
+    )
 
 
 def _ignore_older(subscription: UserSubscription, sub_data: Dict[str, Any], event: str) -> bool:
@@ -1729,20 +1769,23 @@ async def handle_subscription_payment_success(
 
         # The first payment: a promotion's bonus, if subscription_created did not
         # grant it already (it grants once per subscription and promotion).
-        if sub_data.get("billing_reason") == "initial":
+        if await _is_first_payment(
+            db, subscription, sub_data.get("billing_reason"), start_month_given, last_paid_at
+        ):
+            invoiced_at = parse_provider_datetime(sub_data.get("created_at"))
             await grant_promotion_bonus(
                 db,
                 subscription.id,
                 plan_row,
                 subscription.billing_period.value if subscription.billing_period else None,
-                # The subscription's start decides the window, not the invoice's
-                # date (a trial converts to its first payment later); the bonus
-                # runs from this payment.
-                subscription.start_date or parse_provider_datetime(sub_data.get("created_at")),
+                # A promotion's window holds the subscription's start (a trial that began
+                # inside it converts to its first payment later) or this payment (a trial
+                # that began before it); the bonus runs from this payment.
+                subscription.start_date or invoiced_at,
                 next_period_end,
-                paid_from=parse_provider_datetime(sub_data.get("created_at"))
-                or datetime.now(timezone.utc),
+                paid_from=invoiced_at or datetime.now(timezone.utc),
                 order_id=subscription.lemonsqueezy_order_id,
+                first_payment=(invoiced_at, paid_at),
             )
     if paid_at:
         # A plan change's prorated invoice ("updated") pays a difference inside the

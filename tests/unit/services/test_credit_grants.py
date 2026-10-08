@@ -337,6 +337,8 @@ async def test_the_first_payment_judges_the_window_by_the_subscriptions_start(mo
     assert grant.await_args.args[4] == started
     # ...while the bonus runs from the payment itself.
     assert grant.await_args.kwargs["paid_from"] == datetime(2026, 10, 20, 10)
+    # ...whose own moments may hold it inside the window too (a trial begun before the offer).
+    assert datetime(2026, 10, 20, 10) in grant.await_args.kwargs["first_payment"]
     # ...and the grant records the order that started the subscription.
     assert grant.await_args.kwargs["order_id"] == "555"
 
