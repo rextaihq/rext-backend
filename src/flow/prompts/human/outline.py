@@ -105,6 +105,23 @@ def _kebab(value: str | None) -> str:
     return re.sub(r"[\s_-]+", "-", str(value or "").strip().lower()).strip("-")
 
 
+# The same terms named in the plural: the subsections as a whole ("remove the H3s", "no
+# subsections"). "The H3 under the introduction" names one of them and leaves the rest.
+_SUBSECTIONS_AS_A_WHOLE = re.compile(
+    r"\bh3s\b|\bsub[- ]?(?:sections|headings|heads)\b|\bnested\s+headings\b", re.IGNORECASE
+)
+
+
+def wants_no_subsections(feedback: str | None) -> bool:
+    """Whether feedback that asks for fewer H3 subsections is about them as a whole.
+
+    True for "remove the H3s" or "no subsections, please"; false for "remove the H3 under the
+    introduction", which leaves every other one, and for feedback that asks for none fewer."""
+    return subsection_request(feedback) == "fewer" and bool(
+        _SUBSECTIONS_AS_A_WHOLE.search(feedback or "")
+    )
+
+
 def subsection_request(feedback: str | None) -> str | None:
     """What the reviewer's rejection reason asks of H3 subsections: "more", "fewer" or None.
 

@@ -28,6 +28,7 @@ from src.flow.prompts.human.outline import (
     get_outline_prompt,
     outline_subsection_rule,
     subsection_request,
+    wants_no_subsections,
 )
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import (
@@ -624,13 +625,29 @@ def _outline_sections(outline: dict) -> list:
     return []
 
 
+def _heading_levels(outline: dict) -> list[str]:
+    return [
+        str(section.get("heading_level") or "").upper()
+        for section in _outline_sections(outline)
+        if isinstance(section, dict)
+    ]
+
+
+def _main_sections(outline: dict) -> int:
+    return _heading_levels(outline).count("H2")
+
+
+def _subsections(outline: dict) -> int:
+    """The H3s that are subsections: each under an H2. One before the first H2 has no section
+    to be part of, so it isn't counted."""
+    levels = _heading_levels(outline)
+    first_h2 = levels.index("H2") if "H2" in levels else len(levels)
+    return levels[first_h2:].count("H3")
+
+
 def _structure_count(content_type: str, outline: dict) -> int:
     if content_type == _PILLAR:
-        return sum(
-            1
-            for section in _outline_sections(outline)
-            if isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H3"
-        )
+        return _subsections(outline)
     key = _STRUCTURE[content_type][0]
     block = outline.get(key)
     if isinstance(block, dict):
@@ -639,17 +656,17 @@ def _structure_count(content_type: str, outline: dict) -> int:
 
 
 def _thin_structure(
-    content_type: str, outline: dict, reviewed: bool = False, fewer_subsections: bool = False
+    content_type: str, outline: dict, reviewed: bool = False, no_subsections_asked: bool = False
 ) -> str | None:
     """What a generated outline is missing that makes it unusable, or None.
 
     ``reviewed`` is a regeneration after a person's feedback: their own ask sets the length
     ("combine it into two steps"), so only an empty structure is thin then.
-    ``fewer_subsections`` is that feedback asking for fewer H3s: a pillar outline without any
-    is then what was asked for."""
+    ``no_subsections_asked`` is that feedback asking for an outline without H3s: a pillar
+    outline with none is then what was asked for."""
     if content_type not in _STRUCTURE:
         return None
-    if content_type == _PILLAR and fewer_subsections:
+    if content_type == _PILLAR and no_subsections_asked:
         return None
     _, name, least, _ = _STRUCTURE[content_type]
     if reviewed:
@@ -819,11 +836,17 @@ async def generate_outline(state: REXT) -> dict:
         # Asked once more, only when the outline can't be written from (or, for pillar content,
         # has none of the subsections it is expected to have): one extra model call.
         reviewed = str(outline_rejected_reason or "None").strip().lower() not in ("", "none")
+        # Feedback that removes the subsections as a whole, or the only one the rejected outline
+        # had, leaves none by request. "Remove the H3 under the introduction" leaves the others.
+        no_subsections_asked = wants_no_subsections(outline_rejected_reason) or (
+            subsection_request(outline_rejected_reason) == "fewer"
+            and _subsections(outline_state if isinstance(outline_state, dict) else {}) <= 1
+        )
         thin = _thin_structure(
             content_type,
             outline_dict,
             reviewed=reviewed,
-            fewer_subsections=subsection_request(outline_rejected_reason) == "fewer",
+            no_subsections_asked=no_subsections_asked,
         )
         if thin:
             logger.warning("Outline %s for content_type=%s; asking once more", thin, content_type)
@@ -859,9 +882,14 @@ async def generate_outline(state: REXT) -> dict:
                 gained = _structure_count(content_type, retried) - _structure_count(
                     content_type, outline_dict
                 )
-                # A pillar's second attempt was asked for subsections only: without any it is
-                # no fuller than the first, which stays.
-                if gained > 0 or (gained == 0 and content_type != _PILLAR):
+                if content_type == _PILLAR:
+                    # Asked for subsections only: it takes the first one's place when it brought
+                    # some and kept at least as many main sections. The schema sets no least
+                    # number of sections, so a second attempt can come back much shorter.
+                    fuller = gained > 0 and _main_sections(retried) >= _main_sections(outline_dict)
+                else:
+                    fuller = gained >= 0
+                if fuller:
                     outline_dict = retried
 
         # A first outline is held to its main sections and their budgets (outline_depth.py). A

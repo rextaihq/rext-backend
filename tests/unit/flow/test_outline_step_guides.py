@@ -34,7 +34,7 @@ class _Reply:
         return dict(self._data)
 
 
-async def _generate(monkeypatch, content_type, replies, rejected_reason="None"):
+async def _generate(monkeypatch, content_type, replies, rejected_reason="None", previous=None):
     """generate_outline with the model's replies scripted; returns the outline and each call's messages."""
     calls = []
     queue = list(replies)
@@ -81,7 +81,8 @@ async def _generate(monkeypatch, content_type, replies, rejected_reason="None"):
         "content": {
             "selected_topic": "How to start a podcast",
             "content_type": content_type,
-            "outline": {"rejected_reason": rejected_reason},
+            # A regeneration's state holds the outline the reviewer rejected.
+            "outline": {**(previous or {}), "rejected_reason": rejected_reason},
         },
     }
     result = await outline_module.generate_outline.__wrapped__(state)
@@ -205,13 +206,15 @@ def _pillar(*levels, marker="first"):
         (_pillar("H2", "H2"), False, "had 0 H3 subsections"),
         (_pillar("H2", "H3", "H2"), False, None),
         (_pillar("H2", "h3"), False, None),
+        # An H3 before any H2 is under no section: not a subsection.
+        (_pillar("H3", "H2", "H2"), False, "had 0 H3 subsections"),
         # The reviewer asked for fewer: none is what was asked for.
         (_pillar("H2", "H2"), True, None),
         ({"title": "x"}, False, "had 0 H3 subsections"),
     ],
 )
 def test_a_pillar_outline_without_subsections_is_thin(outline, fewer, expected):
-    thin = outline_module._thin_structure("pillar-content", outline, fewer_subsections=fewer)
+    thin = outline_module._thin_structure("pillar-content", outline, no_subsections_asked=fewer)
     assert thin == expected
 
 
@@ -272,7 +275,7 @@ async def test_a_reviewer_who_asked_for_fewer_subsections_gets_none_without_a_re
 
 @pytest.mark.unit
 async def test_other_feedback_on_a_pillar_outline_still_expects_subsections(monkeypatch):
-    second = _pillar("H2", "H3", marker="second")
+    second = _pillar("H2", "H3", "H2", marker="second")
 
     outline, calls = await _generate(
         monkeypatch,
@@ -283,3 +286,51 @@ async def test_other_feedback_on_a_pillar_outline_still_expects_subsections(monk
 
     assert outline["structure"]["sections"][1]["heading_level"] == "H3"
     assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_a_shorter_second_pillar_attempt_keeps_the_first(monkeypatch):
+    """It brought a subsection but lost main sections: the fuller plan stays."""
+    shorter = _pillar("H2", "H3", marker="second")
+
+    outline, calls = await _generate(
+        monkeypatch, "pillar-content", [_pillar("H2", "H2", "H2"), shorter]
+    )
+
+    assert [section["heading"] for section in outline["structure"]["sections"]] == [
+        "first 0",
+        "first 1",
+        "first 2",
+    ]
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_feedback_about_one_subsection_leaves_the_others_expected(monkeypatch):
+    """Removing the H3 under the introduction isn't removing them all."""
+    second = _pillar("H2", "H2", "H3", "H3", marker="second")
+
+    outline, calls = await _generate(
+        monkeypatch,
+        "pillar-content",
+        [_pillar("H2", "H2"), second],
+        rejected_reason="Remove the H3 under the introduction",
+        previous=_pillar("H2", "H3", "H2", "H3", "H3", marker="rejected"),
+    )
+
+    assert outline["structure"]["sections"][2]["heading_level"] == "H3"
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_feedback_that_removes_the_only_subsection_gets_none_without_a_retry(monkeypatch):
+    outline, calls = await _generate(
+        monkeypatch,
+        "pillar-content",
+        [_pillar("H2", "H2")],
+        rejected_reason="Remove the H3 under the introduction",
+        previous=_pillar("H2", "H3", "H2", marker="rejected"),
+    )
+
+    assert len(outline["structure"]["sections"]) == 2
+    assert len(calls) == 1
