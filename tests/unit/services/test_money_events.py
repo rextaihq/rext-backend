@@ -127,6 +127,17 @@ def test_a_refund_of_everything_says_so():
     assert "refunded_amount" not in properties
 
 
+def test_a_refund_without_an_amount_still_says_when_all_of_it_came_back():
+    payload = {"meta": {}, "data": {"attributes": {"refunded": True, "status": "refunded"}}}
+
+    assert money_event("order_refunded", payload)["properties"] == {
+        "status": "refunded",
+        "full_refund": True,
+    }
+    partial = {"meta": {}, "data": {"attributes": {"refunded": True, "status": "partial_refund"}}}
+    assert "full_refund" not in money_event("order_refunded", partial)["properties"]
+
+
 def test_a_refunded_renewal_is_counted_under_its_own_name():
     event = money_event("subscription_payment_refunded", _invoice(status="refunded"))
 
@@ -266,6 +277,22 @@ async def test_a_refusal_or_a_failure_never_reaches_the_webhook(monkeypatch):
             await send_money_event("evt_1", "subscription_created", _subscription(), client=client)
             is False
         )
+
+
+async def test_an_answer_that_says_the_project_is_over_quota_is_not_a_success(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+
+    def over_quota(request):
+        return httpx.Response(200, json={"status": 1, "quota_limited": ["events"]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(over_quota)) as client:
+        assert await send_server_event("credits_spent", {}, key="row-1", client=client) is False
+
+    def not_json(request):
+        return httpx.Response(200, text="ok")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(not_json)) as client:
+        assert await send_server_event("credits_spent", {}, key="row-1", client=client) is True
 
 
 async def test_recording_reads_the_stored_webhook_and_sends_its_event(monkeypatch):

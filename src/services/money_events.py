@@ -99,6 +99,9 @@ def money_event(event_type: str, payload: Dict[str, Any]) -> Optional[Dict[str, 
         properties["refunded_total"] = refunded
         if amount is not None and "total" in attributes:
             properties["full_refund"] = refunded >= amount
+    elif attributes.get("refunded") and attributes.get("status") == "refunded":
+        # A payload can leave the amount out; a status of "refunded" still says all of it came back.
+        properties["full_refund"] = True
     return {"event": name, "properties": properties}
 
 
@@ -165,6 +168,17 @@ async def send_server_event(
             logger.warning(
                 "Server event not accepted",
                 extra={"event": event, "key": key, "status": response.status_code},
+            )
+            return False
+        # Over the project's quota PostHog still answers 200, and says so in the body.
+        try:
+            limited = response.json().get("quota_limited")
+        except Exception:  # noqa: BLE001 - an answer that isn't JSON says nothing about quota
+            limited = None
+        if limited:
+            logger.warning(
+                "Server event dropped: the analytics project is over its quota",
+                extra={"event": event, "key": key},
             )
             return False
         return True
