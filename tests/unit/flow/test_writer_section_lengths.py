@@ -140,14 +140,17 @@ def test_a_block_a_typed_field_owns_is_no_section_of_the_body():
     assert early_body_sections(outline, "how-to-guide", 0.3) == ["User Context"]
 
 
-def test_a_type_that_takes_no_promotion_is_not_told_an_early_section():
-    """Documentation's one allowed mention is a closing note, and its position is not graded."""
+@pytest.mark.parametrize("content_type", ["documentation", "contact-us"])
+def test_a_placement_that_is_not_an_early_body_section_is_told_none(content_type):
+    """Documentation's one allowed mention is a closing note; a contact page's belongs in its
+    opening block. Neither is sent to "an early body section", so neither is told which ones."""
     outline = _outline(sections=9, promote_brand=True, brand_voice_promotion=BRAND)
 
     assert "an early body section means" in _prompt(outline, 1500)
     told = PersonaInjectionMiddleware()._build_full_content_prompt(
-        None, outline, target_word_count=1500, content_type="documentation"
+        None, outline, target_word_count=1500, content_type=content_type
     )
+    assert "PLACEMENT REQUIREMENT FOR THIS CONTENT TYPE" in told
     assert "an early body section means" not in told
 
 

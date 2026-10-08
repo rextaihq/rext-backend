@@ -407,8 +407,14 @@ def resolve_brand_placement_policy(content_type: str) -> BrandPlacementPolicy:
     return BRAND_PLACEMENT_POLICY.get(normalized, _DEFAULT_POLICY)
 
 
+# The words the placements that send a mention into the body's window share. Where a policy
+# uses them, the writer's prompt says which sections of this article they mean
+# (structured_body.early_body_sections); a policy that places the mention elsewhere (the
+# opening block of a contact page, a closing note) is told nothing of the kind.
+EARLY_BODY_SECTION = "EARLY body section"
+
 _SUBTLE_PLACEMENT = (
-    "One natural mention in an EARLY body section, the first section that genuinely relates to "
+    f"One natural mention in an {EARLY_BODY_SECTION}, the first section that genuinely relates to "
     f"the brand's offering, inside the first {_BODY_WINDOW_PCT}% of the article, as one relevant "
     "example or option among others."
 )
