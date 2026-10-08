@@ -39,6 +39,7 @@ from src.api.schema.admin_invitation_schema import (
 )
 from src.api.schema.response_schemas import GenericResponse, SuccessResponse
 from src.api.security.dependencies import get_current_user
+from src.services.admin_invitation_emails import person_name, send_admin_invitation_email
 from src.services.admin_invitation_service import AdminInvitationService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
@@ -60,7 +61,11 @@ public_router = APIRouter(prefix="/admin-invitations", tags=["Public - Admin Inv
 
 
 def _invitation_to_response(invitation) -> AdminInvitationResponse:
-    """Convert invitation model to response schema."""
+    """Convert invitation model to response schema.
+
+    The invitation is one the service read whole (its three people loaded): nothing
+    can be read from the database here.
+    """
     now = datetime.now(timezone.utc)
     days_until_expiry = None
 
@@ -78,11 +83,7 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
         invited_by_admin_id=str(invitation.invited_by_admin_id)
         if invitation.invited_by_admin_id
         else None,
-        invited_by_name=(
-            f"{invitation.invited_by.first_name} {invitation.invited_by.last_name}"
-            if invitation.invited_by
-            else None
-        ),
+        invited_by_name=person_name(invitation.invited_by),
         invited_by_email=invitation.invited_by.email if invitation.invited_by else None,
         created_at=invitation.created_at.isoformat(),
         expires_at=invitation.expires_at.isoformat(),
@@ -92,20 +93,12 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
         accepted_by_user_id=str(invitation.accepted_by_user_id)
         if invitation.accepted_by_user_id
         else None,
-        accepted_by_name=(
-            f"{invitation.accepted_by.first_name} {invitation.accepted_by.last_name}"
-            if invitation.accepted_by
-            else None
-        ),
+        accepted_by_name=person_name(invitation.accepted_by),
         declined_reason=invitation.declined_reason,
         revoked_by_admin_id=str(invitation.revoked_by_admin_id)
         if invitation.revoked_by_admin_id
         else None,
-        revoked_by_name=(
-            f"{invitation.revoked_by.first_name} {invitation.revoked_by.last_name}"
-            if invitation.revoked_by
-            else None
-        ),
+        revoked_by_name=person_name(invitation.revoked_by),
         revoked_reason=invitation.revoked_reason,
         is_expired=invitation.is_expired(),
         can_be_accepted=invitation.can_be_accepted(),
@@ -149,12 +142,13 @@ async def create_admin_invitation(
     **Requirements:**
     - Caller must be super_admin
     - Email must not have existing pending invitation
-    - Admin role must be valid (super_admin, support_admin, platform_admin)
+    - Admin role must be valid (super_admin, admin, support)
 
     **Process:**
     1. Validates caller is super_admin
     2. Creates invitation with secure token
-    3. Sends invitation email (background task)
+    3. Sends the invitation email. If it can't be sent, nothing is saved and the
+       caller is told (502), so "created" always means the person has the link
     4. Returns invitation details
 
     **Security:**
@@ -182,12 +176,8 @@ async def create_admin_invitation(
         request=request,
     )
 
-    logger.info(
-        f"Admin invitation created: {data.email} for {data.admin_role} by {current_user['email']}"
-    )
-
-    # TODO: Send invitation email in background task
-    # await send_admin_invitation_email(invitation)
+    # Before the commit: an invitation whose email didn't go out is not kept.
+    await send_admin_invitation_email(db, invitation)
 
     return created(data=_invitation_to_response(invitation), request=request)
 
@@ -283,7 +273,8 @@ async def resend_admin_invitation(
     **Process:**
     1. Generates new token
     2. Updates expiry date
-    3. Sends new invitation email
+    3. Sends the invitation email again. If it can't be sent, the old link stays
+       as it was and the caller is told (502)
     """
     service = AdminInvitationService(db)
 
@@ -303,10 +294,8 @@ async def resend_admin_invitation(
         request=request,
     )
 
-    logger.info(f"Admin invitation resent: {invitation.email} by {current_user['email']}")
-
-    # TODO: Send invitation email in background task
-    # await send_admin_invitation_email(invitation)
+    # Before the commit: a new link nobody received must not replace the old one.
+    await send_admin_invitation_email(db, invitation)
 
     return success(data=_invitation_to_response(invitation), request=request)
 
@@ -351,8 +340,6 @@ async def revoke_admin_invitation(
         request=request,
     )
 
-    logger.info(f"Admin invitation revoked: {invitation.email} by {current_user['email']}")
-
     # TODO: Optionally send revocation email
     # await send_admin_invitation_revoked_email(invitation)
 
@@ -391,11 +378,7 @@ async def validate_admin_invitation_token(
                 email=invitation.email,
                 admin_role=invitation.admin_role,
                 message=invitation.message,
-                invited_by_name=(
-                    f"{invitation.invited_by.first_name} {invitation.invited_by.last_name}"
-                    if invitation.invited_by
-                    else None
-                ),
+                invited_by_name=person_name(invitation.invited_by),
                 expires_at=invitation.expires_at.isoformat(),
                 is_expired=invitation.is_expired(),
                 status=invitation.status,
@@ -460,8 +443,6 @@ async def accept_admin_invitation(
         request=request,
     )
 
-    logger.info(f"Admin invitation accepted: {invitation.email} is now {invitation.admin_role}")
-
     # TODO: Send acceptance notification to inviter
     # await send_admin_invitation_accepted_email(invitation)
 
@@ -504,8 +485,6 @@ async def decline_admin_invitation(
         new_values={"email": invitation.email, "reason": data.reason},
         request=request,
     )
-
-    logger.info(f"Admin invitation declined: {invitation.email}")
 
     # TODO: Send decline notification to inviter
     # await send_admin_invitation_declined_email(invitation)
