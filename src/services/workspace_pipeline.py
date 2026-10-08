@@ -21,6 +21,7 @@ from src.flow.model.runaway import ainvoke_watched
 from src.services.sse_service import (
     emit_pipeline_complete,
     emit_step_failure,
+    emit_step_progress,
     emit_step_start,
     emit_step_success,
 )
@@ -98,6 +99,9 @@ PERSIST_RESERVE_SECONDS = 5.0
 PIPELINE_BUDGET_SECONDS = 90.0
 EXTRACTION_BUDGET_SECONDS = 35.0
 _ARTICLES_PER_AUTHOR = 2
+# A progress event lists what was found, within a bound: the stream is for a screen.
+MAX_PAGES_REPORTED = 25
+MAX_PEOPLE_REPORTED = 12
 _FEED_BUDGET_SECONDS = 4.0
 _BROWSER_START_DELAY_SECONDS = 4.0
 _BROWSER_CANCEL_GRACE_SECONDS = 5.0
@@ -958,6 +962,53 @@ class WorkspacePipeline:
             )
             return None
 
+    async def _say(self, step: str, message: str, payload: Dict[str, Any]) -> None:
+        """What a step has found so far, as a progress event on the operation's stream.
+
+        For the screen that shows the workspace taking shape while the run goes on
+        (revnix/rext-control#845). It reports; it never fails the run, and it never
+        ends a step: a client that reads only started, completed and failed ignores it.
+        """
+        try:
+            await emit_step_progress(
+                operation_id=self.operation_id,
+                scope=self.scope,
+                step=step,
+                message=message,
+                payload=payload,
+                user_id=self.user_id,
+            )
+        except Exception:  # noqa: BLE001 - a line of progress is never worth the run
+            logger.warning("Workspace pipeline: a progress event was not sent", exc_info=True)
+
+    async def _say_people(self) -> None:
+        """The people are saved from here on: said at once, since the brand-voice step's
+        own end came before them and the run's end is a competitor search away."""
+        people = getattr(self, "_extracted_personas", None) or []
+        await self._say(
+            "personas",
+            f"Saved {len(people)} author personas",
+            {
+                "people": [
+                    {"person": persona.get("full_name"), "title": persona.get("professional_title")}
+                    for persona in people[:MAX_PEOPLE_REPORTED]
+                ],
+                "count": len(people),
+            },
+        )
+
+    def _pages_read(self) -> List[Dict[str, str]]:
+        """The pages the scrape read, with what each is, the home page first."""
+        from src.utils.fast_scraper import classify_page
+
+        pages = getattr(self, "_page_text_by_url", None) or {}
+        home = self.url.rstrip("/")
+        listed = sorted(pages, key=lambda page: (page.rstrip("/") != home, page))
+        return [
+            {"page": page, "kind": classify_page(page, pages[page])}
+            for page in listed[:MAX_PAGES_REPORTED]
+        ]
+
     async def _scrape_website(self) -> _ScrapeResult:
         await emit_step_start(
             operation_id=self.operation_id,
@@ -988,6 +1039,19 @@ class WorkspacePipeline:
                 user_id=self.user_id,
             )
             raise
+
+        # Which pages were read, said before the slower checks below: the first thing the
+        # screen can show of the run's own work.
+        pages_read = self._pages_read()
+        if pages_read:
+            await self._say(
+                "scrape",
+                f"Read {len(pages_read)} pages",
+                {
+                    "pages": pages_read,
+                    "count": len(getattr(self, "_page_text_by_url", None) or {}),
+                },
+            )
 
         title = None
         if raw_html:
@@ -1505,8 +1569,13 @@ class WorkspacePipeline:
             user_id=self.user_id,
         )
 
+        async def _progress(progress: Dict[str, Any]) -> None:
+            # Where the search is (searching, then checking the candidates): the step is
+            # the run's longest and said nothing until its end.
+            await self._say("competitor_discovery", "Discovering competitors", progress)
+
         try:
-            analysis = await discover_competitors(site_url=self.url)
+            analysis = await discover_competitors(site_url=self.url, on_progress=_progress)
         except Exception as exc:  # noqa: BLE001 - non-fatal to the overall pipeline
             logger.error(
                 "Competitor discovery failed",
@@ -2300,6 +2369,8 @@ class WorkspacePipeline:
         position = {(p.get("name") or ""): i for i, p in enumerate(personas_data)}
         saved_personas.sort(key=lambda p: position.get(p.name or "", len(position)))
         self._extracted_personas = [_format_persona_for_frontend(p) for p in saved_personas]
+
+        await self._say_people()
 
         logger.info(
             "Persisted and formatted personas for frontend",

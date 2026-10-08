@@ -12,7 +12,7 @@ which was a Colab display detail, not part of the algorithm.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from src.flow.engines.competitors.aggregation import aggregate_candidates
 from src.flow.engines.competitors.classification import classify_all
@@ -30,8 +30,25 @@ from src.flow.engines.competitors.serp import run_all_searches
 
 logger = logging.getLogger(__name__)
 
+# Told where the discovery is, for whoever shows it while it runs (the workspace's
+# creation screen, revnix/rext-control#845): {"stage": "searching", "queries": 8},
+# then {"stage": "checking", "candidates": 34}.
+ProgressCallable = Callable[[Dict[str, Any]], Awaitable[None]]
 
-async def discover_competitors(site_url: str) -> Dict[str, Any]:
+
+async def _say(on_progress: Optional[ProgressCallable], progress: Dict[str, Any]) -> None:
+    """Report progress, never at the discovery's cost."""
+    if on_progress is None:
+        return
+    try:
+        await on_progress(progress)
+    except Exception:  # noqa: BLE001 - a listener that fails must not stop the discovery
+        logger.warning("Competitor discovery: a progress listener failed", exc_info=True)
+
+
+async def discover_competitors(
+    site_url: str, on_progress: Optional[ProgressCallable] = None
+) -> Dict[str, Any]:
     """Faithful port of the notebook's find_competitors(site_url)."""
     pages = await scrape_site(site_url)
     logger.info("Competitor discovery: scraped %d page(s) for %s", len(pages), site_url)
@@ -50,6 +67,7 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
     ]
     logger.info("Competitor discovery: generated %d queries: %s", len(queries), queries)
 
+    await _say(on_progress, {"stage": "searching", "queries": len(queries)})
     serp_results = await run_all_searches(queries)
     logger.info("Competitor discovery: got %d raw SERP results", len(serp_results))
 
@@ -64,6 +82,7 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
         "Competitor discovery: %d unique candidates going to classification", len(candidates)
     )
 
+    await _say(on_progress, {"stage": "checking", "candidates": len(candidates)})
     classifications = await classify_all(summary, candidates)
 
     rows = []
