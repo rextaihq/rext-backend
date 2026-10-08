@@ -248,3 +248,27 @@ def test_without_a_brief_the_writers_message_opens_as_it_did():
         "under or over)\n\n"
     ) in opening
     assert opening.endswith("\n\n")
+
+
+def test_a_brief_that_says_no_length_leaves_the_writer_its_own_length_line():
+    """Review round 1: an outline with no target gives a brief with a title and no length; the
+    writer step then falls back to 2,000 words, and must still be told so."""
+    outline = {"title": "How to use a content calendar template"}
+    spec = build_requirements_spec(outline, "blog", focus_keyword=FOCUS)
+    brief = brief_for_stage(spec, outline, stage="writer")
+    assert brief and "- Length:" not in brief
+
+    from src.flow.engines.content.generation.content_generation import writer_message_opening
+
+    opening = writer_message_opening(
+        brief,
+        content_type="blog",
+        topic="How to use a content calendar template",
+        title_lock="",
+        primary_keyword=FOCUS,
+        target_word_count=2000,
+        max_word_count=2240,
+    )
+
+    assert opening.startswith(brief)
+    assert "Target Word Count: 2000-2240 words" in opening
