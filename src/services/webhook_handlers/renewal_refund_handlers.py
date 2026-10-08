@@ -38,7 +38,12 @@ from src.api.lib.sentry_config import trigger_payment_alert
 from src.api.models.subscription_models.orders import Order
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.providers.payment.provider_factory import get_payment_provider
+
+# The one shared provider and its HTTP client, as the order's refund handler takes it: a new
+# provider for each refund would open a client that nothing closes.
+from src.providers.payment.provider_factory import (
+    get_payment_provider_singleton as get_payment_provider,
+)
 from src.services.audit_logger import audit_logger
 from src.services.billing_email_service import send_billing_email_in_background
 from src.services.refund_cancellation import cancel_at_provider_for_refund, end_for_refund

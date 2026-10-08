@@ -543,6 +543,13 @@ async def test_recording_a_refund_holds_the_orders_lock_until_the_transaction_en
     assert (await session.execute(held, {"key": "refund:order-2"})).scalar_one() == 0
 
 
+def test_the_invoice_refund_handler_uses_the_shared_provider():
+    # One Lemon Squeezy provider, and so one HTTP client, for this refund path too.
+    from src.providers.payment import provider_factory
+
+    assert module.get_payment_provider is provider_factory.get_payment_provider_singleton
+
+
 def test_a_payment_records_the_invoice_that_paid_the_period():
     row = UserSubscription(subscription_metadata={"other": 1})
 
