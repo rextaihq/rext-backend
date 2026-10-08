@@ -8,7 +8,6 @@ because the asyncpg connection pool is bound to the main loop.
 Credit events are written to the active LangGraph run stream via get_stream_writer().
 """
 
-import asyncio
 from functools import wraps
 from typing import Optional
 from uuid import UUID
@@ -39,35 +38,16 @@ class InsufficientCreditsError(Exception):
         )
 
 
-def _get_main_loop_context():
-    """Return (main_loop, current_loop). Either may be None."""
-    from src.utils import loop_registry
-
-    main_loop = loop_registry.get()
-    try:
-        current_loop = asyncio.get_running_loop()
-    except RuntimeError:
-        current_loop = None
-    return main_loop, current_loop
-
-
 async def _run_on_main_loop(coro):
     """
-    Run `coro` on the main FastAPI event loop and await the result.
-
-    If already on the main loop, awaits directly.
-    Otherwise dispatches via run_coroutine_threadsafe and waits using
-    asyncio.to_thread(future.result) so the caller's loop stays unblocked.
+    Run `coro` on the main FastAPI event loop and await the result, through the one bridge
+    (src.utils.loop_bridge): directly on the main loop, dispatched from any other, and never
+    on a worker thread's own loop (rext-control#858).
     Propagates exceptions including InsufficientCreditsError.
     """
-    main_loop, current_loop = _get_main_loop_context()
+    from src.utils.loop_bridge import run_on_main_loop
 
-    if main_loop is None or current_loop is main_loop:
-        return await coro
-
-    future = asyncio.run_coroutine_threadsafe(coro, main_loop)
-    # future.result() is blocking — run in thread pool to avoid blocking caller loop
-    return await asyncio.to_thread(future.result)
+    return await run_on_main_loop(coro)
 
 
 async def resolve_credit_owner_id(

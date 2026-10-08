@@ -62,8 +62,19 @@ async def lifespan(app):
     Ensures database tables exist, Redis is connected,
     Sentry and tasks are initialized cleanly.
     """
+    # --- Register the main event loop, before anything else ---
+    # The runtime's own startup runs before this one and has already created its run queue's
+    # task: a run resumed after a restart can reach its first database call while this
+    # startup is still at its migrations. The bridge (src.utils.loop_bridge) sends that work
+    # here once this loop is known, and keeps it waiting until then. Registered last, as it
+    # was, such a run used the app's connection pool from its own loop (rext-control#858).
+    from src.utils import loop_registry
+
+    loop_registry.register(asyncio.get_running_loop())
+
     logger.info("🚀 Starting Rext API server...")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
+    logger.info("✅ Main event loop registered")
 
     # --- Initialize Sentry ---
     try:
@@ -177,12 +188,6 @@ async def lifespan(app):
             logger.warning("Email logo not published; emails show the name as text")
     except Exception as e:
         logger.warning(f"⚠️ Email logo publish failed (non-fatal): {e}")
-
-    # --- Register main event loop for cross-thread coroutine dispatch ---
-    from src.utils import loop_registry
-
-    loop_registry.register(asyncio.get_event_loop())
-    logger.info("✅ Main event loop registered")
 
     # --- Initialize LangGraph vector store (singleton — shared across all requests) ---
     try:
