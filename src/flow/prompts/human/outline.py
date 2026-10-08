@@ -89,7 +89,7 @@ _MAIN_SECTIONS = (
     "everything else nested under them is wrong."
 )
 _FULL_BUDGET = (
-    "An H2 WITHOUT H3s is a whole section and keeps a whole budget: 150 to 400 words, never "
+    "An H2 WITHOUT H3s is a whole section and keeps a whole budget: 200 to 400 words, never "
     "the short one."
 )
 _PLACEMENT = (

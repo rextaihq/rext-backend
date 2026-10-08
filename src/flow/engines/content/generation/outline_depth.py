@@ -3,7 +3,7 @@
 Since an outline may nest H3 subsections under its H2s (rext-control#603), nothing held it to
 its main sections: the list needs four entries, of any level. Outlines came back with one or two
 H2s and every other topic as an H3 under them, and with the short budget meant for an H2 that
-only introduces its H3s (80 to 120 words) on every section, so a blog was planned at 700 to
+only introduces its H3s (80 to 120 words) on every section, so a blog was planned at about
 800 words where the same keyword had 1,500 to 1,900 a day earlier (rext-control#837).
 
 The prompt now says both rules plainly. This module is what holds them when the model does not:
@@ -14,8 +14,10 @@ from __future__ import annotations
 
 MIN_MAIN_SECTIONS = 4
 MAX_MAIN_SECTIONS = 8
-# A section with no subsections is written whole from its own budget.
-MAIN_SECTION_MIN_WORDS = 150
+# A section with no subsections is written whole from its own budget: the schema's default for
+# a section (BlogSection.suggested_word_count), which is what outlines planned before the short
+# budget of an introducing H2 spread to every section.
+MAIN_SECTION_MIN_WORDS = 200
 
 _CONTAINERS = ("structure", "content_structure")
 
