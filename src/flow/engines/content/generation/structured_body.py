@@ -37,7 +37,10 @@ from typing import Any, Callable, List, Optional
 
 from pydantic import BaseModel, Field, create_model
 
-from src.flow.engines.content.generation.brand_slot import SLOT_LINE_PREFIX
+from src.flow.engines.content.generation.brand_slot import (
+    SLOT_LINE_PREFIX,
+    sections_inside_window,
+)
 from src.flow.engines.content.generation.link_integrity import extract_links, restore_lost_links
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
@@ -223,8 +226,9 @@ def early_body_sections(outline: dict, content_type: str, fraction: float) -> li
     mention belongs in, and brand_schema_context tells the writer that field):
 
     * a slot reserved in the outline's section list is the one section named;
-    * with none reserved, the window is counted as the slot counts it, over the same list:
-      the first ``max(1, int(sections x fraction))`` entries, H3s included;
+    * with none reserved, the window is counted as the slot counts it, over the same list
+      (`sections_inside_window`: in planned words, as the placement check reads the written
+      body, H3s included);
     * a slot reserved anywhere else (a typed list of a fixed-shape type) says where already,
       and nothing is named here;
     * an outline with no section list (a how-to's blocks) is counted over the blocks the body
@@ -234,7 +238,7 @@ def early_body_sections(outline: dict, content_type: str, fraction: float) -> li
     sections = _section_list(outline)
     if sections:
         reserved = [section for section in sections if _holds_brand_slot(section)]
-        named = reserved[:1] or sections[: max(1, int(len(sections) * fraction))]
+        named = reserved[:1] or sections[: sections_inside_window(sections, fraction)]
         return [str(s.get("heading") or "").strip() for s in named if s.get("heading")]
     if _holds_brand_slot(outline):
         return []

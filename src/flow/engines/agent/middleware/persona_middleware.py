@@ -1157,8 +1157,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 named = " or ".join(f'"{heading}"' for heading in early)
                 lines.append(
                     f"IN THIS ARTICLE'S PLAN, an early body section means: {named}. The first "
-                    f"mention of {brand_name} goes there; in any later section it fails the "
-                    f"placement check, however well it is written."
+                    f"mention of {brand_name} goes there, in the first half of that section; in "
+                    f"any later section it fails the placement check, however well it is written."
                 )
         lines.append(
             f"\nBefore submitting, verify {brand_name} actually landed in the position described above — "
