@@ -26,7 +26,7 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.security.dependencies import get_current_user
-from src.services.server_events import EventContext, event_context
+from src.services.server_events import EventContext, read_event_context
 from tests.conftest import TEST_DATABASE_URL
 
 URL = "/api/v1/user/analytics-consent"
@@ -165,6 +165,35 @@ async def test_anything_but_the_two_answers_and_the_two_regions_is_refused(clien
 
 
 @pytest.mark.asyncio
+async def test_an_impersonating_admin_cant_write_the_customers_answer(session, user):
+    """The browser is the admin's then: its answer and region aren't the customer's."""
+    from src.api.server import app
+
+    user.analytics_consent, user.analytics_region = "denied", "eea"
+    await session.flush()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_async_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "identity": str(user.id),
+        "is_impersonating": True,
+    }
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            written = await ac.put(URL, json={"answer": "granted", "region": "other"})
+            read = await ac.get(URL)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert written.status_code == 403, written.text
+    assert (user.analytics_consent, user.analytics_region) == ("denied", "eea")
+    assert read.status_code == 200
+    assert read.json()["data"]["answer"] == "denied"
+
+
+@pytest.mark.asyncio
 async def test_the_answer_is_not_part_of_a_users_card(user):
     user.analytics_consent, user.analytics_region = "denied", "eea"
     user.analytics_consent_at = datetime.now(timezone.utc)
@@ -202,18 +231,20 @@ async def test_the_servers_events_read_the_stored_answer_and_the_plan(client, se
     standing = {"plan": plan.name, "plan_status": "active", "billing_period": "yearly"}
 
     # No answer and no region yet: anonymous.
-    assert await event_context(session, user.id) == EventContext(identified=False, plan=standing)
+    assert await read_event_context(session, user.id) == EventContext(
+        identified=False, plan=standing
+    )
 
     await client.put(URL, json={"answer": None, "region": "other"})
-    assert (await event_context(session, user.id)).identified is True
+    assert (await read_event_context(session, user.id)).identified is True
 
     await client.put(URL, json={"answer": "denied", "region": "other"})
-    assert (await event_context(session, user.id)).identified is False
+    assert (await read_event_context(session, user.id)).identified is False
 
     await client.put(URL, json={"answer": "granted", "region": "eea"})
-    assert (await event_context(session, user.id)).identified is True
+    assert (await read_event_context(session, user.id)).identified is True
 
 
 @pytest.mark.asyncio
 async def test_an_account_that_isnt_there_has_no_context(session):
-    assert await event_context(session, uuid4()) == EventContext()
+    assert await read_event_context(session, uuid4()) == EventContext()

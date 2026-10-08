@@ -14,7 +14,10 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import RextAuthenticationException
+from src.api.middleware.exceptions import (
+    RextAuthenticationException,
+    RextAuthorizationException,
+)
 from src.api.models.user_models.users import Users
 from src.api.schema.analytics_consent_schema import (
     AnalyticsConsentResponse,
@@ -75,7 +78,14 @@ async def update_analytics_consent(
     An answer replaces the stored one. No answer (null) stores the region only and leaves a
     stored answer as it is: a browser that has forgotten a refusal must not undo it. The
     response is what is stored afterwards, so that browser can take the answer back.
+
+    Refused while impersonating: the browser is then the admin's, and its answer and
+    its region are not the customer's to have written on their account.
     """
+    if current_user.get("is_impersonating"):
+        raise RextAuthorizationException(
+            message="The answer on usage analytics can't be changed while impersonating."
+        )
     user = await _own_account(db, current_user, lock=True)
     user.analytics_region = consent.region
     if consent.answer is not None and consent.answer != user.analytics_consent:
