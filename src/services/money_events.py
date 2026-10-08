@@ -24,10 +24,9 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.subscription_models.orders import Order
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
@@ -78,47 +77,55 @@ def _amount(cents: Any) -> Optional[float]:
         return None
 
 
-def _held_by(event_type: str, payload: Dict[str, Any]) -> Optional[tuple]:
+def _plan_source(event_type: str, payload: Dict[str, Any]) -> Optional[tuple]:
     """
-    How to find the subscription a webhook is about: by a subscription's id or by an
-    order's, and the id. None when the webhook names neither, or when what the backend
-    holds can't be trusted to be the plan it means.
+    Where a webhook's plan is read from, and the id to look for: the variant that was
+    bought, where the webhook names it (a subscription's own, an order's first item's),
+    or the subscription an invoice belongs to. None when the webhook names neither, or
+    when the subscription held now can't be trusted to be on the plan the invoice means:
+    a plan change's invoice, and a refund that doesn't say what its invoice was for.
     """
     data = payload.get("data") or {}
     attributes = data.get("attributes") or {}
     if event_type in _INVOICE_EVENTS:
-        if attributes.get("billing_reason") == _PLAN_CHANGE:
+        reason = attributes.get("billing_reason")
+        unsure = not reason and event_type == "subscription_payment_refunded"
+        if reason == _PLAN_CHANGE or unsure:
             return None
         found_by, value = "subscription", attributes.get("subscription_id")
     elif event_type.startswith("subscription_"):
-        found_by, value = "subscription", data.get("id")
+        found_by, value = "variant", attributes.get("variant_id")
     elif event_type.startswith("order_"):
-        found_by, value = "order", data.get("id")
+        item = attributes.get("first_order_item")
+        found_by, value = "variant", item.get("variant_id") if isinstance(item, dict) else None
     else:
         return None
     return (found_by, str(value)) if value else None
 
 
-def _plan_queries(found_by: str, value: str) -> list:
-    """The reads that find a subscription's plan and period, the surest first."""
-    held = select(SubscriptionPlan.name, UserSubscription.billing_period).join(
-        SubscriptionPlan, SubscriptionPlan.id == UserSubscription.plan_id
-    )
-    newest = UserSubscription.created_at.desc()
-    if found_by == "subscription":
-        return [
-            held.where(UserSubscription.lemonsqueezy_subscription_id == value)
-            .order_by(newest)
+def _plan_query(found_by: str, value: str) -> Any:
+    """
+    The read that names a plan and tells its billing period. By the variant bought, it
+    is the plan as it was sold: a later plan change doesn't relabel an order's refund.
+    """
+    if found_by == "variant":
+        return (
+            select(SubscriptionPlan.name, SubscriptionPlan.lemonsqueezy_variant_id_yearly)
+            .where(
+                or_(
+                    SubscriptionPlan.lemonsqueezy_variant_id_monthly == value,
+                    SubscriptionPlan.lemonsqueezy_variant_id_yearly == value,
+                )
+            )
             .limit(1)
-        ]
-    # An order is tied to its subscription in the orders table; the subscription's own
-    # copy of the order's id is filled in on some rows only, so it comes second.
-    return [
-        held.join(Order, Order.subscription_id == UserSubscription.id)
-        .where(Order.lemonsqueezy_order_id == value)
-        .limit(1),
-        held.where(UserSubscription.lemonsqueezy_order_id == value).order_by(newest).limit(1),
-    ]
+        )
+    return (
+        select(SubscriptionPlan.name, UserSubscription.billing_period)
+        .join(SubscriptionPlan, SubscriptionPlan.id == UserSubscription.plan_id)
+        .where(UserSubscription.lemonsqueezy_subscription_id == value)
+        .order_by(UserSubscription.created_at.desc())
+        .limit(1)
+    )
 
 
 def money_event(
@@ -308,20 +315,16 @@ async def _held_plan(
     db: AsyncSession, event_type: str, payload: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
     """
-    The plan and billing period of the subscription a webhook is about, as the backend
-    holds it now (after the webhook's own work). None when it holds none, or can't say:
-    the event then goes without a plan. A plan change's invoice is one of those: it
-    names no plan, and the one held at that moment may be the one being left.
+    The plan and billing period a webhook is about, under the backend's own name for the
+    plan: from the variant the webhook names, or for an invoice from the subscription
+    held now. None when neither can say, and the event then goes without a plan.
     """
-    held_by = _held_by(event_type, payload)
-    if held_by is None:
+    source = _plan_source(event_type, payload)
+    if source is None:
         return None
-    row = None
+    found_by, value = source
     try:
-        for query in _plan_queries(*held_by):
-            row = (await db.execute(query)).first()
-            if row is not None:
-                break
+        row = (await db.execute(_plan_query(found_by, value))).first()
     except Exception as error:  # noqa: BLE001 - analytics never fails a webhook
         logger.warning("Money event's plan not read", extra={"error": type(error).__name__})
         try:
@@ -332,6 +335,9 @@ async def _held_plan(
         return None
     if row is None:
         return None
+    if found_by == "variant":
+        yearly = str(row.lemonsqueezy_variant_id_yearly or "") == value
+        return {"plan": row.name, "billing_period": "yearly" if yearly else "monthly"}
     period = getattr(row.billing_period, "value", row.billing_period)
     return {"plan": row.name, "billing_period": period}
 
