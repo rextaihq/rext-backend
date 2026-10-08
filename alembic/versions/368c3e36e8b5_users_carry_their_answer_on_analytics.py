@@ -13,8 +13,11 @@ EEA analytics is on until refused), and analytics_consent_at (when they answered
 Only the table's shape changes: three nullable columns with no default and two checks that
 every existing row passes (NULL passes a check). No row is added, removed or rewritten.
 
-The downgrade drops the three columns and with them the stored answers; the browser still
-holds each person's answer and the dashboard writes it again.
+The downgrade refuses while any account holds an answer: dropping the columns would lose
+refusals, and a later upgrade would then treat someone outside the EEA who had refused as
+not having answered. The earlier code runs against this shape as it is (it never reads the
+columns), so going back a release needs no downgrade. A region alone is not kept: the
+dashboard writes it again at sign-in.
 """
 
 from typing import Sequence, Union
@@ -47,6 +50,16 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    answers = (
+        op.get_bind()
+        .execute(sa.text("SELECT count(*) FROM users WHERE analytics_consent IS NOT NULL"))
+        .scalar()
+    )
+    if answers:
+        raise RuntimeError(
+            f"{answers} accounts hold an answer on usage analytics: the downgrade would"
+            " delete them, refusals included. Keep them somewhere first."
+        )
     op.drop_constraint("ck_users_analytics_region", "users", type_="check")
     op.drop_constraint("ck_users_analytics_consent", "users", type_="check")
     op.drop_column("users", "analytics_consent_at")

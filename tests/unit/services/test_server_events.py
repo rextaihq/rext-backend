@@ -1,11 +1,12 @@
 """Server-side events for product analytics (rext-control task 712).
 
-Who an event may name, what it may carry, and that sending never reaches the work it
-reports. PostHog is a fake client here; nothing leaves the machine.
+Who an event may name, what it may carry, and that reporting one never reaches the work
+it reports. PostHog is a fake transport here; nothing leaves the machine.
 """
 
 import asyncio
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -14,37 +15,47 @@ import httpx
 import pytest
 
 from src.api.models.subscription_models.subscriptions import BillingPeriod, SubscriptionStatus
-from src.services import server_events
+from src.services import money_events, server_events
 from src.services.server_events import (
+    EVENT_PROPERTIES,
     EventContext,
     allows_identity,
     event_context,
     plan_properties,
-    send_server_event,
+    report_event,
     send_soon,
+    sendable,
 )
 
-
-class _PostHog:
-    """Stands in for the httpx client: keeps what was posted, answers as told."""
-
-    def __init__(self, status_code: int = 200, error: Exception | None = None):
-        self.status_code = status_code
-        self.error = error
-        self.posts: list[tuple[str, dict]] = []
-
-    async def post(self, url, json):
-        if self.error is not None:
-            raise self.error
-        self.posts.append((url, json))
-        return SimpleNamespace(status_code=self.status_code)
+AT = datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc)
+PLAN = {"plan": "growth", "plan_status": "active", "billing_period": "monthly"}
 
 
 @pytest.fixture
-def configured(monkeypatch):
+def posthog(monkeypatch):
+    """Analytics on; what the one sender is asked to send is kept in `sent`."""
     monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
-    monkeypatch.setenv("ENVIRONMENT", "Production")
-    monkeypatch.delenv("POSTHOG_HOST", raising=False)
+    state = SimpleNamespace(sent=[], context=EventContext(identified=True, plan=PLAN), reads=[])
+
+    async def send(event, properties, *, key, person_id=None, occurred_at=None, client=None):
+        state.sent.append(
+            SimpleNamespace(
+                event=event,
+                properties=properties,
+                key=key,
+                person_id=person_id,
+                occurred_at=occurred_at,
+            )
+        )
+        return True
+
+    async def context(user_id):
+        state.reads.append(user_id)
+        return state.context
+
+    monkeypatch.setattr(money_events, "send_server_event", send)
+    monkeypatch.setattr(server_events, "event_context", context)
+    return state
 
 
 @pytest.mark.parametrize(
@@ -91,139 +102,215 @@ def test_a_plan_that_isnt_loaded_is_left_out_rather_than_queried():
     assert plan_properties(Unloaded()) == {"plan_status": "active", "billing_period": "monthly"}
 
 
-@pytest.mark.asyncio
-async def test_an_allowed_event_carries_the_accounts_id(configured):
-    posthog = _PostHog()
-    user_id, workspace_id = uuid4(), uuid4()
-
-    sent = await send_server_event(
+def test_the_list_is_the_eight_events_on_the_task():
+    assert set(EVENT_PROPERTIES) == {
+        "user_signed_up",
+        "workspace_created",
         "credits_spent",
-        {"action": "generate", "credits": 15, "balance_after": 385},
-        key="charge-1",
-        user_id=user_id,
-        workspace_id=workspace_id,
-        identified=True,
-        plan={"plan": "growth", "plan_status": "active", "billing_period": "monthly"},
-        occurred_at=datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc),
-        client=posthog,
-    )
-
-    assert sent is True
-    url, body = posthog.posts[0]
-    assert url == "https://eu.i.posthog.com/i/v0/e/"
-    assert body["event"] == "credits_spent"
-    assert body["distinct_id"] == str(user_id)
-    assert body["timestamp"] == "2026-10-08T07:00:00+00:00"
-    assert body["properties"] == {
-        "plan": "growth",
-        "plan_status": "active",
-        "billing_period": "monthly",
-        "action": "generate",
-        "credits": 15,
-        "balance_after": 385,
-        "workspace_id": str(workspace_id),
-        "surface": "app",
-        "source": "server",
-        "environment": "production",
+        "credits_low",
+        "credits_out",
+        "content_generation_started",
+        "content_generation_completed",
+        "content_generation_failed",
     }
 
 
-@pytest.mark.asyncio
-async def test_an_event_without_the_persons_yes_is_anonymous(configured):
-    posthog = _PostHog()
-    user_id = uuid4()
-
-    await send_server_event(
-        "user_signed_up",
-        {"method": "credentials"},
-        key=str(user_id),
-        user_id=user_id,
-        client=posthog,
-    )
-
-    body = posthog.posts[0][1]
-    assert str(user_id) not in str(body)
-    assert body["distinct_id"] == body["uuid"]
-    assert body["properties"]["$process_person_profile"] is False
-
-
-@pytest.mark.asyncio
-async def test_a_retry_is_the_same_event_and_another_thing_is_another(configured):
-    posthog = _PostHog()
-
-    for key in ("run-1", "run-1", "run-2"):
-        await send_server_event(
-            "workspace_created", {"first_workspace": True}, key=key, client=posthog
-        )
-    await send_server_event("credits_out", {"action": "generate"}, key="run-1", client=posthog)
-
-    first, again, other, other_name = (body["uuid"] for _, body in posthog.posts)
-    assert first == again
-    assert len({first, other, other_name}) == 3
-
-
-@pytest.mark.asyncio
-async def test_text_a_person_could_have_typed_never_leaves(configured, monkeypatch):
-    posthog = _PostHog()
+def test_a_property_that_isnt_on_the_events_list_never_leaves(monkeypatch):
     warned = []
     monkeypatch.setattr(
         server_events.logger, "warning", lambda message, **kwargs: warned.append((message, kwargs))
     )
 
-    await send_server_event(
+    kept = sendable(
         "credits_spent",
         {
-            "action": "generate",
-            "credits": 15,
-            "refunded": False,
-            "keyword": "best running shoes",
-            "email": "mary@example.com",
-            "title": "x" * 65,
-            "details": {"nested": "value"},
+            "action": "deep_research",
+            "credits": 4,
+            "balance_after": 96,
+            "plan": "growth",
+            # One word, so its shape says nothing: it is left out because it isn't listed.
+            "keyword": "shoes",
+            "token": "abc-123",
+            # Listed for another event, not for this one.
+            "method": "google",
             "nothing": None,
         },
-        key="charge-2",
-        client=posthog,
     )
 
-    properties = posthog.posts[0][1]["properties"]
-    assert {"action", "credits", "refunded"} <= set(properties)
-    assert not {"keyword", "email", "title", "details", "nothing"} & set(properties)
+    assert kept == {"action": "deep_research", "credits": 4, "balance_after": 96, "plan": "growth"}
     # The log names what was left out, never its value.
     assert warned == [
         (
             "Server event properties left out",
-            {"extra": {"properties": ["details", "email", "keyword", "title"]}},
+            {"extra": {"event": "credits_spent", "properties": ["keyword", "method", "token"]}},
         )
     ]
 
 
-@pytest.mark.asyncio
-async def test_nothing_is_sent_without_the_projects_key(monkeypatch):
-    monkeypatch.delenv("POSTHOG_PROJECT_KEY", raising=False)
-    posthog = _PostHog()
-
-    assert await send_server_event("user_signed_up", key="u-1", client=posthog) is False
-    assert posthog.posts == []
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "posthog",
-    [_PostHog(status_code=503), _PostHog(error=httpx.ConnectTimeout("no route"))],
-    ids=["refused", "unreachable"],
+    "value",
+    ["best running shoes", "mary@example.com", "x" * 65, {"nested": "value"}, ["a"], ""],
+    ids=["a sentence", "an address", "too long", "a mapping", "a list", "empty"],
 )
-async def test_a_send_that_fails_is_false_and_never_raises(configured, posthog):
-    assert await send_server_event("user_signed_up", key="u-1", client=posthog) is False
+def test_a_listed_property_holds_a_number_a_boolean_or_a_short_word(value):
+    assert sendable("credits_spent", {"action": value, "credits": 4}) == {"credits": 4}
 
 
 @pytest.mark.asyncio
-async def test_a_context_that_cant_be_read_is_anonymous_and_planless():
-    class Broken:
-        async def execute(self, *_args, **_kwargs):
-            raise RuntimeError("connection closed")
+async def test_an_allowed_event_carries_the_accounts_id_its_plan_and_its_workspace(posthog):
+    user_id, workspace_id = uuid4(), uuid4()
 
-    assert await event_context(Broken(), uuid4()) == EventContext()
+    sent = await report_event(
+        "credits_spent",
+        {"action": "generate_outline", "credits": 1, "balance_after": 385},
+        key="charge-1",
+        occurred_at=AT,
+        user_id=user_id,
+        workspace_id=workspace_id,
+    )
+
+    assert sent is True
+    assert posthog.reads == [user_id]
+    event = posthog.sent[0]
+    assert (event.event, event.key, event.occurred_at) == ("credits_spent", "charge-1", AT)
+    assert event.person_id == str(user_id)
+    assert event.properties == {
+        **PLAN,
+        "action": "generate_outline",
+        "credits": 1,
+        "balance_after": 385,
+        "workspace_id": str(workspace_id),
+    }
+
+
+@pytest.mark.asyncio
+async def test_an_event_without_the_persons_yes_names_no_one(posthog):
+    posthog.context = EventContext(identified=False, plan=PLAN)
+    user_id = uuid4()
+
+    await report_event(
+        "user_signed_up",
+        {"method": "credentials"},
+        key=str(user_id),
+        occurred_at=AT,
+        user_id=user_id,
+    )
+
+    event = posthog.sent[0]
+    assert event.person_id is None
+    assert str(user_id) not in str(event.properties)
+
+
+@pytest.mark.asyncio
+async def test_a_caller_that_has_read_the_standing_passes_it_and_nothing_is_read(posthog):
+    """Code on a sync session (a graph node) reads the answer itself."""
+    user_id = uuid4()
+
+    await report_event(
+        "content_generation_started",
+        {"from_library": True, "country": "US"},
+        key="thread-1",
+        occurred_at=AT,
+        user_id=user_id,
+        context=EventContext(identified=False, plan={"plan": "starter"}),
+    )
+
+    assert posthog.reads == []
+    assert posthog.sent[0].person_id is None
+    assert posthog.sent[0].properties == {"plan": "starter", "from_library": True, "country": "US"}
+
+
+@pytest.mark.asyncio
+async def test_an_event_that_isnt_on_the_list_is_not_sent(posthog):
+    assert await report_event("page_viewed", {"path": "home"}, key="k", occurred_at=AT) is False
+    assert posthog.sent == []
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_read_or_sent_without_the_projects_key(posthog, monkeypatch):
+    monkeypatch.delenv("POSTHOG_PROJECT_KEY")
+
+    sent = await report_event("user_signed_up", key="u-1", occurred_at=AT, user_id=uuid4())
+
+    assert (sent, posthog.sent, posthog.reads) == (False, [], [])
+
+
+@pytest.mark.asyncio
+async def test_a_report_that_fails_is_false_and_never_raises(posthog, monkeypatch):
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(money_events, "send_server_event", broken)
+
+    assert await report_event("user_signed_up", key="u-1", occurred_at=AT, user_id=uuid4()) is False
+
+
+@pytest.mark.asyncio
+async def test_a_report_that_hangs_is_given_up_on(posthog, monkeypatch):
+    async def hangs(_user_id):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(server_events, "event_context", hangs)
+    monkeypatch.setattr(server_events, "REPORT_TIMEOUT_SECONDS", 0.05)
+
+    assert await report_event("user_signed_up", key="u-1", occurred_at=AT, user_id=uuid4()) is False
+    assert posthog.sent == []
+
+
+@pytest.mark.asyncio
+async def test_a_standing_that_cant_be_read_is_anonymous_and_planless(monkeypatch):
+    @asynccontextmanager
+    async def broken():
+        raise RuntimeError("connection closed")
+        yield
+
+    monkeypatch.setattr(server_events, "get_async_db_context", broken)
+
+    assert await event_context(uuid4()) == EventContext()
+
+
+# --- the one sender's request (src/services/money_events.py)
+
+
+def _transport(requests, status=200):
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(status, json={"status": 1})
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [302, 404, 503])
+async def test_only_a_2xx_answer_counts_as_taken(monkeypatch, status):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    requests = []
+
+    async with httpx.AsyncClient(transport=_transport(requests, status)) as client:
+        taken = await money_events.send_server_event(
+            "credits_spent", {"credits": 1}, key="row-1", client=client
+        )
+
+    assert taken is False
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_borrowed_client_with_no_time_limit_is_still_given_the_senders(monkeypatch):
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    requests = []
+
+    async with httpx.AsyncClient(transport=_transport(requests), timeout=None) as client:
+        taken = await money_events.send_server_event(
+            "credits_spent", {"credits": 1}, key="row-1", client=client
+        )
+
+    assert taken is True
+    limits = requests[0].extensions["timeout"]
+    assert set(limits.values()) == {money_events.SEND_TIMEOUT_SECONDS}
+
+
+# --- starting a send without waiting for it
 
 
 @pytest.mark.asyncio
