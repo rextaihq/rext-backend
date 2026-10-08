@@ -334,3 +334,19 @@ async def test_feedback_that_removes_the_only_subsection_gets_none_without_a_ret
 
     assert len(outline["structure"]["sections"]) == 2
     assert len(calls) == 1
+
+
+@pytest.mark.unit
+async def test_feedback_about_the_subsections_of_one_section_leaves_the_others(monkeypatch):
+    second = _pillar("H2", "H2", "H3", "H3", marker="second")
+
+    outline, calls = await _generate(
+        monkeypatch,
+        "pillar-content",
+        [_pillar("H2", "H2"), second],
+        rejected_reason="Remove the H3s under the introduction",
+        previous=_pillar("H2", "H3", "H3", "H2", "H3", "H3", marker="rejected"),
+    )
+
+    assert outline["structure"]["sections"][2]["heading_level"] == "H3"
+    assert len(calls) == 2
