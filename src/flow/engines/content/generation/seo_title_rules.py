@@ -711,8 +711,9 @@ def without_filler_ending(title: Any, keyphrase: Any = "") -> Optional[str]:
     if _ends_dangling(words, len(words) - 1) or not _balanced(shorter):
         return None
     candidates = [shorter]
-    # A question keeps its mark at the end, and the other scripts have padding of their own.
-    if not asks and not _local_language(shorter):
+    # A question keeps its mark at the end, as does a clause that closed on a mark of its own
+    # ("...How Does It Work? Today"), and the other scripts have padding of their own.
+    if not asks and shorter[-1:] not in "?!." and not _local_language(shorter):
         known = shorter.lower()
         candidates += [
             f"{shorter}{suffix}"
