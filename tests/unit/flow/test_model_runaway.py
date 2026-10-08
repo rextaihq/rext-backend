@@ -186,6 +186,27 @@ def test_an_answer_whole_but_for_its_closing_brace_is_kept():
     )
 
 
+def test_an_answer_the_model_had_closed_is_kept_as_it_stands():
+    # Closed, and only then the whitespace: adding a brace would make it unreadable.
+    closed = '{"title":"x","steps":["a","b"],"success":"it works","minutes":20,"words":1800}'
+    assert answer_before_runaway(closed, _Plan) == _Plan(
+        title="x", steps=["a", "b"], success="it works", minutes=20, words=1800
+    )
+    assert answer_before_runaway(closed + "\n\n", _Plan) is not None
+
+
+async def test_a_call_that_ran_away_after_closing_its_answer_is_answered_from_it():
+    written = ['{"title":"x",', '"steps":["a"],', '"words":1900}']
+    model = _Streamed(tokens=[*written, *[" " * 50] * 40], streaming=True, sent=[])
+
+    plan = await ainvoke_watched(
+        model, [HumanMessage(content="plan")], stage="titles", schema=_Plan
+    )
+
+    assert plan == _Plan(title="x", steps=["a"], words=1900)
+    assert len(model.sent) == len(written) + runaway.RUNAWAY_WHITESPACE // 50  # one attempt
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -292,6 +313,13 @@ async def test_a_second_runaway_is_the_callers():
     with pytest.raises(WhitespaceRunaway, match="two"):
         await ainvoke_watched(model, [], stage="outline_model")
     assert model.calls == 2
+
+
+async def test_a_call_that_is_itself_a_second_attempt_is_not_asked_for_again():
+    model = _Scripted(WhitespaceRunaway("ran away"), "never reached")
+    with pytest.raises(WhitespaceRunaway):
+        await ainvoke_watched(model, [], stage="outline_model", attempts=1)
+    assert model.calls == 1
 
 
 async def test_any_other_error_is_not_asked_for_again():
@@ -408,6 +436,15 @@ async def test_an_outline_that_ran_away_after_its_last_field_is_kept(monkeypatch
     assert len(outline["steps"]["steps"]) == 4
     assert outline["target_word_count"] == 2000  # the schema's own default
     assert not result["content"].get("error")
+
+
+async def test_a_thin_outlines_second_attempt_makes_one_call(monkeypatch):
+    # The first outline is thin (no steps), so it is asked for again; that attempt runs away.
+    # It used to be asked for once more itself: up to four calls for one outline.
+    result, calls = await _generate(monkeypatch, [_how_to(0), WhitespaceRunaway("ran away")])
+
+    assert calls == 2
+    assert result["content"]["outline"]["steps"]["steps"] == []  # the first one is kept
 
 
 async def test_an_outline_that_runs_away_twice_ends_the_run_with_the_notice(monkeypatch):

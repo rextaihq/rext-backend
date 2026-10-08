@@ -198,7 +198,8 @@ async def test_the_library_save_makes_no_embedding(monkeypatch):
 
     await keyword_module.save_keyword_research(state, {}, runtime=SimpleNamespace(store=_Store()))
 
-    assert saved == [{"index": False}]
+    # Two writes: the item, and the search results kept beside it for a later start (E24).
+    assert saved == [{"index": False}, {"index": False}]
 
 
 # --- the timing lines -------------------------------------------------------------------

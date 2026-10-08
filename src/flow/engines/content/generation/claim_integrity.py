@@ -102,6 +102,15 @@ _SENTENCE_SPLIT_RE = re.compile(
     rf"(?:(?<=[.!?])|(?<=[.!?]{_CLOSERS})|(?<=[.!?]{_CLOSERS}{_CLOSERS}))"
     r"\s+(?=[\"'(\[*_\u201c\u2018]?[A-Z0-9])"
 )
+# A full stop after a title ends no sentence ("Dr. Smith"), nor does one after a company
+# suffix inside brackets: "The company (Contentful Inc.) Enterprise plan lacks SSO." is one
+# sentence, so its subject and its claim stay in one unit. A suffix that isn't in brackets may
+# well end its sentence ("… through Acme Inc. Beta is cheaper …"), so that boundary stays.
+# "etc." is left out: it ends sentences as often as not.
+_ABBREVIATION_END_RE = re.compile(
+    rf"\b(?:(?:Mr|Mrs|Ms|Dr|St|vs)\.{_CLOSERS}{{0,2}}"
+    rf"|(?:Inc|Ltd|Co|Corp|LLC|LLP|PLC|GmbH|Pty|Bros|Jr|Sr)\.{_CLOSERS}{{1,2}})$"
+)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
 # A piece that is only citations ("… CMS.” [Report](url)", "… [A](url) and [B](url)") is the
@@ -110,6 +119,25 @@ _CITATION_LINK = r"\[[^\]]*\]\(https?://[^)\s]+\)"
 _CITATION_ONLY_RE = re.compile(
     rf"{_CITATION_LINK}(?:(?:[\s,;.&]|\b[Aa]nd\b)*{_CITATION_LINK})*[\s,;.]*"
 )
+# A citation label names its source: names (capitalised words), figures and a few source words
+# ("Report A", "Gartner 2024", "Official pricing page", "State of CMS 2024 report"), or a bare
+# address ("ahrefs.com"). A linked sentence says something of its own ("[Acme launched in
+# 2024](url).", "[Beta beats Acme](url)."), and its address is its own: on the claim before it,
+# that claim would be weighed against the wrong source alone. Any other lowercase word makes
+# the text a sentence, whatever its verb, so no list of verbs has to be complete.
+_LABEL_MAX_WORDS = 8
+_LABEL_WORDS = frozenset(
+    "a an the of for and in on by to at from with vs report reports study studies survey surveys "
+    "research data analysis index benchmark benchmarks statistics stats review reviews pricing "
+    "page pages docs documentation guide guides blog article post source sources official "
+    "website site press release announcement changelog whitepaper paper papers overview "
+    "summary results edition annual state findings".split()
+)
+_LABEL_WORD_RE = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*")
+_BARE_ADDRESS_RE = re.compile(r"(?:https?://)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?")
+# A link that opens a piece: after an abbreviation's full stop it starts a new piece, so a
+# citation or a linked sentence is never joined to the sentence before it.
+_LINK_START_RE = re.compile(r"\s*\[[^\]]*\]\(https?://")
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9.'+-]*")
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -127,6 +155,39 @@ class _Unit:
     cited_urls: tuple[str, ...]
 
 
+def _sentences(line: str) -> list[str]:
+    """The line's sentences; a split after an abbreviation's full stop is joined back."""
+    sentences: list[str] = []
+    for part in _SENTENCE_SPLIT_RE.split(line):
+        if (
+            sentences
+            and _ABBREVIATION_END_RE.search(sentences[-1])
+            and not _LINK_START_RE.match(part)
+        ):
+            sentences[-1] = f"{sentences[-1]} {part}"
+        else:
+            sentences.append(part)
+    return sentences
+
+
+def _is_source_name(label: str) -> bool:
+    label = label.strip()
+    if _BARE_ADDRESS_RE.fullmatch(label):
+        return True
+    if len(label.split()) > _LABEL_MAX_WORDS or _numeric_claim_spans(label):
+        return False
+    return not any(
+        word.islower() and word not in _LABEL_WORDS for word in _LABEL_WORD_RE.findall(label)
+    )
+
+
+def _is_citation_label(part: str) -> bool:
+    """Only links, each one a source's name and not a sentence of its own."""
+    if not _CITATION_ONLY_RE.fullmatch(part):
+        return False
+    return all(_is_source_name(m.group(1)) for m in _LINK_RE.finditer(part))
+
+
 def _units(text: str) -> list[_Unit]:
     """Sentences (and table rows) of prose, headings excluded."""
     cleaned = _HTML_COMMENT_RE.sub(" ", _IMAGE_RE.sub(" ", text or ""))
@@ -135,17 +196,16 @@ def _units(text: str) -> list[_Unit]:
         stripped = line.strip()
         if not stripped or _HEADING_RE.match(line) or _TABLE_SEPARATOR_RE.match(stripped):
             continue
-        parts = [stripped] if _TABLE_ROW_RE.match(stripped) else _SENTENCE_SPLIT_RE.split(stripped)
+        parts = [stripped] if _TABLE_ROW_RE.match(stripped) else _sentences(stripped)
         line_units: list[_Unit] = []
         claim_at: Optional[int] = None  # the last unit that isn't only citation links
         for part in parts:
             urls = tuple(m.group(2) for m in _LINK_RE.finditer(part))
             visible = _LINK_RE.sub(lambda m: m.group(1), part).strip()
-            if claim_at is not None and _CITATION_ONLY_RE.fullmatch(part.strip()):
+            if claim_at is not None and _is_citation_label(part.strip()):
                 # Split off by the sentence boundary: the claim must keep its own source, or it
                 # is weighed against every source and a number from another one can pass it.
-                # The links' own text stays a unit as well: a fully linked sentence
-                # ("[Contentful costs $300 per month](url).") is a claim, not only a source.
+                # The label's own text stays a unit as well, as it always was.
                 claim = line_units[claim_at]
                 line_units[claim_at] = _Unit(claim.text, claim.cited_urls + urls)
             elif visible:
@@ -249,12 +309,38 @@ _NEGATION_BEFORE_RE = re.compile(
     rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
     re.IGNORECASE,
 )
+# A denial that is itself denied asserts the test: "it's not true that we never tested", "it
+# isn't that we haven't tested", "it's false that we never tested", "we deny that we never
+# tested". Only the denial's own subject and its auxiliaries may stand between "that" and
+# the denial: with anything else there ("that we said we never…", "that our logs show we
+# never…") the outer negation denies what was said or shown, and asserts nothing about the
+# test. Read by structure, so no list of reporting verbs has to be complete.
+_NEGATED_FRAME_RE = re.compile(
+    r"(?:(?:\bnot\b|n['’]t\b)\s+(?:(?:true|the\s+case|correct|accurate)\s+)?"
+    r"|\b(?:false|untrue|incorrect|wrong|a\s+lie|a\s+myth)\s+"
+    r"|\b(?:den(?:y|ies|ied)|reject(?:s|ed)?|dispute[sd]?)\s+"
+    r"(?:the\s+(?:claim|idea|notion|suggestion)\s+)?)"
+    r"that\s+(?:we|i|(?:our|my)\s+(?:team|editors?|reviewers?|staff))"
+    r"(?:\s+(?:have|had|has|did|do|would|could|ever|actually|really|personally))*\s*$",
+    re.IGNORECASE,
+)
+# "Never" denies the qualifier, not the test, only when the qualifier makes the sentence say
+# that testing happened: "we never tested in isolation", "never tested without production
+# data", "never tested only one tier". A place or a condition is a plain, scoped denial: "we
+# never tested in production" and "never tested under load" say what wasn't tested.
+_QUALIFIER_AFTER_RE = re.compile(
+    r"\s+(?:without|only|just|merely|alone|in\s+isolation|by\s+(?:itself|themselves))\b",
+    re.IGNORECASE,
+)
 # After a denial, a clause that asserts the test by leaving the verb out ("I haven't tested
-# it, but we have.", "…, though our team did.") is a testing claim after all. Only a bare
-# auxiliary that ends its clause counts: "but we have a checklist" asserts no test.
+# it, but we have.", "…, though our team did.") or by standing a pro-verb in for it ("…, but
+# we did so on enterprise") is a testing claim after all. A bare auxiliary counts only when it
+# ends its clause: "but we have a checklist" asserts no test, nor does "we do so many checks".
 _ELLIPTICAL_ASSERTION_RE = re.compile(
-    r"\b(?:but|though|although|however|yet)\b[,\s]+(?:we|i|(?:our|my)\s+team)\s+(?:have|has|did|do)\b"
-    r"(?!\s+not\b)(?:\s+(?:too|already|since))?\s*(?:[.!?,;:)\"'\u201d\u2019]|$)",
+    r"\b(?:but|though|although|however|yet)\b[,\s]+(?:we|i|(?:our|my)\s+team)\s+"
+    r"(?:have|has|did|do)\b(?!\s+not\b)(?:\s+done\b)?"
+    r"(?:\s+so\b(?!\s+(?:many|much|few|little|far)\b)"
+    r"|(?:\s+(?:too|already|since))?\s*(?:[.!?,;:)\"'\u201d\u2019]|$))",
     re.IGNORECASE,
 )
 _CLIENT_OUTCOME_RE = re.compile(
@@ -553,20 +639,30 @@ def _numeric_claim_spans(text: str) -> dict[str, list[str]]:
     return spans
 
 
+def _denies(text: str, testing: re.Match) -> bool:
+    """Whether a negation right before the testing word denies that a test was run."""
+    if testing.group(0).lower().startswith("in "):
+        # "Not in our tests but in production" places the finding; it asserts the tests.
+        return False
+    before = text[: testing.start()]
+    negation = _NEGATION_BEFORE_RE.search(before)
+    if not negation:
+        return False
+    if _NEGATED_FRAME_RE.search(before[: negation.start()]):
+        return False
+    return not (
+        negation.group(0).lower().startswith("never")
+        and _QUALIFIER_AFTER_RE.match(text, testing.end())
+    )
+
+
 def _fabricated_experience(unit: _Unit, index: _EvidenceIndex) -> Optional[str]:
     text = unit.text
     if not _FIRST_PERSON_RE.search(text):
         return None
     # The first testing word the sentence doesn't deny ("we haven't tested every product,
     # but we tested the top five" is still a claim).
-    testing = next(
-        (
-            m
-            for m in _TESTING_RE.finditer(text)
-            if not _NEGATION_BEFORE_RE.search(text[: m.start()])
-        ),
-        None,
-    )
+    testing = next((m for m in _TESTING_RE.finditer(text) if not _denies(text, m)), None)
     if testing is None:
         testing = next(
             (

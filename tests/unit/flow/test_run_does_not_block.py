@@ -128,23 +128,11 @@ async def test_keyword_extraction_runs_off_the_event_loop(monkeypatch):
     assert result["seo_result"]["keyword_clusters"] == [{"name": "ROI"}]
 
 
-def test_the_nltk_corpora_are_loaded_at_import_not_in_a_worker_thread():
+def test_the_nltk_corpora_are_loaded_at_import_from_disk_without_a_download(monkeypatch):
     # NLTK's first corpus load is not thread-safe. Importing keyword_service (at
     # server start, on one thread) loads it, so the extractions running in
-    # worker threads only ever read a loaded corpus.
-    from nltk.corpus import stopwords
-
-    import src.services.keyword_service as keyword_service
-
-    assert type(stopwords).__name__ != "LazyCorpusLoader"
-    assert "the" in keyword_service.ENGLISH_STOP_WORDS
-    assert "the" in keyword_service.KeywordExtractor().stop_words
-
-
-def test_missing_nltk_data_does_not_stop_the_server_from_starting(monkeypatch):
-    # No network at start: the downloads fail quietly and the corpus is missing.
-    # Importing the module (which builds the graph) must still work; the corpus
-    # is then loaded on first use, as before.
+    # worker threads only ever read a loaded corpus; and the start makes no
+    # network call: the image holds the data (G39, rext-control#390).
     import importlib
 
     import nltk
@@ -152,14 +140,63 @@ def test_missing_nltk_data_does_not_stop_the_server_from_starting(monkeypatch):
 
     import src.services.keyword_service as keyword_service
 
+    assert keyword_service.load_nltk_data(download=True)  # on disk for this test
+    downloads = []
+    monkeypatch.setattr(nltk, "download", lambda *a, **k: downloads.append(a) or True)
+    try:
+        reloaded = importlib.reload(keyword_service)
+        assert downloads == []
+        assert type(stopwords).__name__ != "LazyCorpusLoader"
+        assert "the" in reloaded.ENGLISH_STOP_WORDS
+        assert "the" in reloaded.KeywordExtractor().stop_words
+        assert downloads == []
+    finally:
+        monkeypatch.undo()
+        importlib.reload(keyword_service)
+
+
+def test_missing_nltk_data_is_downloaded_once_on_first_use_not_at_start(monkeypatch):
+    # No data on disk (a checkout that never fetched it): the server still starts,
+    # with no download at import; the first extractions, in worker threads, fetch
+    # it once between them.
+    import importlib
+
+    import nltk
+    from nltk.corpus import stopwords
+
+    import src.services.keyword_service as keyword_service
+
+    assert keyword_service.load_nltk_data(download=True)
+    real_words = stopwords.words
+    downloads = []
+
     def missing(*args, **kwargs):
         raise LookupError("Resource stopwords not found.")
 
-    monkeypatch.setattr(nltk, "download", lambda *a, **k: False)
+    def download(name, quiet=False):
+        time.sleep(0.05)
+        downloads.append(name)
+        monkeypatch.setattr(stopwords, "words", real_words)
+        return True
+
     monkeypatch.setattr(stopwords, "words", missing)
+    monkeypatch.setattr(nltk, "download", download)
     try:
         reloaded = importlib.reload(keyword_service)
-        assert reloaded.ENGLISH_STOP_WORDS is None
+        assert reloaded.ENGLISH_STOP_WORDS is None and downloads == []
+
+        extractors = []
+        workers = [
+            threading.Thread(target=lambda: extractors.append(reloaded.KeywordExtractor()))
+            for _ in range(4)
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+
+        assert downloads == list(reloaded.NLTK_DATA)  # once, not once per thread
+        assert len(extractors) == 4 and all("the" in e.stop_words for e in extractors)
     finally:
         monkeypatch.undo()
         importlib.reload(keyword_service)
