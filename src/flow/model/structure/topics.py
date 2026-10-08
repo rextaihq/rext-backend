@@ -38,10 +38,13 @@ class SEOTopic(BaseModel):
             "MANDATORY TITLE LENGTH REQUIREMENT:\n"
             f"- The title MUST contain between {TITLE_MIN_CHARS} and {TITLE_MAX_CHARS} "
             "characters inclusive, unless the prompt gives a higher maximum for a long "
-            "focus keyphrase.\n"
-            f"- {TITLE_MIN_CHARS} characters is the minimum.\n"
-            f"- {TITLE_MAX_CHARS} characters is the maximum, or the higher maximum the "
-            "prompt gives for a long focus keyphrase.\n"
+            "focus keyphrase, or a range of its own for a Chinese, Japanese, Korean or Thai "
+            "title: then the prompt's range applies.\n"
+            f"- For a title in Latin or a similar script, {TITLE_MIN_CHARS} characters is the "
+            f"minimum and {TITLE_MAX_CHARS} the maximum, or the higher maximum the prompt "
+            "gives for a long focus keyphrase.\n"
+            "- For a Chinese, Japanese, Korean or Thai title, only the prompt's range "
+            "applies.\n"
             "- Count spaces and punctuation as characters.\n"
             "- The title must remain natural and readable while satisfying the "
             "character requirement.\n\n"
@@ -76,6 +79,8 @@ class SEOTopic(BaseModel):
                     "minimum": TITLE_MIN_CHARS,
                     "maximum": TITLE_MAX_CHARS,
                     "inclusive": True,
+                    "applies_to": "titles in Latin and similar scripts; Chinese, Japanese, "
+                    "Korean and Thai titles take the prompt's range",
                 },
                 "focus_keyphrase": "exact_verbatim_match_required",
                 "primary_keyphrase": "near_beginning_when_natural",
@@ -133,7 +138,8 @@ class SEOTopics(BaseModel):
             "or reworded version, and never a different keyword you chose yourself.\n"
             f"2. Every title MUST be between {TITLE_MIN_CHARS} and {TITLE_MAX_CHARS} "
             "characters inclusive, or up to the higher maximum the prompt gives for a long "
-            "focus keyphrase.\n"
+            "focus keyphrase, or within the range the prompt gives for a Chinese, Japanese, "
+            "Korean or Thai title.\n"
             "3. Count spaces and punctuation when calculating title length.\n"
             "4. Titles must remain natural and readable while satisfying the length "
             "rule.\n"
@@ -165,6 +171,8 @@ class SEOTopics(BaseModel):
                 "ideal_topic_count": 5,
                 "title_character_minimum": TITLE_MIN_CHARS,
                 "title_character_maximum": TITLE_MAX_CHARS,
+                "title_character_range_applies_to": "Latin and similar scripts; Chinese, "
+                "Japanese, Korean and Thai titles take the prompt's range",
                 "title_character_count_includes_spaces": True,
                 "title_must_contain_exact_focus_keyphrase": True,
                 "title_must_match_content_type_and_intent": True,
