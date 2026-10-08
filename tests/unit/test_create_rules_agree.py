@@ -130,6 +130,40 @@ async def test_a_site_that_keeps_us_waiting_is_let_through(site):
 
 
 @pytest.mark.asyncio
+async def test_a_parking_page_that_stalls_is_still_a_parking_page(site, monkeypatch):
+    site["resolves"].add("tea.example.com")
+
+    class _Stalls(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"<html><body>This domain is for sale. Buy this domain today.</body></html>"
+            raise httpx.ReadTimeout("still waiting")
+
+    monkeypatch.setattr(
+        fast_scraper,
+        "public_client",
+        lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=_Stalls())),
+            follow_redirects=True,
+        ),
+    )
+
+    # What it sent before it stalled already says what it is.
+    with pytest.raises(WebsiteUnreachableError, match="parked or for sale"):
+        await check_website_reachable("https://tea.example.com/")
+
+
+@pytest.mark.asyncio
+async def test_a_slow_sites_address_is_logged_without_what_it_carries(site, caplog):
+    site["resolves"].add("tea.example.com")
+    site["answer"] = httpx.ReadTimeout("still waiting")
+
+    with caplog.at_level("INFO"):
+        await check_website_reachable("https://tea.example.com/in?token=s3cret#part")
+
+    assert "s3cret" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_a_site_that_refuses_the_connection_is_still_refused(site):
     site["resolves"].add("tea.example.com")
     site["answer"] = httpx.ConnectError("refused")

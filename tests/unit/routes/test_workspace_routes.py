@@ -79,7 +79,8 @@ async def _create(client, body):
             patch("src.api.routes.workspaces.workspace_core.WorkspaceService") as service_cls,
             patch(
                 "src.api.routes.workspaces.workspace_core.check_website_reachable",
-                new=AsyncMock(return_value=None),
+                # The check answers with the address to keep: here, the one it was asked about.
+                new=AsyncMock(side_effect=lambda url: url),
             ) as reachable,
             patch("src.utils.audit_helper.create_audit_log_async", new=AsyncMock()),
         ):
