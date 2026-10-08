@@ -274,6 +274,64 @@ async def test_a_restore_keeps_what_was_there_and_puts_the_whole_version_back(se
 
 
 @pytest.mark.asyncio
+async def test_a_restore_keeps_the_editors_unsaved_text_and_still_finds_its_version(session):
+    """The article holds its full count of versions and the editor has typing it never saved.
+    Restoring the oldest keeps that typing as an edit and puts the oldest back, although the
+    trim takes the oldest's own row on the way: a save sent first, by itself, would have
+    trimmed it before the restore could read it."""
+    user, workspace, article = await _setup(session)
+    for number in range(KEPT + 2):
+        await _save(session, article, user, body_markdown=f"Text number {number}.")
+        await _age(session, article, SITTING + timedelta(seconds=1))
+    stored = article.body_markdown
+    oldest = (await _versions(session, article))[-1]
+    oldest_text = text_of(
+        (await ContentVersionService(session).get(article.id, oldest["id"], workspace.id))[0]
+    )
+
+    restored = await ContentService(session).restore_version(
+        article.id,
+        oldest["id"],
+        workspace.id,
+        user.id,
+        unsaved={"body_markdown": "Typed and never saved.", "introduction": article.introduction},
+    )
+
+    assert text_of(restored) == oldest_text
+    versions = await _versions(session, article)
+    assert len(versions) == KEPT
+    assert [v["source"] for v in versions[:2]] == ["restore", "edit"]
+    service = ContentVersionService(session)
+    typed, _ = await service.get(article.id, versions[1]["id"], workspace.id)
+    assert typed.body_markdown == "Typed and never saved."
+    # The article as it was stored is in the history too, before the typing.
+    saved, _ = await service.get(article.id, versions[2]["id"], workspace.id)
+    assert saved.body_markdown == stored
+
+
+@pytest.mark.asyncio
+async def test_a_restore_with_nothing_unsaved_keeps_no_extra_version(session):
+    user, workspace, article = await _setup(session)
+    await _save(session, article, user, body_markdown="Edited once.")
+    first = (await _versions(session, article))[-1]
+
+    await ContentService(session).restore_version(
+        article.id,
+        first["id"],
+        workspace.id,
+        user.id,
+        # What the editor holds is what is stored: nothing was typed since the save.
+        unsaved={"body_markdown": "Edited once.", "title": article.title},
+    )
+
+    assert [v["source"] for v in await _versions(session, article)] == [
+        "restore",
+        "edit",
+        "generation",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_a_restore_empties_what_the_version_has_empty(session):
     user, workspace, article = await _setup(session, introduction=None, body_html=None)
     await _save(session, article, user, introduction="Added later.", body_html="<p>Added.</p>")
