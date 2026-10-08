@@ -198,3 +198,39 @@ class WordPressConnectionTest(BaseModel):
         None, description="Whether the plugin's author list answers (plugin key connections only)"
     )
     checked_at: datetime
+
+
+class ContentVersionMaker(BaseModel):
+    """Who made a version."""
+
+    id: UUID
+    name: Optional[str] = None
+
+
+class ContentVersionSummary(BaseModel):
+    """A version in the editor's history: the article's text as a save left it."""
+
+    id: UUID
+    created_at: datetime
+    updated_at: Optional[datetime] = Field(
+        None, description="When a later save of the same sitting last wrote into it"
+    )
+    created_by: Optional[ContentVersionMaker] = Field(
+        None, description="null when the account is gone"
+    )
+    source: str = Field(description="generation, edit, restore or publish")
+    title: str
+    word_count: int = Field(description="Words of the introduction and the body")
+
+
+class ContentVersionListResponse(BaseModel):
+    """Response for GET /content/{content_id}/versions: newest first, without bodies."""
+
+    versions: List[ContentVersionSummary]
+
+
+class ContentVersionDetailResponse(ContentVersionSummary):
+    """Response for GET /content/{content_id}/versions/{version_id}."""
+
+    introduction: Optional[str] = None
+    body_markdown: Optional[str] = None

@@ -32,7 +32,11 @@ from src.api.models.admin_models import (  # noqa: E402, F401
     PlatformAdminInvitations,
 )
 from src.api.models.audit_models.audit_logs import AuditLog  # noqa: E402, F401
-from src.api.models.content_models import Content, ContentSEOData  # noqa: E402, F401
+from src.api.models.content_models import (  # noqa: E402, F401
+    Content,
+    ContentSEOData,
+    ContentVersion,
+)
 from src.api.models.email_models import EmailEvent, EmailLog  # noqa: E402, F401
 from src.api.models.integrations.shopify_app_install import (  # noqa: E402
     ShopifyAppInstall,  # noqa: F401
