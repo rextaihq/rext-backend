@@ -388,6 +388,46 @@ async def test_a_pillar_outline_short_of_four_main_sections_gets_no_subsections_
 
 
 @pytest.mark.unit
+def test_subsections_are_made_only_while_the_articles_target_stays_where_it_is():
+    from src.flow.model.structure.outlines import get_outline_model
+
+    schema = get_outline_model("pillar-content")
+    outline = _planned(*[(f"Section {n}", ["a", "b", "c", "d"]) for n in range(7)])
+    sections = outline["structure"]["sections"]
+    target = outline_module._summed_word_target(schema, sections)
+    room = outline_module._room_for_subsections(schema, sections)
+
+    # One more entry than the room would move the target (or pass the writer's limit).
+    assert outline_module._summed_word_target(schema, [*sections, *([{}] * room)]) == target
+    assert (
+        outline_module._summed_word_target(schema, [*sections, *([{}] * (room + 1))]) != target
+        or len(sections) + room == outline_module.MAX_EXPANDED_SECTIONS
+    )
+
+    made = outline_module._subsections_from_key_points(outline, room=room)
+
+    assert 0 < made <= room
+    assert outline_module._summed_word_target(schema, outline["structure"]["sections"]) == target
+    assert len(outline["structure"]["sections"]) <= outline_module.MAX_EXPANDED_SECTIONS
+    # Served in order: the first sections have theirs, and none has a single one.
+    families = []
+    for section in outline["structure"]["sections"]:
+        if section["heading_level"] == "H2":
+            families.append(0)
+        else:
+            families[-1] += 1
+    assert families[0] == 4 and 1 not in families
+
+
+@pytest.mark.unit
+def test_no_room_leaves_the_outline_whole():
+    outline = _planned(*[(f"Section {n}", ["a", "b"]) for n in range(4)])
+
+    assert outline_module._subsections_from_key_points(outline, room=1) == 0
+    assert len(outline["structure"]["sections"]) == 4
+
+
+@pytest.mark.unit
 def test_an_outline_whose_sections_have_no_parts_is_left_as_it_is():
     outline = _pillar("H2", "H2", "H2", "H2")
     before = [dict(section) for section in outline["structure"]["sections"]]
