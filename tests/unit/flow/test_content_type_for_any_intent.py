@@ -15,6 +15,7 @@ from langgraph.types import Command
 import src.flow.engines.content.generation.content_type as content_type_module
 from src.flow.engines.content.generation.content_type import (
     ARTICLE_TYPES_FOR_ANY_INTENT,
+    intent_for_the_pick,
     intent_of_choice,
     offered_content_types,
     recommended_among,
@@ -23,6 +24,8 @@ from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
 from src.flow.states.rext import REXT
 
 CONFIG = {"configurable": {"thread_id": "any-intent"}}
+# What the recommendation was told of the intent, by the last `_gate`.
+told: list[str] = []
 
 
 def _results(*titles):
@@ -43,13 +46,17 @@ HOW_TO_RESULTS = _results(
 )
 
 
-async def _gate(monkeypatch, intent, query="remote team onboarding", results=None):
+async def _gate(
+    monkeypatch, intent, query="remote team onboarding", results=None, results_read_as=None
+):
     """The content-type gate's payload for a keyword of that intent, the candidates the
     recommendation was made among, and the app to answer it with."""
     asked = []
+    told.clear()
 
     def recommend(query, search_intent, candidates):
         asked.append(list(candidates))
+        told.append(search_intent)
         return (candidates[0] if candidates else None), "Fits"
 
     monkeypatch.setattr(content_type_module, "_recommend_content_type", recommend)
@@ -63,6 +70,7 @@ async def _gate(monkeypatch, intent, query="remote team onboarding", results=Non
     await app.ainvoke(
         {
             "serp_normalized": {"query": query, "normalize_results": results or []},
+            **({"final_intent_type": results_read_as} if results_read_as else {}),
             "seo_result": {
                 "intent_type": intent,
                 "serp_backlinks": {"main_intent": intent, "search_volume": 10},
@@ -180,3 +188,33 @@ async def test_a_keyword_read_as_navigational_whose_results_are_how_to_guides(mo
         == (INTENT_TO_CONTENT_TYPES["navigational"])
     )
     assert "blog" in gate["content_types"]
+
+
+async def test_the_reported_keyword_as_staging_reads_it(monkeypatch):
+    """Read on staging (2026-10-08 14:23Z): the provider labels "remote team onboarding"
+    navigational, our own reading of its results is INFORMATIONAL, and no format leads them
+    (two lists, a how-to, a guide). The pick was made among a brand's pages and came out as
+    "documentation". It is now made among those and the article types, and is told both
+    readings."""
+    gate, among, _ = await _gate(monkeypatch, "navigational", results_read_as="INFORMATIONAL")
+
+    own = INTENT_TO_CONTENT_TYPES["navigational"]
+    assert among == [*own, "blog", "how-to-guide", "explainer"]
+    assert told == [
+        "navigational by the keyword's data, but the top search results read as informational"
+    ]
+    # The step still says what the keyword's data says, and offers the same list.
+    assert gate["search_intent"] == "navigational"
+    assert gate["content_types"] == [*own, "blog", "how-to-guide", "explainer"]
+
+
+async def test_a_brands_own_name_is_picked_among_its_site_pages_as_before(monkeypatch):
+    """Its results read as navigational too: nothing joins, and the pick is told the label."""
+    gate, among, _ = await _gate(
+        monkeypatch, "navigational", query="acme tools", results_read_as="NAVIGATIONAL"
+    )
+
+    assert among == INTENT_TO_CONTENT_TYPES["navigational"]
+    assert told == ["navigational"]
+    assert intent_for_the_pick("commercial", None) == "commercial"
+    assert intent_for_the_pick("commercial", "UNKNOWN") == "commercial"

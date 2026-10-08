@@ -107,17 +107,44 @@ def intent_of_choice(chosen: str, intent: str) -> str:
     )
 
 
-def recommended_among(intent_types: list[str], serp_evidence: dict | None) -> list[str]:
-    """The types the recommendation is made among: the intent's own, and an article type the
-    search results themselves lead with. A keyword read as navigational whose results are
-    mostly how-to guides is not a brand's page, and the pick should be free to say so. With
-    no leading format, or one that is not an article's (home pages, list posts), the intent's
-    own alone, as before: a brand's own name keeps its site pages."""
+def recommended_among(
+    intent_types: list[str], serp_evidence: dict | None, results_read_as: str | None = None
+) -> list[str]:
+    """The types the recommendation is made among: the intent's own, and the article types
+    where what the search shows says the keyword is an article's.
+
+    The intent is the search provider's label for the keyword. Two readings of our own stand
+    beside it: the format most of the top results share, and the intent read from those
+    results (``results_read_as``, the run's `final_intent_type`). "remote team onboarding"
+    was labelled navigational while its results read as informational, and the pick, made
+    among a brand's pages, was "documentation".
+
+    * The results read as informational and the label says otherwise: the three article
+      types join.
+    * The results lead with a how-to or an explainer format: that type joins.
+
+    With neither, the intent's own alone, as before: a brand's own name, whose results read
+    as navigational too, keeps its site pages."""
     leading = ((serp_evidence or {}).get("dominant_format") or {}).get("content_types") or []
+    read_as_articles = (results_read_as or "").strip().lower() == "informational"
     return [
         *intent_types,
-        *(t for t in ARTICLE_TYPES_FOR_ANY_INTENT if t in leading and t not in intent_types),
+        *(
+            t
+            for t in ARTICLE_TYPES_FOR_ANY_INTENT
+            if t not in intent_types and (read_as_articles or t in leading)
+        ),
     ]
+
+
+def intent_for_the_pick(search_intent: str, results_read_as: str | None) -> str:
+    """What the recommendation is told of the intent: the label, and what the results read as
+    when the two disagree, so the pick weighs both and not the label alone."""
+    read_as = (results_read_as or "").strip().lower()
+    label = (search_intent or "").strip().lower()
+    if not read_as or read_as in ("unknown", label):
+        return search_intent
+    return f"{search_intent} by the keyword's data, but the top search results read as {read_as}"
 
 
 def _gate_inputs(state: REXT) -> tuple[str, list[str], str]:
@@ -146,11 +173,15 @@ def recommend_content_type(state: REXT) -> REXT:
     logger.info("Starting content type selection")
 
     search_intent, candidate_content_types, query = _gate_inputs(state)
+    # Our own reading of the top results, kept beside the provider's label for the keyword.
+    results_read_as = state.get("final_intent_type")
     recommended_content_type, recommendation_reason = _recommend_content_type(
         query,
-        search_intent,
+        intent_for_the_pick(search_intent, results_read_as),
         recommended_among(
-            candidate_content_types, build_serp_evidence(state.get("serp_normalized"))
+            candidate_content_types,
+            build_serp_evidence(state.get("serp_normalized")),
+            results_read_as,
         ),
     )
     return {
