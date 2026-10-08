@@ -1740,6 +1740,9 @@ async def handle_subscription_payment_success(
     # `renews_at` is the authoritative next period end; fall back to a calendar
     # month only when it is absent.
     next_period_end = parsed_renews_at or add_months(utc_now_naive(), 1)
+    # The legacy counter still goes to zero with its anchor, for the release before this one
+    # (see subscription_tasks: a deploy or a rollback would otherwise carry last month's count).
+    subscription.current_api_calls = 0
     subscription.usage_reset_date = next_period_end
 
     # Replenish monthly credits for paid plans so current_credits and

@@ -28,3 +28,22 @@ def test_neither_is_part_of_an_answer():
     assert "current_api_calls" not in subscription.to_dict(include_nulls=True)
     assert "max_api_calls_per_month" not in plan.to_dict(include_nulls=True)
     assert plan.to_dict(exclude=["name"]).get("name") is None
+
+
+def test_the_legacy_counter_is_still_zeroed_wherever_its_anchor_advances():
+    # Nothing here reads the counter any more, but the release before this one does, and it
+    # clears a count only once its date has passed. If the date moved on without the count
+    # going to zero, a worker of that release (during a deploy, or after a rollback) would
+    # enforce last month's count for a whole period.
+    import inspect
+
+    import src.api.tasks.subscription_tasks as tasks
+    import src.services.webhook_handlers.subscription_handlers as handlers
+
+    for module, advance in (
+        (tasks, "subscription.usage_reset_date = next_billing_anchor("),
+        (handlers, "subscription.usage_reset_date = next_period_end"),
+    ):
+        source = inspect.getsource(module)
+        at = source.index(advance)
+        assert "subscription.current_api_calls = 0" in source[at - 600 : at + 200], module.__name__
