@@ -50,6 +50,8 @@ from src.flow.engines.content.generation.section_rewrite import words as count_w
 from src.flow.engines.content.generation.validation import (
     apply_brand_exclusion,
     check_brand_placement_policy,
+    check_brand_prominence,
+    check_brand_url_accuracy,
     check_links_preserved,
     merge_link_inventory,
     protected_links,
@@ -394,6 +396,12 @@ def _repair_fixed(
     lost_before, lost_after = _lost_links(before, protected), _lost_links(repaired, protected)
     if lost_after > lost_before:
         return False
+    # Asked to move the brand's first mention earlier, the repair may add one there instead: a
+    # Subtle article's one mention is then two, and the new first one has no link. The place
+    # is fixed and the level the user chose is broken, with no repair after this one.
+    for held in (check_brand_prominence, check_brand_url_accuracy):
+        if held(before, spec)["passed"] and not held(repaired, spec)["passed"]:
+            return False
     brand_fixed = False
     if brand_failed and brand_context:
         brand_name = brand_context["brand_name"]
