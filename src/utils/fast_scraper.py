@@ -16,7 +16,12 @@ import httpx
 import tldextract
 from bs4 import BeautifulSoup
 
-from src.utils.url_validator import SSRFValidationError, public_client, validate_url_for_ssrf
+from src.utils.url_validator import (
+    SSRFValidationError,
+    loggable_url,
+    public_client,
+    validate_url_for_ssrf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +142,7 @@ async def check_website_reachable(url: str) -> str:
             ) from exc
         url = twin
 
+    final_host, head = "", b""
     try:
         # Every hop, redirects included, is checked and connects only to the address checked.
         # Certificates aren't checked here: the site only has to be one a browser opens, and a
@@ -150,7 +156,6 @@ async def check_website_reachable(url: str) -> str:
             # Stream so only the start of the page is read, never the whole body.
             async with client.stream("GET", url) as response:
                 final_host = (response.url.host or "").lower()
-                head = b""
                 async for chunk in response.aiter_bytes():
                     head += chunk
                     if len(head) >= PARKED_SNIFF_BYTES:
@@ -159,8 +164,8 @@ async def check_website_reachable(url: str) -> str:
         # A redirect to a private or reserved address.
         raise WebsiteUnreachableError("This URL is not allowed.") from exc
     except httpx.TimeoutException:
-        logger.info("Website reachability check timed out for %s: let through", url)
-        return url
+        # Let through, unless what it did send before stalling is a parking page (below).
+        logger.info("Website reachability check timed out for %s: let through", loggable_url(url))
     except httpx.HTTPError as exc:
         logger.info("Website reachability check failed for %s: %s", url, exc)
         raise WebsiteUnreachableError(
