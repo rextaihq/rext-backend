@@ -13,7 +13,7 @@ so the unique index on hand-written titles is the model's.
 
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -497,6 +497,84 @@ async def test_a_saved_article_is_counted_with_its_numbers_and_the_rows_own_time
     assert properties["word_count"] == 5
     assert properties["repairs"] == 1
     assert how == {"thread_id": thread, "occurred_at": saved_at}
+
+
+@pytest.mark.asyncio
+async def test_a_save_replayed_on_a_thread_started_again_is_one_event_at_one_time(monkeypatch):
+    """Decided with the events' owner (rext-control#712): an event's key and time must not
+    move on a replay. A thread started again saves into the row an earlier run made, whose
+    update time moves with every save: the replay reads it before saving again."""
+    began = datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc)
+    first_runs_row = began - timedelta(hours=3)
+    saves = [began + timedelta(seconds=300), began + timedelta(seconds=340)]
+    on_the_row = [first_runs_row]
+
+    class SavingService:
+        def __init__(self, db):
+            pass
+
+        async def create_content(self, workspace_id, user_id, payload):
+            on_the_row.append(saves[len(on_the_row) - 1])
+            return SimpleNamespace(
+                id=uuid.uuid4(), created_at=first_runs_row, updated_at=on_the_row[-1]
+            )
+
+    @asynccontextmanager
+    async def fake_db():
+        yield None
+
+    async def last_saved_at(workspace_id, thread_id):
+        return on_the_row[-1]
+
+    monkeypatch.setattr(service_module, "ContentService", SavingService)
+    monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", fake_db)
+    monkeypatch.setattr(loop_module, "run_on_main_loop", lambda coro: coro)
+    monkeypatch.setattr(notification_module, "notify_now", AsyncMock())
+    monkeypatch.setattr(persist_module, "_last_saved_at", last_saved_at)
+    announced = _announced(monkeypatch)
+    state = _finished_run_state()
+    state["content"]["run_started_at"] = began.isoformat()
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+
+    await persist_module.persist_content(state, config)
+    await persist_module.persist_content(state, config)  # the same step, run again
+
+    first, replayed = (how["occurred_at"] for _, _, how in announced)
+    assert first == replayed == saves[0]
+
+
+@pytest.mark.asyncio
+async def test_the_rows_last_save_is_read_apart_from_the_save_and_never_fails_it(monkeypatch):
+    workspace, thread = uuid.uuid4(), uuid.uuid4()
+    moment = datetime(2026, 10, 8, 7, 5, tzinfo=timezone.utc)
+
+    class Found:
+        def scalar_one_or_none(self):
+            return moment
+
+    class Session:
+        async def execute(self, statement):
+            return Found()
+
+    @asynccontextmanager
+    async def reading():
+        yield Session()
+
+    @asynccontextmanager
+    async def broken():
+        raise RuntimeError("the database went away")
+        yield
+
+    monkeypatch.setattr(loop_module, "run_on_main_loop", lambda coro: coro)
+    monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", reading)
+
+    # No event is sent without the project's key: nothing is read for it.
+    monkeypatch.delenv("POSTHOG_PROJECT_KEY", raising=False)
+    assert await persist_module._last_saved_at(workspace, thread) is None
+    monkeypatch.setenv("POSTHOG_PROJECT_KEY", "phc_test")
+    assert await persist_module._last_saved_at(workspace, thread) == moment
+    monkeypatch.setattr(database_module, "get_pooled_langgraph_db_context", broken)
+    assert await persist_module._last_saved_at(workspace, thread) is None
 
 
 @pytest.mark.asyncio

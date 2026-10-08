@@ -62,8 +62,10 @@ EVENT_PROPERTIES: Dict[str, FrozenSet[str]] = {
     "credits_low": frozenset({"balance", "threshold"}),
     "credits_out": frozenset({"action"}),
     "content_generation_started": frozenset({"from_library", "country"}),
-    "content_generation_completed": frozenset({"content_type", "word_count", "seconds", "repairs"}),
-    "content_generation_failed": frozenset({"stage", "reason", "seconds"}),
+    "content_generation_completed": frozenset(
+        {"content_type", "word_count", "seconds", "writing_seconds", "repairs"}
+    ),
+    "content_generation_failed": frozenset({"stage", "reason", "seconds", "writing_seconds"}),
 }
 
 # A property's text is a word from a fixed list (an action, a plan, a country code):

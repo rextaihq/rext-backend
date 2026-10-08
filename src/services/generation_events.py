@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
@@ -104,6 +105,68 @@ def offered_content_type(content_type: Any) -> Optional[str]:
     return key if key in CONTENT_TYPE_TO_MODEL else None
 
 
+# When each run's outline was approved, by thread, kept in this process only. The article is
+# written in the one invocation that follows the approval, so the seconds from it to the save
+# need no place in the run's state. A run another process takes up after a restart has no
+# entry here, and its event goes without them.
+_WRITING_BEGAN: dict[str, float] = {}
+_MOST_RUNS_WRITING = 2000
+
+
+def _clock() -> float:
+    """Seconds on a clock that only goes forward (a deploy or a time sync never moves it)."""
+    return time.monotonic()
+
+
+def writing_began(thread_id: Optional[str] = None) -> None:
+    """The outline was approved and the article's writing starts: called by the outline gate."""
+    thread = thread_id or _thread_id()
+    if not thread:
+        return
+    _WRITING_BEGAN.pop(thread, None)
+    _WRITING_BEGAN[thread] = _clock()
+    while len(_WRITING_BEGAN) > _MOST_RUNS_WRITING:
+        del _WRITING_BEGAN[next(iter(_WRITING_BEGAN))]
+
+
+def _writing_seconds(thread_id: Optional[str]) -> Optional[int]:
+    """Whole seconds since the outline's approval, or None when this process did not see it.
+    The entry is taken out: the run ends with the event that asks."""
+    began = _WRITING_BEGAN.pop(thread_id or _thread_id() or "", None)
+    return None if began is None else max(0, round(_clock() - began))
+
+
+def _aware(moment: Optional[datetime]) -> Optional[datetime]:
+    return moment.replace(tzinfo=timezone.utc) if moment and moment.tzinfo is None else moment
+
+
+def completion_time(
+    state: Any,
+    *,
+    created_at: Optional[datetime],
+    saved_before: Optional[datetime],
+    saved_after: Optional[datetime],
+) -> Optional[datetime]:
+    """When this run's article was saved: the same moment for a save that runs twice, so the
+    event's key and time do not move on a replay.
+
+    * The row is this run's own (made after the run began): its creation time.
+    * The row is an earlier run's (a thread started again): the time this run first saved
+      into it. A replayed save finds that time on the row before it saves again
+      (``saved_before``, at or after the run's start); the first save has only the time it
+      leaves on the row (``saved_after``).
+
+    None when the run has no start mark or the row no times: the caller's own clock then.
+    """
+    started = run_started_at(state)
+    created_at, saved_before, saved_after = map(_aware, (created_at, saved_before, saved_after))
+    if started is None or created_at is None or created_at >= started:
+        return created_at
+    if saved_before is not None and saved_before >= started:
+        return saved_before
+    return saved_after if saved_after is not None and saved_after >= started else None
+
+
 def run_start_mark() -> dict:
     """What the graph's first node writes into the run's content: when it began."""
     return {RUN_STARTED_AT: datetime.now(timezone.utc).isoformat()}
@@ -144,6 +207,11 @@ def _uuid(value: Any) -> Optional[UUID]:
         return None
 
 
+def events_are_sent() -> bool:
+    """Whether this server sends analytics events at all (the project's key is set)."""
+    return bool(os.getenv("POSTHOG_PROJECT_KEY"))
+
+
 def _announce(
     name: str,
     properties: dict,
@@ -154,7 +222,7 @@ def _announce(
 ) -> None:
     """Start one event's send and return at once. Never raises."""
     try:
-        if not os.getenv("POSTHOG_PROJECT_KEY"):
+        if not events_are_sent():
             return
         serp = (state or {}).get("serp_payload") or {}
         user_id = _uuid(serp.get("user_id") or (state or {}).get("user_id"))
@@ -224,6 +292,8 @@ def announce_completed(
             "content_type": offered_content_type(content_type),
             "word_count": int(word_count),
             "seconds": _seconds(started, ended),
+            # From the outline's approval to the save: the server's own time writing it.
+            "writing_seconds": _writing_seconds(thread_id),
             "repairs": repairs if isinstance(repairs, int) and not isinstance(repairs, bool) else 0,
         },
         state,
@@ -242,6 +312,8 @@ def announce_failed(
             "stage": stage,
             "reason": reason,
             "seconds": _seconds(run_started_at(state), datetime.now(timezone.utc)),
+            # An article that failed: from the outline's approval to its end.
+            "writing_seconds": _writing_seconds(thread_id) if stage == ARTICLE else None,
         },
         state,
         thread_id=thread_id,

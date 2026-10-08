@@ -267,6 +267,73 @@ def test_an_event_that_cannot_be_started_never_reaches_the_run(monkeypatch):
     events.announce_started(_state())  # does not raise
 
 
+async def test_the_writing_seconds_run_from_the_outlines_approval_to_the_save(sent, monkeypatch):
+    """Decided by the events' owner (rext-control#712, 2026-10-08 12:11Z): `writing_seconds`
+    on a completed article and on a failed one, from the outline's approval, beside `seconds`
+    (the whole run). Kept in this process by thread: nothing is added to the run's state."""
+    taken, waiting = sent
+    clock = iter([100.0, 147.4, 200.0, 263.6, 300.0])
+    monkeypatch.setattr(events, "_clock", lambda: next(clock))
+
+    events.writing_began(THREAD)  # the outline gate, on approval
+    events.announce_completed(_state(), thread_id=THREAD, content_type="blog", word_count=1500)
+    events.writing_began(THREAD)
+    events.announce_failed(_state(), stage=events.ARTICLE, reason=events.PROVIDER, thread_id=THREAD)
+    # A failure before the article, and an article whose approval this process did not see
+    # (the run was taken up after a restart): sent without it, never with a guess.
+    events.writing_began(THREAD)
+    events.announce_failed(_state(), stage=events.TITLES, reason=events.INTERNAL, thread_id=THREAD)
+    events.announce_completed(_state(), thread_id="another", content_type="blog", word_count=9)
+    await _run(waiting)
+
+    assert [t["properties"].get("writing_seconds") for t in taken] == [47, 64, None, None]
+    assert "seconds" in taken[0]["properties"]
+
+
+def test_the_approvals_kept_for_the_writing_seconds_do_not_grow_without_end(monkeypatch):
+    monkeypatch.setattr(events, "_MOST_RUNS_WRITING", 3)
+    monkeypatch.setattr(events, "_WRITING_BEGAN", {})
+
+    for run in "abcde":
+        events.writing_began(run)
+
+    # Runs that never ended (a person who closed the tab) leave no trail longer than this.
+    assert list(events._WRITING_BEGAN) == ["c", "d", "e"]
+    assert events._writing_seconds("a") is None
+
+
+@pytest.mark.parametrize(
+    ("created", "before", "after", "expected"),
+    [
+        # A first run's row is its own: its creation time, whatever its later saves.
+        (10, None, 10, 10),
+        (10, 10, 30, 10),
+        # A thread started again saves into the earlier run's row: the time it leaves there...
+        (-600, -590, 20, 20),
+        # ...and a replay of that save finds that time on the row, and keeps it.
+        (-600, 20, 45, 20),
+        # No time on the row that is this run's: the caller's own clock.
+        (-600, -590, None, None),
+    ],
+)
+def test_a_saves_time_is_the_same_when_the_save_runs_twice(created, before, after, expected):
+    """Decided with the events' owner: an event's key and time must not move on a replay. The
+    row's update time moves with every save, so the replay reads it before saving again."""
+
+    def at(seconds):
+        return None if seconds is None else BEGAN + timedelta(seconds=seconds)
+
+    found = events.completion_time(
+        _state(),
+        # Rows give their times without a zone.
+        created_at=at(created).replace(tzinfo=None),
+        saved_before=at(before),
+        saved_after=at(after),
+    )
+
+    assert found == at(expected)
+
+
 def test_every_event_and_property_sent_from_here_is_on_the_senders_list(monkeypatch):
     """The sender drops what is not listed and logs its name: a property missing from its
     list would vanish without a failing test."""
@@ -284,10 +351,12 @@ def test_every_event_and_property_sent_from_here_is_on_the_senders_list(monkeypa
     monkeypatch.setattr(events, "_thread_id", lambda: THREAD)
 
     events.announce_started(_state())
+    events.writing_began(THREAD)
     events.announce_completed(
         _state(review={"repair_attempts": 1}), thread_id=THREAD, content_type="blog", word_count=9
     )
-    events.announce_failed(_state(), stage=events.TITLES, reason=events.REFUSED)
+    events.writing_began(THREAD)
+    events.announce_failed(_state(), stage=events.ARTICLE, reason=events.INTERNAL)
 
     assert set(seen) == {events.STARTED, events.COMPLETED, events.FAILED}
     for name, properties in seen.items():
