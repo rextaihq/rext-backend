@@ -181,6 +181,23 @@ def _kind(current: SubscriptionPlan, new: SubscriptionPlan) -> str:
     return UPGRADE if (new.price_monthly or 0) > (current.price_monthly or 0) else DOWNGRADE
 
 
+def _over_the_limits(
+    service: SubscriptionService,
+    current: SubscriptionPlan,
+    plan: SubscriptionPlan,
+    usage: Dict[str, int],
+) -> Optional[str]:
+    """Why the user's usage rules the plan out (more workspaces than it allows), in the
+    words the change itself refuses with, or None."""
+    if not service._is_downgrade(current, plan, usage):
+        return None
+    try:
+        service._validate_downgrade_limits(plan, usage)
+    except RextValidationException as over:
+        return over.message
+    return None
+
+
 def _period_refusal(
     standing: _Standing, current: SubscriptionPlan, plan: SubscriptionPlan, period: BillingPeriod
 ) -> Optional[str]:
@@ -289,13 +306,17 @@ async def plan_options(
     subscription = await _current_subscription(db, user_id)
     standing = await _standing_of(db, user_id, subscription, protected)
     current = subscription.plan if subscription else None
+    service = SubscriptionService(db)
+    usable = standing.change_refused is None and current is not None
+    # What the change checks a smaller plan against, read once for all of them.
+    usage = await service.calculate_usage(user_id) if usable else {}
     plans = []
     for plan in await _offered_plans(db, current.id if current else None):
+        over = _over_the_limits(service, current, plan, usage) if usable else None
         periods = []
         for period in _PERIODS:
-            usable = standing.change_refused is None and current is not None
             refused = (
-                _period_refusal(standing, current, plan, period)
+                (_period_refusal(standing, current, plan, period) or over)
                 if usable
                 else standing.change_refused
             )
@@ -534,15 +555,17 @@ async def extend_trial(
             Lemon Squeezy runs.
     """
     reason = clean_reason(reason)
-    result = await db.execute(
-        select(UserSubscription)
-        .options(selectinload(UserSubscription.plan))
-        .where(UserSubscription.user_id == user_id, subscription_grants_access())
-        .order_by(UserSubscription.created_at.desc())
-        .limit(1)
-        .with_for_update(of=UserSubscription)
-    )
-    subscription = result.scalar_one_or_none()
+    # The subscription the options showed (an active one before a trial), then its row
+    # under a lock, read again.
+    subscription = await _current_subscription(db, user_id)
+    if subscription is not None:
+        await db.execute(
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(UserSubscription.id == subscription.id)
+            .with_for_update(of=UserSubscription)
+            .execution_options(populate_existing=True)
+        )
     standing = await _standing_of(db, user_id, subscription)
     if standing.extension_refused:
         raise _refuse(standing.extension_refused, "admin_trial_standing")

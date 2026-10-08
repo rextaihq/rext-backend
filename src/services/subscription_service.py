@@ -30,7 +30,7 @@ from sqlalchemy.orm import selectinload
 
 from src.api.cache.decorators import invalidate_cache
 from src.api.cache.redis_client import cache
-from src.api.lib.sentry_config import capture_payment_exception
+from src.api.lib.sentry_config import capture_payment_exception, trigger_payment_alert
 from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     DuplicateResourceException,
@@ -51,6 +51,7 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.config.payment_config import payment_settings
 from src.config.plan_rules import TRIAL_DURATION_DAYS
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import as_utc, change_plan_credits
@@ -707,6 +708,35 @@ class SubscriptionService:
                         logger.warning(
                             f"LemonSqueezy API call failed for test/sandbox ID '{provider_sub_id}'. Proceeding with local plan update for testing.",
                             extra={"user_id": str(user_id), "provider_sub_id": provider_sub_id},
+                        )
+                    elif by_admin and isinstance(e, PaymentChangeUnconfirmed):
+                        # Lemon Squeezy took the change and only its answer was lost: it
+                        # can't be undone from here, so the admin isn't told that nothing
+                        # changed. Its subscription_updated brings the plan here in line.
+                        trigger_payment_alert(
+                            alert_type="admin_plan_change_unconfirmed",
+                            message=(
+                                "An admin's plan change was sent to Lemon Squeezy, which "
+                                "accepted it, but reading the subscription back failed: the "
+                                "plan here follows Lemon Squeezy's update; record who "
+                                "changed it and why"
+                            ),
+                            severity="high",
+                            context={
+                                "subscription": provider_sub_id,
+                                "old_plan": current_plan.name,
+                                "new_plan": new_plan.name,
+                            },
+                            user_id=str(user_id),
+                            operation="admin_plan_change",
+                        )
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy took the change, but its confirmation didn't "
+                                "arrive, so it isn't recorded here yet. The plan here follows "
+                                "when Lemon Squeezy's update arrives; the team has been alerted."
+                            ),
+                            rule_name="admin_plan_unconfirmed",
                         )
                     elif by_admin:
                         # The admin reads the status, never Lemon Squeezy's own words.

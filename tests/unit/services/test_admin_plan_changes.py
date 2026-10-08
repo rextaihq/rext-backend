@@ -31,6 +31,7 @@ from src.api.models.subscription_models.subscriptions import (
     subscription_grants_access,
 )
 from src.api.models.user_models.users import Users
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed
 from src.providers.payment.providers.lemonsqueezy import LemonSqueezyAPIError
 from src.services.audit_logger import audit_logger
 from src.services.subscription_service import SubscriptionService
@@ -89,6 +90,7 @@ def lemon(monkeypatch):
         subscription_service_module, "get_payment_provider_singleton", lambda: provider
     )
     monkeypatch.setattr(module, "trigger_payment_alert", MagicMock())
+    monkeypatch.setattr(subscription_service_module, "trigger_payment_alert", MagicMock())
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
     monkeypatch.setattr(module, "invalidate_cache", AsyncMock(return_value=0))
     monkeypatch.setattr(
@@ -304,6 +306,28 @@ async def test_nothing_changes_when_lemon_squeezy_does_not_accept_it(session, le
     assert "status 422" in message and "Nothing was changed" in message
     assert "variant not in the store" not in message  # the status, never Lemon Squeezy's words
     assert (row.plan_id, row.current_credits) == (starter.id, 100)
+    assert await _audit(session, user) == []
+
+
+async def test_a_change_lemon_squeezy_took_but_did_not_confirm_is_not_called_refused(
+    session, lemon
+):
+    # The PATCH went through and reading the subscription back failed: Lemon Squeezy has
+    # changed and can't be rolled back, so the admin isn't told that nothing changed.
+    starter, growth, _ = await _world(session)
+    user, row = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    lemon.update_subscription.side_effect = PaymentChangeUnconfirmed("read back failed")
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await _change(session, user, admin, growth)
+
+    assert "Lemon Squeezy took the change" in refused.value.message
+    assert "Nothing was changed" not in refused.value.message
+    alert = subscription_service_module.trigger_payment_alert.call_args.kwargs
+    assert alert["alert_type"] == "admin_plan_change_unconfirmed"
+    # Nothing is recorded here: Lemon Squeezy's own update brings the plan in line.
+    assert row.plan_id == starter.id
     assert await _audit(session, user) == []
 
 
@@ -589,6 +613,30 @@ async def test_the_options_for_a_user_nobody_bills_and_for_one_without_a_plan(se
     assert all(not period["allowed"] for plan in none["plans"] for period in plan["periods"])
 
 
+async def test_a_smaller_plan_the_users_workspaces_do_not_fit_is_not_offered(
+    session, lemon, monkeypatch
+):
+    # The change refuses it (the customer's own change does too), so the options say so.
+    starter, growth, pro = await _world(session)
+    starter.max_workspaces = 1
+    user, _ = await _subscribed(session, growth, left=250)
+    admin = await _user(session)
+    monkeypatch.setattr(
+        SubscriptionService,
+        "calculate_usage",
+        AsyncMock(return_value={"workspaces": 2, "members": 0}),
+    )
+
+    options = await module.plan_options(session, user.id)
+
+    down = _choice(options, starter)
+    assert (down["allowed"], down["modes"]) == (False, [])
+    assert "2 workspaces" in down["refused_reason"]
+    assert _choice(options, pro)["allowed"] is True
+    with pytest.raises(RextValidationException):
+        await _change(session, user, admin, starter)
+
+
 async def test_a_super_admins_account_is_offered_nothing(session, lemon):
     starter, growth, _ = await _world(session)
     user, _ = await _subscribed(session, starter, left=100)
@@ -745,6 +793,78 @@ async def test_only_a_trial_this_app_runs_is_extended(session, lemon):
         assert says in refused.value.message
 
     assert row.trial_end_date == NOW + timedelta(days=2)
+
+
+async def test_the_extension_reads_the_subscription_the_options_show(session, lemon):
+    # A paid plan and a newer trial row that both grant access: the options show the paid
+    # plan (active first), so the extension answers for that one and leaves the trial row.
+    starter, _, _ = await _world(session)
+    user, _ = await _subscribed(session, starter, left=100)
+    trial = await _plan(session, "trial", price=0, credits=60, trial=True, variants=False)
+    end = NOW + timedelta(days=2)
+    _, stray = await _subscribed(
+        session,
+        trial,
+        left=40,
+        billed=False,
+        user=user,
+        status=SubscriptionStatus.TRIAL,
+        trial_end_date=end,
+        end_date=end,
+        credits_reset_date=end,
+        created_at=NOW,
+    )
+    admin = await _user(session)
+
+    options = await module.plan_options(session, user.id)
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await module.extend_trial(
+            session,
+            user_id=user.id,
+            admin_id=admin.id,
+            ends_at=NOW + timedelta(days=9),
+            reason=REASON,
+        )
+
+    assert options["subscription"]["plan_id"] == starter.id
+    assert options["trial_extension"]["allowed"] is False
+    assert "isn't on a trial" in refused.value.message
+    assert stray.trial_end_date == end
+
+
+async def test_a_failed_audit_write_is_logged_without_what_the_entry_held(monkeypatch):
+    # SQLAlchemy's error text carries the statement's parameters, and with them the reason.
+    from sqlalchemy.exc import IntegrityError
+
+    import src.utils.audit_helper as audit_helper
+
+    logged = []
+    monkeypatch.setattr(
+        audit_helper.logger, "error", lambda message, *a, **k: logged.append(message)
+    )
+    db = MagicMock()
+    db.get = AsyncMock(return_value=None)
+    db.flush = AsyncMock(
+        side_effect=IntegrityError(
+            "INSERT INTO audit_logs ...",
+            {"audit_metadata": '{"reason": "As promised to jane@example.com"}'},
+            Exception("null value in column violates not-null constraint"),
+        )
+    )
+
+    entry = await audit_helper.create_audit_log(
+        db=db,
+        user_id=uuid4(),
+        action="admin.plan_changed",
+        resource_type="subscription",
+        resource_id="s-1",
+        metadata={"reason": "As promised to jane@example.com"},
+    )
+
+    assert entry is None
+    (line,) = logged
+    assert "jane@example.com" not in line
+    assert "not-null constraint" in line
 
 
 # --- the Users list ---------------------------------------------------------------------

@@ -47,6 +47,11 @@ class SubscriptionData:
     trial_end: Optional[datetime] = None
 
 
+class PaymentChangeUnconfirmed(Exception):
+    """The provider accepted a change, but reading the result back failed: the change
+    stands there, and what it left is unknown here until the provider's own update arrives."""
+
+
 class PaymentProvider(ABC):
     """Abstract payment provider interface that all providers must implement"""
 
