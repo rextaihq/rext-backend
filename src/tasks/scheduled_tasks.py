@@ -10,6 +10,7 @@ Environment variables:
 - BILLING_TASKS_ENABLED: Toggle subscription maintenance tasks (default: true)
 - TRIAL_TASKS_ENABLED: Toggle trial expiration tasks (default: true)
 - DIGEST_TASKS_ENABLED: Toggle the email digest (default: true)
+- INVITATION_REMINDERS_ENABLED: Toggle the daily invitation reminders (default: true)
 - WEBHOOK_REPROCESS_TASKS_ENABLED: Toggle retrying failed LemonSqueezy webhooks (default: true)
 
 Local checkouts set SCHEDULER_ENABLED=false (see .env.example), so a development
@@ -59,6 +60,7 @@ from src.api.schema.response_schemas import ErrorSeverity
 # TODO: src.api.tasks.webhook_reprocessing_task missing — disabled until committed
 # from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
+from src.api.tasks.invitation_reminder_task import run_invitation_reminders_task
 from src.api.tasks.subscription_reconcile_task import run_subscription_reconcile_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
@@ -710,6 +712,23 @@ class ScheduledTaskManager:
             logger.info("Registered task: email_digest")
         else:
             logger.info("Email digest task disabled (DIGEST_TASKS_ENABLED=false)")
+
+        # Invitation reminders — daily; a pending invitation two days from expiry gets one
+        if cleanup_config.INVITATION_REMINDERS_ENABLED:
+            self.scheduler.add_job(
+                run_invitation_reminders_task,
+                trigger=CronTrigger(
+                    hour=cleanup_config.INVITATION_REMINDER_HOUR,
+                    minute=cleanup_config.INVITATION_REMINDER_MINUTE,
+                ),
+                id="invitation_reminders",
+                name="Daily invitation reminders",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: invitation_reminders")
+        else:
+            logger.info("Invitation reminders disabled (INVITATION_REMINDERS_ENABLED=false)")
 
         # Subscription maintenance — daily at 3 AM
         if cleanup_config.BILLING_TASKS_ENABLED:

@@ -67,6 +67,31 @@ def test_failed_webhook_reprocessing_stays_off_when_disabled(manager, monkeypatc
     assert "webhook_reprocessing" not in _jobs(fake)
 
 
+def test_the_daily_invitation_reminders_are_registered(manager, monkeypatch):
+    from src.api.tasks.invitation_reminder_task import run_invitation_reminders_task
+
+    monkeypatch.setattr(scheduled_tasks.cleanup_config, "INVITATION_REMINDERS_ENABLED", True)
+    task_manager, fake = manager
+    task_manager.start()
+
+    job = _jobs(fake)["invitation_reminders"]
+    assert job.func is run_invitation_reminders_task
+    assert job.kwargs["max_instances"] == 1
+    # Once a day, at the configured hour.
+    daily = {field.name: str(field) for field in job.kwargs["trigger"].fields}
+    assert daily["hour"] == str(scheduled_tasks.cleanup_config.INVITATION_REMINDER_HOUR)
+    assert daily["minute"] == str(scheduled_tasks.cleanup_config.INVITATION_REMINDER_MINUTE)
+    assert daily["day"] == "*"
+
+
+def test_the_invitation_reminders_stay_off_when_disabled(manager, monkeypatch):
+    monkeypatch.setattr(scheduled_tasks.cleanup_config, "INVITATION_REMINDERS_ENABLED", False)
+    task_manager, fake = manager
+    task_manager.start()
+
+    assert "invitation_reminders" not in _jobs(fake)
+
+
 def test_scheduled_publish_runs_every_minute(manager):
     task_manager, fake = manager
     task_manager.start()

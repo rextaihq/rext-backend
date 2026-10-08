@@ -27,6 +27,8 @@ class CleanupConfig(HidesSecrets, BaseSettings):
     BILLING_TASKS_ENABLED: bool = True
     TRIAL_TASKS_ENABLED: bool = True
     DIGEST_TASKS_ENABLED: bool = True
+    # The reminder a pending workspace invitation gets two days before it expires.
+    INVITATION_REMINDERS_ENABLED: bool = True
     WEBHOOK_REPROCESS_TASKS_ENABLED: bool = True
     # Nightly re-read of every unfinished subscription from Lemon Squeezy (F11).
     SUBSCRIPTION_RECONCILE_ENABLED: bool = True
@@ -41,6 +43,9 @@ class CleanupConfig(HidesSecrets, BaseSettings):
     # Email digest — checked daily; each user receives one per their cadence.
     DIGEST_HOUR: int = Field(default=8, ge=0, le=23)
     DIGEST_MINUTE: int = Field(default=0, ge=0, le=59)
+    # Invitation reminders — once a day (UTC).
+    INVITATION_REMINDER_HOUR: int = Field(default=9, ge=0, le=23)
+    INVITATION_REMINDER_MINUTE: int = Field(default=0, ge=0, le=59)
 
     # Operational controls
     CLEANUP_BATCH_SIZE: int = Field(default=1000, ge=1, le=100000)
