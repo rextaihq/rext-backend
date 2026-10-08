@@ -80,6 +80,21 @@ _ADDED_AFTER = re.compile(
 _PLACED_AFTER = re.compile(r"^\s+(?:under|beneath|below|for|in|within|per|on)\s+\w+", re.IGNORECASE)
 
 _PARTS = "steps, stages, types, options, tools, or pros and cons"
+# With H3s allowed, outlines came back with one or two H2s and every other topic under them,
+# and with the short budget of an H2 that only introduces its H3s on every section
+# (rext-control#837). outline_depth.py holds both rules when the model does not.
+_MAIN_SECTIONS = (
+    "MAIN SECTIONS COME FIRST: {count} H2s, always. An H3 never stands in for a main section: a "
+    "topic a reader would look for in the table of contents is an H2. One or two H2s with "
+    "everything else nested under them is wrong."
+)
+# A blog's schema refuses more than eight H2s; a pillar page may run longer.
+_BLOG_MAIN_SECTIONS = _MAIN_SECTIONS.format(count="4 to 8")
+_PILLAR_MAIN_SECTIONS = _MAIN_SECTIONS.format(count="at least 4")
+_FULL_BUDGET = (
+    "An H2 WITHOUT H3s is a whole section and keeps a whole budget: 200 to 400 words, never "
+    "the short one."
+)
 _PLACEMENT = (
     "An H3 comes directly after its H2 or after a sibling H3, never first and never on its own."
 )
@@ -88,6 +103,40 @@ _PLACEMENT = (
 def _kebab(value: str | None) -> str:
     """A content type as written, lower-kebab-case, without the aliases ("listicle" stays)."""
     return re.sub(r"[\s_-]+", "-", str(value or "").strip().lower()).strip("-")
+
+
+# The same terms named in the plural: the subsections as a whole ("remove the H3s", "no
+# subsections"). "The H3 under the introduction" names one of them and leaves the rest.
+_SUBSECTIONS_IN_THE_PLURAL = re.compile(
+    r"\bh3s\b|\bsub[- ]?(?:sections|headings|heads)\b|\bnested\s+headings\b", re.IGNORECASE
+)
+# A place right after the term narrows it to one part of the outline ("the H3s under the
+# introduction", "the subsections in the pricing section"), unless the place is the whole of it
+# ("the H3s in the article").
+_PLACE_AFTER = re.compile(
+    r"\s+(?:under|in|inside|within|from|of|for|beneath|below|on|at|after|around)\b"
+    r"(?P<place>[^.;,]*)",
+    re.IGNORECASE,
+)
+_THE_WHOLE_OUTLINE = re.compile(
+    r"\b(?:article|outline|post|piece|document|page|whole|entire|everywhere)\b", re.IGNORECASE
+)
+
+
+def wants_no_subsections(feedback: str | None) -> bool:
+    """Whether feedback that asks for fewer H3 subsections is about them as a whole.
+
+    True for "remove the H3s" or "no subsections, please"; false for "remove the H3 under the
+    introduction" and "remove the H3s under the introduction", which leave every other one, and
+    for feedback that asks for none fewer."""
+    if subsection_request(feedback) != "fewer":
+        return False
+    text = feedback or ""
+    for mention in _SUBSECTIONS_IN_THE_PLURAL.finditer(text):
+        place = _PLACE_AFTER.match(text, mention.end())
+        if place is None or _THE_WHOLE_OUTLINE.search(place.group("place")):
+            return True
+    return False
 
 
 def subsection_request(feedback: str | None) -> str | None:
@@ -143,6 +192,7 @@ def outline_subsection_rule(
     if policy == _EXPECTED:
         lines = [
             "H3 SUBSECTIONS: EXPECTED for this content type.",
+            f"- {_PILLAR_MAIN_SECTIONS}",
             f"- Wherever an H2 covers two or more distinct parts ({_PARTS}), give each part its "
             "own H3 under that H2.",
             "- A pillar guide's main sections nearly always have parts: plan H3s under at least "
@@ -152,6 +202,7 @@ def outline_subsection_rule(
     elif policy == _BY_SHAPE:
         lines = [
             "H3 SUBSECTIONS: decide by the article's shape.",
+            f"- {_BLOG_MAIN_SECTIONS}",
             "- A long blog or guide (a complete or ultimate guide, or a plan past about 1,200 "
             f"words): EXPECTED. Wherever an H2 covers two or more distinct parts ({_PARTS}), give "
             "each part its own H3 under that H2.",
@@ -163,7 +214,7 @@ def outline_subsection_rule(
             "most 16 entries in all.",
             "- An H2 that has H3s keeps a short budget of its own (about 80-120 words, its "
             "introduction) and its H3s carry the rest, so the plan's total stays the length "
-            "this article needs.",
+            f"this article needs. {_FULL_BUDGET}",
             f"- {_PLACEMENT}",
         ]
     elif raw == "listicle":

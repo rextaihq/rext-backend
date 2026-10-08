@@ -17,6 +17,7 @@ from src.flow.engines.content.review.outline_edits import (
     apply_section_edits,
     editable_sections,
 )
+from src.flow.engines.content.review.outline_parts import safe_gate_structure
 from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.structure.outlines import WRITER_MAX_TARGET_WORDS, target_word_count_range
 from src.flow.model.structure.outlines.render import normalize_outline
@@ -182,6 +183,10 @@ def review_outline(state: REXT):
             "editable_sections": editable_sections(outline_dict, content_type),
             # The lists a new section may be added to (a row with "new": true).
             "section_additions": addable_lists(outline_dict, content_type),
+            # Every part the article is written under, in order, for the screen to list
+            # whole: the lists above in their place among the parts that are only read
+            # (outline_parts.py; the dashboard's side is revnix/rext-control#814).
+            "structure": safe_gate_structure(outline_dict, content_type),
             # serp_titles, serp_questions and related_searches, for Sources.
             **_search_sources(state),
             "instruction": (
