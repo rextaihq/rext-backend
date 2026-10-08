@@ -838,6 +838,48 @@ def test_a_subtle_call_to_action_that_names_the_brand_is_refused():
     assert "must not be named in the call to action" in result["detail"]
 
 
+def test_a_subtle_call_to_action_is_read_before_the_body_mention_is_counted():
+    """Named only in the call to action, the brand is missing from the body as well. Both are
+    asked at once: a repair that added the body mention alone would make this check fail anew
+    and be thrown away as a step back."""
+    from src.flow.engines.content.generation.validation import check_brand_prominence
+
+    article = {
+        **ARTICLE,
+        "introduction": "Plan before you plant.",
+        "body_markdown": "## Choose the spot\n\nSun matters.",
+        "cta": {"text": "Try Acme Tools today"},
+    }
+
+    result = check_brand_prominence(article, build_requirements_spec(_outline("subtle"), "blog"))
+
+    assert result["passed"] is False
+    assert "must not be named in the call to action" in result["detail"]
+
+
+def test_a_call_to_action_word_that_only_holds_the_brands_letters_is_not_the_brand():
+    from src.flow.engines.content.generation.validation import check_brand_prominence
+
+    outline = _outline(
+        "subtle", brand_voice_promotion={"brand_name": "Box", "brand_url": "https://box.test"}
+    )
+    article = {
+        **ARTICLE,
+        "introduction": "Plan before you plant.",
+        "body_markdown": "## Choose the spot\n\nBox keeps every plan in one place.\n\nSun matters.",
+        "cta": {"text": "Open your toolbox"},
+    }
+
+    result = check_brand_prominence(article, build_requirements_spec(outline, "blog"))
+
+    assert result["passed"] is True, result["detail"]
+    # Named as a word of its own, it is still refused.
+    named = {**article, "cta": {"text": "Open your Box account"}}
+    assert (
+        check_brand_prominence(named, build_requirements_spec(outline, "blog"))["passed"] is False
+    )
+
+
 def test_a_persona_whose_name_contains_the_brand_is_recognised():
     from types import SimpleNamespace
 
@@ -849,20 +891,34 @@ def test_a_persona_whose_name_contains_the_brand_is_recognised():
     assert not _is_named(SimpleNamespace(full_name="Acme Toolsmith", name="smith"), "Acme Tools")
 
 
-def test_a_profile_saved_without_a_name_takes_the_outlines_brand():
-    from src.flow.engines.agent.middleware.persona_middleware import _profile_with_a_name
+def test_an_unnamed_profiles_company_sentences_stay_out_under_no_mention():
+    """A profile saved without a brand name can't be cleared of it, and the outline's name for
+    it is then the workspace's label, which need not be the brand."""
+    from src.flow.engines.agent.middleware.persona_middleware import _profile_under_the_choice
     from src.flow.engines.content.generation.article_voice import (
         article_voice,
         format_expertise_for_writer,
     )
 
-    profile = {"brand_name": "", "about": "Acme Tools builds garden planners."}
+    profile = {
+        "brand_name": "",
+        "about": "Acme Tools builds garden planners.",
+        "selling_position": "Acme Tools is the planner gardeners trust.",
+        "content_pillars": ["Garden planning"],
+    }
+    excluded = {"brand_name": "My test workspace", "brand_url": ""}
 
-    named = _profile_with_a_name(profile, _outline("none"))
+    kept_out = _profile_under_the_choice(profile, excluded)
+    expertise = format_expertise_for_writer(article_voice(None, kept_out))
 
-    assert named["brand_name"] == "Acme Tools"
-    assert "Acme Tools" not in format_expertise_for_writer(article_voice(None, named))
-    # A profile with its own name keeps it; no profile stays none.
+    assert "Acme Tools" not in expertise and "Garden planning" in expertise
+    # With a mention allowed the sentences reach the writer as they were saved.
+    assert _profile_under_the_choice(profile, None) is profile
+    assert "Acme Tools builds garden planners." in format_expertise_for_writer(
+        article_voice(None, profile)
+    )
+    # A profile with its own name is cleared of it by the voice itself; no profile stays none.
     own = {"brand_name": "Beta", "about": "Beta builds sites."}
-    assert _profile_with_a_name(own, _outline("none")) is own
-    assert _profile_with_a_name(None, _outline("none")) is None
+    assert _profile_under_the_choice(own, excluded) is own
+    assert "Beta" not in format_expertise_for_writer(article_voice(None, own))
+    assert _profile_under_the_choice(None, excluded) is None

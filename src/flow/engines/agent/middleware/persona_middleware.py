@@ -90,14 +90,17 @@ def persona_query(workspace_id, selected_id):
     return query.order_by(Persona.created_at.desc()).limit(1)
 
 
-def _profile_with_a_name(profile: Optional[dict], outline: Optional[dict]) -> Optional[dict]:
-    """The Brand Voice Profile with a brand name on it. A profile saved without one takes the
-    outline's brand, which is the same company: without a name, the profile's own sentences
-    ("Acme builds sites") could not be cleared of it before the writer reads them."""
-    if profile is None or (profile.get("brand_name") or "").strip():
+def _profile_under_the_choice(profile: Optional[dict], excluded: Optional[dict]) -> Optional[dict]:
+    """The Brand Voice Profile as the writer may read it under the user's brand choice.
+
+    A profile with a brand name is cleared of that name before the writer reads it. One saved
+    without a name can't be: its sentences about the company ("Acme builds sites") name a brand
+    nobody recorded, and the outline's name for it is then only the workspace's label, which
+    need not be the brand. Under "no mention" those sentences stay out; the voice, the readers
+    and the pillars are kept."""
+    if profile is None or not excluded or (profile.get("brand_name") or "").strip():
         return profile
-    promoted = ((outline or {}).get("brand_voice_promotion") or {}).get("brand_name")
-    return {**profile, "brand_name": promoted or ""}
+    return {**profile, "about": "", "selling_position": ""}
 
 
 def _is_named(persona: Persona, name: str) -> bool:
@@ -629,8 +632,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         personas = await self._fetch_best_persona(workspace_id, outline)
         # The Brand Voice Profile steers the writing beside the persona, whose own
         # tone wins where they disagree (rext-control #161, option 1).
-        profile = _profile_with_a_name(await fetch_brand_voice_profile(workspace_id), outline)
-        voice = article_voice(personas.tone_of_voice if personas else None, profile)
+        profile = await fetch_brand_voice_profile(workspace_id)
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
         internal_links = (outline or {}).get("internal_links") or []
@@ -659,6 +661,10 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if personas and excluded and _is_named(personas, excluded["brand_name"]):
             fits_topic = False
             print("  persona shares the excluded brand's name: written unnamed")
+        voice = article_voice(
+            personas.tone_of_voice if personas else None,
+            _profile_under_the_choice(profile, excluded),
+        )
 
         full_prompt = self._build_full_content_prompt(
             personas,
