@@ -247,6 +247,8 @@ async def _is_first_payment(
     log decide: a subscription that has paid before is not making its first payment. The log
     can say "never paid" only of a subscription that started after its first payment record:
     an older one may have paid before the log began, and is not taken for a first payment.
+    A log that holds no payment at all (a new database, or one whose records have all aged
+    out) says nothing either.
     """
     if billing_reason == "initial":
         return True
@@ -261,10 +263,10 @@ async def _is_first_payment(
     ):
         return False
     records_begin = await db.scalar(select(func.min(AuditLog.created_at)).where(*payments))
-    if records_begin is None:
-        return True  # nobody has paid yet
-    return subscription.start_date is not None and as_utc(subscription.start_date) > as_utc(
-        records_begin
+    return (
+        records_begin is not None
+        and subscription.start_date is not None
+        and as_utc(subscription.start_date) > as_utc(records_begin)
     )
 
 
