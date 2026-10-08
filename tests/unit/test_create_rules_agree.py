@@ -164,6 +164,40 @@ async def test_a_slow_sites_address_is_logged_without_what_it_carries(site, capl
 
 
 @pytest.mark.asyncio
+async def test_a_parking_marketplace_that_stalls_before_answering_is_still_refused(
+    site, monkeypatch
+):
+    site["resolves"].add("tea.example.com")
+
+    def respond(request):
+        if request.url.host == "tea.example.com":
+            return httpx.Response(302, headers={"location": "https://sedoparking.com/tea"})
+        raise httpx.ReadTimeout("still waiting", request=request)
+
+    monkeypatch.setattr(
+        fast_scraper,
+        "public_client",
+        lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(respond), follow_redirects=True
+        ),
+    )
+
+    with pytest.raises(WebsiteUnreachableError, match="parked or for sale"):
+        await check_website_reachable("https://tea.example.com/")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_check_is_logged_without_what_the_address_carries(site, caplog):
+    site["resolves"].add("tea.example.com")
+    site["answer"] = httpx.ConnectError("refused")
+
+    with caplog.at_level("INFO"), pytest.raises(WebsiteUnreachableError):
+        await check_website_reachable("https://user:s3cret@tea.example.com/in?token=t0ken")
+
+    assert "s3cret" not in caplog.text and "t0ken" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_a_site_where_no_server_answers_is_still_refused(site):
     site["resolves"].add("tea.example.com")
     site["answer"] = httpx.ConnectTimeout("nobody there")
