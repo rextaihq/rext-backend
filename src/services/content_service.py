@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import markdown
-from sqlalchemy import and_, case, func, not_, or_, select
+from sqlalchemy import and_, case, exists, func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -142,9 +142,9 @@ def _own_site_link(hosts: List[str]) -> str:
     - a link from the site's root ("](/pricing)", href="/pricing"), which has no host at all;
     - a link relative to the article's own address ("](pricing)", "](../plans/)",
       href="guide.html"), which has no host either. Not one: an address with a scheme
-      ("mailto:", "tel:"), a place on the same page ("#top", "?page=2"), and a name that reads
-      as a host ("other.com/x", "www.other.com": another site's address without its scheme)
-      unless it ends as a page does ("guide.html").
+      ("mailto:", "tel:"), a place on the same page ("#top", "?page=2"), an email address, and
+      a name that reads as a host ("other.com/x", "www.other.com": another site's address
+      without its scheme) unless it ends as a page does ("guide.html", "guide.en.html").
     """
     names = "|".join(re.escape(host) for host in hosts)
     ends = r'[/:?#)"<>\s' + "'" + "]"
@@ -152,14 +152,26 @@ def _own_site_link(hosts: List[str]) -> str:
     link = r"(\]\(|href=[" + "\"'" + r"]?)"
     absolute = rf"(://|{opens}//)(www\.)?({names})({ends}|$)"
     from_the_root = link + r"/([^/]|$)"
-    a_page = rf"[a-z0-9_~-]+\.(html?|php|aspx?|pdf)({ends}|$)"
-    reads_as_a_host = rf"[a-z0-9.@-]*\.[a-z]{{2,}}({ends}|$)"
+    a_page = rf"[a-z0-9_~.-]+\.(html?|php|aspx?|pdf)({ends}|$)"
+    reads_as_a_host = rf"[a-z0-9.-]*\.[a-z]{{2,}}({ends}|$)"
+    an_email = r"[^/?#)<>\s" + "\"'" + r"]*@"
     relative = (
         link
         + r"(?![a-z][a-z0-9+.-]*:)"
+        + rf"(?!{an_email})"
         + rf"((\.{{1,2}}/)+|(\.{{1,2}}/)*({a_page}|(?!{reads_as_a_host})[a-z0-9_~-]))"
     )
     return f"({absolute})|({from_the_root})|({relative})"
+
+
+def _live_with(native_id):
+    """The article has a published result on a site that gave it this id (WordPress's post id or
+    Shopify's article id)."""
+    return exists().where(
+        ContentPublishingResult.content_id == Content.id,
+        native_id.is_not(None),
+        ContentPublishingResult.status == PublishingStatus.PUBLISHED.value,
+    )
 
 
 class ContentService:
@@ -549,9 +561,10 @@ class ContentService:
         if hosts:
             # The published article is its introduction and its body: the Markdown body, or the
             # HTML one when there is no Markdown (as the WordPress publisher chooses). Shopify's
-            # publisher chooses the other way round, so an article published there alone is read
-            # HTML first, and one published to both is read in both. An image is no link, so
-            # image embeds are taken out before the search.
+            # publisher chooses the other way round, so an article that is live there alone is
+            # read HTML first, and one live on both is read in both. Live is what its publishing
+            # results say: the article's own Shopify and WordPress ids outlast a post deleted on
+            # the site. An image is no link, so image embeds are taken out before the search.
             own_site_link = _own_site_link(hosts)
             markdown_first = func.coalesce(
                 func.nullif(Content.body_markdown, ""), Content.body_html, ""
@@ -559,8 +572,8 @@ class ContentService:
             html_first = func.coalesce(
                 func.nullif(Content.body_html, ""), Content.body_markdown, ""
             )
-            on_shopify = Content.shopify_article_id.is_not(None)
-            on_wordpress = Content.wordpress_post_id.is_not(None)
+            on_shopify = _live_with(ContentPublishingResult.shopify_article_id)
+            on_wordpress = _live_with(ContentPublishingResult.wp_post_id)
             body = case(
                 (and_(on_shopify, on_wordpress), func.concat(markdown_first, " ", html_first)),
                 (on_shopify, html_first),
