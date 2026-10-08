@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 from tenacity import (
+    RetryCallState,
     before_sleep_log,
     retry,
     retry_if_exception_type,
@@ -63,7 +64,25 @@ class LemonSqueezyTransientError(LemonSqueezyError):
 
     def __init__(self, message: str, status_code: Optional[int] = None):
         self.status_code = status_code
+        # An earlier attempt of the same request got no answer (``_note_unanswered``).
+        self.after_unanswered = False
         super().__init__(message)
+
+
+def _note_unanswered(retry_state: RetryCallState) -> None:
+    """
+    After each failed attempt of a request: mark the error when an earlier attempt of
+    the same request got no answer (a timeout, a dropped connection, a server error).
+
+    A caller sees only the last attempt's error. A write that went unanswered once may
+    have been applied, whatever a later attempt was told, so the last error carries it.
+    """
+    error = retry_state.outcome.exception() if retry_state.outcome else None
+    if not isinstance(error, LemonSqueezyTransientError):
+        return
+    error.after_unanswered = getattr(retry_state, "unanswered", False)
+    if error.status_code != 429:
+        retry_state.unanswered = True
 
 
 # A subscription's statuses in Lemon Squeezy's API.
@@ -117,6 +136,7 @@ class LemonSqueezyProvider(PaymentProvider):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type(LemonSqueezyTransientError),
+        after=_note_unanswered,
         before_sleep=before_sleep_log(logger, 20),  # INFO level
         reraise=True,
     )
@@ -752,8 +772,10 @@ class LemonSqueezyProvider(PaymentProvider):
                     method="PATCH", endpoint=f"/subscriptions/{subscription_id}", data=update_data
                 )
             except LemonSqueezyTransientError as exc:
-                # Too many requests is an answer: Lemon Squeezy turned this one away.
-                if exc.status_code == 429:
+                # Too many requests is an answer: Lemon Squeezy turned this one away. Not
+                # when an earlier attempt went unanswered, though: that one may have been
+                # applied, and the 429 answers only the attempt after it.
+                if exc.status_code == 429 and not exc.after_unanswered:
                     raise
                 # No answer, or a server error: the request may have been applied all the
                 # same (and, invoiced at once, charged). Not a refusal, and a caller must
