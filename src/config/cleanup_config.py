@@ -20,8 +20,6 @@ class CleanupConfig(HidesSecrets, BaseSettings):
     # record, and a dependency outage can write them in volume.
     ERROR_LOG_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
     USER_SESSION_INACTIVE_DAYS: int = Field(default=7, ge=1, le=3650)
-    # Processed Lemon Squeezy webhook events; unprocessed ones are never deleted.
-    WEBHOOK_EVENT_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
     # Read by anonymize_cancelled_subscriptions, which cleanup_all doesn't run yet.
     CANCELLED_SUBSCRIPTION_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
 
@@ -88,7 +86,6 @@ class CleanupConfig(HidesSecrets, BaseSettings):
             "email_events": timedelta(days=self.EMAIL_EVENT_RETENTION_DAYS),
             "error_logs": timedelta(days=self.ERROR_LOG_RETENTION_DAYS),
             "user_sessions": timedelta(days=self.USER_SESSION_INACTIVE_DAYS),
-            "webhook_events": timedelta(days=self.WEBHOOK_EVENT_RETENTION_DAYS),
         }
 
     def get_retention_summary(self) -> Dict[str, str]:
@@ -98,7 +95,6 @@ class CleanupConfig(HidesSecrets, BaseSettings):
             "email_events": f"{self.EMAIL_EVENT_RETENTION_DAYS} days",
             "error_logs": f"{self.ERROR_LOG_RETENTION_DAYS} days",
             "user_sessions": f"{self.USER_SESSION_INACTIVE_DAYS} days (inactive)",
-            "webhook_events": f"{self.WEBHOOK_EVENT_RETENTION_DAYS} days (processed)",
         }
 
 
