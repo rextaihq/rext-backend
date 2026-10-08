@@ -20,7 +20,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-import bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -172,7 +171,7 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If current password incorrect or passwords same
         """
-        from src.api.security.token_utils import verify_password
+        from src.api.security.token_utils import hash_password_async, verify_password_async
 
         user = await self.get_user_by_id(user_id)
 
@@ -184,14 +183,14 @@ class UserService:
             )
 
         # Verify current password
-        if not verify_password(current_password, user.password_hash):
+        if not await verify_password_async(current_password, user.password_hash):
             raise RextValidationException(
                 message="Current password is incorrect",
                 field_errors={"current_password": ["Incorrect password"]},
             )
 
         # Ensure new password is different
-        if verify_password(new_password, user.password_hash):
+        if await verify_password_async(new_password, user.password_hash):
             raise RextValidationException(
                 message="New password must be different from current password",
                 field_errors={"new_password": ["Password must be different"]},
@@ -201,8 +200,7 @@ class UserService:
         validate_password_strength(new_password)
 
         # Hash new password
-        new_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt())
-        user.password_hash = new_hash.decode("utf-8")
+        user.password_hash = await hash_password_async(new_password)
         user.password_changed_at = datetime.now(timezone.utc)
         user.updated_at = datetime.now(timezone.utc)
 
@@ -800,7 +798,7 @@ class UserService:
         from datetime import timezone as dt_timezone
 
         from src.api.middleware.exceptions import RextValidationException
-        from src.api.security.token_utils import hash_password
+        from src.api.security.token_utils import hash_password_async
 
         user = await self.get_user_by_id(user_id)
 
@@ -828,7 +826,7 @@ class UserService:
         # Handle password update
         if password:
             validate_password_strength(password)
-            user.password_hash = hash_password(password)
+            user.password_hash = await hash_password_async(password)
             user.password_changed_at = datetime.now(dt_timezone.utc)
 
         user.updated_at = datetime.now(dt_timezone.utc)
@@ -876,7 +874,7 @@ class UserService:
         Raises:
             ResourceNotFoundException: If no user found with that token
         """
-        from src.api.security.token_utils import hash_password
+        from src.api.security.token_utils import hash_password_async
 
         # Find user by reset token
         query = select(Users).where(Users.reset_token == reset_token)
@@ -890,7 +888,7 @@ class UserService:
         validate_password_strength(new_password)
 
         # Update password
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await hash_password_async(new_password)
         user.reset_token = None
         user.password_changed_at = datetime.now(timezone.utc)
 
@@ -913,14 +911,14 @@ class UserService:
         Raises:
             ResourceNotFoundException: If user not found
         """
-        from src.api.security.token_utils import verify_password
+        from src.api.security.token_utils import verify_password_async
 
         user = await self.get_user_by_id(user_id)
 
         if user.password_hash is None:
             return False
 
-        is_valid = verify_password(password, user.password_hash)
+        is_valid = await verify_password_async(password, user.password_hash)
         logger.debug(f"Password verification for user {user_id}: {is_valid}")
 
         return is_valid

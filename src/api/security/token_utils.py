@@ -22,6 +22,7 @@ for simplicity. For higher security requirements, consider using RS256 (RSA)
 or ES256 (Elliptic Curve) with asymmetric key pairs.
 """
 
+import asyncio
 import uuid
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -77,6 +78,19 @@ def verify_password(password: str, hashed_password: str | None) -> bool:
     # silently, which is how existing hashes were made); bcrypt 5 raises on
     # longer input, which turned a long login attempt into a 500.
     return bcrypt.checkpw(password.encode("utf-8")[:72], hashed_password.encode("utf-8"))
+
+
+# For async callers: bcrypt spends a few hundred milliseconds of CPU, which on the
+# event loop would stall every other request (G39, rext-control#390). bcrypt lets
+# go of the GIL while it works, so a worker thread runs it alongside the loop.
+async def hash_password_async(password: str) -> str:
+    """hash_password() in a worker thread."""
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, hashed_password: str | None) -> bool:
+    """verify_password() in a worker thread."""
+    return await asyncio.to_thread(verify_password, password, hashed_password)
 
 
 # Create Access Token
