@@ -20,6 +20,7 @@ from sqlalchemy.future import select
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
+from src.services.money_events import record_money_event
 from src.services.webhook_handlers import register_default_handlers
 from src.utils.logger import logger
 
@@ -384,9 +385,14 @@ class WebhookMonitoringService:
                 reprocessed = await webhook_service.reprocess_event(webhook_event=reprocess_target)
                 # Marked done in the handler's transaction, so the next run to claim
                 # the row sees it processed.
+                # Read before the commit, which expires the row.
+                reprocessed_event_id = reprocess_target.event_id
                 await webhook_service._mark_processed(reprocess_target)
                 await processing_db.commit()
                 success_result = True
+                # As the first delivery would have: the event's id is the webhook's, so a
+                # retry of one that was already counted is the same event again.
+                await record_money_event(processing_db, reprocessed_event_id)
                 handler_result = reprocessed.get("handler_result")
         except Exception as process_error:  # noqa: BLE001 - result surfaced to admin
             await processing_db.rollback()
