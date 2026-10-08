@@ -384,7 +384,11 @@ async def test_a_nonsense_keyword_ends_the_run_with_a_message(monkeypatch):
     custom, final, log = await _run_graph(monkeypatch, serp=serp)
 
     message = rext_module.NO_SERP_MESSAGES["no_results"]
-    assert final["content"] == {"error": message, "error_code": "no_serp_data"}
+    # Beside the notice, the run's content holds when the run began (generation_events.py).
+    assert {k: v for k, v in final["content"].items() if k != "run_started_at"} == {
+        "error": message,
+        "error_code": "no_serp_data",
+    }
     assert "__interrupt__" not in final
     assert [e for e in custom if e.get("type") == "run"] == [
         {
@@ -407,6 +411,10 @@ async def test_a_failed_serp_lookup_ends_the_run_and_is_logged(monkeypatch):
     custom, final, log = await _run_graph(monkeypatch, serp=AsyncMock(side_effect=error))
 
     message = rext_module.NO_SERP_MESSAGES["lookup_failed"]
-    assert final["content"] == {"error": message, "error_code": "no_serp_data"}
+    # Beside the notice, the run's content holds when the run began (generation_events.py).
+    assert {k: v for k, v in final["content"].items() if k != "run_started_at"} == {
+        "error": message,
+        "error_code": "no_serp_data",
+    }
     assert [e["serp_status"] for e in custom if e.get("type") == "run"] == ["lookup_failed"]
     log.assert_awaited_once()
