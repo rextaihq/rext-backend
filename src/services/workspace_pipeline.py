@@ -997,17 +997,37 @@ class WorkspacePipeline:
             },
         )
 
+    def _page_kind(self, page: str, text: str) -> str:
+        """What a page is, for a reader: home, about, team, article or other.
+
+        `classify_page` sorts pages for the extraction passes, which read an about page
+        with the team's and have no word for the home page; a list of what was read
+        names both.
+        """
+        from urllib.parse import urlparse
+
+        from src.utils.fast_scraper import PAGE_ARTICLE, classify_page
+
+        def _address(url: str) -> Tuple[str, str]:
+            parsed = urlparse(url)
+            return (parsed.netloc or "").lower().removeprefix("www."), parsed.path.strip("/")
+
+        if _address(page) == _address(self.url) or not _address(page)[1]:
+            return "home"
+        kind = classify_page(page, text)
+        segments = _address(page)[1].lower().split("/")
+        if kind != PAGE_ARTICLE and any(
+            segment == "about" or segment.startswith("about-") for segment in segments
+        ):
+            return "about"
+        return kind
+
     def _pages_read(self) -> List[Dict[str, str]]:
         """The pages the scrape read, with what each is, the home page first."""
-        from src.utils.fast_scraper import classify_page
-
         pages = getattr(self, "_page_text_by_url", None) or {}
-        home = self.url.rstrip("/")
-        listed = sorted(pages, key=lambda page: (page.rstrip("/") != home, page))
-        return [
-            {"page": page, "kind": classify_page(page, pages[page])}
-            for page in listed[:MAX_PAGES_REPORTED]
-        ]
+        kinds = {page: self._page_kind(page, text) for page, text in pages.items()}
+        listed = sorted(pages, key=lambda page: (kinds[page] != "home", page))
+        return [{"page": page, "kind": kinds[page]} for page in listed[:MAX_PAGES_REPORTED]]
 
     async def _scrape_website(self) -> _ScrapeResult:
         await emit_step_start(
@@ -1619,6 +1639,9 @@ class WorkspacePipeline:
         self, brand_voice_schema: Optional[BrandSchema]
     ) -> Optional[BrandVoice]:
         if brand_voice_schema is None:
+            # No voice means no one is saved either: said, so a screen need not wait for
+            # people through the competitor search.
+            await self._say_people()
             return None
 
         data = brand_voice_schema.model_dump()

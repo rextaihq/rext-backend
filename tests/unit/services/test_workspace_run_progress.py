@@ -140,12 +140,25 @@ def test_the_pages_read_are_listed_with_what_each_is_the_home_page_first():
 
     pages = pipeline._pages_read()
 
-    assert [page["page"] for page in pages] == [
-        "https://acme.example/",
-        "https://acme.example/about",
-        "https://acme.example/blog/forging",
+    assert pages == [
+        {"page": "https://acme.example/", "kind": "home"},
+        {"page": "https://acme.example/about", "kind": "about"},
+        {"page": "https://acme.example/blog/forging", "kind": "article"},
     ]
-    assert all(page["kind"] for page in pages)
+
+
+def test_a_page_is_named_as_a_reader_would_name_it():
+    pipeline = _pipeline("https://www.acme.example")
+
+    assert pipeline._page_kind("https://acme.example", "Acme.") == "home"
+    assert pipeline._page_kind("https://acme.example/about-us/", "We make anvils.") == "about"
+    assert pipeline._page_kind("https://acme.example/team", "Ana Ruiz, founder.") == "team"
+    assert pipeline._page_kind("https://acme.example/pricing", "Plans.") == "other"
+    # A post about the company is still a post.
+    assert (
+        pipeline._page_kind("https://acme.example/blog/about-anvils", "Article author: Ana Ruiz\n")
+        == "article"
+    )
 
 
 def test_the_list_of_pages_is_bounded():
@@ -188,3 +201,13 @@ async def test_no_one_saved_is_said_too(said):
 
     assert said[-1][0] == "personas"
     assert said[-1][2] == {"people": [], "count": 0}
+
+
+async def test_a_run_that_drafts_no_voice_says_no_one_was_saved(said):
+    """No voice means the personas are never reached: the screen is told at once, not left
+    to wait for people through the competitor search."""
+    assert await _pipeline()._persist_brand_voice(None) is None
+
+    assert [(step, payload) for step, _, payload in said] == [
+        ("personas", {"people": [], "count": 0})
+    ]
