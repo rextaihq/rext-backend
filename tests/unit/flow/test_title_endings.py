@@ -223,6 +223,11 @@ def test_a_guide_ending_is_only_for_an_article_that_guides_or_explains():
     buy, is left to the repair when dropping its filler word alone would leave it short."""
     assert takes_a_guide_ending("blog", "informational")
     assert takes_a_guide_ending("How-To-Guide", "Informational")
+    # The type in the other spellings the flow accepts.
+    assert takes_a_guide_ending("How To Guide", "informational")
+    assert takes_a_guide_ending("how_to_guide", "informational")
+    assert takes_a_guide_ending("Pillar Content", "informational")
+    assert not takes_a_guide_ending("Landing Page", "informational")
     assert not takes_a_guide_ending("landing-page", "informational")
     assert not takes_a_guide_ending("blog", "transactional")
     assert not takes_a_guide_ending(None, None)
@@ -237,6 +242,28 @@ def test_a_filler_word_inside_single_quotation_marks_stays_for_the_repair():
     title = "Benefits of Standing Desks: ‘Why They Matter Today’"
     assert title_ending_problem(title, "benefits of standing desks") == "filler:today"
     assert without_filler_ending(title, "benefits of standing desks", lift=True) is None
+
+
+@pytest.mark.parametrize(
+    "title, keyphrase",
+    [
+        # An apostrophe earlier in the title closes nothing that opens after it.
+        ("Beginner’s Benefits: ‘Why Standing Desks Matter Today’", "standing desks"),
+        ("Beginners’ Benefits: ‘Why Standing Desks Matter Today’", "standing desks"),
+        ("Beginners' Benefits: 'Why Standing Desks Matter Today'", "standing desks"),
+    ],
+)
+def test_an_apostrophe_does_not_close_a_quotation_that_opens_after_it(title, keyphrase):
+    assert title_ending_problem(title, keyphrase) == "filler:today"
+    assert without_filler_ending(title, keyphrase, lift=True) is None
+
+
+def test_an_apostrophe_alone_does_not_keep_a_filler_word():
+    title = "A Beginner’s Guide to Email Marketing for Small Shops Today"
+    assert (
+        without_filler_ending(title, "email marketing")
+        == "A Beginner’s Guide to Email Marketing for Small Shops"
+    )
 
 
 def test_a_filler_word_that_closes_a_bracket_is_not_cut_out_of_it():
