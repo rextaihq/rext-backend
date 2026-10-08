@@ -70,6 +70,7 @@ from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCK
 from src.flow.engines.content.generation.subheading_seo import (
     describe_keyphrase_issue,
     describe_length_issue,
+    extract_subheadings,
     subheading_report,
 )
 from src.flow.engines.content.generation.title_subject import find_subject_mismatch
@@ -1366,7 +1367,18 @@ def check_brand_placement_policy(
     )
 
 
-_H2_LINE_RE = re.compile(r"^##(?!#)[ \t]*(.+?)[ \t]*$", re.MULTILINE)
+def _h2_positions(text: str) -> list[tuple[int, str]]:
+    """Where each H2 of ``text`` starts, and its words: the headings a reader sees, so a line
+    of a fenced example that only looks like one is none (subheading_seo's own reading)."""
+    starts, offset = [], 0
+    for line in text.splitlines(keepends=True):
+        starts.append(offset)
+        offset += len(line)
+    return [
+        (starts[heading.line_index], heading.text)
+        for heading in extract_subheadings(text)
+        if heading.level == 2
+    ]
 
 
 def _where_early_is(body: str, max_fraction: float) -> str:
@@ -1378,20 +1390,20 @@ def _where_early_is(body: str, max_fraction: float) -> str:
     another one qualifies, since several placements keep the brand out of the opening.
     """
     text = _normalize_for_mentions(body)
-    headings = list(_H2_LINE_RE.finditer(text))
+    headings = _h2_positions(text)
     if not text or not headings:
         return ""
-    ends = [match.start() for match in headings[1:]] + [len(text)]
+    ends = [start for start, _ in headings[1:]] + [len(text)]
     inside = [
-        match.group(1).strip()
-        for match, end in zip(headings, ends, strict=True)
+        name
+        for (_, name), end in zip(headings, ends, strict=True)
         if end / len(text) <= max_fraction
     ]
     if len(inside) > 1:
         inside = inside[1:]
     if not inside:
         # No section ends inside the window, so the window lies inside the first one.
-        first = headings[0].group(1).strip()
+        first = headings[0][1]
         return f' In this article that means the opening paragraphs of "{first}".'
     named = " or ".join(f'"{heading}"' for heading in inside[:3])
     return (
