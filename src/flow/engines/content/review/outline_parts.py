@@ -22,7 +22,6 @@ out, because the writer may state only sourced facts and the article can differ.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from src.flow.engines.content.generation.outline_structure import (
@@ -44,13 +43,23 @@ MAX_POINTS = 3
 MAX_POINT_LENGTH = 160
 MAX_LABEL_LENGTH = 120
 
-# A field that holds a fact the outline's model wrote without a source (a price, a rating, a
-# date, a comparison table's cells), or a link.
-_FACT_FIELD = re.compile(
-    r"price|pricing|cost|fee|rating|score|metric|percent|statistic|link|url|discount"
-    r"|values$|last_updated|(?:^|_)date(?:$|_)",
-    re.IGNORECASE,
-)
+# A field holds a fact the outline's model wrote without a source (a price, a rating, a date),
+# or a link, when one of the words of its name says so. Whole words: `user_feedback` is no fee
+# and `operating_system` no rating.
+_FACT_WORDS = frozenset(
+    {
+        "price", "prices", "pricing", "cost", "costs", "fee", "fees", "discount", "discounts",
+        "rating", "ratings", "score", "scores", "metrics", "percent", "percentage",
+        "statistic", "statistics", "link", "links", "url", "urls", "date", "dates", "updated",
+    }
+)  # fmt: skip
+# A comparison table's row names what is compared; its cells are facts, one per product.
+_TABLE_ROW_LABELS = ("feature", "criterion")
+
+
+def _is_fact_field(key: str, row: bool) -> bool:
+    words = key.lower().split("_")
+    return any(word in _FACT_WORDS for word in words) or (row and words[-1] == "values")
 
 
 def _typed_fields(content_type: str) -> set[str]:
@@ -68,8 +77,11 @@ def _typed_fields(content_type: str) -> set[str]:
 def _without_facts(value: Any) -> Any:
     """The value without its fact fields, at any depth."""
     if isinstance(value, dict):
+        row = any(label in value for label in _TABLE_ROW_LABELS)
         return {
-            key: _without_facts(sub) for key, sub in value.items() if not _FACT_FIELD.search(key)
+            key: _without_facts(sub)
+            for key, sub in value.items()
+            if not _is_fact_field(str(key), row)
         }
     if isinstance(value, list):
         return [_without_facts(item) for item in value]

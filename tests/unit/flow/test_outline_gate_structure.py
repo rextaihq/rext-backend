@@ -322,6 +322,36 @@ def test_no_price_rating_date_or_link_is_shown(content_type, build):
         ]
 
 
+def test_a_fact_field_is_known_by_a_whole_word_of_its_name():
+    outline = _roundup_outline()
+    outline["use_cases"]["matches"] = [
+        {
+            "use_case": "A shared office",
+            "user_feedback": "People refill it all day.",
+            "operating_system": "None needed.",
+            "linked_topics": "Descaling.",
+            "starting_price": "Approx. $39",
+            "rating_score": "4.5 of 5",
+            "last_updated": "2023-10-01",
+        }
+    ]
+    points = _part(gate_structure(outline, "product-roundup"), "use_cases")["items"][0]["points"]
+
+    assert points == ["People refill it all day.", "None needed.", "Descaling."]
+
+
+def test_only_a_tables_cells_are_left_out_not_every_list_named_values():
+    outline = _roundup_outline()
+    outline["social_proof"] = {"core_values": ["Honest tests", "No paid picks"]}
+    parts = gate_structure(outline, "product-roundup")
+
+    assert _part(parts, "social_proof")["items"] == [
+        {"label": "Core Values", "points": ["Honest tests", "No paid picks"]}
+    ]
+    # The table's rows keep their names and lose their cells.
+    assert all(not item["points"] for item in _part(parts, "comparison_matrix")["items"])
+
+
 def test_a_part_shows_a_bounded_amount():
     outline = _roundup_outline()
     outline["use_cases"]["matches"] = [
