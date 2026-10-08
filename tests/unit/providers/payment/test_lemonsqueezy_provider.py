@@ -370,6 +370,39 @@ class TestUpdateSubscription:
         ):
             await provider.update_subscription("sub_123", "variant_789")
 
+    @pytest.mark.asyncio
+    async def test_an_update_that_got_no_answer_is_neither_done_nor_refused(self, provider):
+        """A timeout, a dropped connection or a server error on the PATCH: Lemon Squeezy may
+        have applied it. The error says the outcome isn't known, so a caller can't tell an
+        admin that nothing changed."""
+        from src.providers.payment.base_provider import PaymentChangeUnknown
+        from src.providers.payment.providers.lemonsqueezy import LemonSqueezyTransientError
+
+        async def no_answer(**_request):
+            raise LemonSqueezyTransientError("timed out")
+
+        with (
+            patch.object(provider, "_make_request", side_effect=no_answer),
+            pytest.raises(PaymentChangeUnknown) as unknown,
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
+        # Nothing of Lemon Squeezy's, and no id, in what a caller may show.
+        assert "sub_123" not in str(unknown.value)
+
+    @pytest.mark.asyncio
+    async def test_an_update_lemon_squeezy_refuses_is_still_a_refusal(self, provider):
+        from src.providers.payment.providers.lemonsqueezy import LemonSqueezyAPIError
+
+        async def refused(**_request):
+            raise LemonSqueezyAPIError(422, "variant not in the store")
+
+        with (
+            patch.object(provider, "_make_request", side_effect=refused),
+            pytest.raises(LemonSqueezyAPIError),
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
 
 class TestCreatePortalSession:
     """Test create_portal_session method."""

@@ -50,7 +50,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.config.payment_config import payment_settings
-from src.providers.payment.base_provider import PaymentChangeUnconfirmed
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed, PaymentChangeUnknown
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import as_utc, change_plan_credits
@@ -604,6 +604,37 @@ class SubscriptionService:
                         logger.warning(
                             f"LemonSqueezy API call failed for test/sandbox ID '{provider_sub_id}'. Proceeding with local plan update for testing.",
                             extra={"user_id": str(user_id), "provider_sub_id": provider_sub_id},
+                        )
+                    elif by_admin and isinstance(e, PaymentChangeUnknown):
+                        # No answer came back: Lemon Squeezy may have changed the plan (and,
+                        # charged now, invoiced) or not. Telling the admin that nothing
+                        # changed would be a guess, so a person looks, and the plan here
+                        # follows Lemon Squeezy's update if it did.
+                        trigger_payment_alert(
+                            alert_type="admin_plan_change_unknown",
+                            message=(
+                                "An admin's plan change was sent to Lemon Squeezy and got "
+                                "no answer: look at the subscription there. If it changed, "
+                                "the plan here follows Lemon Squeezy's update; record who "
+                                "changed it and why"
+                            ),
+                            severity="high",
+                            context={
+                                "subscription": provider_sub_id,
+                                "old_plan": current_plan.name,
+                                "new_plan": new_plan.name,
+                                "charged_now": prorate,
+                            },
+                            user_id=str(user_id),
+                            operation="admin_plan_change",
+                        )
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy didn't answer, so it isn't known whether the "
+                                "plan changed. Look at the subscription in Lemon Squeezy "
+                                "before trying again; the team has been alerted."
+                            ),
+                            rule_name="admin_plan_unknown",
                         )
                     elif by_admin and isinstance(e, PaymentChangeUnconfirmed):
                         # Lemon Squeezy took the change and only its answer was lost: it

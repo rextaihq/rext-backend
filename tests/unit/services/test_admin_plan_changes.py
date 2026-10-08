@@ -31,7 +31,7 @@ from src.api.models.subscription_models.subscriptions import (
     subscription_grants_access,
 )
 from src.api.models.user_models.users import Users
-from src.providers.payment.base_provider import PaymentChangeUnconfirmed
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed, PaymentChangeUnknown
 from src.providers.payment.providers.lemonsqueezy import LemonSqueezyAPIError
 from src.services.audit_logger import audit_logger
 from src.services.subscription_service import SubscriptionService
@@ -327,6 +327,28 @@ async def test_a_change_lemon_squeezy_took_but_did_not_confirm_is_not_called_ref
     alert = subscription_service_module.trigger_payment_alert.call_args.kwargs
     assert alert["alert_type"] == "admin_plan_change_unconfirmed"
     # Nothing is recorded here: Lemon Squeezy's own update brings the plan in line.
+    assert row.plan_id == starter.id
+    assert await _audit(session, user) == []
+
+
+async def test_a_change_lemon_squeezy_never_answered_is_not_called_refused(session, lemon):
+    # A timeout or a dropped connection on the request: Lemon Squeezy may have changed the
+    # plan, and with charge_now invoiced it. "Nothing was changed" would be a guess.
+    starter, growth, _ = await _world(session)
+    user, row = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    lemon.update_subscription.side_effect = PaymentChangeUnknown("The update got no answer")
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await _change(session, user, admin, growth, billing="charge_now")
+
+    message = refused.value.message
+    assert "didn't answer" in message and "isn't known" in message
+    assert "Nothing was changed" not in message
+    alert = subscription_service_module.trigger_payment_alert.call_args.kwargs
+    assert alert["alert_type"] == "admin_plan_change_unknown"
+    assert alert["context"]["charged_now"] is True
+    # Nothing is recorded here: if it did change, Lemon Squeezy's update brings the plan.
     assert row.plan_id == starter.id
     assert await _audit(session, user) == []
 

@@ -259,6 +259,35 @@ async def test_a_super_admin_changes_a_users_plan(session, call, lemon):
     lemon.update_subscription.assert_awaited_once()
 
 
+async def test_a_change_that_cant_be_saved_after_lemon_squeezy_took_it_alerts_a_person(
+    session, call, lemon, monkeypatch
+):
+    """The commit fails after Lemon Squeezy accepted: neither the plan nor the audit entry is
+    here, so who changed it and why goes to a person before the error goes on."""
+    import src.api.routes.admin.user_plan_routes as routes_module
+
+    starter = await _plan(session, "starter", price=39, credits=400)
+    growth = await _plan(session, "growth", price=89, credits=1000)
+    customer, _ = await _customer(session, starter)
+    admin = await _user(session)
+    alert = MagicMock()
+    monkeypatch.setattr(routes_module, "trigger_payment_alert", alert)
+    monkeypatch.setattr(session, "commit", AsyncMock(side_effect=RuntimeError("connection lost")))
+
+    response = await call(admin, "POST", _url(customer), _change(growth), super_admins=[admin])
+
+    assert response.status_code >= 500
+    lemon.update_subscription.assert_awaited_once()
+    told = alert.call_args.kwargs
+    assert told["alert_type"] == "admin_plan_change_unrecorded"
+    assert told["user_id"] == str(customer.id)
+    assert (told["context"]["old_plan"], told["context"]["new_plan"]) == (
+        starter.name,
+        growth.name,
+    )
+    assert told["context"]["admin"] == str(admin.id)
+
+
 async def test_a_super_admin_moves_a_trials_end(session, call, lemon):
     customer, row = await _trial_user(session)
     admin = await _user(session)
