@@ -36,7 +36,9 @@ from src.flow.engines.content.generation.keyword_density import (
 )
 from src.flow.engines.content.generation.subheading_seo import extract_subheadings
 from src.flow.engines.content.generation.validation import (
-    _brand_occurrences,
+    _BARE_URL_RE,
+    _MD_LINK_RE,
+    _brand_mention_re,
     _keyword_appears,
     check_brand_url_accuracy,
 )
@@ -225,8 +227,15 @@ def _plain_text(answer: Any) -> str:
 
 
 def _mentions(text: str, name: str) -> int:
-    """How often a reader sees the name in the text, as the article's brand checks count it."""
-    return len(_brand_occurrences(text, name)) if name else 0
+    """How often a reader sees the name in a part: in its words and in its links' own words,
+    never inside an address.
+
+    The article's brand checks count the same way but leave a list of sources out; a part
+    that is the list of sources is still told of the names in it, and held to them."""
+    named = _brand_mention_re(name)
+    if named is None:
+        return 0
+    return len(named.findall(_BARE_URL_RE.sub("", _MD_LINK_RE.sub(r"\1", text or ""))))
 
 
 def _brand_linked(text: str, brand: dict[str, str]) -> bool:
@@ -640,15 +649,19 @@ async def rewrite_parts(
 
         try:
             accepted, why, answer = await ask()
-            if accepted is None and why == LOST_A_LINK:
-                # A list of products comes back without one of its links time and again, and
-                # kept as drafted it is the part an over-long article most needs shortened.
-                # Told which link it left out, the model keeps it: asked once more, no more.
-                # What it left out is read from the answer as the guard read it (a link put
-                # before the part's heading went with what stood there).
-                read = _with_its_headings(part, answer) or ""
+            # A list of products comes back without one of its links time and again, and kept
+            # as drafted it is the part an over-long article most needs shortened. Told which
+            # link it left out, the model keeps it: asked once more, no more. What it left out
+            # is read from the answer as the guard read it (a link put before the part's
+            # heading went with what stood there), whatever the guard refused it for first.
+            lost = (
+                ()
+                if accepted is not None
+                else tuple(lost_embeds(part.text, _with_its_headings(part, answer) or answer))
+            )
+            if lost:
                 logger.info("section rewrite: part %s lost a link; asked once more", index + 1)
-                accepted, why, _ = await ask(tuple(lost_embeds(part.text, read)))
+                accepted, why, _ = await ask(lost)
         except Exception as error:  # noqa: BLE001 - one part's failure keeps that part's draft
             logger.warning(
                 "section rewrite: part %s failed (%s); kept as drafted",
