@@ -117,7 +117,32 @@ def test_a_step_left_unwritten_stands_with_what_the_outline_planned_for_it():
         "Prepare the New Pot and Soil",
         "Set the Plant and Fill In",
     ]
-    assert "2. **Prepare the New Pot and Soil.** b" in payload["body_markdown"]
+    assert "2. **Prepare the New Pot and Soil.** b." in payload["body_markdown"]
+
+
+def test_the_stand_in_for_an_unwritten_step_is_the_whole_of_its_plan():
+    """Its expected result, its warning and its tips were approved with its description."""
+    planned = {
+        **OUTLINE,
+        "steps": {
+            "steps": [
+                {
+                    "title": "Remove the Plant from Its Current Pot",
+                    "description": "Tip the pot and ease the root ball out",
+                    "expected_result": "The root ball comes out whole.",
+                    "warning": "Never pull the plant by its stem",
+                    "tips": ["Water it the day before", "  "],
+                }
+            ]
+        },
+    }
+
+    payload = _assembled({"step_1": None}, outline=planned)
+
+    assert payload["steps"][0]["description"] == (
+        "Tip the pot and ease the root ball out. The root ball comes out whole. "
+        "Never pull the plant by its stem. Water it the day before."
+    )
 
 
 def test_a_step_with_nothing_written_and_nothing_planned_is_left_out():

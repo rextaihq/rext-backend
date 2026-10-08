@@ -807,6 +807,50 @@ def test_the_draft_of_a_step_written_empty_is_what_the_article_will_show():
     )
 
 
+def test_a_step_field_closed_as_null_is_closed_and_the_section_is_still_sent():
+    """A provider answering best-effort JSON can return null for a required text: the article
+    lets the plan stand in, and the page is sent the same list rather than nothing."""
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    stream = article_section_stream(built[1], HOW_TO_OUTLINE, "how-to-guide", "How to Repot")
+    answer = '{"step_1": "Ease it out.", "step_2": null, "step_3": null}'
+
+    sent = [
+        section
+        for piece in (answer[:30], answer[30:41], answer[41:])
+        for section in stream.feed(piece)
+    ]
+
+    assert [section["key"] for section in sent] == ["steps"]
+    assert sent[0]["markdown"] == (
+        "1. **Remove the plant.** Ease it out.\n"
+        "2. **Prepare the new pot.** Add fresh mix.\n"
+        "3. **Water the plant.** Water it once."
+    )
+
+
+def test_a_closed_step_field_is_read_once_however_long_the_answer_grows(monkeypatch):
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+    stream = article_section_stream(built[1], HOW_TO_OUTLINE, "how-to-guide", "How to Repot")
+    reads = []
+    loads = json.loads
+    monkeypatch.setattr(json, "loads", lambda text: reads.append(text) or loads(text))
+
+    stream.feed('{"step_1": "Ease it out.", "step_2": "Add ')
+    for _ in range(50):
+        stream.feed("more ")
+    sent = stream.feed('mix.", "step_3": "Water it once."}')
+
+    assert [section["key"] for section in sent] == ["steps"]
+    assert reads.count('"Ease it out."') == 1
+    # A new answer starts from nothing.
+    stream.restart()
+    assert stream.feed('{"step_1": "Other."') == []
+
+
 def test_the_writers_fields_stand_where_the_steps_do_in_the_approved_order():
     """The article is written in the order it is read: the step fields come after the section
     before the steps and before the one after."""

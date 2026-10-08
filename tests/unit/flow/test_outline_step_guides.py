@@ -28,6 +28,62 @@ def test_a_step_guide_without_steps_is_thin(content_type, outline, expected):
     assert outline_module._thin_structure(content_type, outline) == expected
 
 
+def _steps(count, words=None):
+    outline = {"steps": {"steps": [{"title": f"Step {n}"} for n in range(1, count + 1)]}}
+    return outline if words is None else {**outline, "target_word_count": words}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("steps", "words", "expected"),
+    [
+        # Three steps passed for any length, the least a guide may have (rext-control #817).
+        (3, 1500, "had 3 steps"),
+        (4, 1500, "had 4 steps"),
+        (5, 1500, None),
+        (5, 2000, "had 5 steps"),
+        (6, 2000, None),
+        (9, 3000, "had 9 steps"),
+        (10, 3000, None),
+        # Never more than ten asked for, never fewer than three, and no target asks for three.
+        (10, 5000, None),
+        (3, 600, None),
+        (3, None, None),
+        (3, "about 1,500", None),
+    ],
+)
+def test_a_how_to_guides_steps_follow_its_own_target_length(steps, words, expected):
+    assert outline_module._thin_structure("how-to-guide", _steps(steps, words)) == expected
+
+
+@pytest.mark.unit
+def test_a_persons_feedback_sets_the_number_of_steps_whatever_the_length():
+    """ "Combine it into two steps" stands: only an empty list is thin after a review."""
+    assert outline_module._thin_structure("how-to-guide", _steps(2, 3000), reviewed=True) is None
+    assert outline_module._thin_structure("how-to-guide", _steps(0, 3000), reviewed=True)
+
+
+@pytest.mark.unit
+def test_the_second_attempt_is_told_the_number_its_length_needs():
+    ask = outline_module._structure_ask("how-to-guide", _steps(3, 1500))
+    assert ask.startswith("5-10 steps for its 1500-word target")
+    assert outline_module._structure_ask("how-to-guide", _steps(3)).startswith("3-10 steps, each")
+    # A tutorial is built from its modules, whatever its length.
+    assert outline_module._structure_ask("tutorial", {"target_word_count": 3000}).startswith(
+        "its modules"
+    )
+
+
+@pytest.mark.unit
+def test_the_outline_prompt_says_how_many_steps_a_length_needs_for_a_how_to_guide_only():
+    from src.flow.prompts.human.outline import outline_subsection_rule
+
+    how_to = outline_subsection_rule("how-to-guide")
+    assert "about one step for every 300 words" in how_to
+    assert "Five or more for 1,500 words" in how_to
+    assert "every 300 words" not in outline_subsection_rule("tutorial")
+
+
 class _Reply:
     def __init__(self, data):
         self._data = data

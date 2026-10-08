@@ -961,11 +961,24 @@ def _steps_from_fields(
     return steps, own_words
 
 
+def _planned_text(step: dict) -> str:
+    """What the outline planned for a step, as sentences: what to do, what the reader should
+    see, what to avoid, its tips. The same values the step's field is described with."""
+    planned = [
+        step.get("description"),
+        step.get("expected_result"),
+        step.get("warning"),
+        *(step.get("tips") if isinstance(step.get("tips"), list) else []),
+    ]
+    sentences = [" ".join(str(part or "").split()) for part in planned]
+    return " ".join(s if s[-1] in ".!?" else f"{s}." for s in sentences if s)
+
+
 def step_text_or_plan(step: dict, written: Any) -> str:
     """A step's text: what the writer wrote for it, or, written empty, what the outline
     planned for it. One rule for the finished article and for the draft the page shows."""
     text = written.strip() if isinstance(written, str) else ""
-    return text or str(step.get("description") or "").strip()
+    return text or _planned_text(step)
 
 
 def _tools_named_in(text: str, tools: Any) -> list[str]:
