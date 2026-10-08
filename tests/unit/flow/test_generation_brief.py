@@ -86,7 +86,11 @@ def test_the_wording_is_the_same_at_every_stage_but_for_the_stages_own_line():
     assert writer[3] == "Write the article this brief describes."
     assert rewrite[3].endswith("Rewrite its words; the brief stands.")
     assert repair[3].endswith("Fix the listed issues; the brief stands.")
-    assert writer[4:] == rewrite[4:] == repair[4:]
+    assert writer[4:] == rewrite[4:]
+    # A repair keeps the article at the length it has (the rewrite owns the length), so it is
+    # given no second length to obey; every other line is the same.
+    assert repair[4:] == [line for line in writer[4:] if not line.startswith("- Length:")]
+    assert any(line.startswith("- Length:") for line in writer)
     assert writer[4:] == [
         f'- Title (fixed, the user chose it): "{TITLE}"',
         "- Content type: blog",
@@ -110,7 +114,8 @@ def test_the_wording_is_the_same_at_every_stage_but_for_the_stages_own_line():
         ),
         (
             "none",
-            f"- Brand: Acme Tools, none: {BRAND_CHOICE_LINES['none']}",
+            f"- Brand: Acme Tools, none: {BRAND_CHOICE_LINES['none']}. The internal links the "
+            "user approved stay, with their exact addresses",
             '- Call to action: "Start planning today" (with no link)',
         ),
     ],
@@ -200,3 +205,24 @@ def test_every_keyword_the_spec_checks_is_in_the_brief():
 
     assert len(spec["secondary_keywords"]) == 30
     assert brief["secondary_keywords"] == spec["secondary_keywords"]
+
+
+def test_every_reader_the_outline_holds_is_in_the_brief():
+    readers = [f"Reader {index}" for index in range(12)]
+    brief, _ = _brief(_outline("prominent", target_audience=readers))
+
+    assert brief["readers"] == readers
+
+
+def test_a_brief_that_cannot_be_built_is_empty_and_takes_no_run_down(monkeypatch):
+    from src.flow.engines.content.generation import generation_brief
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no brief today")
+
+    outline = _outline("subtle")
+    spec = build_requirements_spec(outline, "blog", focus_keyword=FOCUS)
+    assert "THE ARTICLE'S BRIEF" in generation_brief.brief_for_stage(spec, outline, stage="repair")
+
+    monkeypatch.setattr(generation_brief, "build_generation_brief", broken)
+    assert generation_brief.brief_for_stage(spec, outline, stage="repair") == ""

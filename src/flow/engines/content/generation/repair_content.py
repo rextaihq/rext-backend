@@ -23,6 +23,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
 )
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.generation_brief import brief_for_stage
 from src.flow.engines.content.generation.link_integrity import (
     LinkRecord,
     dedupe_records,
@@ -339,8 +340,13 @@ async def run_targeted_repair(
     previous_attempt: Optional[dict] = None,
     brand_policy: Optional[BrandPlacementPolicy] = None,
     excluded_brand: Optional[dict] = None,
+    brief: str = "",
 ) -> dict | None:
     """Core repair LLM call: fix exactly the listed issues, minimally.
+
+    ``brief`` is the article's brief as a repair reads it (generation_brief, stage "repair"):
+    what the article is, so that fixing one thing does not undo another the user chose (a
+    repair for the brand's address broke the brand's prominence, rext-control#818's runs).
 
     Returns the updated final_content dict, or None on failure (no schema for
     this content type, or the model call/re-validation raised) — soft-fail,
@@ -365,6 +371,7 @@ async def run_targeted_repair(
         filter(
             None,
             [
+                brief,
                 _build_previous_attempt_block(previous_attempt),
                 _build_links_block(failed_checks, protected),
                 _build_length_block(final_content),
@@ -506,6 +513,7 @@ async def repair_content(state: REXT) -> dict:
                 previous_attempt=repair_history[-1] if repair_history else None,
                 brand_policy=spec.get("brand_placement_policy"),
                 excluded_brand=spec.get("excluded_brand"),
+                brief=brief_for_stage(spec, outline, stage="repair"),
             )
             if repaired is not None:
                 # The repair returns every field: the brand choice's cleanup applies to it too.
