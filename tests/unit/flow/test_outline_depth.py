@@ -92,6 +92,15 @@ def test_never_more_than_eight_main_sections_and_nothing_invented():
 
     assert raised == 7
     assert sum(1 for s in sections if s["heading_level"] == "H2") == 8
+    # The last seven are raised: the four left are still under the H2 they were written under.
+    assert _levels(sections)[:5] == [
+        ("One", "H2"),
+        ("Part 1", "H3"),
+        ("Part 2", "H3"),
+        ("Part 3", "H3"),
+        ("Part 4", "H3"),
+    ]
+    assert all(level == "H2" for _, level in _levels(sections)[5:])
     # Two H2s and no H3s to raise: left as it is.
     flat = [_section("One"), _section("Two")]
     assert raise_subsections(flat) == (flat, 0)
@@ -115,6 +124,53 @@ def test_a_raised_subsections_own_h4s_become_its_h3s():
         ("Step two", "H2"),
         ("Step three", "H2"),
     ]
+
+
+def test_an_outline_with_no_main_section_at_all_gets_them():
+    orphans = [_section(f"Topic {n}", "H3") for n in range(1, 7)]
+
+    sections, raised = raise_subsections(orphans)
+
+    assert raised == 6 and {level for _, level in _levels(sections)} == {"H2"}
+    # Subsections before the first section are main sections; the ones after it are its own.
+    opening = [_section("Basics", "H3"), _section("Setup"), _section("Step", "H3")]
+    assert _levels(raise_subsections(opening, least=1)[0]) == [
+        ("Basics", "H2"),
+        ("Setup", "H2"),
+        ("Step", "H3"),
+    ]
+
+
+def test_a_detail_under_a_raised_subsection_is_never_raised_in_turn():
+    pillar = [
+        _section("Guide"),
+        _section("Part one", "H3"),
+        _section("Detail a", "H4"),
+        _section("Detail b", "H4"),
+        _section("Detail c", "H4"),
+    ]
+
+    sections, raised = raise_subsections(pillar)
+
+    # One subsection to raise: two main sections is all this outline holds.
+    assert raised == 1
+    assert _levels(sections) == [
+        ("Guide", "H2"),
+        ("Part one", "H2"),
+        ("Detail a", "H3"),
+        ("Detail b", "H3"),
+        ("Detail c", "H3"),
+    ]
+
+
+def test_an_outline_with_more_main_sections_than_the_ceiling_is_left_as_written():
+    """The ceiling limits what is raised. A pillar page may hold more than eight H2s, and a
+    blog with more is its schema's to refuse."""
+    long_pillar = [_section(f"Chapter {n}") for n in range(1, 11)] + [_section("Aside", "H3")]
+
+    sections, raised = raise_subsections(long_pillar)
+
+    assert raised == 0 and _levels(sections) == _levels(long_pillar)
 
 
 def test_a_section_without_subsections_gets_a_whole_budget():
@@ -159,11 +215,13 @@ def test_an_outline_without_levelled_sections_is_left_alone(outline):
     assert repr(outline) == before
 
 
-@pytest.mark.parametrize("content_type", ["blog", "pillar-content"])
-def test_the_prompt_says_main_sections_come_first(content_type):
+@pytest.mark.parametrize(
+    ("content_type", "count"), [("blog", "4 to 8"), ("pillar-content", "at least 4")]
+)
+def test_the_prompt_says_main_sections_come_first(content_type, count):
     rule = outline_subsection_rule(content_type)
 
-    assert "MAIN SECTIONS COME FIRST: 4 to 8 H2s, always." in rule
+    assert f"MAIN SECTIONS COME FIRST: {count} H2s, always." in rule
     assert "An H3 never stands in for a main section" in rule
 
 

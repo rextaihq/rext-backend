@@ -84,10 +84,13 @@ _PARTS = "steps, stages, types, options, tools, or pros and cons"
 # and with the short budget of an H2 that only introduces its H3s on every section
 # (rext-control#837). outline_depth.py holds both rules when the model does not.
 _MAIN_SECTIONS = (
-    "MAIN SECTIONS COME FIRST: 4 to 8 H2s, always. An H3 never stands in for a main section: a "
+    "MAIN SECTIONS COME FIRST: {count} H2s, always. An H3 never stands in for a main section: a "
     "topic a reader would look for in the table of contents is an H2. One or two H2s with "
     "everything else nested under them is wrong."
 )
+# A blog's schema refuses more than eight H2s; a pillar page may run longer.
+_BLOG_MAIN_SECTIONS = _MAIN_SECTIONS.format(count="4 to 8")
+_PILLAR_MAIN_SECTIONS = _MAIN_SECTIONS.format(count="at least 4")
 _FULL_BUDGET = (
     "An H2 WITHOUT H3s is a whole section and keeps a whole budget: 200 to 400 words, never "
     "the short one."
@@ -155,7 +158,7 @@ def outline_subsection_rule(
     if policy == _EXPECTED:
         lines = [
             "H3 SUBSECTIONS: EXPECTED for this content type.",
-            f"- {_MAIN_SECTIONS}",
+            f"- {_PILLAR_MAIN_SECTIONS}",
             f"- Wherever an H2 covers two or more distinct parts ({_PARTS}), give each part its "
             "own H3 under that H2.",
             "- A pillar guide's main sections nearly always have parts: plan H3s under at least "
@@ -165,7 +168,7 @@ def outline_subsection_rule(
     elif policy == _BY_SHAPE:
         lines = [
             "H3 SUBSECTIONS: decide by the article's shape.",
-            f"- {_MAIN_SECTIONS}",
+            f"- {_BLOG_MAIN_SECTIONS}",
             "- A long blog or guide (a complete or ultimate guide, or a plan past about 1,200 "
             f"words): EXPECTED. Wherever an H2 covers two or more distinct parts ({_PARTS}), give "
             "each part its own H3 under that H2.",
