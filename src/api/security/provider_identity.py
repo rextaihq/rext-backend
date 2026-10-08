@@ -35,6 +35,8 @@ GITHUB_EMAILS = "https://api.github.com/user/emails"
 # A sign-in waits on these calls: a provider that is slow is not waited for. One limit for the
 # whole asking, however many calls it takes.
 PROVIDER_TIMEOUT_SECONDS = 6.0
+# An account's addresses are read a hundred at a time, to this many pages.
+GITHUB_EMAIL_PAGES = 5
 
 PROVIDERS = ("google", "github")
 
@@ -115,8 +117,11 @@ async def _google(client: httpx.AsyncClient, access_token: str) -> ProviderIdent
 
     # Google's token information comes in two shapes, by the version that answers: `aud`, `azp`,
     # `sub` and `email_verified`, or `audience`, `issued_to`, `user_id` and `verified_email`.
-    made_for = {told.get(name) for name in ("aud", "azp", "audience", "issued_to")}
-    if expected not in made_for:
+    # The app that asked for the token (`azp` / `issued_to`) is the one that counts when Google
+    # names it; a token another client asked for is not ours even if it is addressed to us.
+    asked_by = told.get("azp") or told.get("issued_to")
+    made_for = asked_by or told.get("aud") or told.get("audience")
+    if made_for != expected:
         raise ProviderRefused("the token was made for another app")
 
     account_id = str(told.get("sub") or told.get("user_id") or "").strip()
@@ -154,6 +159,9 @@ async def _github(client: httpx.AsyncClient, access_token: str) -> ProviderIdent
     if response.status_code in (401, 403):
         # Our app's own sign-in was not accepted: nothing can be asked until it is set right.
         raise ProviderUnavailable("our app's sign-in was not accepted by GitHub")
+    if response.status_code == 422:
+        # GitHub's answer when it holds this check back as asked too often: no word on the token.
+        raise ProviderUnavailable("GitHub is holding the token check back")
     if response.status_code != 200:
         raise ProviderRefused("the token is not accepted")
     checked = _json(response)
@@ -166,10 +174,14 @@ async def _github(client: httpx.AsyncClient, access_token: str) -> ProviderIdent
     # vouched for: the account can still sign in by its id, and is linked to nothing by email.
     primary: Optional[str] = None
     verified: list[str] = []
-    listed = await _ask(client, "GET", GITHUB_EMAILS, headers=headers)
-    if listed.status_code == 200:
-        entries = _json(listed)
-        for entry in entries if isinstance(entries, list) else []:
+    for page in range(1, GITHUB_EMAIL_PAGES + 1):
+        listed = await _ask(
+            client, "GET", GITHUB_EMAILS, headers=headers, params={"per_page": 100, "page": page}
+        )
+        entries = _json(listed) if listed.status_code == 200 else None
+        if not isinstance(entries, list):
+            break
+        for entry in entries:
             if not isinstance(entry, dict) or not entry.get("verified"):
                 continue
             address = _lower(entry.get("email"))
@@ -178,6 +190,8 @@ async def _github(client: httpx.AsyncClient, access_token: str) -> ProviderIdent
             verified.append(address)
             if entry.get("primary"):
                 primary = address
+        if len(entries) < 100:
+            break
     email = primary or (verified[0] if verified else None)
     return ProviderIdentity(
         account_id=str(account["id"]),

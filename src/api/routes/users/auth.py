@@ -968,6 +968,8 @@ async def link_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    # Each call asks the provider, so it is counted like a sign-in.
+    _rate_limit: None = Depends(oauth_rate_limit()),
 ):
     """
     Link OAuth account to current user.

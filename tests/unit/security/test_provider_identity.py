@@ -462,6 +462,56 @@ async def test_githubs_spent_rate_limit_is_not_a_word_on_the_token(providers, mo
         await checked_sign_in("github", "4242", "ana@example.com", TOKEN)
 
 
+@pytest.mark.asyncio
+async def test_a_google_token_another_of_our_clients_asked_for_is_refused(providers):
+    # Addressed to our app, but asked for by a sibling client: the one that asked is what counts.
+    providers.google = {**providers.google, "aud": OUR_APP, "azp": "a-sibling-client"}
+
+    with pytest.raises(ProviderRefused, match="another app"):
+        await checked_sign_in("google", "108000000000000000001", "ana@example.com", TOKEN)
+
+
+@pytest.mark.asyncio
+async def test_github_holding_its_check_back_is_not_a_word_on_the_token(providers):
+    providers.github_status = 422
+
+    with pytest.raises(ProviderUnavailable, match="holding the token check back"):
+        await checked_sign_in("github", "4242", "ana@example.com", TOKEN)
+
+
+@pytest.mark.asyncio
+async def test_an_address_past_the_first_hundred_is_still_found(providers, monkeypatch):
+    pages = {
+        "1": [
+            {"email": f"a{n}@example.com", "primary": n == 0, "verified": True} for n in range(100)
+        ],
+        "2": [{"email": "late@example.com", "primary": False, "verified": True}],
+    }
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/token"):
+            return httpx.Response(200, json={"user": providers.github_user})
+        return httpx.Response(200, json=pages.get(request.url.params["page"], []))
+
+    monkeypatch.setattr(
+        provider_identity,
+        "_client",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+    )
+
+    signed_in = await checked_sign_in("github", "4242", "late@example.com", TOKEN)
+
+    assert (signed_in.email, signed_in.email_verified) == ("late@example.com", True)
+
+
+def test_linking_is_counted_like_a_sign_in():
+    import inspect
+
+    from src.api.routes.users import auth as routes
+
+    assert "oauth_rate_limit()" in inspect.getsource(inspect.unwrap(routes.link_oauth))
+
+
 # The call that carries the dashboard's key says so
 
 
