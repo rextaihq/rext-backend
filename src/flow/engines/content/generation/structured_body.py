@@ -441,18 +441,40 @@ def build_structured_content_model(
 # A number the writer put before a step's title ("Step 2: Mix", "2. Mix", "2) Mix"): the list
 # numbers the steps itself. Not a number the title starts with ("10-minute bake").
 _STEP_NUMBER = re.compile(r"^(?:step\s*\d+(?:\s*[.:)–—-]\s*|\s+)|\d{1,2}[.)]\s+)", re.IGNORECASE)
-_WHOLLY_EMPHASIZED = re.compile(r"(\*{1,3}|_{1,3})(.+?)\1")
+_WHOLLY_EMPHASIZED = re.compile(r"(\*{1,3})(.+?)\1")
+# Underscores at a word's edge would read as emphasis ("__init__"); inside a word they don't.
+_EDGE_UNDERSCORES = re.compile(r"(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])")
 
 
 def _step_title(title: Any) -> str:
-    """A step's title as the list sets it in bold: without emphasis around the whole of it and
-    without the writer's own numbering. An asterisk inside it is the writer's ("SELECT *") and
-    stays one."""
+    """A step's title as the list sets it in bold: without asterisks of emphasis around the
+    whole of it and without the writer's own numbering. An asterisk or an underscore that is
+    part of it is the writer's ("SELECT *", "__init__") and is shown as one."""
     title = " ".join(str(title or "").split())
     emphasized = _WHOLLY_EMPHASIZED.fullmatch(title)
     if emphasized:
         title = emphasized.group(2).strip()
-    return _STEP_NUMBER.sub("", title).strip().replace("*", "\\*")
+    title = _STEP_NUMBER.sub("", title).strip().replace("*", "\\*")
+    return _EDGE_UNDERSCORES.sub(lambda run: "\\_" * len(run.group()), title)
+
+
+# A step's text that is more than a sentence: a blank line, a code fence or a list inside it.
+_HAS_BLOCKS = re.compile(r"\n[ \t]*\n|```|~~~|\n[ \t]*(?:[-*+]|\d+[.)])[ \t]")
+
+
+def _step_text(description: Any, indent: int) -> str:
+    """A step's instructions on the step's line. Text of several blocks (a paragraph break, a
+    code block, a list) keeps its lines, each indented as an item of a numbered list needs, so
+    a fence stays a fence; a sentence the writer merely wrapped is one line."""
+    text = str(description or "").strip()
+    if not _HAS_BLOCKS.search(text):
+        return " ".join(text.split())
+    first, *rest = text.splitlines()
+    pad = " " * indent
+    return "\n".join(
+        [" ".join(first.split())]
+        + [f"{pad}{line.rstrip()}" if line.strip() else "" for line in rest]
+    )
 
 
 def _numbered_steps(steps: Any) -> str:
@@ -468,13 +490,14 @@ def _numbered_steps(steps: Any) -> str:
         if not isinstance(step, dict):
             continue
         title = _step_title(step.get("title"))
-        text = " ".join(str(step.get("description") or "").split())
+        number = f"{len(lines) + 1}. "
+        text = _step_text(step.get("description"), indent=len(number))
         if not title and not text:
             continue
         if title and title[-1] not in ".!?:":
             title += "."
         lead = f"**{title}** " if title else ""
-        lines.append(f"{len(lines) + 1}. {lead}{text}".rstrip())
+        lines.append(f"{number}{lead}{text}".rstrip())
     return "\n".join(lines)
 
 
@@ -487,21 +510,57 @@ def _bullets(items: Any) -> str:
     return "\n".join(f"- {entry}" for entry in entries if entry)
 
 
-# Content type -> the block a typed field owns -> how its value is written, and the section's
-# heading with the keyphrase and without it. Both headings fit the H2 length rule.
-_TYPED_SECTIONS: dict[str, dict[str, tuple[Callable[[Any], str], str, str]]] = {
-    "how-to-guide": {
-        "steps": (_numbered_steps, "{keyphrase}: Step by Step", "Follow These Steps in Order")
-    },
-    "in-depth-review": {
-        "verdict": (_paragraphs, "{keyphrase}: The Verdict", "The Verdict in a Few Words")
-    },
+# A keyphrase that is a question of its own ("what is compound interest") can't be a part of
+# another sentence; "how to ..." can, in the two headings that take a verb.
+_QUESTION_OPENINGS = (
+    "how", "what", "why", "when", "where", "which", "who", "is", "are", "can", "does", "do",
+    "should", "will",
+)  # fmt: skip
+
+
+def _is_a_question(keyphrase: str) -> bool:
+    return (keyphrase or "").strip().lower().split(" ", 1)[0] in _QUESTION_OPENINGS
+
+
+def _how_to(keyphrase: str) -> Optional[str]:
+    """What follows "how to" in the keyphrase, in the keyphrase's Title Case, or None."""
+    shown = display_keyphrase(keyphrase)
+    return shown[7:].strip() or None if shown.lower().startswith("how to ") else None
+
+
+# The headings carry the keyphrase as a part of what they say, never set before a colon: that
+# is the "Keyphrase: ..." form the heading rules call bolted on (subheading_seo._is_bolted_on).
+def _steps_heading(keyphrase: str, markdown: str) -> Optional[str]:
+    steps = len(re.findall(r"(?m)^\d+\. ", markdown))
+    if _is_a_question(keyphrase) and not _how_to(keyphrase):
+        return None
+    count = f"{steps} Steps" if steps > 1 else "One Step"
+    return f"{display_keyphrase(keyphrase)} in {count}"
+
+
+def _verdict_heading(keyphrase: str, markdown: str) -> Optional[str]:
+    return None if _is_a_question(keyphrase) else f"The Verdict on {display_keyphrase(keyphrase)}"
+
+
+def _prerequisites_heading(keyphrase: str, markdown: str) -> Optional[str]:
+    doing = _how_to(keyphrase)
+    if doing:
+        return f"What You Need to {doing}"
+    if _is_a_question(keyphrase):
+        return None
+    return f"What You Need for {display_keyphrase(keyphrase)}"
+
+
+# Content type -> the block a typed field owns -> how its value is written, the section's
+# heading with the keyphrase in it, and its heading without. The plain ones fit the H2 length
+# rule; one with the keyphrase is used only when it does too.
+_TYPED_SECTIONS: dict[
+    str, dict[str, tuple[Callable[[Any], str], Callable[[str, str], Optional[str]], str]]
+] = {
+    "how-to-guide": {"steps": (_numbered_steps, _steps_heading, "Follow These Steps in Order")},
+    "in-depth-review": {"verdict": (_paragraphs, _verdict_heading, "The Verdict in a Few Words")},
     "tutorial": {
-        "prerequisites": (
-            _bullets,
-            "{keyphrase}: What You Need First",
-            "What You Need Before You Start",
-        )
+        "prerequisites": (_bullets, _prerequisites_heading, "What You Need Before You Start")
     },
 }
 
@@ -523,7 +582,12 @@ def typed_section_blocks(outline: dict, content_type: str) -> list[OutlineBlock]
 
 
 def _typed_heading(
-    with_keyphrase: str, plain: str, keyphrase: str, title: str, body: str, content_type: str
+    with_keyphrase: Optional[str],
+    plain: str,
+    keyphrase: str,
+    title: str,
+    body: str,
+    content_type: str,
 ) -> Optional[str]:
     """The section's H2: the candidate that fits the heading length rule and leaves the share
     of subheadings carrying the keyphrase nearest its range, the keyphrase one first.
@@ -533,8 +597,7 @@ def _typed_heading(
     """
     if reads_as_another_language(title):
         return None
-    shown = display_keyphrase(keyphrase) if (keyphrase or "").strip() else ""
-    candidates = ([with_keyphrase.format(keyphrase=shown)] if shown else []) + [plain]
+    candidates = ([with_keyphrase] if with_keyphrase else []) + [plain]
 
     def cost(candidate: str) -> tuple[bool, int]:
         share = subheading_report(f"{body}\n\n## {candidate}\n", keyphrase, content_type)[
@@ -573,7 +636,7 @@ def _with_typed_sections(
         if not markdown:
             continue
         heading = _typed_heading(
-            with_keyphrase,
+            with_keyphrase(keyphrase, markdown) if (keyphrase or "").strip() else None,
             plain,
             keyphrase,
             str(content_dict.get("title") or ""),
