@@ -125,7 +125,8 @@ def test_a_new_answer_is_read_from_its_start():
     cut = refused.index('"structure_2"')
 
     assert [s["key"] for s in stream.feed(refused[:cut])] == ["hero", "structure_1"]
-    stream.restart()
+    # The page is told to drop what it was sent: the new answer may leave a section out.
+    assert stream.restart() == [{"type": "section", "phase": "reset"}]
     sections = _feed_all(stream, _pieces(again, 13))
 
     assert [s["key"] for s in sections] == ["hero", "structure_1", "structure_2", "faqs"]
@@ -207,4 +208,32 @@ def test_a_typed_section_written_as_text_is_returned_when_its_text_closes():
     assert [(s["key"], s["markdown"]) for s in returned] == [
         ("verdict", 'Worth it, "mostly". {Really}'),
         ("hero", "A plan saves a season."),
+    ]
+
+
+def test_a_reset_is_sent_only_when_sections_were():
+    """The writer calls its model several times before its answer (its searches): none of
+    those is a refused answer, and the page is told nothing."""
+    stream = SectionStream(SECTIONS)
+
+    assert stream.restart() == []
+    stream.feed('{"query": "garden beds"}')
+    assert stream.restart() == []
+    stream.feed(json.dumps(ANSWER))
+    assert stream.restart() == [{"type": "section", "phase": "reset"}]
+    # Told once: nothing was sent since.
+    assert stream.restart() == []
+
+
+def test_a_section_the_new_answer_leaves_out_is_not_sent_again():
+    stream = SectionStream(SECTIONS)
+    stream.feed(json.dumps(ANSWER))
+
+    events = stream.restart() + stream.feed(json.dumps({**ANSWER, "structure_2": None}))
+
+    assert [(e["phase"], e.get("key")) for e in events] == [
+        ("reset", None),
+        ("draft", "hero"),
+        ("draft", "structure_1"),
+        ("draft", "faqs"),
     ]
