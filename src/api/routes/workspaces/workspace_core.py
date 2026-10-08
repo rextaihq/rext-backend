@@ -116,7 +116,8 @@ async def create_workspace(
     if url:
         # Reject dead or made-up domains before any workspace row or pipeline exists.
         try:
-            await check_website_reachable(url)
+            # The address that answered: its `www.` twin when only that one resolves.
+            url = await check_website_reachable(url)
         except WebsiteUnreachableError as exc:
             raise RextValidationException(message=str(exc), field_errors={"url": [str(exc)]})
 
@@ -465,9 +466,10 @@ async def update_workspace(
 
     # A changed URL must be a live site, the same rule as on create. Re-sending
     # the current URL unchanged skips the network check.
-    if data.url and str(data.url).rstrip("/").lower() != (workspace.url or "").rstrip("/").lower():
+    new_url = str(data.url) if data.url else None
+    if new_url and new_url.rstrip("/").lower() != (workspace.url or "").rstrip("/").lower():
         try:
-            await check_website_reachable(str(data.url))
+            new_url = await check_website_reachable(new_url)
         except WebsiteUnreachableError as exc:
             raise RextValidationException(message=str(exc), field_errors={"url": [str(exc)]})
 
@@ -487,7 +489,7 @@ async def update_workspace(
         user_id=UUID(user_id),
         name=name,
         timezone=data.timezone,
-        url=str(data.url) if data.url else None,
+        url=new_url,
     )
 
     from src.utils.audit_helper import create_audit_log_async
@@ -503,7 +505,7 @@ async def update_workspace(
         new_values={
             "name": name or old_values["name"],
             "timezone": data.timezone or old_values["timezone"],
-            "url": str(data.url) if data.url else old_values["url"],
+            "url": new_url or old_values["url"],
         },
         request=request,
     )
