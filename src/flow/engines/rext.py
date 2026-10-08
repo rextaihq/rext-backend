@@ -167,25 +167,26 @@ _PAID_MARKS = ("credits_deducted", "image_credit_deducted")
 
 async def _begin_run(state: REXT) -> dict:
     """A new run notes when it began (its analytics events count their seconds from it), and
-    clears what an earlier run on this thread left in its content: its terminal error, and
-    its paid-charge marks, so this run's own charges are made."""
+    clears what an earlier run on this thread left in its content: its terminal error, its
+    paid-charge marks, so this run's own charges are made, and its repairs, so this run's
+    article has its own attempts and its own count."""
     from src.services.generation_events import run_start_mark
 
     content = state.get("content") or {}
+    update: dict = run_start_mark()
     if (
-        content.get("error") is None
-        and content.get("error_code") is None
-        and not any(content.get(mark) for mark in _PAID_MARKS)
+        content.get("error") is not None
+        or content.get("error_code") is not None
+        or any(content.get(mark) for mark in _PAID_MARKS)
     ):
-        return {"content": run_start_mark()}
-    return {
-        "content": {
-            "error": None,
-            "error_code": None,
-            **dict.fromkeys(_PAID_MARKS, False),
-            **run_start_mark(),
-        }
-    }
+        update.update({"error": None, "error_code": None, **dict.fromkeys(_PAID_MARKS, False)})
+    review = content.get("review") or {}
+    if review.get("repair_attempts") or review.get("repair_history"):
+        # The repair step counts its attempts in the thread's review and stops at the limit,
+        # and skips a check an earlier attempt left as it was: an earlier article's attempts
+        # say nothing about this one.
+        update["review"] = {"repair_attempts": 0, "repair_history": []}
+    return {"content": update}
 
 
 CREDIT_CHECK_FAILED = (

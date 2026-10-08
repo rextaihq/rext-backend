@@ -230,6 +230,38 @@ async def test_a_new_run_on_a_finished_thread_pays_for_its_drafting():
     }
 
 
+async def test_a_new_run_on_a_finished_thread_has_its_own_repairs():
+    # The repair step counts its attempts in the thread's review and stops at two; it also
+    # leaves alone a check an earlier attempt worked on in vain. Both are about the article
+    # they were made for: a second article on the thread starts with neither.
+    from src.flow.engines.content.generation.validation import MAX_REPAIR_ATTEMPTS
+    from src.flow.engines.rext import _begin_run
+    from src.flow.states.reducers.custom_reducer import deep_merge_dicts
+
+    earlier = {
+        "final_content": {},
+        "review": {
+            "repair_attempts": MAX_REPAIR_ATTEMPTS,
+            "repair_history": [{"attempt": 1}, {"attempt": 2}],
+            "validation": {"passed": True},
+        },
+    }
+    update = await _begin_run({"content": earlier})
+
+    assert update["content"]["review"] == {"repair_attempts": 0, "repair_history": []}
+    # As the run's state takes it: the count and the list are this run's, the rest stays.
+    merged = deep_merge_dicts(earlier, update["content"])
+    assert merged["review"] == {
+        "repair_attempts": 0,
+        "repair_history": [],
+        "validation": {"passed": True},
+    }
+    # A thread with no repairs behind it gets nothing written into its review.
+    assert (
+        "review" not in (await _begin_run({"content": {"review": {"validation": {}}}}))["content"]
+    )
+
+
 def test_the_graphs_end_the_run_where_a_charge_is_refused():
     from src.flow.engines.content.content_engine import create_content_engine
     from src.flow.engines.rext import create_rext_engine
