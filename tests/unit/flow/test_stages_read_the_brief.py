@@ -176,3 +176,75 @@ async def test_the_repair_is_given_the_brief_and_only_its_own_length(monkeypatch
     # One length only: the one the article has now. The target is the rewrite's.
     assert "- Length:" not in human
     assert "LENGTH — the article is currently" in human
+
+
+# -- Step three: the writer reads the brief ---------------------------------------------------
+
+
+def _opening(brief):
+    from src.flow.engines.content.generation.content_generation import writer_message_opening
+
+    return writer_message_opening(
+        brief,
+        content_type="blog",
+        topic="How to use a content calendar template",
+        title_lock="TITLE — FIXED, USER-SELECTED\n",
+        primary_keyword=FOCUS,
+        target_word_count=1500,
+        max_word_count=1680,
+    )
+
+
+def test_the_writers_message_opens_with_the_brief_the_later_stages_read():
+    outline = _outline("subtle")
+    spec = build_requirements_spec(outline, "blog", focus_keyword=FOCUS)
+    brief = brief_for_stage(spec, outline, stage="writer")
+
+    opening = _opening(brief)
+
+    assert opening.startswith(brief)
+    assert "Write the article this brief describes." in opening
+    # The same facts in the same words the rewrite and the repair are given after it.
+    rewrite = brief_for_stage(spec, outline, stage="rewrite")
+    shared = [line for line in brief.splitlines() if line.startswith("- ")]
+    assert shared and all(line in rewrite for line in shared)
+    for line in (
+        "- Written for: Marketing leads, Small agencies",
+        "- Tone: Practical, plain-spoken",
+        "- Secondary keywords (each at least once): editorial calendar, posting schedule",
+        "- Brand: Acme Tools, subtle: one natural mention early in the body",
+    ):
+        assert line in opening
+    # What the message said before stays where the brief does not say it.
+    assert "Content Type: blog\n" in opening
+    assert "TITLE — FIXED, USER-SELECTED" in opening
+    assert f"Primary Keyword: {FOCUS}\n" in opening
+
+
+def test_with_the_brief_the_writer_is_told_one_length_the_one_the_check_reads():
+    outline = _outline("subtle")
+    spec = build_requirements_spec(outline, "blog", focus_keyword=FOCUS)
+
+    opening = _opening(brief_for_stage(spec, outline, stage="writer"))
+
+    # The range the article is checked against: 12% either side of 1,500.
+    assert (
+        "- Length: about 1500 words; the introduction and the body together between 1320 and 1680"
+        in opening
+    )
+    # Not a second range beside it that makes the target the least.
+    assert "Target Word Count" not in opening
+    assert "1500-1680" not in opening
+
+
+def test_without_a_brief_the_writers_message_opens_as_it_did():
+    opening = _opening("")
+
+    assert opening.startswith(
+        "Content Type: blog\nTopic: How to use a content calendar template\n\n"
+    )
+    assert (
+        "Target Word Count: 1500-1680 words (stay within this range — do not go meaningfully "
+        "under or over)\n\n"
+    ) in opening
+    assert opening.endswith("\n\n")
