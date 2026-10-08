@@ -184,6 +184,7 @@ async def test_the_event_goes_to_posthog_with_no_person_and_an_id_of_its_own(mon
     assert body["event"] == "subscription_started"
     assert body["properties"]["$process_person_profile"] is False
     assert body["properties"]["source"] == "backend"
+    assert body["properties"]["surface"] == "app"
     assert body["timestamp"] == "2026-10-08T05:00:00+00:00"
     # No identity: the id is made from the webhook's, and is the event's own.
     assert body["distinct_id"] == body["uuid"]

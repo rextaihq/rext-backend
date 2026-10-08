@@ -130,6 +130,9 @@ async def send_money_event(
             "uuid": anonymous_id,
             "properties": {
                 **event["properties"],
+                # The app's events say where they are from, so its numbers can be laid beside
+                # the website's (which sends "website" to its own project).
+                "surface": "app",
                 "source": "backend",
                 # No person is made or updated for it.
                 "$process_person_profile": False,
