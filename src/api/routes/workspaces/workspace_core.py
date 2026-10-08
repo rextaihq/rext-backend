@@ -101,7 +101,10 @@ async def create_workspace(
             field_errors={"url": ["URL must be provided and valid"]},
         )
     if description and len(description) < DESCRIPTION_MIN_LENGTH:
-        short = "Describe the business in a sentence or two: what it sells, and to whom."
+        short = (
+            "Your description is too short. Say in a sentence or two what the business sells, "
+            "and to whom."
+        )
         raise RextValidationException(message=short, field_errors={"description": [short]})
 
     if url:
