@@ -234,3 +234,5 @@ class ContentVersionDetailResponse(ContentVersionSummary):
 
     introduction: Optional[str] = None
     body_markdown: Optional[str] = None
+    body_html: Optional[str] = None
+    images_data: Optional[Any] = None
