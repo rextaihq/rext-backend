@@ -17,19 +17,20 @@ Does NOT:
 """
 
 import re
-from asyncio import create_task
+from asyncio import create_task, ensure_future, sleep, wait
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from langsmith import trace, traceable
-from sqlalchemy import and_, delete, distinct, func, select
+from sqlalchemy import and_, delete, distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.api.cache.decorators import cached, invalidate_cache, invalidate_cache_key
 from src.api.database.async_database import get_async_db_context
 from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
     RextAuthenticationException,
@@ -44,13 +45,169 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.services.sse_service import event_stream_manager
+from src.services.sse_service import emit_step_failure, event_stream_manager
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
 from src.utils.storage import resolve_avatar_url, resolve_media_url
 
 # Track background pipeline tasks to prevent garbage collection
 _background_tasks: set = set()
+# The operation ids of the pipeline runs this process is running now.
+_live_operations: set = set()
+
+# The workspace pipeline runs as a task inside this process, with no queue behind it, so a
+# restart or a deploy ends a run without a word. A run recorded as running is gone once it
+# started before this process did, or once it has outlived any real run (the pipeline's own
+# budget is 90 seconds). A run this process is still running is never gone: it is cut off at
+# the same limit instead (_run_pipeline_recorded), so a retry can't start beside it.
+_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+_PIPELINE_RUN_LIMIT = timedelta(minutes=10)
+# How long a run's end waits for the request that created its row to commit it.
+_RECORD_ATTEMPTS = 15
+_RECORD_RETRY_SECONDS = 2.0
+
+
+def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
+    """The workspace's latest pipeline run, as the dashboard polls it: its status ("running",
+    "completed", "failed", or "interrupted" for a running row this process no longer runs), its
+    operation id for the SSE stream, and when it started. None when no run is recorded, as for
+    a workspace created before runs were: nothing on the row says whether that setup finished
+    (a setup can complete and leave no brand voice), so nothing is claimed about it."""
+    status = workspace.pipeline_status
+    if status is None:
+        return None
+    started_at = workspace.pipeline_started_at
+    if (
+        status == "running"
+        and workspace.pipeline_operation_id not in _live_operations
+        and (
+            started_at is None
+            or started_at < _PROCESS_STARTED_AT
+            or datetime.now(timezone.utc) - started_at > _PIPELINE_RUN_LIMIT
+        )
+    ):
+        status = "interrupted"
+    return {
+        "status": status,
+        "operation_id": workspace.pipeline_operation_id,
+        "started_at": started_at.isoformat() if started_at else None,
+    }
+
+
+def _mark_pipeline_started(workspace: WorkspaceModel, operation_id: str) -> None:
+    workspace.pipeline_status = "running"
+    workspace.pipeline_operation_id = operation_id
+    workspace.pipeline_started_at = datetime.now(timezone.utc)
+
+
+async def _record_pipeline_end(
+    db: AsyncSession, workspace_id: UUID, operation_id: str, status: str
+) -> bool:
+    """Write how a run ended, unless a newer run has taken its place on the row. A creation run
+    can end before the request that created its row has committed it, so while the row isn't
+    there yet this waits for it (up to about half a minute). Never raises: the run's outcome is
+    logged already, and a row left running reads as interrupted.
+
+    True when the row now says how this run ended, or a newer run holds it. False when the
+    outcome isn't on record (the row never appeared, or the write failed): the run's terminal
+    event is then withheld, so nobody reads "running" on an event that says the run is over."""
+    try:
+        for _ in range(_RECORD_ATTEMPTS):
+            result = await db.execute(
+                update(WorkspaceModel)
+                .where(
+                    WorkspaceModel.id == workspace_id,
+                    WorkspaceModel.pipeline_operation_id == operation_id,
+                )
+                .values(pipeline_status=status)
+                .execution_options(synchronize_session=False)
+            )
+            await db.commit()
+            if result.rowcount:
+                return True
+            current = await db.scalar(
+                select(WorkspaceModel.pipeline_operation_id).where(
+                    WorkspaceModel.id == workspace_id
+                )
+            )
+            await db.commit()
+            if current is not None:
+                return True  # a newer run has the row: its own end will be recorded
+            await sleep(_RECORD_RETRY_SECONDS)
+        logger.warning(
+            "The workspace pipeline's row never appeared to record its end",
+            extra={"workspace_id": str(workspace_id), "operation_id": operation_id},
+        )
+        return False
+    except Exception as exc:  # noqa: BLE001 - the status is a record, never a new failure
+        await db.rollback()
+        logger.warning(
+            "Could not record the workspace pipeline's end",
+            extra={
+                "workspace_id": str(workspace_id),
+                "operation_id": operation_id,
+                "status": status,
+                "error": repr(exc),
+            },
+        )
+        return False
+
+
+async def _run_pipeline_recorded(
+    db: AsyncSession, *, operation_id: str, workspace_id: UUID, user_id: UUID, url: str
+) -> None:
+    """One pipeline run with its outcome on the workspace's row: written as the run settles, before
+    its terminal event goes out (so a read on that event sees it), and "failed" for a run cut off at
+    _PIPELINE_RUN_LIMIT. Live in _live_operations meanwhile, so it never reads as interrupted.
+
+    The limit is on the work up to the run's commit (or its failure). Past that point the run is
+    left to finish what follows by itself: recording the outcome, then its own terminal event with
+    its own payload, so nothing here has to guess whether the record landed or rebuild the event.
+    A run cut off before that point is cancelled, which passes the pipeline's `except Exception`
+    without a word, so its failure is recorded and its failure event sent from here, the event
+    only once the row says "failed"."""
+    settled = False
+
+    async def record(status: str) -> bool:
+        nonlocal settled
+        settled = True
+        return await _record_pipeline_end(db, workspace_id, operation_id, status)
+
+    _live_operations.add(operation_id)
+    run = ensure_future(
+        run_workspace_pipeline(
+            db=db,
+            operation_id=operation_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            url=url,
+            on_finished=record,
+        )
+    )
+    try:
+        await wait({run}, timeout=_PIPELINE_RUN_LIMIT.total_seconds())
+        if run.done() or settled:
+            # Finished, or past its commit and finishing: its own outcome, event and exception.
+            await run
+            return
+        run.cancel()
+        await wait({run})
+        await db.rollback()
+        if await _record_pipeline_end(db, workspace_id, operation_id, "failed"):
+            await emit_step_failure(
+                operation_id=operation_id,
+                scope="workspace",
+                step="pipeline",
+                message="Workspace creation pipeline encountered an error.",
+                error=None,
+                user_id=user_id,
+            )
+        raise TimeoutError(f"The workspace pipeline ran past {_PIPELINE_RUN_LIMIT}")
+    finally:
+        if not run.done():
+            # This task was cancelled itself (a shutdown): the run goes with it.
+            run.cancel()
+        _live_operations.discard(operation_id)
 
 
 class WorkspaceService:
@@ -113,6 +270,8 @@ class WorkspaceService:
             await self._assign_role_to_user(owner_role.id, user_id, workspace.id)
 
         operation_id = str(uuid4())
+        _mark_pipeline_started(workspace, operation_id)
+        await self.db.flush()
 
         # Register ownership so only this user can publish events to this operation
         await event_stream_manager.set_operation_owner(operation_id, user_id)
@@ -124,8 +283,8 @@ class WorkspaceService:
             ):
                 async with get_async_db_context() as bg_db:
                     try:
-                        await run_workspace_pipeline(
-                            db=bg_db,
+                        await _run_pipeline_recorded(
+                            bg_db,
                             operation_id=operation_id,
                             workspace_id=workspace.id,
                             user_id=user_id,
@@ -206,7 +365,21 @@ class WorkspaceService:
                 field_errors={"url": ["Workspace must have a valid URL before refreshing"]},
             )
 
+        # The row stays locked until this request commits, so a second request at the same
+        # moment waits here and then sees this run.
+        await self.db.refresh(workspace, with_for_update=True)
+        state = pipeline_state(workspace)
+        if state and state["status"] == "running":
+            # Two runs at once would race each other's writes to the brand voice.
+            raise BusinessRuleViolationException(
+                message="The workspace's website is still being read. Wait for it to finish.",
+                rule_name="workspace_pipeline_running",
+            )
+
         operation_id = str(uuid4())
+        _mark_pipeline_started(workspace, operation_id)
+        await self.db.flush()
+        workspace_id, url = workspace.id, workspace.url
 
         # Register ownership so only this user can publish events to this operation
         await event_stream_manager.set_operation_owner(operation_id, user_id)
@@ -214,19 +387,19 @@ class WorkspaceService:
         async def run_pipeline() -> None:
             async with get_async_db_context() as bg_db:
                 try:
-                    await run_workspace_pipeline(
-                        db=bg_db,
+                    await _run_pipeline_recorded(
+                        bg_db,
                         operation_id=operation_id,
-                        workspace_id=workspace.id,
+                        workspace_id=workspace_id,
                         user_id=user_id,
-                        url=workspace.url,
+                        url=url,
                     )
                 except Exception as exc:
                     logger.error(
                         "Workspace refresh pipeline failed",
                         extra={
                             "operation_id": operation_id,
-                            "workspace_id": str(workspace.id),
+                            "workspace_id": str(workspace_id),
                             "error": str(exc),
                         },
                         exc_info=True,
@@ -234,8 +407,10 @@ class WorkspaceService:
                     raise
 
         task = create_task(run_pipeline())
+        _background_tasks.add(task)
 
         def handle_completion(pipeline_task) -> None:
+            _background_tasks.discard(pipeline_task)
             try:
                 pipeline_task.result()
             except Exception as exc:
@@ -257,6 +432,19 @@ class WorkspaceService:
         )
 
         return operation_id
+
+    async def retry_pipeline_for_user(self, workspace_id: UUID, user_id: UUID) -> str:
+        """Run the workspace pipeline again after its last run failed or was interrupted (a
+        restart or a deploy ends a run). Returns the new run's operation id."""
+        await self._ensure_active_user(user_id)
+        workspace = await self._ensure_membership(workspace_id, user_id)
+        state = pipeline_state(workspace)
+        if not state or state["status"] not in ("failed", "interrupted"):
+            raise BusinessRuleViolationException(
+                message="Only a run that failed or was interrupted can be retried.",
+                rule_name="workspace_pipeline_not_retryable",
+            )
+        return await self.refresh_brand_voice_for_user(workspace_id, user_id)
 
     async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""
@@ -1254,6 +1442,7 @@ class WorkspaceService:
             "timezone": workspace.timezone,
             "url": workspace.url,
             "favicon_url": resolve_media_url(workspace.favicon_url),
+            "pipeline": pipeline_state(workspace),
             "created_at": (workspace.created_at.isoformat() if workspace.created_at else None),
             "updated_at": (workspace.updated_at.isoformat() if workspace.updated_at else None),
         }

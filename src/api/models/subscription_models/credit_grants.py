@@ -2,11 +2,18 @@
 Credit grants: credits given on top of a subscription's monthly credits.
 
 A grant has its own amount, what is left of it, what was forfeited (a refund
-takes an unspent bonus back) and an expiry; spent = amount - remaining -
-forfeited. It is spent before the monthly credits, soonest expiry first, and an
-expired grant is simply no longer counted. Today every grant is a promotion's bonus and points
-at it; one grant per subscription and promotion, so a webhook delivered twice
-grants once.
+takes an unspent bonus back, an admin's deduction takes added credits back) and
+an expiry; spent = amount - remaining - forfeited. A grant with an expiry is
+spent before the monthly credits, soonest expiry first; one without is spent
+after them, oldest first; an expired grant is simply no longer counted.
+
+A grant comes from one of two sources. A promotion's bonus (``source =
+'promotion'``) points at its promotion; one grant per subscription and
+promotion, so a webhook delivered twice grants once. Credits a super admin adds
+(``source = 'admin'``, src/services/admin_credits.py) point at no promotion and
+carry the admin's reason and who added them. They are the user's: when a later
+subscription replaces the row they were added on, they are spent from that one
+(src/services/credit_grants.py, ``_spendable_by``).
 """
 
 import uuid
@@ -18,6 +25,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -27,16 +35,29 @@ from sqlalchemy.sql import func
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
+# What a super admin may add or deduct at once, and the reason's length; the
+# reason is shown to the customer (src/services/admin_credits.py).
+ADMIN_CREDIT_MAX_AMOUNT = 100_000
+ADMIN_CREDIT_REASON_MIN_LENGTH = 3
+ADMIN_CREDIT_REASON_MAX_LENGTH = 500
+
 
 class CreditGrant(Base, SerializableMixin):
     __tablename__ = "credit_grants"
     __table_args__ = (
+        # PostgreSQL treats NULLs as distinct here, so a subscription can hold any
+        # number of admin grants (promotion_id NULL) and still one per promotion.
         UniqueConstraint(
             "subscription_id", "promotion_id", name="uq_credit_grants_subscription_promotion"
         ),
         CheckConstraint(
             "remaining >= 0 AND forfeited >= 0 AND remaining + forfeited <= amount",
             name="ck_credit_grants_remaining",
+        ),
+        CheckConstraint(
+            "(source = 'promotion' AND promotion_id IS NOT NULL)"
+            " OR (source = 'admin' AND reason IS NOT NULL)",
+            name="ck_credit_grants_source",
         ),
     )
 
@@ -47,10 +68,21 @@ class CreditGrant(Base, SerializableMixin):
         nullable=False,
         index=True,
     )
+    # "promotion" (a promotion's bonus) or "admin" (added by a super admin).
+    source = Column(String(20), nullable=False, server_default="promotion")
+    # NULL for an admin grant.
     promotion_id = Column(
         UUID(as_uuid=True),
         ForeignKey("promotions.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+    # An admin grant's reason, shown to the customer, and the admin who added it.
+    reason = Column(Text, nullable=True)
+    granted_by = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     # The Lemon Squeezy order whose payment earned the grant: a refund of that

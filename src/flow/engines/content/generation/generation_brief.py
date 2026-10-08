@@ -10,12 +10,13 @@ wherever the spec holds the fact, so what a stage is told cannot differ from wha
 is checked against, and from the approved outline for the two facts the spec does not hold
 (the reader and the tone).
 
-This module is the brief as data and its one wording. No prompt reads it yet: the rewrite and
-the repair come first, then the writer, each after a comparison on real articles.
+This module is the brief as data and its one wording. The rewrite and the repair read it
+(humanize_content, repair_content); the writer comes next, after a comparison on real articles.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal, TypedDict
 
 from src.flow.engines.content.generation.requirements_spec import (
@@ -25,9 +26,9 @@ from src.flow.engines.content.generation.requirements_spec import (
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 
-Stage = Literal["writer", "rewrite", "repair"]
+logger = logging.getLogger(__name__)
 
-MAX_READERS = 8
+Stage = Literal["writer", "rewrite", "repair"]
 
 # What the article does under each brand choice, in the words the outline screen shows beside
 # the option (rext-admin, outline-brief.tsx) and the checks hold the article to.
@@ -81,7 +82,9 @@ def _readers(outline: dict) -> list[str]:
         audience = audience.split(",")
     if not isinstance(audience, list):
         return []
-    return [_text(reader) for reader in audience if _text(reader)][:MAX_READERS]
+    # Every reader the outline holds: a bound, if one is wanted, belongs at the outline gate,
+    # where the user would see it.
+    return [_text(reader) for reader in audience if _text(reader)]
 
 
 def _brand(spec: RequirementsSpec, outline: dict) -> tuple[str, str]:
@@ -135,7 +138,10 @@ def build_generation_brief(spec: RequirementsSpec, outline: dict | None) -> Gene
 
 
 def render_generation_brief(brief: GenerationBrief, *, stage: Stage) -> str:
-    """The brief in words. The same lines at every stage; only the stage's own line differs."""
+    """The brief in words. The same lines at every stage, but for two: the stage's own line, and
+    the length, which a repair is not given. A repair keeps the article at the length it has
+    (the rewrite that follows owns the length), and the target beside that would be a second
+    length to obey."""
     lines = [
         "========================",
         "THE ARTICLE'S BRIEF",
@@ -149,7 +155,7 @@ def render_generation_brief(brief: GenerationBrief, *, stage: Stage) -> str:
             f"- Length: about {brief['target_words']} words; the introduction and the body "
             f"together between {brief['min_words']} and {brief['max_words']}"
         )
-        if brief["target_words"]
+        if brief["target_words"] and stage != "repair"
         else "",
         f'- Focus keyphrase (exact wording): "{brief["focus_keyphrase"]}"'
         if brief["focus_keyphrase"]
@@ -169,7 +175,11 @@ def _brand_line(brief: GenerationBrief) -> str:
         return ""
     if choice == "mention":
         return f"- Brand: {name}, mentioned where this kind of article places it"
-    return f"- Brand: {name}, {choice}: {BRAND_CHOICE_LINES[choice]}"
+    line = f"- Brand: {name}, {choice}: {BRAND_CHOICE_LINES[choice]}"
+    if choice == "none":
+        # As the writer is told: the links the user approved are theirs, wherever they point.
+        line += ". The internal links the user approved stay, with their exact addresses"
+    return line
 
 
 def _call_to_action_line(brief: GenerationBrief) -> str:
@@ -185,3 +195,13 @@ def _call_to_action_line(brief: GenerationBrief) -> str:
     return f'- Call to action: "{text}"' + (
         "" if brief["call_to_action_links"] else " (with no link)"
     )
+
+
+def brief_for_stage(spec: RequirementsSpec, outline: dict | None, *, stage: Stage) -> str:
+    """The article's brief as ``stage`` reads it, from the spec it is checked against. Empty when
+    it can't be built: a stage then says what it said before the brief, never nothing wrong."""
+    try:
+        return render_generation_brief(build_generation_brief(spec, outline), stage=stage)
+    except Exception:  # noqa: BLE001 - a prompt helper must not take a run down
+        logger.warning("The article's brief could not be built for %s", stage, exc_info=True)
+        return ""

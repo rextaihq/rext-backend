@@ -15,11 +15,12 @@ import hmac
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -27,6 +28,7 @@ import src.api.models.subscription_models.subscriptions as subscriptions_module
 import src.services.credit_grants as credit_grants_module
 import src.services.lemonsqueezy_webhook_service as webhook_service_module
 import src.services.refund_request_service as refund_request_module
+import src.services.subscription_service as subscription_service_module
 import src.services.usage_tracking_service as usage_module
 import src.services.webhook_handlers.subscription_handlers as subscription_handlers_module
 from scripts.seeds.seed_promotions import LAUNCH_PROMOTION
@@ -39,13 +41,17 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.refund_requests import RefundRequest
 from src.api.models.subscription_models.refunds import Refund
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import (
+    SubscriptionStatus,
+    UserSubscription,
+)
 from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.refund_request_service import RefundRequestError, RefundRequestService
+from src.services.subscription_service import SubscriptionService
 from src.services.usage_tracking_service import UsageTrackingService
 from src.services.webhook_handlers import register_default_handlers
 from src.services.webhook_handlers.order_handlers import handle_order_created
@@ -106,6 +112,10 @@ def _session(conn):
 @pytest_asyncio.fixture
 async def db(connection):
     async with _session(connection) as session:
+        # A migrated test database holds the real launch offer. Only the promotions a test
+        # makes itself count here, or a test that reads the real clock would get the bonus
+        # while the suite runs in launch week.
+        await session.execute(update(Promotion).values(is_active=False))
         yield session
 
 
@@ -188,7 +198,15 @@ def _meta(user, event_name=""):
 
 
 def _subscription_event(
-    user, ls_id, variant, *, at, status="active", order_id=None, name="subscription_created"
+    user,
+    ls_id,
+    variant,
+    *,
+    at,
+    status="active",
+    order_id=None,
+    name="subscription_created",
+    renews_at=None,
 ):
     return {
         "meta": _meta(user, name),
@@ -203,7 +221,8 @@ def _subscription_event(
                 "user_email": user.email,
                 "created_at": _iso(at),
                 "updated_at": _iso(at),
-                "renews_at": _iso(at + timedelta(days=30)),
+                # A plan change keeps the period: Lemon Squeezy's renews_at stays.
+                "renews_at": _iso(renews_at or at + timedelta(days=30)),
                 "ends_at": None,
                 "trial_ends_at": None,
                 "cancelled": False,
@@ -344,10 +363,6 @@ async def test_launch_offer_is_granted_once_however_often_its_events_arrive(db, 
     assert await UsageTrackingService(db).get_credit_balance(user.id) == 2000
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="F8e rext-control#551: the first invoice resets the month spent since the start",
-)
 async def test_credits_spent_between_the_starts_events_stay_spent(db, clock):
     """Spend after the subscription was created, then its first invoice and the created event
     arrive again (Lemon Squeezy's order isn't guaranteed, and a failed delivery is retried):
@@ -730,9 +745,243 @@ async def test_an_upgrade_and_a_downgrade_take_the_new_plans_credits_at_once(db)
     assert downgraded.current_credits == 400  # nothing was spent
 
 
-@pytest.mark.xfail(strict=True, reason="F8a rext-control#536: a plan change sets a full month")
 async def test_switching_plans_down_and_up_does_not_refill_spent_credits(db):
-    """Spend most of a month, switch to a smaller plan and back: the spent credits stay spent."""
+    """Spend most of a month, switch to a smaller plan and back: the spent credits stay spent
+    (F8a, the founder's rule: the new plan's credits less those used this period)."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    period_end = now + timedelta(days=27)
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            growth.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=3),
+            renews_at=period_end,
+        ),
+        None,
+        db,
+    )
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 900)  # 100 left of the month's 1,000
+
+    await _change_plan(db, user, ls_id, starter, at=now - timedelta(hours=2), period_end=period_end)
+    assert await usage.get_credit_balance(user.id) == 0  # 900 used is more than Starter's 400
+    await _change_plan(db, user, ls_id, growth, at=now - timedelta(hours=1), period_end=period_end)
+
+    assert await usage.get_credit_balance(user.id) == 100
+
+
+async def _starter_spent(db, spend):
+    """A Starter subscriber (400 a month) three days into the period, who has spent some."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    period_end = now + timedelta(days=27)
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            starter.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=3),
+            renews_at=period_end,
+        ),
+        None,
+        db,
+    )
+    assert await UsageTrackingService(db).consume_credits(user.id, spend)
+    return user, ls_id, starter, growth, now, period_end
+
+
+async def _change_plan(db, user, ls_id, plan, *, at, period_end, status="active"):
+    await handle_subscription_updated(
+        _subscription_event(
+            user,
+            ls_id,
+            plan.lemonsqueezy_variant_id_monthly,
+            at=at,
+            status=status,
+            renews_at=period_end,
+            name="subscription_updated",
+        ),
+        None,
+        db,
+    )
+
+
+async def test_an_upgrade_adds_only_the_difference_paid_for(db):
+    """300 of Starter's 400 used, then Growth: 1,000 less the 300 used."""
+    user, ls_id, _, growth, now, period_end = await _starter_spent(db, 300)
+
+    await _change_plan(db, user, ls_id, growth, at=now - timedelta(hours=1), period_end=period_end)
+
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 700
+
+
+async def test_a_plan_changes_prorated_invoice_brings_no_new_month(db):
+    """Lemon Squeezy charges the difference with billing_reason "updated": the change already
+    set the credits, so the payment doesn't reset them to a full month."""
+    user, ls_id, _, growth, now, period_end = await _starter_spent(db, 300)
+    await _change_plan(db, user, ls_id, growth, at=now - timedelta(hours=1), period_end=period_end)
+
+    await handle_subscription_payment_success(
+        _invoice_event(
+            user, ls_id, at=now - timedelta(minutes=50), billing_reason="updated", total=3300
+        ),
+        None,
+        db,
+    )
+
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 700
+
+
+async def test_the_next_period_after_a_plan_change_starts_from_its_own_month(db):
+    """The renewal brings the new plan's full month, and a change in that period counts only
+    what was used in it."""
+    user, ls_id, starter, growth, now, period_end = await _starter_spent(db, 300)
+    await _change_plan(db, user, ls_id, growth, at=now - timedelta(hours=3), period_end=period_end)
+    usage = UsageTrackingService(db)
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now - timedelta(hours=2), billing_reason="renewal"),
+        None,
+        db,
+    )
+    assert await usage.get_credit_balance(user.id) == 1000
+
+    assert await usage.consume_credits(user.id, 100)
+    await _change_plan(
+        db,
+        user,
+        ls_id,
+        starter,
+        at=now - timedelta(hours=1),
+        period_end=period_end + timedelta(days=30),
+    )
+    assert await usage.get_credit_balance(user.id) == 300  # 400 less the 100 used this period
+
+
+@pytest.mark.parametrize("billing_reason", ["initial", "updated"])
+async def test_a_trials_plan_change_gives_no_credits_until_its_first_payment(db, billing_reason):
+    """On a paid plan's trial days the credits come with the first payment: switching plans
+    during the trial doesn't hand out a month. That payment brings it under either name: Lemon
+    Squeezy labels an invoice a subscription update produced "updated"."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    period_end = now + timedelta(days=4)
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            starter.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=3),
+            status="on_trial",
+            renews_at=period_end,
+        ),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    opening = subscription.current_credits
+
+    await _change_plan(
+        db,
+        user,
+        ls_id,
+        growth,
+        at=now - timedelta(hours=1),
+        period_end=period_end,
+        status="on_trial",
+    )
+    assert (await _subscription_of(db, ls_id)).current_credits == opening
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now - timedelta(minutes=30), billing_reason=billing_reason),
+        None,
+        db,
+    )
+    assert (await _subscription_of(db, ls_id)).current_credits == 1000
+
+
+async def test_the_in_app_plan_change_follows_the_same_rule(db, monkeypatch):
+    """The dashboard's change (SubscriptionService.upgrade, which downgrades too) sets the
+    credits before Lemon Squeezy's update arrives; that update then changes nothing."""
+    user, ls_id, starter, growth, now, period_end = await _starter_spent(db, 300)
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    # A downgrade checks the workspaces and members against the plan's limits: none here.
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+    usage = UsageTrackingService(db)
+
+    await service.upgrade(user.id, growth.id)
+    assert await usage.get_credit_balance(user.id) == 700
+    await _change_plan(db, user, ls_id, growth, at=now - timedelta(hours=1), period_end=period_end)
+    assert await usage.get_credit_balance(user.id) == 700
+
+    await service.upgrade(user.id, starter.id)
+    assert await usage.get_credit_balance(user.id) == 100
+    await service.upgrade(user.id, growth.id)
+    assert await usage.get_credit_balance(user.id) == 700
+
+
+async def test_an_in_app_change_counts_what_is_spent_while_lemon_squeezy_answers(
+    db, connection, monkeypatch
+):
+    """An article spends 50 while the dashboard's change waits on Lemon Squeezy: the change
+    counts it, rather than working from the balance it read before."""
+    user, ls_id, _, growth, now, period_end = await _starter_spent(db, 300)
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+
+    async def spend_meanwhile(**_):
+        async with _session(connection) as other:
+            assert await UsageTrackingService(other).consume_credits(user.id, 50)
+            await other.commit()
+
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock(side_effect=spend_meanwhile))
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+
+    await service.upgrade(user.id, growth.id)
+
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 650  # 1,000 less 350
+
+
+async def test_a_start_from_before_the_marker_is_not_refilled_by_its_created_event_again(db):
+    """A subscription stored before the start-month marker existed, running paid: its created
+    event delivered again keeps what was spent."""
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    created = _subscription_event(
+        user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=now - timedelta(days=3)
+    )
+    await handle_subscription_created(created, None, db)
+    subscription = await _subscription_of(db, ls_id)
+    subscription.subscription_metadata = {
+        k: v for k, v in subscription.subscription_metadata.items() if k != "start_month_given"
+    }
+    await db.flush()
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 300)
+
+    await handle_subscription_created(created, None, db)
+
+    assert await usage.get_credit_balance(user.id) == 700
+
+
+async def test_plan_changes_without_a_renewal_date_stay_in_one_period(db):
+    """An update without renews_at keeps the stored period, so a change down and back up is
+    still counted as one period's: nothing spent comes back."""
     starter = await _plan(db, "starter", price=39, credits=400)
     growth = await _plan(db, "growth", price=89, credits=1000)
     user = await _customer(db)
@@ -746,25 +995,354 @@ async def test_switching_plans_down_and_up_does_not_refill_spent_credits(db):
         db,
     )
     usage = UsageTrackingService(db)
-    assert await usage.consume_credits(user.id, 900)  # 100 left of the month's 1,000
+    assert await usage.consume_credits(user.id, 900)
 
-    for variant, hours_ago in (
-        (starter.lemonsqueezy_variant_id_monthly, 2),
-        (growth.lemonsqueezy_variant_id_monthly, 1),
-    ):
-        await handle_subscription_updated(
-            _subscription_event(
-                user,
-                ls_id,
-                variant,
-                at=now - timedelta(hours=hours_ago),
-                name="subscription_updated",
-            ),
+    for plan, hours_ago in ((starter, 2), (growth, 1)):
+        event = _subscription_event(
+            user,
+            ls_id,
+            plan.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(hours=hours_ago),
+            name="subscription_updated",
+        )
+        event["data"]["attributes"]["renews_at"] = None
+        await handle_subscription_updated(event, None, db)
+
+    assert await usage.get_credit_balance(user.id) == 100
+
+
+async def test_an_in_app_change_keeps_the_period_when_renews_at_lags(db, monkeypatch):
+    """After a renewal invoice (no renews_at), the stored reset date is the period's end and
+    renews_at still the last one. The change keeps the reset date ahead, so the next spend
+    doesn't refill the month it has just worked out."""
+    user, ls_id, _, growth, now, _ = await _starter_spent(db, 300)
+    subscription = await _subscription_of(db, ls_id)
+    subscription.renews_at = (now - timedelta(days=1)).replace(tzinfo=None)  # lagging
+    subscription.credits_reset_date = now + timedelta(days=29)
+    await db.flush()
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+    usage = UsageTrackingService(db)
+
+    await service.upgrade(user.id, growth.id)
+    assert await usage.consume_credits(user.id, 1)
+
+    assert await usage.get_credit_balance(user.id) == 699  # 1,000 less 300, less 1
+
+
+async def test_a_paid_start_from_before_the_marker_gets_no_second_month_from_its_invoice(db):
+    """Created paid before the marker existed, its first invoice processed after: the month
+    it opened with isn't given again over what was spent."""
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    await handle_subscription_created(
+        _subscription_event(user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=now),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    subscription.subscription_metadata = {
+        k: v for k, v in subscription.subscription_metadata.items() if k != "start_month_given"
+    }
+    await db.flush()
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 300)
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=1), billing_reason="initial"),
+        None,
+        db,
+    )
+
+    assert await usage.get_credit_balance(user.id) == 700
+
+
+async def test_a_failed_first_payment_from_before_the_marker_gets_its_month_when_paid(db):
+    """A start from before the marker whose first payment failed: unpaid, never a trial, no
+    payment credited. When the payment comes, it brings the month. The row's status is read
+    before the payment activates it, or it would pass for a start that opened paid."""
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    await handle_subscription_created(
+        _subscription_event(user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=now),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    subscription.status = SubscriptionStatus.UNPAID
+    subscription.current_credits = 0
+    subscription.subscription_metadata = {
+        k: v
+        for k, v in subscription.subscription_metadata.items()
+        if k not in ("start_month_given", "paid_invoice_at")
+    }
+    await db.flush()
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=1), billing_reason="initial"),
+        None,
+        db,
+    )
+
+    paid = await _subscription_of(db, ls_id)
+    assert paid.status == SubscriptionStatus.ACTIVE
+    assert paid.current_credits == 1000
+    assert paid.subscription_metadata["start_month_given"] is True
+
+
+async def test_an_in_app_change_after_the_period_ended_starts_from_a_full_month(db, monkeypatch):
+    """The period ended and nothing has refilled it yet (the refill comes with the next spend or
+    the renewal's invoice). The change opens the new period: last period's spending isn't taken
+    off the new plan, and an earlier change in the ended period doesn't count either."""
+    user, ls_id, starter, growth, now, _ = await _starter_spent(db, 300)
+    subscription = await _subscription_of(db, ls_id)
+    ended = now - timedelta(hours=1)
+    subscription.credits_reset_date = ended
+    subscription.renews_at = now + timedelta(days=30)
+    subscription.subscription_metadata = {
+        **(subscription.subscription_metadata or {}),
+        "plan_change_credits": {"period": ended.isoformat(), "used": 300, "left": 100},
+    }
+    await db.flush()
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+    usage = UsageTrackingService(db)
+
+    await service.upgrade(user.id, growth.id)
+
+    assert await usage.get_credit_balance(user.id) == 1000
+    assert await usage.consume_credits(user.id, 1)
+    assert await usage.get_credit_balance(user.id) == 999  # the next spend refills nothing
+
+
+async def test_lemon_squeezys_change_after_the_period_ended_starts_from_a_full_month(db):
+    """The same through Lemon Squeezy's update: the stored period had ended, the update brings
+    the next one, and last period's spending isn't taken off the new plan."""
+    user, ls_id, _, growth, now, _ = await _starter_spent(db, 300)
+    subscription = await _subscription_of(db, ls_id)
+    subscription.credits_reset_date = now - timedelta(hours=1)
+    await db.flush()
+
+    await _change_plan(
+        db, user, ls_id, growth, at=now - timedelta(minutes=5), period_end=now + timedelta(days=30)
+    )
+
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 1000
+
+
+async def _trial_from_before_the_marker(db, plan, now):
+    """A subscriber on a paid plan's trial days whose row predates the start-month marker."""
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            plan.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=3),
+            status="on_trial",
+            renews_at=now + timedelta(days=4),
+        ),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    subscription.trial_end_date = now + timedelta(days=4)
+    subscription.subscription_metadata = {
+        k: v for k, v in subscription.subscription_metadata.items() if k != "start_month_given"
+    }
+    await db.flush()
+    return user, ls_id
+
+
+@pytest.mark.parametrize("billing_reason", ["initial", "updated"])
+async def test_a_trial_from_before_the_marker_upgraded_in_the_app_gets_its_month_when_paid(
+    db, monkeypatch, billing_reason
+):
+    """The in-app change makes the trial active and clears its end date. The row says first
+    that it hasn't had its month, so the first payment still brings it: the invoice the change
+    asks for at once, which Lemon Squeezy labels "updated", or one labelled "initial"."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    now = datetime.now(timezone.utc)
+    user, ls_id = await _trial_from_before_the_marker(db, starter, now)
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+
+    await service.upgrade(user.id, growth.id)
+    upgraded = await _subscription_of(db, ls_id)
+    assert upgraded.status == SubscriptionStatus.ACTIVE
+    assert upgraded.trial_end_date is None
+    assert upgraded.subscription_metadata["start_month_given"] is False
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=1), billing_reason=billing_reason),
+        None,
+        db,
+    )
+
+    paid = await _subscription_of(db, ls_id)
+    assert paid.current_credits == 1000
+    assert paid.subscription_metadata["start_month_given"] is True
+
+    # It brought the month once. A later plan change's prorated payment, under the same
+    # name, brings nothing: the customer keeps what the spending left.
+    assert await UsageTrackingService(db).consume_credits(user.id, 300)
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=9), billing_reason="updated"),
+        None,
+        db,
+    )
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 700
+
+
+async def test_a_trial_from_before_the_marker_that_converts_gets_its_month_when_paid(db):
+    """Lemon Squeezy's update ends the trial first (active, no trial date), then the invoice
+    comes: the row kept its answer, so the first payment brings the month."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    now = datetime.now(timezone.utc)
+    user, ls_id = await _trial_from_before_the_marker(db, starter, now)
+
+    await _change_plan(
+        db, user, ls_id, starter, at=now - timedelta(minutes=5), period_end=now + timedelta(days=30)
+    )
+    converted = await _subscription_of(db, ls_id)
+    assert converted.status == SubscriptionStatus.ACTIVE
+    assert converted.trial_end_date is None
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now + timedelta(minutes=1), billing_reason="initial"),
+        None,
+        db,
+    )
+
+    assert (await _subscription_of(db, ls_id)).current_credits == 400
+
+
+@pytest.mark.parametrize("first", ["initial", "updated"])
+async def test_a_trial_that_converts_by_itself_gets_its_month_exactly_once(db, first):
+    """No plan change: the trial ends and its first payment brings the month, whichever name
+    the invoice carries. No later payment of either name brings it again: a retry of the
+    first, or a prorated invoice. The customer keeps what the spending left."""
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            growth.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=7),
+            status="on_trial",
+            renews_at=now + timedelta(days=30),
+        ),
+        None,
+        db,
+    )
+    assert (await _subscription_of(db, ls_id)).subscription_metadata["start_month_given"] is False
+
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now, billing_reason=first), None, db
+    )
+
+    converted = await _subscription_of(db, ls_id)
+    assert converted.current_credits == 1000
+    assert converted.subscription_metadata["start_month_given"] is True
+
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 300)
+    for minutes, again in enumerate(("initial", "updated"), 5):
+        await handle_subscription_payment_success(
+            _invoice_event(user, ls_id, at=now + timedelta(minutes=minutes), billing_reason=again),
             None,
             db,
         )
+        assert await usage.get_credit_balance(user.id) == 700
 
-    assert await usage.get_credit_balance(user.id) <= 100
+
+async def test_a_converted_trial_changing_plan_before_it_pays_keeps_its_balance(db):
+    """Lemon Squeezy's update made the trial active; a plan change arrives before the first
+    payment. The balance stays as it is, and the payment brings the new plan's month. After
+    that a plan change works from what was used."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    now = datetime.now(timezone.utc)
+    user, ls_id = await _trial_from_before_the_marker(db, starter, now)
+    period_end = now + timedelta(days=30)
+    await _change_plan(
+        db, user, ls_id, starter, at=now - timedelta(minutes=9), period_end=period_end
+    )
+    before = (await _subscription_of(db, ls_id)).current_credits
+
+    await _change_plan(
+        db, user, ls_id, growth, at=now - timedelta(minutes=8), period_end=period_end
+    )
+    assert (await _subscription_of(db, ls_id)).current_credits == before
+
+    # The first paid invoice, whatever Lemon Squeezy calls it, brings the month and settles it.
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=now - timedelta(minutes=7), billing_reason="renewal"),
+        None,
+        db,
+    )
+    paid = await _subscription_of(db, ls_id)
+    assert paid.current_credits == 1000
+    assert paid.subscription_metadata["start_month_given"] is True
+
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 100)
+    await _change_plan(
+        db, user, ls_id, starter, at=now - timedelta(minutes=5), period_end=period_end
+    )
+    assert await usage.get_credit_balance(user.id) == 300  # 400 less the 100 used
+
+
+async def test_an_in_app_change_then_lemon_squeezys_change_back_stay_in_one_period(db, monkeypatch):
+    """The dashboard's change keeps the stored period end; Lemon Squeezy's next change brings
+    its renews_at. Both are one period: 900 spent, down to Starter and back up leaves 100."""
+    starter = await _plan(db, "starter", price=39, credits=400)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    now = datetime.now(timezone.utc)
+    period_end = now + timedelta(days=27)
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            growth.lemonsqueezy_variant_id_monthly,
+            at=now - timedelta(days=3),
+            renews_at=period_end,
+        ),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    subscription.credits_reset_date = period_end - timedelta(hours=5)  # a renewal invoice's
+    await db.flush()
+    usage = UsageTrackingService(db)
+    assert await usage.consume_credits(user.id, 900)
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = MagicMock(update_subscription=AsyncMock())
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+
+    await service.upgrade(user.id, starter.id)
+    assert await usage.get_credit_balance(user.id) == 0
+    await _change_plan(db, user, ls_id, growth, at=now - timedelta(hours=1), period_end=period_end)
+
+    assert await usage.get_credit_balance(user.id) == 100
 
 
 @pytest.mark.xfail(
@@ -835,12 +1413,14 @@ def refund_fakes(monkeypatch):
 
     import src.providers.payment.provider_factory as provider_factory
     import src.services.webhook_handlers.order_handlers as order_handlers
+    import src.services.webhook_handlers.renewal_refund_handlers as renewal_refund_handlers
 
     provider = MagicMock()
     provider.cancel_subscription = AsyncMock(return_value={"success": True})
     monkeypatch.setattr(provider_factory, "get_payment_provider", lambda: provider)
-    monkeypatch.setattr(order_handlers, "get_payment_provider", lambda: provider)
-    monkeypatch.setattr(order_handlers, "send_billing_email_in_background", AsyncMock())
+    for handlers in (order_handlers, renewal_refund_handlers):
+        monkeypatch.setattr(handlers, "get_payment_provider", lambda: provider)
+        monkeypatch.setattr(handlers, "send_billing_email_in_background", AsyncMock())
     return provider
 
 
@@ -859,29 +1439,41 @@ async def test_a_full_refund_of_the_first_payment_ends_access(db, refund_fakes):
     assert await usage.consume_credits(user.id, 15) is False
 
 
-@pytest.mark.xfail(strict=True, reason="F8b rext-control#537: a renewal order is not linked")
 async def test_a_full_refund_of_a_renewal_ends_that_months_credits(db, refund_fakes):
-    """The refund rule covers any payment: refunding a renewal takes back that month."""
-    from src.services.webhook_handlers.order_handlers import handle_order_refunded
+    """The refund rule covers any payment: refunding a renewal takes back that month.
 
-    user, ls_id, growth = await _active_growth(db)
-    variant = growth.lemonsqueezy_variant_id_monthly
+    Lemon Squeezy bills a renewal as a subscription invoice, not an order, and its refund
+    arrives as subscription_payment_refunded for that invoice (F8b, rext-control#537).
+    """
+    from src.services.webhook_handlers.renewal_refund_handlers import (
+        handle_subscription_payment_refunded,
+    )
+
+    user, ls_id, _ = await _active_growth(db)
     now = datetime.now(timezone.utc)
-    renewal_order = f"ord-renewal-{uuid4().hex[:6]}"
-    await handle_order_created(
-        _order_event(user, renewal_order, variant, at=now - timedelta(days=1)), None, db
-    )
-    await handle_subscription_payment_success(
-        _invoice_event(user, ls_id, at=now - timedelta(days=1), billing_reason="renewal"),
-        None,
-        db,
-    )
+    renewal = _invoice_event(user, ls_id, at=now - timedelta(days=1), billing_reason="renewal")
+    await handle_subscription_payment_success(renewal, None, db)
     usage = UsageTrackingService(db)
     assert await usage.get_credit_balance(user.id) == 1000
 
-    await handle_order_refunded(_refund_event(user, renewal_order, variant), None, db)
+    refund = _invoice_event(
+        user,
+        ls_id,
+        at=now - timedelta(days=1),
+        billing_reason="renewal",
+        status="refunded",
+        name="subscription_payment_refunded",
+    )
+    refund["data"]["id"] = renewal["data"]["id"]
+    refund["data"]["attributes"].update(
+        {"refunded": True, "refunded_amount": 8900, "refunded_at": _iso(now)}
+    )
+    await handle_subscription_payment_refunded(refund, None, db)
 
+    assert await usage.get_credit_balance(user.id) == 0
     assert await usage.consume_credits(user.id, 15) is False
+    # Lemon Squeezy's subscription ends too, or it charges the refunded customer next month.
+    refund_fakes.cancel_subscription.assert_awaited()
 
 
 async def test_a_refunded_plan_is_not_revived_by_lemon_squeezys_next_update(db, refund_fakes):

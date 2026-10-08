@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.api.database.base import Base
@@ -28,6 +29,15 @@ class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixi
     # The site's favicon in the media store (an object name, resolved to a URL when
     # served), fetched when the workspace is created or its brand voice refreshed.
     favicon_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # The latest run of the workspace pipeline (at creation, on a retry or a brand-voice
+    # refresh): "running", "completed" or "failed". The run is a task inside the API process,
+    # so a restart ends it without a word; WorkspaceService's pipeline_state() reads a
+    # "running" row the process no longer runs as interrupted. None: no run recorded.
+    pipeline_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    pipeline_operation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    pipeline_started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )

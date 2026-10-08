@@ -32,19 +32,32 @@ Nothing here is wired into generation yet — this is the additive groundwork.
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+import re
+from typing import Any, Callable, List, Optional
 
 from pydantic import BaseModel, Field, create_model
 
+from src.flow.engines.content.generation.brand_slot import (
+    SLOT_LINE_PREFIX,
+    sections_inside_window,
+)
 from src.flow.engines.content.generation.link_integrity import extract_links, restore_lost_links
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
     expand_section_containers,
     faq_section_heading,
+    is_cta_key,
     is_faq_section,
     render_section_plan,
     resolve_outline_structure,
 )
+from src.flow.engines.content.generation.seo_title_rules import display_keyphrase
+from src.flow.engines.content.generation.subheading_seo import (
+    heading_length_issue,
+    subheading_report,
+)
+from src.flow.engines.content.generation.title_articles import reads_as_another_language
+from src.flow.engines.content.generation.word_count_utils import TYPED_SECTION_WORDS_KEY
 from src.flow.model.structure.content import Link
 from src.flow.model.structure.contents.base import (
     EMPTY_SCHEMA_CONTEXT,
@@ -152,6 +165,90 @@ def _without_separate_faqs(
             content_type,
         )
     return kept
+
+
+def _writer_blocks(outline: dict, content_type: str) -> list[OutlineBlock]:
+    """The blocks the article's body is assembled from, in order: what
+    build_structured_content_model keeps (a block a typed field of the content model owns,
+    such as a how-to guide's `steps`, is written through that field), each planned section a
+    block of its own, less the call to action, which is a line or two and no section."""
+    from src.flow.model.structure.contents import get_generated_content_model
+
+    base_model = get_generated_content_model(content_type)
+    reserved = set(base_model.model_fields) if base_model is not None else set()
+    resolved = [
+        block
+        for block in resolve_outline_structure(outline or {}, content_type)
+        if block.key not in reserved
+    ]
+    blocks = _without_separate_faqs(
+        expand_section_containers(resolved), outline or {}, content_type
+    )
+    return [block for block in blocks if not is_cta_key(block.key)]
+
+
+def planned_section_count(outline: dict, content_type: str) -> int:
+    """How many H2 sections the writer is asked for (planned subsections, H3 and H4, are part
+    of their section). 0 when the outline resolves to none."""
+    return sum(1 for block in _writer_blocks(outline, content_type) if block.level == 2)
+
+
+def _section_list(outline: dict) -> list[dict]:
+    """The outline's own list of sections, as the brand slot reads it (brand_slot.py):
+    `structure.sections`, or a flat `sections`."""
+    container = outline.get("structure")
+    sections = container.get("sections") if isinstance(container, dict) else None
+    if not isinstance(sections, list):
+        sections = outline.get("sections")
+    return [s for s in sections if isinstance(s, dict)] if isinstance(sections, list) else []
+
+
+def _holds_brand_slot(value: Any) -> bool:
+    """Whether a brand slot was reserved here: a line the review step wrote for the writer
+    ("Work in the approved mention of …"), at any depth."""
+    if isinstance(value, str):
+        return value.startswith(SLOT_LINE_PREFIX)
+    if isinstance(value, dict):
+        return any(_holds_brand_slot(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_holds_brand_slot(item) for item in value)
+    return False
+
+
+def early_body_sections(outline: dict, content_type: str, fraction: float) -> list[str]:
+    """What "an early body section" means for this outline, by name: the sections inside the
+    first ``fraction`` of the article by their place in the plan.
+
+    A writer told "inside the first 30% of the article" cannot measure it, and put the one
+    mention a section too late (31% on a ten-section guide, rext-control#760).
+
+    It never says anything the brand slot does not (brand_slot.py reserves the section the
+    mention belongs in, and brand_schema_context tells the writer that field):
+
+    * a slot reserved in the outline's section list is the one section named;
+    * with none reserved, the window is counted as the slot counts it, over the same list
+      (`sections_inside_window`: in planned words, as the placement check reads the written
+      body, H3s included);
+    * a slot reserved anywhere else (a typed list of a fixed-shape type) says where already,
+      and nothing is named here;
+    * an outline with no section list (a how-to's blocks) is counted over the blocks the body
+      is built from, the opening and the FAQ left out.
+    """
+    outline = outline or {}
+    sections = _section_list(outline)
+    if sections:
+        reserved = [section for section in sections if _holds_brand_slot(section)]
+        named = reserved[:1] or sections[: sections_inside_window(sections, fraction)]
+        return [str(s.get("heading") or "").strip() for s in named if s.get("heading")]
+    if _holds_brand_slot(outline):
+        return []
+    parts = [
+        block
+        for block in _writer_blocks(outline, content_type)
+        if block.key not in ("hero", "faq", "faqs")
+        and not (isinstance(block.data, dict) and is_faq_section(block.data))
+    ]
+    return [block.heading for block in parts[: max(1, int(len(parts) * fraction))]]
 
 
 def _field_description(block: OutlineBlock) -> str:
@@ -419,9 +516,278 @@ def build_structured_content_model(
     return model, resolved
 
 
+# ── Sections a typed field writes (G98, revnix/rext-control#812) ─────────────
+#
+# A block whose key is also a typed field of the content model is left to that
+# field (the collision filter in `build_structured_content_model`), which is
+# right for `cta` and `images`. Three of those fields are sections of the
+# article, though, and nothing ever put them in the body: a how-to guide's
+# steps, an in-depth review's verdict and a tutorial's prerequisites were
+# written and never shown. They are rendered here, once, at assembly, where the
+# block's place in the approved order is known. The typed field stays in the
+# payload as it is.
+
+# A number the writer put before a step's title ("Step 2: Mix", "2. Mix", "2) Mix"): the list
+# numbers the steps itself. Not a number the title starts with ("10-minute bake").
+_STEP_NUMBER = re.compile(r"^(?:step\s*\d+(?:\s*[.:)–—-]\s*|\s+)|\d{1,2}[.)]\s+)", re.IGNORECASE)
+_WHOLLY_EMPHASIZED = re.compile(r"(\*{1,3})(.+?)\1")
+# Underscores at a word's edge would read as emphasis ("__init__"); inside a word they don't.
+_EDGE_UNDERSCORES = re.compile(r"(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])")
+
+
+def _step_title(title: Any) -> str:
+    """A step's title as the list sets it in bold: without asterisks of emphasis around the
+    whole of it and without the writer's own numbering. An asterisk or an underscore that is
+    part of it is the writer's ("SELECT *", "__init__") and is shown as one."""
+    title = " ".join(str(title or "").split())
+    emphasized = _WHOLLY_EMPHASIZED.fullmatch(title)
+    if emphasized:
+        title = emphasized.group(2).strip()
+    title = _STEP_NUMBER.sub("", title).strip().replace("*", "\\*")
+    return _EDGE_UNDERSCORES.sub(lambda run: "\\_" * len(run.group()), title)
+
+
+# A step's text that is more than a sentence: a blank line, a code fence or a list inside it.
+_HAS_BLOCKS = re.compile(r"\n[ \t]*\n|```|~~~|\n[ \t]*(?:[-*+]|\d+[.)])[ \t]")
+
+
+def _step_text(description: Any, indent: int) -> str:
+    """A step's instructions on the step's line. Text of several blocks (a paragraph break, a
+    code block, a list) keeps its lines, each indented as an item of a numbered list needs, so
+    a fence stays a fence; a sentence the writer merely wrapped is one line."""
+    text = str(description or "").strip()
+    if not _HAS_BLOCKS.search(text):
+        return " ".join(text.split())
+    first, *rest = text.splitlines()
+    pad = " " * indent
+    return "\n".join(
+        [" ".join(first.split())]
+        + [f"{pad}{line.rstrip()}" if line.strip() else "" for line in rest]
+    )
+
+
+def _numbered_steps(steps: Any) -> str:
+    """A how-to guide's typed steps as one numbered list: "1. **Title.** What to do."
+
+    A list and not a heading per step: every H2 and H3 counts toward the share of
+    subheadings that carry the keyphrase, which is a blocking check.
+    """
+    lines: list[str] = []
+    for step in steps if isinstance(steps, list) else []:
+        if hasattr(step, "model_dump"):
+            step = step.model_dump()
+        if not isinstance(step, dict):
+            continue
+        title = _step_title(step.get("title"))
+        number = f"{len(lines) + 1}. "
+        text = _step_text(step.get("description"), indent=len(number))
+        if not title and not text:
+            continue
+        if title and title[-1] not in ".!?:":
+            title += "."
+        lead = f"**{title}** " if title else ""
+        lines.append(f"{number}{lead}{text}".rstrip())
+    return "\n".join(lines)
+
+
+def _paragraphs(text: Any) -> str:
+    return text.strip() if isinstance(text, str) else ""
+
+
+def _bullets(items: Any) -> str:
+    entries = [" ".join(str(item).split()) for item in (items if isinstance(items, list) else [])]
+    return "\n".join(f"- {entry}" for entry in entries if entry)
+
+
+# A keyphrase that is a question of its own ("what is compound interest") can't be a part of
+# another sentence; "how to ..." can, in the two headings that take a verb.
+_QUESTION_OPENINGS = (
+    "how", "what", "why", "when", "where", "which", "who", "is", "are", "can", "does", "do",
+    "should", "will",
+)  # fmt: skip
+
+
+def _is_a_question(keyphrase: str) -> bool:
+    return (keyphrase or "").strip().lower().split(" ", 1)[0] in _QUESTION_OPENINGS
+
+
+def _how_to(keyphrase: str) -> Optional[str]:
+    """What follows "how to" in the keyphrase, in the keyphrase's Title Case, or None."""
+    shown = display_keyphrase(keyphrase)
+    return shown[7:].strip() or None if shown.lower().startswith("how to ") else None
+
+
+# The headings carry the keyphrase as a part of what they say, never set before a colon: that
+# is the "Keyphrase: ..." form the heading rules call bolted on (subheading_seo._is_bolted_on).
+def _steps_heading(keyphrase: str, markdown: str) -> Optional[str]:
+    steps = len(re.findall(r"(?m)^\d+\. ", markdown))
+    if _is_a_question(keyphrase) and not _how_to(keyphrase):
+        return None
+    count = f"{steps} Steps" if steps > 1 else "One Step"
+    return f"{display_keyphrase(keyphrase)} in {count}"
+
+
+def _verdict_heading(keyphrase: str, markdown: str) -> Optional[str]:
+    return None if _is_a_question(keyphrase) else f"The Verdict on {display_keyphrase(keyphrase)}"
+
+
+def _prerequisites_heading(keyphrase: str, markdown: str) -> Optional[str]:
+    doing = _how_to(keyphrase)
+    if doing:
+        return f"What You Need to {doing}"
+    if _is_a_question(keyphrase):
+        return None
+    return f"What You Need for {display_keyphrase(keyphrase)}"
+
+
+# Content type -> the block a typed field owns -> how its value is written, the section's
+# heading with the keyphrase in it, and its heading without. The plain ones fit the H2 length
+# rule; one with the keyphrase is used only when it does too.
+_TYPED_SECTIONS: dict[
+    str, dict[str, tuple[Callable[[Any], str], Callable[[str, str], Optional[str]], str]]
+] = {
+    "how-to-guide": {"steps": (_numbered_steps, _steps_heading, "Follow These Steps in Order")},
+    "in-depth-review": {"verdict": (_paragraphs, _verdict_heading, "The Verdict in a Few Words")},
+    "tutorial": {
+        "prerequisites": (_bullets, _prerequisites_heading, "What You Need Before You Start")
+    },
+}
+
+
+def typed_section_blocks(outline: dict, content_type: str) -> list[OutlineBlock]:
+    """The approved outline's blocks that a typed field of the content model writes and
+    `assemble_structured_payload` renders, in the approved order. None for most types."""
+    from src.flow.model.structure.outlines import normalize_content_type
+
+    keys = _TYPED_SECTIONS.get(normalize_content_type(content_type))
+    if not keys:
+        return []
+    try:
+        resolved = resolve_outline_structure(outline, content_type)
+    except Exception:
+        logger.exception("typed_section_blocks: no structure for content_type=%s", content_type)
+        return []
+    return [block for block in resolved if block.key in keys and not block.parent]
+
+
+def sections_in_article_order(
+    blocks: list[OutlineBlock], typed: list[OutlineBlock]
+) -> list[OutlineBlock]:
+    """The written blocks with each typed section where `_with_typed_sections` puts it: before
+    the first block that stands after it in the approved order. What the writing screen counts
+    its sections against while the article is still being written (rext-control#773)."""
+    placed = list(blocks)
+    for block in typed:
+        at = next((i for i, other in enumerate(placed) if other.order > block.order), len(placed))
+        placed.insert(at, block)
+    return placed
+
+
+def typed_section_drafts(
+    content_type: str, title: str = ""
+) -> dict[str, Callable[[Any], Optional[tuple[str, str]]]]:
+    """How each typed section of the type reads while the article is still being written: its
+    value to (heading, markdown), or None with nothing to show.
+
+    The heading is the plain one. The one that carries the keyphrase is chosen against the
+    finished body (`_typed_heading`), which does not exist yet; and as there, a title that is
+    surely in another language gets no heading of these English words.
+    """
+    from src.flow.model.structure.outlines import normalize_content_type
+
+    writers = _TYPED_SECTIONS.get(normalize_content_type(content_type)) or {}
+    headed = not reads_as_another_language(title)
+
+    def draft(
+        write: Callable[[Any], str], plain: str
+    ) -> Callable[[Any], Optional[tuple[str, str]]]:
+        def read(value: Any) -> Optional[tuple[str, str]]:
+            markdown = write(value)
+            return (plain if headed else "", markdown) if markdown else None
+
+        return read
+
+    return {key: draft(write, plain) for key, (write, _, plain) in writers.items()}
+
+
+def _typed_heading(
+    with_keyphrase: Optional[str],
+    plain: str,
+    keyphrase: str,
+    title: str,
+    body: str,
+    content_type: str,
+) -> Optional[str]:
+    """The section's H2: the candidate that fits the heading length rule and leaves the share
+    of subheadings carrying the keyphrase nearest its range, the keyphrase one first.
+
+    None for a title that is surely in another language: these headings are English words,
+    and the section then follows the one before it without a heading of its own.
+    """
+    if reads_as_another_language(title):
+        return None
+    candidates = ([with_keyphrase] if with_keyphrase else []) + [plain]
+
+    def cost(candidate: str) -> tuple[bool, int]:
+        share = subheading_report(f"{body}\n\n## {candidate}\n", keyphrase, content_type)[
+            "keyphrase"
+        ]
+        off = 0
+        if share["status"] in ("too_low", "too_high"):
+            off = max(share["min"] - share["matching"], share["matching"] - share["max"])
+        return heading_length_issue(2, candidate, content_type) is not None, off
+
+    return min(candidates, key=cost)
+
+
+def _with_typed_sections(
+    ordered: list[tuple[str, Optional[ContentBlock]]],
+    blocks: list[OutlineBlock],
+    typed: list[OutlineBlock],
+    content_dict: dict,
+    body: str,
+    keyphrase: str,
+    content_type: str,
+) -> tuple[list[tuple[str, Optional[ContentBlock]]], list[str]]:
+    """`ordered` with each typed section put where its block stands in the approved order, and
+    the keys of the ones that had something to show."""
+    from src.flow.model.structure.outlines import normalize_content_type
+
+    writers = _TYPED_SECTIONS.get(normalize_content_type(content_type)) or {}
+    order_of = {block.key: block.order for block in blocks}
+    placed = list(ordered)
+    shown: list[str] = []
+    for block in typed:
+        if block.key not in writers:
+            continue
+        write, with_keyphrase, plain = writers[block.key]
+        markdown = write(content_dict.get(block.key))
+        if not markdown:
+            continue
+        heading = _typed_heading(
+            with_keyphrase(keyphrase, markdown) if (keyphrase or "").strip() else None,
+            plain,
+            keyphrase,
+            str(content_dict.get("title") or ""),
+            body,
+            content_type,
+        )
+        at = next(
+            (i for i, (key, _) in enumerate(placed) if order_of.get(key, -1) > block.order),
+            len(placed),
+        )
+        placed.insert(at, (block.key, ContentBlock(heading=heading, markdown=markdown)))
+        order_of[block.key] = block.order
+        shown.append(block.key)
+    return placed, shown
+
+
 def assemble_structured_payload(
     content_dict: dict,
     blocks: list[OutlineBlock],
+    typed: Optional[list[OutlineBlock]] = None,
+    keyphrase: str = "",
+    content_type: str = "",
 ) -> dict:
     """Collapse generated blocks into `body_markdown` and drop the block fields.
 
@@ -433,6 +799,11 @@ def assemble_structured_payload(
 
     If the blocks produced nothing usable, any `body_markdown` the model happened
     to write is left in place rather than being replaced with an empty string.
+
+    `typed` (see `typed_section_blocks`) are the sections a typed field wrote
+    instead of a block: each is rendered into the body where its block stands in
+    the approved order. Only beside written blocks, so a payload assembled once
+    already (its block fields are gone) is never given them a second time.
     """
     ordered = []
     for block in blocks:
@@ -468,6 +839,28 @@ def assemble_structured_payload(
     # A block counts as written only with prose in it: an empty one renders as
     # nothing, so it is as missing as an absent one.
     written = [k for k, b in ordered if b is not None and (b.markdown or "").strip()]
+    typed_words = 0
+    if typed and written:
+        try:
+            placed, typed_shown = _with_typed_sections(
+                ordered, blocks, typed, content_dict, assembled, keyphrase, content_type
+            )
+        except Exception:
+            # As everywhere in this module: what can't be rendered degrades to the body
+            # without it, it does not take a run down.
+            logger.exception(
+                "assemble_structured_payload: typed sections not rendered for content_type=%s",
+                content_type,
+            )
+            typed_shown = []
+        if typed_shown:
+            ordered = placed
+            without = len(assembled.split())
+            assembled = blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
+            written = written + typed_shown
+            # What the sections add to the body, as the length check counts words: its
+            # maximum grows by exactly this (word_count_utils.typed_section_allowance).
+            typed_words = len(assembled.split()) - without
     missing_required = [b.key for b in blocks if b.required and b.key not in written]
     if missing_required:
         # Should be unreachable — these are required fields under constrained
@@ -518,6 +911,8 @@ def assemble_structured_payload(
     # rewrites body_markdown freely, block provenance no longer holds and the
     # heading-based check should apply again.
     payload[STRUCTURED_BLOCKS_KEY] = written
+    if typed_words > 0:
+        payload[TYPED_SECTION_WORDS_KEY] = typed_words
 
     logger.info(
         "assemble_structured_payload: blocks_written=%s/%s body_chars=%s",

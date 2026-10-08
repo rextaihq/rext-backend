@@ -356,6 +356,7 @@ def test_the_workspace_response_carries_the_favicon_as_a_url(monkeypatch):
         timezone="UTC",
         url=PAGE,
         favicon_url="workspaces/ws-1/favicon_2.png",
+        pipeline_status=None,
         created_at=datetime.now(timezone.utc),
         updated_at=None,
     )

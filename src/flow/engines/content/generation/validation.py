@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from src.flow.engines.content.generation.brand_link import ensure_brand_link
 from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
     DEFAULT_TOP_POSITION_MAX_FRACTION,
@@ -29,6 +30,7 @@ from src.flow.engines.content.generation.claim_integrity import (
 )
 from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.generation_brief import brief_for_stage
 from src.flow.engines.content.generation.keyword_density import (
     analyze_keyword_density,
     count_keyphrase_occurrences,
@@ -52,6 +54,7 @@ from src.flow.engines.content.generation.onpage_seo import (
 )
 from src.flow.engines.content.generation.repair_content import (
     HUMANIZATION_OWNED_CHECKS,
+    checks_worth_an_attempt,
     enforce_subheadings_for_spec,
     run_targeted_repair,
 )
@@ -68,10 +71,14 @@ from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCK
 from src.flow.engines.content.generation.subheading_seo import (
     describe_keyphrase_issue,
     describe_length_issue,
+    extract_subheadings,
     subheading_report,
 )
 from src.flow.engines.content.generation.title_subject import find_subject_mismatch
-from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.engines.content.generation.word_count_utils import (
+    compute_word_target_band,
+    typed_section_allowance,
+)
 from src.flow.model.structure.outlines.product_names import find_placeholder_names_in_text
 from src.flow.states.content import ContentValidation, ValidationCheckResult
 from src.flow.states.rext import REXT
@@ -444,6 +451,12 @@ def check_word_count_band(final_content: dict, spec: RequirementsSpec) -> Valida
         return _pass("word_count_band", "No target word count in outline; skipping.")
     total_words = len(_combined_text(final_content).split())
     min_words, max_words = compute_word_target_band(target)
+    # A section assembly rendered from a typed field (a how-to guide's steps) was no part of
+    # what the writer was asked to fit in the target, so its words, as counted when it was
+    # rendered, come on top of the maximum. The rewrite goes on asking for the plain band
+    # (humanize_content._build_prompt_data): a stricter instruction with a more lenient check
+    # is the safe way round, so the two are not to be brought into line.
+    max_words += typed_section_allowance(final_content)
     if min_words <= total_words <= max_words:
         return _pass(
             "word_count_band", f"{total_words} words within target band {min_words}-{max_words}."
@@ -1345,12 +1358,57 @@ def check_brand_placement_policy(
             "blocking",
             f"'{brand_name}' first appears at {int(first.position_fraction * 100)}% through the body, past "
             f"the first {pct}% where readers actually are. Move that first mention into an earlier body "
-            f"section — later mentions are fine, but the first one must land early.",
+            f"section — later mentions are fine, but the first one must land early."
+            f"{_where_early_is(body, max_fraction)}",
         )
 
     return _pass(
         "brand_placement_policy",
         "Brand mention sits in an early body section, out of the introduction and the closing section.",
+    )
+
+
+def _h2_positions(text: str) -> list[tuple[int, str]]:
+    """Where each H2 of ``text`` starts, and its words: the headings a reader sees, so a line
+    of a fenced example that only looks like one is none (subheading_seo's own reading)."""
+    starts, offset = [], 0
+    for line in text.splitlines(keepends=True):
+        starts.append(offset)
+        offset += len(line)
+    return [
+        (starts[heading.line_index], heading.text)
+        for heading in extract_subheadings(text)
+        if heading.level == 2
+    ]
+
+
+def _where_early_is(body: str, max_fraction: float) -> str:
+    """Which of the article's own sections sit inside the window, for the repair to act on.
+
+    "Move it earlier" left a repair to guess how far: a mention at 31% of a ten-section guide
+    stayed where it was through two attempts (rext-control#760). Positions are read on the
+    same text the mention's own position is read on. The opening section is left out when
+    another one qualifies, since several placements keep the brand out of the opening.
+    """
+    text = _normalize_for_mentions(body)
+    headings = _h2_positions(text)
+    if not text or not headings:
+        return ""
+    ends = [start for start, _ in headings[1:]] + [len(text)]
+    inside = [
+        name
+        for (_, name), end in zip(headings, ends, strict=True)
+        if end / len(text) <= max_fraction
+    ]
+    if len(inside) > 1:
+        inside = inside[1:]
+    if not inside:
+        # No section ends inside the window, so the window lies inside the first one.
+        first = headings[0][1]
+        return f' In this article that means the opening paragraphs of "{first}".'
+    named = " or ".join(f'"{heading}"' for heading in inside[:3])
+    return (
+        f" In this article that means the section {named}: move the sentence that names it there."
     )
 
 
@@ -2199,6 +2257,19 @@ def check_placeholder_product_names(
     )
 
 
+def _unsupported_claims_in(final_content: dict, spec: RequirementsSpec) -> list:
+    text = "\n".join(
+        str(final_content.get(field) or "")
+        for field in ("meta_description", "introduction", "body_markdown")
+    )
+    return find_unsupported_claims(text, spec.get("claim_evidence") or {})
+
+
+def flagged_claim_sentences(final_content: dict, spec: RequirementsSpec) -> list[str]:
+    """The sentences `check_unsupported_claims` reports, each whole."""
+    return [claim.sentence for claim in _unsupported_claims_in(final_content, spec)]
+
+
 def check_unsupported_claims(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     """Prices, figures, versions/dates, invented experience, absolute verdicts,
     competitor weaknesses and brand capabilities that no evidence supports.
@@ -2215,11 +2286,7 @@ def check_unsupported_claims(final_content: dict, spec: RequirementsSpec) -> Val
     promotion itself is untouched — only the unsupported specifics inside it,
     so qualified positioning ("a strong fit for teams that...") survives.
     """
-    text = "\n".join(
-        str(final_content.get(field) or "")
-        for field in ("meta_description", "introduction", "body_markdown")
-    )
-    claims = find_unsupported_claims(text, spec.get("claim_evidence") or {})
+    claims = _unsupported_claims_in(final_content, spec)
     if not claims:
         return _pass(
             "unsupported_claims",
@@ -2600,6 +2667,11 @@ async def validate_content(state: REXT) -> dict:
     # sentence that replaced its sentence) is still there is put back in place
     # deterministically — no model call is needed to re-wrap an anchor.
     final_content = restore_links_for_spec(final_content, spec, stage="validate_content")
+    # The brand's first mention is linked to its approved address in code: one address in
+    # one place is not a job for the repair model (it fixed it in 2 of 6 attempts).
+    final_content = ensure_brand_link(
+        final_content, spec.get("brand_context"), stage="validate_content"
+    )
     final_content = apply_density_report(final_content, spec)
     failed_blocking, warnings = run_checks(final_content, spec, searched_results)
     passed = not failed_blocking
@@ -2611,10 +2683,15 @@ async def validate_content(state: REXT) -> dict:
     # the wrong tool and a reliable way to break checks that already passed.
     repairable = [c for c in failed_blocking if c["name"] not in HUMANIZATION_OWNED_CHECKS]
     deferred = [c for c in failed_blocking if c["name"] in HUMANIZATION_OWNED_CHECKS]
-    repair_required = bool(repairable)
+    # An attempt runs only for a check a repair can still do something about: not one an
+    # earlier attempt already worked on and left exactly as it was, and not the headings'
+    # own alone (repair_content.checks_worth_an_attempt). On seven real runs that is where
+    # the attempts that changed nothing went.
+    repair_required = bool(checks_worth_an_attempt(repairable, review.get("repair_history")))
 
     repair_attempts = review.get("repair_attempts", 0)
-    gave_up = repair_required and repair_attempts >= MAX_REPAIR_ATTEMPTS
+    # Failures a repair could own remain, and no (further) attempt runs for them.
+    gave_up = bool(repairable) and (not repair_required or repair_attempts >= MAX_REPAIR_ATTEMPTS)
     run_id = (review.get("validation") or {}).get("validation_run_id") or str(uuid.uuid4())
 
     validation_result: ContentValidation = {
@@ -2738,6 +2815,7 @@ async def final_validate_content(state: REXT) -> dict:
             ),
             brand_policy=spec.get("brand_placement_policy"),
             excluded_brand=spec.get("excluded_brand"),
+            brief=brief_for_stage(spec, outline, stage="repair"),
         )
         if repaired is not None:
             repaired = apply_density_report(repaired, spec)

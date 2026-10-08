@@ -1117,6 +1117,16 @@ class LemonSqueezyProvider(PaymentProvider):
             },
         )
 
+    async def subscription_ids_for_order(self, order_id: str) -> list:
+        """The ids of the subscriptions an order created (a subscription's first purchase).
+
+        Lets a refund of an order with no local record still find its subscription
+        (F8c.2, revnix/rext-control#593). ``filter[order_id]`` is a documented filter
+        of the subscriptions list.
+        """
+        items = await self._paginate("/subscriptions", {"filter[order_id]": str(order_id)}, 10)
+        return [str(item["id"]) for item in items if isinstance(item, dict) and item.get("id")]
+
     async def _paginate(self, endpoint: str, params: Dict[str, Any], limit: int) -> list:
         """
         Fetch a JSON:API collection following ``meta.page.lastPage`` until ``limit``

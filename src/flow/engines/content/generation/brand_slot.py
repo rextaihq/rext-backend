@@ -42,6 +42,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
     resolve_brand_placement_policy,
 )
+from src.flow.engines.content.generation.word_count_utils import plan_section_lengths
 from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.model.structure.outlines.product_names import (
     find_placeholder_names,
@@ -766,6 +767,39 @@ def _ensure_brand_in_hero(outline: dict, promo: dict, brand_name: str) -> bool:
     return True
 
 
+def _planned_words(section: dict) -> int:
+    words = section.get("suggested_word_count")
+    return words if isinstance(words, int) and not isinstance(words, bool) and words > 0 else 0
+
+
+def sections_inside_window(sections: list[dict], max_fraction: float) -> int:
+    """How many of the leading sections lie inside the first ``max_fraction`` of the article
+    as it is planned, at least one.
+
+    The placement check reads where the mention lands in the written body, so the window is
+    counted in planned words, the opening before the sections included, not in sections:
+    the third of ten equal sections starts at 29% of the body and ends at 37%, and a mention
+    written where it was reserved failed the check it was planned for (rext-control#760).
+    A section is inside when its middle is, so a mention in its first half lands inside.
+    A list with no budgets at all is counted by its sections, as it was.
+    """
+    budgets = [_planned_words(section) for section in sections]
+    known = [words for words in budgets if words]
+    if not known:
+        return max(1, int(len(sections) * max_fraction))
+    typical = round(sum(known) / len(known))
+    budgets = [words or typical for words in budgets]
+    opening = plan_section_lengths(sum(budgets), len(budgets)).intro_words
+    limit = (opening + sum(budgets)) * max_fraction
+    inside, reached = 0, opening
+    for words in budgets:
+        if reached + words / 2 > limit:
+            break
+        inside += 1
+        reached += words
+    return max(1, inside)
+
+
 def _slot_body_section(
     outline: dict,
     promo: dict,
@@ -803,7 +837,7 @@ def _slot_body_section(
     policy = resolve_brand_placement_policy(content_type)
     max_fraction = policy.get("body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION)
     # At least one candidate, even for a two-section outline.
-    window_end = max(1, int(len(candidates) * max_fraction))
+    window_end = sections_inside_window([section for _, section in candidates], max_fraction)
     in_window = candidates[:window_end]
 
     target_text = f"{promo.get('about', '')} {promo.get('selling_position', '')}"

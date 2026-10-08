@@ -51,10 +51,12 @@ from src.flow.engines.content.generation.requirements_spec import (
     excluded_brand_of,
     resolve_outline_cta,
 )
+from src.flow.engines.content.generation.section_stream import article_section_stream
 from src.flow.engines.content.generation.structured_body import (
     UNPLACED_LINKS_KEY,
     assemble_structured_payload,
     build_structured_content_model,
+    typed_section_blocks,
     uses_structured_body,
 )
 from src.flow.engines.content.generation.subheading_seo import (
@@ -1056,6 +1058,12 @@ async def generate_content(state: REXT) -> dict:
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
         write = get_stream_writer()
+        # Each section is sent to the page the moment its part of the answer closes, so the
+        # writing screen fills section by section (rext-control#773; the dashboard's half is
+        # that task's part A and B). Events only: nothing here is stored or changes the answer.
+        section_stream = article_section_stream(
+            structured_blocks, outline, content_type, title=str(topic or "")
+        )
         final_messages = []
         # Typed Pydantic model instance if the agent returns one.
         structured_output = None
@@ -1084,6 +1092,12 @@ async def generate_content(state: REXT) -> dict:
             if kind == "on_chain_start" and agent_root_run_id is None:
                 agent_root_run_id = event_run_id
 
+            # The writer is asked for an answer (again, when its last one was refused): the
+            # sections are read from this answer's start, so a refused one's are replaced.
+            elif kind == "on_chat_model_start":
+                if section_stream is not None:
+                    section_stream.restart()
+
             # Token-by-token LLM output
             elif kind == "on_chat_model_stream":
                 chunk = event["data"].get("chunk")
@@ -1111,6 +1125,14 @@ async def generate_content(state: REXT) -> dict:
 
                     if token:
                         write({"type": "token", "content": token})
+                        if section_stream is not None:
+                            try:
+                                for section in section_stream.feed(token):
+                                    write(section)
+                            except Exception:
+                                # A reading aid for the page: never the writer's problem.
+                                logger.warning("section events stopped for this run", exc_info=True)
+                                section_stream = None
 
             # on_chat_model_end: ToolStrategy never invokes the fake structured-output tool —
             # it parses args directly inside the model node. So on_tool_start never fires
@@ -1282,7 +1304,13 @@ async def generate_content(state: REXT) -> dict:
         # publisher are all unchanged by structured generation.
         unplaced_links: list[dict] = []
         if structured_blocks:
-            content_dict = assemble_structured_payload(content_dict, structured_blocks)
+            content_dict = assemble_structured_payload(
+                content_dict,
+                structured_blocks,
+                typed=typed_section_blocks(outline, content_type),
+                keyphrase=focus_keyword or "",
+                content_type=content_type,
+            )
             unplaced_links = content_dict.pop(UNPLACED_LINKS_KEY, None) or []
 
         # The outline's CTA fields steer the text; a line that only prints one as a
