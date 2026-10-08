@@ -796,6 +796,7 @@ async def generate_outline(state: REXT) -> dict:
                             [*messages, retry_note],
                             stage="outline_model",
                             schema=model_schema,
+                            attempts=1,  # itself the second attempt: four calls otherwise
                         )
                     ).model_dump()
             except Exception as error:
