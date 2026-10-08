@@ -142,6 +142,39 @@ def checks_worth_an_attempt(
     ]
 
 
+def without_facts_removed_with_a_claim(before: dict, after: dict) -> dict:
+    """`after` without the facts whose words a repair took out of the prose.
+
+    Asked to fix an unsupported claim, a repair removes or softens the sentence that made
+    it. When that sentence carried a cited figure, its entry in `facts` stayed behind, the
+    facts check read it as "never woven into the prose", and the fix was thrown away for it:
+    3 of 3 replays of one real article (rext-control#818). A fact goes with its sentence: one
+    that was in the prose before the repair and is not after it is no longer a fact of the
+    article. Presence is judged as the facts check judges it, so exactly the entries it would
+    report are the ones dropped.
+    """
+    facts = after.get("facts")
+    if not isinstance(facts, list) or not facts:
+        return after
+    # Imported here: validation imports this module at load time.
+    from src.flow.engines.content.generation.validation import (
+        _combined_text,
+        _word_overlap_ratio,
+    )
+
+    def stated(text: str, prose: str) -> bool:
+        return text in prose or _word_overlap_ratio(text, prose) >= 0.2
+
+    was, now = _combined_text(before), _combined_text(after)
+    kept = []
+    for fact in facts:
+        text = (fact.get("text") or "").strip() if isinstance(fact, dict) else ""
+        if text and stated(text, was) and not stated(text, now):
+            continue
+        kept.append(fact)
+    return after if len(kept) == len(facts) else {**after, "facts": kept}
+
+
 # How far a repair may move the article's length. Repair fixes named issues; a
 # rewrite that shrinks the body is how unrelated checks (density, links, word
 # count) regressed and forced a second attempt.
@@ -588,8 +621,16 @@ async def repair_content(state: REXT) -> dict:
         # length is corrected after this loop.
         failed_before = {c.get("name") for c in failed_checks}
 
+        def settled(content: dict) -> dict:
+            """The content as it would be kept: a fact goes with the claim a repair removed."""
+            if "unsupported_claims" not in asked:
+                return content
+            return without_facts_removed_with_a_claim(final_content, content)
+
         def failing(content: dict) -> set[str]:
-            blocking, _ = run_checks(apply_density_report(content, spec), spec, searched_results)
+            blocking, _ = run_checks(
+                apply_density_report(settled(content), spec), spec, searched_results
+            )
             return {c["name"] for c in blocking}
 
         failed_after = failing(candidate)
@@ -607,6 +648,7 @@ async def repair_content(state: REXT) -> dict:
             if kept is not None:
                 candidate, salvaged = kept, how
                 failed_after = failing(candidate)
+        candidate = settled(candidate)
         unresolved = [name for name in targeted_checks if name in failed_after]
         resolved = [name for name in targeted_checks if name not in failed_after]
         accepted = not regressed or salvaged is not None

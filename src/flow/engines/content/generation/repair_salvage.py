@@ -129,7 +129,8 @@ def salvage_repair(
                 dropped += 1
 
     _, fixed = judge(assembled())
-    if not fixed:
+    if not fixed or not any(kept.values()):
+        # Nothing of the repair can stay, or what can stay fixes nothing.
         return None, {"how": "blocks", "kept": 0, "dropped": dropped}
 
     # Out again with every change the fixes don't need.

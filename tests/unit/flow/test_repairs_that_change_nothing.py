@@ -551,3 +551,89 @@ async def test_the_brands_address_is_settled_before_the_checks_and_costs_no_atte
     assert "such as [Nextly](https://nextly.test) makes" in final["body_markdown"]
     failed = [c["name"] for c in validated["content"]["review"]["validation"]["failed_checks"]]
     assert "brand_url_accuracy" not in failed
+
+
+# ── a fact goes with the claim a repair removed ──────────────────────────────
+
+# Words the rest of the article does not use: the facts check calls a fact stated when a fifth of
+# its words appear anywhere in the prose.
+FIGURE = "Zentrix Quorvex benchmarks measured 76 percent uplift."
+FIGURE_SENTENCE = f" {FIGURE} ([study]({flow.CITATION}))."
+
+
+def _with_a_cited_figure() -> dict:
+    """The article with a figure in its prose that the facts list records with its source."""
+    article = flow._article()
+    return {
+        **article,
+        "body_markdown": article["body_markdown"].replace(
+            flow._para(6), f"{flow._para(6)}{FIGURE_SENTENCE}"
+        ),
+        "facts": [{"text": FIGURE, "source_url": flow.CITATION}],
+    }
+
+
+def test_a_fact_whose_sentence_the_repair_removed_goes_with_it():
+    before = _with_a_cited_figure()
+    after = {**before, "body_markdown": before["body_markdown"].replace(FIGURE_SENTENCE, "")}
+
+    kept = repair_module.without_facts_removed_with_a_claim(before, after)
+
+    assert kept["facts"] == []
+    assert kept["body_markdown"] == after["body_markdown"]
+
+
+def test_a_fact_still_stated_or_never_stated_is_left_alone():
+    before = _with_a_cited_figure()
+    reworded = {
+        **before,
+        "body_markdown": before["body_markdown"].replace("benchmarks measured", "benchmarks found"),
+    }
+    assert repair_module.without_facts_removed_with_a_claim(before, reworded) is reworded
+
+    # A fact the article never stated is the facts check's to report, not this one's to hide.
+    never = {
+        **before,
+        "facts": [{"text": "Quorvex audits saw 91 percent churn.", "source_url": flow.CITATION}],
+    }
+    assert repair_module.without_facts_removed_with_a_claim(never, never) is never
+    assert (
+        repair_module.without_facts_removed_with_a_claim(before, {**before, "facts": []})["facts"]
+        == []
+    )
+
+
+async def _repair_removing_the_figure(failed: list[str]) -> dict:
+    """A repair, asked to fix `failed`, that takes the figure's sentence out."""
+    validated = await validate_content(flow._state(_with_a_cited_figure()))
+    validation = validated["content"]["review"]["validation"]
+    assert "facts_and_external_links" not in [c["name"] for c in validation["failed_checks"]]
+    validation["failed_checks"] = _failed(*failed)
+    repairer = flow._fake_model(flow._echo(**{FIGURE_SENTENCE: ""}))
+    with patch.object(repair_module, "load_content_model", return_value=repairer):
+        return await repair_content(validated)
+
+
+async def test_removing_an_unsupported_claim_and_its_figure_is_kept():
+    out = await _repair_removing_the_figure(["unsupported_claims"])
+
+    (attempt,) = out["content"]["review"]["repair_history"]
+    assert attempt["accepted"] is True and attempt["regressed_checks"] == []
+    final = out["content"]["final_content"]
+    assert FIGURE not in final["body_markdown"]
+    assert final["facts"] == []
+    again = (await validate_content(out))["content"]["review"]["validation"]
+    assert "facts_and_external_links" not in [c["name"] for c in again["failed_checks"]]
+
+
+async def test_a_figure_lost_while_fixing_something_else_is_still_a_step_back():
+    # Not asked to remove a claim: a cited figure that disappears is damage, and is not kept.
+    out = await _repair_removing_the_figure(["brand_prominence"])
+
+    (attempt,) = out["content"]["review"]["repair_history"]
+    assert attempt["regressed_checks"] == ["facts_and_external_links"]
+    assert attempt["accepted"] is False
+    assert FIGURE in out["content"]["final_content"]["body_markdown"]
+    assert out["content"]["final_content"]["facts"] == [
+        {"text": FIGURE, "source_url": flow.CITATION}
+    ]
