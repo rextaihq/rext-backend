@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from src.flow.engines.content.generation.brand_link import ensure_brand_link
 from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
     DEFAULT_TOP_POSITION_MAX_FRACTION,
@@ -52,6 +53,7 @@ from src.flow.engines.content.generation.onpage_seo import (
 )
 from src.flow.engines.content.generation.repair_content import (
     HUMANIZATION_OWNED_CHECKS,
+    checks_worth_an_attempt,
     enforce_subheadings_for_spec,
     run_targeted_repair,
 )
@@ -2609,6 +2611,11 @@ async def validate_content(state: REXT) -> dict:
     # sentence that replaced its sentence) is still there is put back in place
     # deterministically — no model call is needed to re-wrap an anchor.
     final_content = restore_links_for_spec(final_content, spec, stage="validate_content")
+    # The brand's first mention is linked to its approved address in code: one address in
+    # one place is not a job for the repair model (it fixed it in 2 of 6 attempts).
+    final_content = ensure_brand_link(
+        final_content, spec.get("brand_context"), stage="validate_content"
+    )
     final_content = apply_density_report(final_content, spec)
     failed_blocking, warnings = run_checks(final_content, spec, searched_results)
     passed = not failed_blocking
@@ -2620,10 +2627,15 @@ async def validate_content(state: REXT) -> dict:
     # the wrong tool and a reliable way to break checks that already passed.
     repairable = [c for c in failed_blocking if c["name"] not in HUMANIZATION_OWNED_CHECKS]
     deferred = [c for c in failed_blocking if c["name"] in HUMANIZATION_OWNED_CHECKS]
-    repair_required = bool(repairable)
+    # An attempt runs only for a check a repair can still do something about: not one an
+    # earlier attempt already worked on and left failing, and not the headings' own alone
+    # (repair_content.checks_worth_an_attempt). On seven real runs that is where the
+    # attempts that changed nothing went.
+    repair_required = bool(checks_worth_an_attempt(repairable, review.get("repair_history")))
 
     repair_attempts = review.get("repair_attempts", 0)
-    gave_up = repair_required and repair_attempts >= MAX_REPAIR_ATTEMPTS
+    # Failures a repair could own remain, and no (further) attempt runs for them.
+    gave_up = bool(repairable) and (not repair_required or repair_attempts >= MAX_REPAIR_ATTEMPTS)
     run_id = (review.get("validation") or {}).get("validation_run_id") or str(uuid.uuid4())
 
     validation_result: ContentValidation = {
