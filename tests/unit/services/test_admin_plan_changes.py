@@ -828,6 +828,30 @@ async def test_the_new_end_is_later_than_the_trials_and_within_thirty_days(sessi
     assert row.trial_end_date == before
 
 
+async def test_a_trial_that_already_runs_past_the_limit_is_not_offered_an_extension(session, lemon):
+    """An older or hand-set row: no later end is left inside the limit, so the options say
+    so instead of offering a window the change would refuse every date of."""
+    user, row = await _on_trial(session, ends_in=timedelta(days=45))
+    admin = await _user(session)
+    before = row.trial_end_date
+
+    extension = (await module.plan_options(session, user.id))["trial_extension"]
+
+    assert extension["allowed"] is False
+    assert extension["refused_reason"] == module.TRIAL_AT_ITS_LIMIT
+    assert (extension["earliest_ends_at"], extension["latest_ends_at"]) == (None, None)
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await module.extend_trial(
+            session,
+            user_id=user.id,
+            admin_id=admin.id,
+            ends_at=NOW + timedelta(days=50),
+            reason="A little longer",
+        )
+    assert refused.value.message.startswith(module.TRIAL_AT_ITS_LIMIT)
+    assert row.trial_end_date == before
+
+
 async def test_only_a_trial_this_app_runs_is_extended(session, lemon):
     starter, _, _ = await _world(session)
     paying, _ = await _subscribed(session, starter, left=100)
