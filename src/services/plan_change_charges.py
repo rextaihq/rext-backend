@@ -11,7 +11,7 @@ Read from the webhook events already stored: `subscription_payment_success` says
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from sqlalchemy import select
@@ -25,6 +25,10 @@ from src.utils.datetime_utils import parse_provider_datetime
 PAID = "subscription_payment_success"
 REFUNDED = "subscription_payment_refunded"
 PLAN_CHANGE = "updated"
+RENEWAL = "renewal"
+# An order and the invoice of that same payment are stamped moments apart. A renewal's
+# invoice this soon after an order is that order's own, not the start of the next period.
+SAME_PAYMENT = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -118,20 +122,53 @@ def charges_from_events(events: Iterable[tuple[str, dict]]) -> Dict[str, List[Pl
     return charges
 
 
-async def plan_change_charges(
+def renewals_from_events(events: Iterable[tuple[str, dict]]) -> Dict[str, List[datetime]]:
+    """Per subscription id: when each of its renewals was paid, oldest first.
+
+    A renewal is a subscription invoice too, and no order is recorded for it: its payment
+    is what starts the next period.
+    """
+    renewals: Dict[str, List[datetime]] = {}
+    seen = set()
+    for name, payload in events:
+        data = (payload or {}).get("data") or {}
+        attributes = data.get("attributes") or {}
+        invoice_id = str(data.get("id") or "")
+        subscription_id = str(attributes.get("subscription_id") or "")
+        if name != PAID or attributes.get("billing_reason") != RENEWAL:
+            continue
+        if not invoice_id or not subscription_id or invoice_id in seen:
+            continue
+        paid_at = _utc(
+            parse_provider_datetime(attributes.get("created_at") or attributes.get("updated_at"))
+        )
+        if paid_at is not None:
+            seen.add(invoice_id)
+            renewals.setdefault(subscription_id, []).append(paid_at)
+    return {key: sorted(times) for key, times in renewals.items()}
+
+
+async def _payment_events(
     db: AsyncSession, subscription_ids: Sequence[Optional[str]]
-) -> Dict[str, List[PlanChangeCharge]]:
-    """`charges_from_events` for these Lemon Squeezy subscription ids, in one query."""
+) -> List[tuple[str, dict]]:
+    """The stored payment events of these Lemon Squeezy subscription ids, oldest first."""
     ids = sorted({str(i) for i in subscription_ids if i})
     if not ids:
-        return {}
+        return []
     subscription_id = WebhookEvent.payload[("data", "attributes", "subscription_id")].astext
     result = await db.execute(
         select(WebhookEvent.event_name, WebhookEvent.payload)
         .where(WebhookEvent.event_name.in_((PAID, REFUNDED)), subscription_id.in_(ids))
         .order_by(WebhookEvent.created_at)
     )
-    return charges_from_events((row[0], row[1]) for row in result.all())
+    return [(row[0], row[1]) for row in result.all()]
+
+
+async def plan_change_charges(
+    db: AsyncSession, subscription_ids: Sequence[Optional[str]]
+) -> Dict[str, List[PlanChangeCharge]]:
+    """`charges_from_events` for these Lemon Squeezy subscription ids, in one query."""
+    return charges_from_events(await _payment_events(db, subscription_ids))
 
 
 def in_its_period(
@@ -140,7 +177,8 @@ def in_its_period(
     other_payments: Sequence[datetime],
 ) -> List[PlanChangeCharge]:
     """The charges that belong to the payment made at `paid_at`: those paid from then until the
-    subscription's next payment (`other_payments`: the times of the subscription's other orders).
+    subscription's next payment (`other_payments`: the times of the subscription's other orders
+    and of its renewals).
 
     A plan change paid in an earlier period is that period's order's to answer for, not a later
     renewal's. A charge whose day is unknown goes with the newest payment; an order whose own
@@ -165,7 +203,10 @@ async def plan_change_charges_for_orders(
     """Per Lemon Squeezy order id: the plan changes paid in the period that order paid for.
 
     An order made before the subscription's id was stored on it is matched through the
-    subscription that names it as its first order.
+    subscription that names it as its first order. Its period ends at the subscription's
+    next payment: another order's, or a renewal's, which is an invoice with no order of its
+    own. A plan change paid after a renewal is that later period's, and is given back with
+    the renewal's invoice in Lemon Squeezy, where both are listed.
     """
     asked = {
         o.lemonsqueezy_order_id: o for o in orders if o is not None and o.lemonsqueezy_order_id
@@ -184,9 +225,11 @@ async def plan_change_charges_for_orders(
         )
         by_order.update({row[0]: row[1] for row in result.all()})
 
-    charges = await plan_change_charges(db, list(by_order.values()))
+    events = await _payment_events(db, list(by_order.values()))
+    charges = charges_from_events(events)
     if not charges:
         return {}
+    renewals = renewals_from_events(events)
 
     # When each of those subscriptions was paid for, to tell one period from the next.
     payments: Dict[str, Dict[str, Optional[datetime]]] = {}
@@ -213,11 +256,14 @@ async def plan_change_charges_for_orders(
         if key not in charges:
             continue
         times = payments[key]
-        own = in_its_period(
-            charges[key],
-            times[order_id],
-            [t for other, t in times.items() if other != order_id and t is not None],
-        )
+        paid_at = _utc(times[order_id])
+        others = [t for other, t in times.items() if other != order_id and t is not None]
+        others += [
+            renewed
+            for renewed in renewals.get(key, [])
+            if paid_at is None or renewed - paid_at > SAME_PAYMENT
+        ]
+        own = in_its_period(charges[key], paid_at, others)
         if own:
             found[order_id] = own
     return found
