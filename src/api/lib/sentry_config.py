@@ -124,6 +124,7 @@ def init_sentry(settings: Settings) -> None:
             auto_enabling_integrations=False,
             # Error Filtering
             before_send=before_send_filter,
+            before_send_transaction=without_secret_headers,
             before_breadcrumb=before_breadcrumb_filter,
             # Additional Options
             traces_sampler=traces_sampler,
@@ -144,6 +145,33 @@ def init_sentry(settings: Settings) -> None:
         logger.error(f"Failed to initialize Sentry: {e}", exc_info=True)
 
 
+# Request headers that hold a credential of ours and are not on Sentry's own list of headers to
+# leave out. The event keeps the header's name, so it can be seen that one was sent.
+SECRET_REQUEST_HEADERS = frozenset({"x-rext-dashboard-key"})
+
+
+def without_secret_headers(
+    event: Dict[str, Any], hint: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """An error or a trace never carries a credential in its request headers (rext-control#892)."""
+    request = event.get("request")
+    headers = request.get("headers") if isinstance(request, dict) else None
+    if isinstance(headers, dict):
+        for name in list(headers):
+            if str(name).lower() in SECRET_REQUEST_HEADERS:
+                headers[name] = "[Filtered]"
+    elif isinstance(headers, list):
+        request["headers"] = [
+            [pair[0], "[Filtered]"]
+            if isinstance(pair, (list, tuple))
+            and len(pair) == 2
+            and str(pair[0]).lower() in SECRET_REQUEST_HEADERS
+            else pair
+            for pair in headers
+        ]
+    return event
+
+
 def before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Filter and modify events before sending to Sentry.
@@ -161,6 +189,8 @@ def before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[
     Returns:
         Modified event dictionary, or None to drop the event
     """
+    without_secret_headers(event)
+
     # Drop health check 404s (not real errors)
     if event.get("request", {}).get("url", "").endswith("/health"):
         return None

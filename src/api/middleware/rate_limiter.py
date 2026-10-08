@@ -417,7 +417,7 @@ class EndpointRateLimiter:
         # A caller the route has identified itself, in a way the caller cannot write
         # (src/api/security/dashboard_server.py sets it only for a proven call).
         identity = getattr(request.state, "rate_limit_identity", None)
-        if identity:
+        if isinstance(identity, str) and identity:
             client_key = f"id:{identity}"
         # If authenticated, use user identity
         elif user_id:
