@@ -29,6 +29,7 @@ def register_routes(app: FastAPI) -> None:
     )
     from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
     from src.api.routes.admin.user_credit_routes import router as admin_user_credit_routes_router
+    from src.api.routes.admin.user_plan_routes import router as admin_user_plan_routes_router
     from src.api.routes.admin.webhook_monitoring_routes import (
         router as admin_webhook_monitoring_routes_router,
     )
@@ -109,6 +110,9 @@ def register_routes(app: FastAPI) -> None:
         admin_account_recovery_routes_router,
         prefix="/api/v1/admin",
         tags=["Admin - Account Recovery"],
+    )
+    app.include_router(
+        admin_user_plan_routes_router, prefix="/api/v1/admin", tags=["Admin - User Plan"]
     )
     app.include_router(
         admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"]

@@ -30,8 +30,9 @@ from sqlalchemy.orm import selectinload
 
 from src.api.cache.decorators import invalidate_cache
 from src.api.cache.redis_client import cache
-from src.api.lib.sentry_config import capture_payment_exception
+from src.api.lib.sentry_config import capture_payment_exception, trigger_payment_alert
 from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
@@ -50,6 +51,7 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.config.payment_config import payment_settings
 from src.config.plan_rules import TRIAL_DURATION_DAYS
+from src.providers.payment.base_provider import PaymentChangeUnconfirmed
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import as_utc, change_plan_credits
@@ -540,7 +542,13 @@ class SubscriptionService:
         return checkout
 
     async def upgrade(
-        self, user_id: UUID, new_plan_id: UUID, billing_period: Optional[BillingPeriod] = None
+        self,
+        user_id: UUID,
+        new_plan_id: UUID,
+        billing_period: Optional[BillingPeriod] = None,
+        *,
+        prorate: bool = True,
+        by_admin: bool = False,
     ) -> UserSubscription:
         """
         Upgrade subscription to higher tier.
@@ -556,6 +564,12 @@ class SubscriptionService:
             user_id: User UUID
             new_plan_id: New plan UUID
             billing_period: Optional new billing period
+            prorate: Lemon Squeezy invoices the prorated difference now. False: no
+                proration, the new price from the next renewal.
+            by_admin: A super admin's change (src/services/admin_plan_changes.py),
+                which has checked what an admin may do. Lemon Squeezy must agree
+                before anything changes here, with no local-only fallback, and the
+                caller writes the audit entry (with the admin and the reason).
 
         Returns:
             Updated UserSubscription object
@@ -630,9 +644,20 @@ class SubscriptionService:
                     )
 
                     # Update subscription with payment provider
-                    await self.payment_provider.update_subscription(
-                        subscription_id=provider_sub_id, price_id=new_variant_id
+                    updated = await self.payment_provider.update_subscription(
+                        subscription_id=provider_sub_id, price_id=new_variant_id, prorate=prorate
                     )
+                    # Lemon Squeezy answers 200 for a subscription paid through PayPal and
+                    # leaves it as it was (the customer changes it in the billing portal).
+                    if by_admin and str(getattr(updated, "plan_id", None)) != str(new_variant_id):
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy left the subscription on its plan: one paid "
+                                "through PayPal is changed by the customer in their billing "
+                                "portal. Nothing was changed."
+                            ),
+                            rule_name="admin_plan_unchanged_at_provider",
+                        )
 
                     logger.info(
                         f"Updated subscription {provider_sub_id} with payment provider to variant {new_variant_id}",
@@ -644,6 +669,8 @@ class SubscriptionService:
                             "new_plan": new_plan.name,
                         },
                     )
+                except BusinessRuleViolationException:
+                    raise
                 except Exception as e:
                     logger.error(
                         f"Failed to update subscription with payment provider: {str(e)}",
@@ -675,16 +702,67 @@ class SubscriptionService:
                         )
                     )
 
-                    if is_test_id:
+                    # An admin's change is never made here alone: Lemon Squeezy would go on
+                    # billing the old plan and its next update would undo it.
+                    if is_test_id and not by_admin:
                         logger.warning(
                             f"LemonSqueezy API call failed for test/sandbox ID '{provider_sub_id}'. Proceeding with local plan update for testing.",
                             extra={"user_id": str(user_id), "provider_sub_id": provider_sub_id},
+                        )
+                    elif by_admin and isinstance(e, PaymentChangeUnconfirmed):
+                        # Lemon Squeezy took the change and only its answer was lost: it
+                        # can't be undone from here, so the admin isn't told that nothing
+                        # changed. Its subscription_updated brings the plan here in line.
+                        trigger_payment_alert(
+                            alert_type="admin_plan_change_unconfirmed",
+                            message=(
+                                "An admin's plan change was sent to Lemon Squeezy, which "
+                                "accepted it, but reading the subscription back failed: the "
+                                "plan here follows Lemon Squeezy's update; record who "
+                                "changed it and why"
+                            ),
+                            severity="high",
+                            context={
+                                "subscription": provider_sub_id,
+                                "old_plan": current_plan.name,
+                                "new_plan": new_plan.name,
+                            },
+                            user_id=str(user_id),
+                            operation="admin_plan_change",
+                        )
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy took the change, but its confirmation didn't "
+                                "arrive, so it isn't recorded here yet. The plan here follows "
+                                "when Lemon Squeezy's update arrives; the team has been alerted."
+                            ),
+                            rule_name="admin_plan_unconfirmed",
+                        )
+                    elif by_admin:
+                        # The admin reads the status, never Lemon Squeezy's own words.
+                        status = getattr(e, "status_code", None)
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy didn't accept the change"
+                                + (f" (status {status})" if status else "")
+                                + ". Nothing was changed."
+                            ),
+                            rule_name="admin_plan_provider",
                         )
                     else:
                         raise RextValidationException(
                             message="Failed to update subscription with payment provider. Please try again.",
                             field_errors={"payment_provider": [str(e)]},
                         )
+            elif by_admin:
+                # Changed here alone, Lemon Squeezy would go on billing the old plan.
+                raise BusinessRuleViolationException(
+                    message=(
+                        f"{new_plan.display_name} has no {new_billing_period.value} price at "
+                        "Lemon Squeezy. Nothing was changed."
+                    ),
+                    rule_name="admin_plan_variant",
+                )
             else:
                 logger.warning(
                     f"No variant ID found for plan {new_plan.name} with billing period {new_billing_period.value}",
@@ -809,8 +887,10 @@ class SubscriptionService:
             },
         )
 
-        # Audit log
-        if is_downgrade:
+        # Audit log (an admin's change is audited by its caller, with the admin and the reason)
+        if by_admin:
+            pass
+        elif is_downgrade:
             await audit_logger.log_subscription_downgraded(
                 user_id=user_id,
                 subscription_id=current_subscription.id,
@@ -1518,7 +1598,7 @@ class SubscriptionService:
 
         # The version is part of the key: raise it when the plan's columns change, so a
         # deploy never rebuilds a plan from a cached row that has columns it no longer has.
-        cache_key = f"subscription:plan:v2:{plan_id}:active={active_only}"
+        cache_key = f"subscription:plan:v3:{plan_id}:active={active_only}"
 
         if cache.is_enabled:
             cached_plan = await cache.get(cache_key)
@@ -1558,6 +1638,10 @@ class SubscriptionService:
                 "max_api_calls_per_month": plan.max_api_calls_per_month,
                 "lemonsqueezy_variant_id_monthly": plan.lemonsqueezy_variant_id_monthly,
                 "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
+                # A plan change works the balance out from these: left out, a plan read
+                # from the cache had no monthly credits and the change skipped the balance.
+                "credits_per_month": plan.credits_per_month,
+                "is_trial_plan": plan.is_trial_plan,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,

@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException
 from langgraph_sdk import Auth
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -38,6 +38,47 @@ _BLOCKED_STATUSES = {
         "Your account has been banned. Please contact support for assistance.",
     ),
 }
+
+
+async def _say_which_session_was_refused(db: AsyncSession, session_id: UUID, user_id: UUID) -> None:
+    """One log line for a session the check refuses (rext-control#858): which one, and what a
+    second read of its row says.
+
+    Sessions that existed and were active have been refused in the seconds after their sign-in
+    and accepted again a moment later, and the log could not say which session a refused
+    request spoke for. The last characters of the two ids match a refusal to its sign-in
+    ("User logged in" carries the session id), and the second read tells a session that was
+    really ended from a read that missed its row. Never raises: the request is refused either way.
+    """
+    try:
+        row = (
+            await db.execute(
+                select(
+                    UserSession.is_active,
+                    UserSession.revoked_at,
+                    UserSession.user_id,
+                    func.extract("epoch", func.now() - UserSession.created_at),
+                    func.pg_backend_pid(),
+                ).where(UserSession.id == session_id)
+            )
+        ).first()
+        if row is None:
+            found = "no row with that id"
+        else:
+            active, revoked_at, owner, age, backend = row
+            state = "active" if active else ("revoked" if revoked_at else "inactive")
+            whose = "this user's" if owner == user_id else "another user's"
+            found = (
+                f"a row that is {state}, {whose}, made {float(age):.1f} s ago (backend {backend})"
+            )
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must not change the answer
+        found = f"it could not be read ({type(exc).__name__})"
+    logger.warning(
+        "Session refused: session ..%s of user ..%s; read again: %s",
+        str(session_id)[-4:],
+        str(user_id)[-4:],
+        found,
+    )
 
 
 async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
@@ -79,6 +120,7 @@ async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
         )
     )
     if result.scalar_one_or_none() is None:
+        await _say_which_session_was_refused(db, session_id, user_id)
         raise RextAuthenticationException(message="Authentication session has been revoked")
 
 

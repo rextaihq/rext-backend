@@ -357,11 +357,17 @@ async def grant_promotion_bonus(
     first_period_end: Optional[datetime],
     paid_from: Optional[datetime] = None,
     order_id: Optional[str] = None,
+    first_payment: Sequence[Optional[datetime]] = (),
 ) -> Optional[int]:
-    """Give a promotion's bonus to a subscription started inside its window.
+    """Give a promotion's bonus to a subscription that started inside its window, or whose
+    first payment falls inside it.
 
     Called by the Lemon Squeezy webhook handlers for a paid subscription.
-    ``started_at`` (the subscription's start) decides the window; the bonus runs
+    ``started_at`` (the subscription's start) decides the window, and so does each moment of
+    ``first_payment`` (when the first payment's invoice was raised, when it was paid): a trial
+    that began before the offer and pays inside it gets the bonus, as one that began inside it
+    and pays after it closed does (decided 2026-10-08: nobody who starts or buys during the
+    offer is refused). The bonus runs
     from ``paid_from`` (when the paid period began; the start if not given). A
     subscription gets one promotional bonus: the subscription row is locked and a
     subscription that already has a promotion grant gets nothing, so a repeated or
@@ -390,14 +396,19 @@ async def grant_promotion_bonus(
     if order_id and await order_refunded(db, order_id):
         logger.info("No promotion bonus for refunded order %s", order_id)
         return None
+    moments = [as_utc(moment) for moment in (started_at, *first_payment) if moment is not None]
     candidates = (
         (
             await db.execute(
                 select(Promotion)
                 .where(
                     Promotion.is_active.is_(True),
-                    Promotion.starts_at <= as_utc(started_at),
-                    Promotion.ends_at > as_utc(started_at),
+                    or_(
+                        *(
+                            and_(Promotion.starts_at <= moment, Promotion.ends_at > moment)
+                            for moment in moments
+                        )
+                    ),
                 )
                 .order_by(Promotion.starts_at.desc())
             )
@@ -409,7 +420,9 @@ async def grant_promotion_bonus(
     # locked while its grants are counted.
     promotion = bonus = None
     for candidate in candidates:
-        if not promotion_applies(candidate, started_at, plan.name, billing_period):
+        if not any(
+            promotion_applies(candidate, moment, plan.name, billing_period) for moment in moments
+        ):
             continue
         candidate_bonus = promotion_bonus(
             candidate, plan.credits_per_month, paid_from or started_at, first_period_end

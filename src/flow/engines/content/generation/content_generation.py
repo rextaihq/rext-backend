@@ -1093,10 +1093,12 @@ async def generate_content(state: REXT) -> dict:
                 agent_root_run_id = event_run_id
 
             # The writer is asked for an answer (again, when its last one was refused): the
-            # sections are read from this answer's start, so a refused one's are replaced.
+            # sections are read from this answer's start, and the page is told to drop the
+            # refused one's, since the new answer may leave one of them out.
             elif kind == "on_chat_model_start":
                 if section_stream is not None:
-                    section_stream.restart()
+                    for reset in section_stream.restart():
+                        write(reset)
 
             # Token-by-token LLM output
             elif kind == "on_chat_model_stream":
