@@ -165,6 +165,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     thread_id = (config.get("configurable") or {}).get("thread_id")
     if not (user_id and workspace_id and thread_id):
         logger.warning("persist_content: missing user/workspace/thread; skipping save")
+        announce_failed(state, stage=ARTICLE, reason=INTERNAL)
         return {}
 
     try:
@@ -173,6 +174,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         thread_uuid = UUID(str(thread_id))
     except (TypeError, ValueError):
         logger.warning("persist_content: non-UUID user/workspace/thread; skipping save")
+        announce_failed(state, stage=ARTICLE, reason=INTERNAL, thread_id=str(thread_id))
         return {}
 
     review = content_state.get("review") or {}

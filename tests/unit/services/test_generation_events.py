@@ -311,6 +311,26 @@ async def test_a_new_run_notes_when_it_began():
     assert events.run_started_at(again) >= began
 
 
+async def test_a_thread_started_again_counts_its_own_repairs_only(sent):
+    """Review round 2: the count is kept in the thread's review, which a new run inherits. The
+    run's first node clears it, so a second article repaired once says one, not three."""
+    from src.flow.engines.rext import _begin_run
+    from src.flow.states.reducers.custom_reducer import deep_merge_dicts
+
+    taken, waiting = sent
+    first_run = {"final_content": {}, "review": {"repair_attempts": 2, "repair_history": [{}, {}]}}
+    content = deep_merge_dicts(first_run, (await _begin_run({"content": first_run}))["content"])
+    # The second run's one repair, as the repair step counts it.
+    content["review"]["repair_attempts"] = content["review"].get("repair_attempts", 0) + 1
+
+    events.announce_completed(
+        {**_state(), "content": content}, thread_id=THREAD, content_type="blog", word_count=1500
+    )
+    await _run(waiting)
+
+    assert taken[0]["properties"]["repairs"] == 1
+
+
 async def test_the_runs_end_points_before_the_titles_say_why(announced, monkeypatch):
     from src.flow.engines import rext
 

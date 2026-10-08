@@ -539,3 +539,25 @@ async def test_a_run_that_reaches_the_save_with_no_article_is_counted_as_failed(
     ((name, properties, _),) = announced
     assert name == "content_generation_failed"
     assert (properties["stage"], properties["reason"]) == ("article", "internal")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "thread",
+    [None, "my-own-thread-name"],
+    ids=["no thread on the run", "a thread that is not a UUID"],
+)
+async def test_a_run_whose_article_cannot_be_filed_under_its_thread_is_counted_as_failed(
+    monkeypatch, thread
+):
+    """Review round 2: the save also leaves without a row when the run has no thread, or one
+    that is not a UUID (the runtime takes any text for a thread). The run began and wrote its
+    article: with nothing saved it is a failed one in the counts, not a run that vanished."""
+    announced = _announced(monkeypatch)
+    config = {"configurable": {"thread_id": thread} if thread else {}}
+
+    assert await persist_module.persist_content(_finished_run_state(), config) == {}
+
+    ((name, properties, _),) = announced
+    assert name == "content_generation_failed"
+    assert (properties["stage"], properties["reason"]) == ("article", "internal")
