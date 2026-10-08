@@ -278,27 +278,47 @@ def test_an_approved_link_is_itself_whatever_stands_right_after_it(after):
 
 
 @pytest.mark.parametrize(
-    ("found", "address"),
+    ("text", "addresses"),
     [
-        ("https://acme.test/planner/)\u2014then", "https://acme.test/planner/"),
-        ("https://acme.test/planner).", "https://acme.test/planner"),
-        ("https://acme.test/planner)),", "https://acme.test/planner"),
+        ("See [a](https://acme.test/planner/)\u2014then", ["https://acme.test/planner/"]),
+        ("See [a](https://acme.test/planner).", ["https://acme.test/planner"]),
         (
-            "https://en.wikipedia.test/wiki/Bed_(garden)",
-            "https://en.wikipedia.test/wiki/Bed_(garden)",
+            "([a](https://en.wikipedia.test/wiki/Bed_(garden))).",
+            ["https://en.wikipedia.test/wiki/Bed_(garden)"],
         ),
+        ('See [a](https://acme.test/planner "The planner") first.', ["https://acme.test/planner"]),
         (
-            "https://en.wikipedia.test/wiki/Bed_(garden)).",
-            "https://en.wikipedia.test/wiki/Bed_(garden)",
+            "[a](https://acme.test/one)[b](https://acme.test/two), then",
+            ["https://acme.test/one", "https://acme.test/two"],
         ),
-        ("https://acme.test/planner,", "https://acme.test/planner"),
-        ("https://acme.test/planner", "https://acme.test/planner"),
+        ("A bare https://acme.test/planner, and no link.", []),
     ],
 )
-def test_an_address_in_running_text_ends_where_its_link_does(found, address):
-    from src.flow.engines.content.generation.validation import _trim_address
+def test_a_text_links_address_ends_where_the_link_does(text, addresses):
+    from src.flow.engines.content.generation.validation import _link_addresses
 
-    assert _trim_address(found) == address
+    found, rest = _link_addresses(text)
+
+    assert found == addresses
+    # What is left is read as running text: no address of a text link is read twice.
+    assert all(address not in rest for address in addresses)
+
+
+def test_an_address_outside_a_text_link_is_read_as_before():
+    """Review round 1: only a text link's own closing bracket ends an address. An autolink
+    whose address holds a bracket ("…/garden-planner/)other") is another page than the
+    approved one it begins like, and still a link to the brand's site."""
+    internal = "https://www.acme.test/blog/garden-planner/"
+    spec = build_requirements_spec(
+        _outline("none", internal_links=[{"url": internal, "title": "Garden planner"}]), "blog"
+    )
+
+    def absent(body):
+        return check_brand_absent({**ARTICLE, "body_markdown": body}, spec)["passed"]
+
+    assert absent(f"See {internal}.") is True
+    assert absent(f"See <{internal})other> first.") is False
+    assert absent("See https://acme.test/shop).") is False
 
 
 @pytest.mark.parametrize(

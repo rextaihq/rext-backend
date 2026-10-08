@@ -1605,23 +1605,47 @@ _EMPHASIS_MARKS_RE = re.compile(r"[*_~`]+")
 
 
 def _trim_address(url: str) -> str:
-    """An address as found in running text, without what follows it.
+    """An address as found in running text, without the punctuation that follows it. A closing
+    bracket stays when it closes one the address opened ("…/wiki/Foo_(bar)")."""
+    url = url.rstrip(".,;:!?\"'")
+    while url.endswith(")") and url.count(")") > url.count("("):
+        url = url[:-1].rstrip(".,;:!?\"'")
+    return url
 
-    It ends at a closing bracket it did not open: the one that closes its markdown link,
-    whatever stands right after. Read to the next space, "…/planner/)—then" was an address of
-    its own, an approved internal link no longer matched itself, and a "no mention" article
-    failed for a link to the brand's site it did not have. A bracket the address opened stays
-    ("…/wiki/Foo_(bar)"). Then without the punctuation after it."""
-    depth = 0
-    for index, char in enumerate(url):
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            if not depth:
-                url = url[:index]
-                break
-            depth -= 1
-    return url.rstrip(".,;:!?\"'")
+
+# Where a text link's address begins: after "](", an http address.
+_LINK_ADDRESS_START_RE = re.compile(r"\]\(\s*(?=https?://)")
+
+
+def _link_addresses(text: str) -> tuple[list[str], str]:
+    """(the address of each text link, the text without those links' addresses).
+
+    A text link's address ends at the bracket that closes the link, whatever stands right
+    after it. Read as running text, to the next space, "[our planner](…/planner/)—then" gave
+    the address "…/planner/)—then": an approved internal link no longer matched itself, and a
+    "no mention" article failed for a link to the brand's site it did not have. A bracket the
+    address opened itself is part of it ("…/wiki/Bed_(garden)"), and a space ends it (a title
+    follows).
+    """
+    addresses, rest, position = [], [], 0
+    for match in _LINK_ADDRESS_START_RE.finditer(text):
+        if match.start() < position:
+            continue
+        begin = end = match.end()
+        depth = 0
+        while end < len(text) and not text[end].isspace():
+            if text[end] == "(":
+                depth += 1
+            elif text[end] == ")":
+                if not depth:
+                    break
+                depth -= 1
+            end += 1
+        addresses.append(text[begin:end])
+        rest.append(text[position:begin])
+        position = end
+    rest.append(text[position:])
+    return addresses, " ".join(rest)
 
 
 # An image embed: "![alt](address)". Its address is where the picture is stored, not a link a
@@ -1632,8 +1656,9 @@ _IMAGE_EMBED_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
 def _links_to_host(text: str, host: str, approved: set[str]) -> bool:
     """Whether ``text`` links to ``host`` other than through an approved internal link."""
-    for url in _BARE_URL_RE.findall(_IMAGE_EMBED_RE.sub(" ", text or "")):
-        url = _trim_address(url)
+    linked, rest = _link_addresses(_IMAGE_EMBED_RE.sub(" ", text or ""))
+    # An address outside a text link (bare, or an autolink) is read as running text.
+    for url in [*linked, *(_trim_address(found) for found in _BARE_URL_RE.findall(rest))]:
         if _is_brand_host(_host(url), host) and normalize_url(url) not in approved:
             return True
     return False
