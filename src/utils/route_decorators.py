@@ -264,9 +264,10 @@ def require_permissions(
                     Used where a permission is too broadly held to gate on — e.g.
                     user.read is the self-service permission every account has,
                     so read-only admin visibility for Support is keyed on its
-                    global role name instead. Only global roles appear in the
-                    signed JWT's roles claim, so a same-named workspace role
-                    never matches.
+                    global role name instead. Read from the database on every
+                    request (never from the token's roles claim), among the
+                    roles held outside any workspace, so a same-named workspace
+                    role never matches.
 
     Expected Parameters in Route:
         - workspace_id: str parameter (if workspace_scoped=True)
@@ -359,6 +360,7 @@ def require_permissions(
             from src.utils.rbac_utils import (
                 check_all_permissions,
                 check_any_permission,
+                holds_global_role,
                 is_user_super_admin,
             )
             from src.utils.workspace_utils import async_get_workspace_id_from_identifier
@@ -440,10 +442,23 @@ def require_permissions(
                 return await func(*args, **kwargs)
 
             # Optional role-based admission (OR with the permission check).
-            # The signed JWT's roles claim lists only GLOBAL role names, so a
-            # workspace-scoped role with the same name never matches here.
-            if allow_roles and set(user.get("roles") or []) & set(allow_roles):
-                return await func(*args, **kwargs)
+            # Asked of the database, as every other check here is: a role given or
+            # taken away counts at once, whatever the caller's token was issued
+            # with. Only a role held outside any workspace matches, so a
+            # workspace-scoped role with the same name never does.
+            if allow_roles:
+                try:
+                    holds_role = await holds_global_role(db, user_id, allow_roles)
+                except Exception:
+                    logger.warning(
+                        "role admission check failed; falling back to permission check",
+                        exc_info=True,
+                        extra={"operation": func.__name__},
+                    )
+                    holds_role = False
+
+                if holds_role:
+                    return await func(*args, **kwargs)
 
             check_func = check_all_permissions if require_all else check_any_permission
             try:

@@ -448,6 +448,32 @@ async def is_user_super_admin(db: AsyncSession, user_id: UUID) -> bool:
     return result.first() is not None
 
 
+async def holds_global_role(db: AsyncSession, user_id: UUID, role_names: tuple[str, ...]) -> bool:
+    """
+    Check if a user holds one of the named roles outside any workspace.
+
+    Asked of the database on every call, like the checks above: a role given or
+    taken away counts from that moment, whatever the caller's token was issued with.
+    A workspace role of the same name never matches.
+    """
+    if not role_names:
+        return False
+
+    query = (
+        select(UserRole)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(
+            UserRole.user_id == user_id,
+            Role.name.in_(role_names),
+            UserRole.workspace_id.is_(None),
+        )
+        .limit(1)
+    )
+
+    result = await db.execute(query)
+    return result.first() is not None
+
+
 async def get_user_max_hierarchy_level(
     db: AsyncSession, user_id: UUID, workspace_id: Optional[UUID] = None
 ) -> int:
