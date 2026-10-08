@@ -567,9 +567,115 @@ def test_a_fully_linked_sentence_is_still_weighed():
     assert "$300" in claims[0].span
 
 
+def test_a_linked_sentence_is_not_the_source_of_the_claim_before_it():
+    # Its address on the price would have the price weighed against that source alone.
+    text = "The plan costs $300. [Acme launched in 2024](https://b.example)."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("The plan costs $300.", ()),
+        ("Acme launched in 2024.", ("https://b.example",)),
+    ]
+
+
+@pytest.mark.parametrize(
+    "linked",
+    [
+        "[Contentful costs $300 per month](https://b.example).",
+        "[Contentful is the top pick here](https://b.example).",
+        "[The second half of this very long sentence carries on well past a name](https://b.example).",
+    ],
+)
+def test_a_linked_sentence_keeps_its_address_to_itself(linked):
+    units = claim_integrity._units(f"73% of enterprises plan to adopt one. {linked}")
+    assert units[0].cited_urls == ()
+    assert units[1].cited_urls == ("https://b.example",)
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["Report", "Gartner 2024", "Statista (2023)", "State of CMS 2024 report", "G2"],
+)
+def test_a_citation_label_is_the_source_of_the_claim_before_it(label):
+    units = claim_integrity._units(
+        f"73% of enterprises plan to adopt one. [{label}](https://r.example)."
+    )
+    assert units[0].cited_urls == ("https://r.example",)
+
+
+@pytest.mark.parametrize(
+    "linked",
+    [
+        "[Beta beats Acme](https://b.example).",
+        "[Beta wins on price](https://b.example).",
+        "[Beta outperforms Acme everywhere](https://b.example).",
+        "[Acme uses Beta's engine](https://b.example).",
+    ],
+)
+def test_a_linked_sentence_is_one_whatever_its_verb(linked):
+    # No list of verbs is complete: any lowercase word that isn't a source word makes it a sentence.
+    text = f"Acme plan costs $49. [Official pricing](https://a.example). {linked}"
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ("https://a.example",)
+    assert units[-1].cited_urls == ("https://b.example",)
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["ahrefs.com", "Beta Beats Acme", "Official pricing page", "Press release", "W3Techs, 2025"],
+)
+def test_a_name_an_address_or_a_headline_is_a_label(label):
+    units = claim_integrity._units(
+        f"73% of enterprises plan to adopt one. [{label}](https://r.example)."
+    )
+    assert units[0].cited_urls == ("https://r.example",)
+
+
+def test_a_link_after_an_abbreviation_starts_a_piece_of_its_own():
+    # Joined to "…Acme Inc.", Beta's page became the cited source of Acme's price.
+    text = "Acme charges $49 through Acme Inc. [Beta charges $49](https://beta.example)."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("Acme charges $49 through Acme Inc.", ()),
+        ("Beta charges $49.", ("https://beta.example",)),
+    ]
+
+
 @pytest.mark.parametrize(
     "text",
     [
+        "The company (Contentful Inc.) Enterprise plan lacks SSO.",
+        "We asked Dr. Smith about the Enterprise plan.",
+    ],
+)
+def test_an_abbreviation_inside_a_sentence_still_ends_none(text):
+    assert [u.text for u in claim_integrity._units(text)] == [text]
+
+
+def test_a_company_suffix_outside_brackets_may_end_its_sentence():
+    # Joined, the second sentence's citation became the source of the first one's price.
+    text = "Acme costs $49 through Acme Inc. Beta is cheaper [Beta pricing](https://b.example)."
+    units = claim_integrity._units(text)
+    assert [(u.text, u.cited_urls) for u in units] == [
+        ("Acme costs $49 through Acme Inc.", ()),
+        ("Beta is cheaper Beta pricing.", ("https://b.example",)),
+    ]
+
+
+def test_a_label_after_a_linked_sentence_is_that_sentences_source():
+    text = (
+        "Costs vary. [Acme launched in 2024](https://b.example). "
+        "[Press release](https://c.example)."
+    )
+    units = claim_integrity._units(text)
+    assert units[0].cited_urls == ()
+    assert units[1].cited_urls == ("https://b.example", "https://c.example")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I haven't tested the free tier, but we did so on enterprise yesterday.",
+        "We haven't benchmarked it ourselves, though our team has done so.",
         "I haven't tested it, but we have.",
         "We haven't benchmarked the free plan, though I did.",
         "I have not tested the enterprise tier, but our team has already.",
@@ -587,6 +693,7 @@ def test_a_denial_followed_by_an_elliptical_assertion_is_a_claim(text):
         "We haven't tested it, but we have not ruled it out.",
         "I haven't tested it, but our readers have.",
         "We haven't tested it, and we do not plan to.",
+        "We haven't tested it, but we do so many other checks first.",
     ],
 )
 def test_a_denial_followed_by_another_clause_is_still_a_denial(text):
@@ -619,3 +726,76 @@ def test_a_sentence_ends_after_a_closing_quote():
         "He said “done.”",
         "Then we left.",
     ]
+
+
+# --- the claims check's rarer sentence shapes (G54.1, rext-control#571) ------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A denial that is itself denied asserts the test.
+        "It's not true that we never tested the products ourselves.",
+        "It isn't that we haven't tested the tools, it's that the tests were short.",
+        "It's false that we never tested the tools.",
+        "We deny that we never tested the tools.",
+        "It would be wrong that we never tested these plans.",
+        # "Never" scoping a qualifier, not the testing itself.
+        "We never tested in isolation; every benchmark used production data.",
+        "We never tested without production data.",
+        "We never tested only one tier.",
+    ],
+)
+def test_a_denied_denial_or_a_qualified_never_is_still_a_testing_claim(text):
+    claims = find_unsupported_claims(text, {})
+    assert [(c.category, c.span) for c in claims] == [("fabricated_experience", "tested")]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We never tested these products ourselves.",
+        "We have never personally tested these tools, so read the ratings as a guide.",
+        "We never tested in production.",
+        "We never tested under load.",
+        "We never tested on client sites.",
+        "We never tested with real customer data.",
+    ],
+)
+def test_a_plain_never_stays_a_disclosure(text):
+    assert [c.category for c in find_unsupported_claims(text, {})] == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "It's not true that we said we never tested these tools.",
+        "It's not true that the report says we never tested these tools.",
+        "It's false that anyone claimed we haven't tested it.",
+        "It's not true that our logs show we never tested these tools.",
+        "It isn't the case that critics allege we never tested it.",
+    ],
+)
+def test_a_denied_report_of_a_denial_asserts_no_test(text):
+    # It denies that the statement was made, and says nothing about the test.
+    assert [c.category for c in find_unsupported_claims(text, {})] == []
+
+
+def test_an_abbreviation_inside_brackets_ends_no_sentence():
+    text = "The company (Contentful Inc.) Enterprise plan lacks SSO."
+    assert [u.text for u in claim_integrity._units(text)] == [text]
+    assert "[competitor_claim]" in _flagged(_check("comparison", text))
+
+
+def test_a_sentence_after_an_abbreviation_still_ends_at_its_own_full_stop():
+    text = "We compared Acme Inc. and Beta Ltd. on price. Then we chose."
+    assert [u.text for u in claim_integrity._units(text)] == [
+        "We compared Acme Inc. and Beta Ltd. on price.",
+        "Then we chose.",
+    ]
+
+
+def test_not_before_in_our_tests_places_the_finding_and_is_still_a_claim():
+    text = "We found the slowdown not in our tests but in production."
+    claims = find_unsupported_claims(text, {})
+    assert [(c.category, c.span) for c in claims] == [("fabricated_experience", "in our tests")]
