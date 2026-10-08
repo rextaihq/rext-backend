@@ -393,3 +393,25 @@ async def test_an_existing_user_is_found_by_email_in_any_case(monkeypatch):
     assert "lower(users.email)" in db.asked[1]
     (linked,) = (call.args[0] for call in db.add.call_args_list)
     assert linked.user_id == "ana"
+
+
+# The call that carries the dashboard's key says so
+
+
+@pytest.mark.asyncio
+async def test_a_call_with_the_dashboards_key_leaves_a_line_that_holds_no_key(monkeypatch, caplog):
+    from src.api.security import dashboard_server
+
+    key = "k" * 40
+    monkeypatch.setattr(dashboard_server, "came_from_the_dashboards_server", lambda request: True)
+    monkeypatch.setattr(
+        dashboard_server, "_provider_account", AsyncMock(return_value="google:1080001")
+    )
+    request = SimpleNamespace(state=SimpleNamespace(), headers={"X-Rext-Dashboard-Key": key})
+
+    with caplog.at_level("INFO"):
+        await dashboard_server.dashboard_sign_in_gate(request)
+
+    assert "with the dashboard's key: counted per account" in caplog.text
+    assert key not in caplog.text and "1080001" not in caplog.text
+    assert request.state.rate_limit_identity == "oauth:google:1080001"
