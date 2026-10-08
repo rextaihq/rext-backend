@@ -9,7 +9,11 @@ from src.flow.engines.content.generation.focus_keyword import (
     pin_focus_keyword,
     resolve_focus_keyword,
 )
-from src.flow.engines.content.generation.outline_depth import hold_main_sections
+from src.flow.engines.content.generation.outline_depth import (
+    PLAN_MAX_WORDS,
+    hold_main_sections,
+    hold_plan_inside_its_range,
+)
 from src.flow.model.llm_manager import load_model
 from src.flow.model.provider_outage import (
     STEP_FAILED,
@@ -921,9 +925,21 @@ async def generate_outline(state: REXT) -> dict:
         # blog's `structure.sections`. Reading only the flat key meant blog
         # outlines never had their word budget recomputed and silently fell back
         # to the schema default regardless of how deep the plan actually was.
+        # A plan above the range the product shows for the type is brought inside it first,
+        # every budget by the same share (outline_depth.py): a first outline and one written
+        # again after feedback alike, since the range is the type's, not the plan's.
+        trimmed = hold_plan_inside_its_range(outline_dict, content_type)
+        if trimmed:
+            logger.info(
+                "Outline plan brought inside its type's range: %s words off, content_type=%s",
+                trimmed,
+                content_type,
+            )
         sections = _outline_sections(outline_dict)
         if sections:
-            outline_dict["target_word_count"] = _summed_word_target(model_schema, sections)
+            target = _summed_word_target(model_schema, sections)
+            most = PLAN_MAX_WORDS.get(content_type)
+            outline_dict["target_word_count"] = min(target, most) if most else target
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly

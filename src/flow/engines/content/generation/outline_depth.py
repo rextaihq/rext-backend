@@ -19,6 +19,16 @@ MAX_MAIN_SECTIONS = 8
 # budget of an introducing H2 spread to every section.
 MAIN_SECTION_MIN_WORDS = 200
 
+# The most a type's plan adds up to, where the product shows a narrower range than the outline
+# model allows. A blog is 800 to 2,000 words on the content-type step and beside the outline's
+# Target words; its model inherits the base bound (5,000). The bound is held here and not on
+# the model: structured output is not strict, and a model that wrote a larger target would fail
+# the run on a tighter bound. With whole budgets a blog of eight sections planned 2,200 words
+# (rext-control#837).
+PLAN_MAX_WORDS = {"blog": 2000}
+# Budgets are brought down to a multiple of this, as the model writes them.
+_BUDGET_STEP = 10
+
 _CONTAINERS = ("structure", "content_structure")
 
 
@@ -110,6 +120,60 @@ def fill_main_budgets(
             section["suggested_word_count"] = least_words
             lifted += 1
     return sections, lifted
+
+
+def _budget(section: dict) -> int | None:
+    words = section.get("suggested_word_count")
+    return words if isinstance(words, int) and not isinstance(words, bool) and words > 0 else None
+
+
+def fit_budgets(
+    sections: list[dict], most: int, least_words: int = MAIN_SECTION_MIN_WORDS
+) -> tuple[list[dict], int]:
+    """``sections`` with their budgets brought down in proportion until the plan adds up to
+    ``most`` words or fewer, and how many words came off.
+
+    Every budget gives the same share, so the plan keeps its shape. An H2 without H3s is not
+    taken under ``least_words`` (the whole budget `fill_main_budgets` guarantees), and no other
+    budget under half of that, so a plan of many sections can still come out above ``most``:
+    the caller holds the article's target to ``most`` itself. A section without a budget
+    counts as ``least_words``, as the sum does, and is left as it is.
+    """
+    sections = [dict(section) for section in sections]
+    total = sum(_budget(section) or least_words for section in sections)
+    if total <= most:
+        return sections, 0
+    removed = 0
+    for index, section in enumerate(sections):
+        budget = _budget(section)
+        if budget is None:
+            continue
+        plain = _level(section) == "H2" and not _children(sections, index)
+        floor = min(budget, least_words if plain else least_words // 2)
+        fitted = max(floor, budget * most // total // _BUDGET_STEP * _BUDGET_STEP)
+        removed += budget - fitted
+        section["suggested_word_count"] = fitted
+    return sections, removed
+
+
+def hold_plan_inside_its_range(outline: dict, content_type: str) -> int:
+    """Bring a generated outline's budgets inside the range the product shows for its type, in
+    place. Returns the words that came off; 0 for a type whose model's own bound is that range
+    already, and for an outline whose sections carry no heading levels."""
+    most = PLAN_MAX_WORDS.get(content_type)
+    if not most:
+        return 0
+    for key in _CONTAINERS:
+        container = outline.get(key)
+        sections = container.get("sections") if isinstance(container, dict) else None
+        if not isinstance(sections, list) or not sections:
+            continue
+        kept = [section for section in sections if isinstance(section, dict)]
+        fitted, removed = fit_budgets(kept, most)
+        if removed:
+            container["sections"] = fitted
+        return removed
+    return 0
 
 
 def hold_main_sections(outline: dict) -> tuple[int, int]:

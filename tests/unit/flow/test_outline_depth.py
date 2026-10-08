@@ -8,8 +8,11 @@ a blog planned at 700 to 800 words. The prompt says both rules; `outline_depth` 
 import pytest
 
 from src.flow.engines.content.generation.outline_depth import (
+    PLAN_MAX_WORDS,
     fill_main_budgets,
+    fit_budgets,
     hold_main_sections,
+    hold_plan_inside_its_range,
     raise_subsections,
 )
 from src.flow.model.structure.outlines.infomational.blog import ContentStructure
@@ -256,3 +259,74 @@ def test_the_five_outlines_measured_before_the_change_come_out_longer():
         assert sum(1 for s in held if s["heading_level"] == "H2") >= 4, keyword
         assert total >= 200 * 4, keyword
         assert total > sum(b[1] if isinstance(b, tuple) else b for b in budgets), keyword
+
+
+# -- A plan inside the range the product shows for its type (rext-control#837) -------------
+
+
+def _planned(*budgets, levels=None):
+    levels = levels or ["H2"] * len(budgets)
+    return [
+        {"heading": f"Part {n}", "heading_level": level, "suggested_word_count": words}
+        for n, (level, words) in enumerate(zip(levels, budgets, strict=True), 1)
+    ]
+
+
+def test_a_plan_over_its_types_range_comes_down_by_the_same_share_everywhere():
+    """Staging, 8 October: eight whole sections planned 2,150 words for a blog the product
+    calls 800 to 2,000."""
+    sections = _planned(350, 300, 300, 300, 250, 250, 200, 200)
+
+    fitted, removed = fit_budgets(sections, 2000)
+
+    budgets = [section["suggested_word_count"] for section in fitted]
+    assert budgets == [320, 270, 270, 270, 230, 230, 200, 200]
+    assert sum(budgets) <= 2000 and removed == 2150 - sum(budgets)
+    # The plan keeps its shape, and what was given is not changed.
+    assert budgets == sorted(budgets, reverse=True)
+    assert sections[0]["suggested_word_count"] == 350
+
+
+def test_a_plan_inside_its_range_is_left_alone():
+    sections = _planned(300, 300, 400, 300, 300, 300)
+
+    fitted, removed = fit_budgets(sections, 2000)
+
+    assert removed == 0 and fitted == sections
+
+
+def test_no_whole_section_is_taken_under_its_budget_and_no_subsection_under_half():
+    levels = ["H2", "H3", "H3", "H2", "H2", "H2", "H2", "H2", "H2", "H2"]
+    sections = _planned(120, 400, 400, 400, 400, 400, 400, 400, 400, 400, levels=levels)
+
+    fitted, _ = fit_budgets(sections, 2000)
+
+    budgets = [section["suggested_word_count"] for section in fitted]
+    # 3,720 words asked: every budget gives the same share, down to its floor.
+    assert budgets[0] == 100  # an H2 that only introduces its H3s: half a whole budget at least
+    assert budgets[1:3] == [210, 210]
+    assert all(words >= 200 for words in budgets[3:])
+
+
+def test_a_section_without_a_budget_counts_as_a_whole_one_and_is_left_as_it_is():
+    sections = _planned(400, 400, 400, 400, 400, 400)
+    del sections[2]["suggested_word_count"]
+
+    fitted, removed = fit_budgets(sections, 2000)
+
+    assert "suggested_word_count" not in fitted[2]
+    assert removed > 0
+    assert sum(section.get("suggested_word_count", 200) for section in fitted) <= 2000
+
+
+def test_only_a_type_whose_range_is_narrower_than_its_model_is_held():
+    blog = {"structure": {"sections": _planned(400, 400, 400, 400, 400, 400)}}
+    pillar = {"structure": {"sections": _planned(400, 400, 400, 400, 400, 400)}}
+
+    assert hold_plan_inside_its_range(blog, "blog") == 2400 - 1980
+    assert sum(s["suggested_word_count"] for s in blog["structure"]["sections"]) == 1980
+    assert hold_plan_inside_its_range(pillar, "pillar-content") == 0
+    assert sum(s["suggested_word_count"] for s in pillar["structure"]["sections"]) == 2400
+    # An outline with no section list (a how-to's steps) has nothing to hold.
+    assert hold_plan_inside_its_range({"steps": {"steps": []}}, "blog") == 0
+    assert PLAN_MAX_WORDS == {"blog": 2000}
