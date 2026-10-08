@@ -23,7 +23,10 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_outline_structure,
 )
 from src.flow.engines.content.generation.persona_relevance import persona_fits_topic
-from src.flow.engines.content.generation.requirements_spec import excluded_brand_of
+from src.flow.engines.content.generation.requirements_spec import (
+    brand_named_in,
+    excluded_brand_of,
+)
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
@@ -87,14 +90,25 @@ def persona_query(workspace_id, selected_id):
     return query.order_by(Persona.created_at.desc()).limit(1)
 
 
+def _profile_with_a_name(profile: Optional[dict], outline: Optional[dict]) -> Optional[dict]:
+    """The Brand Voice Profile with a brand name on it. A profile saved without one takes the
+    outline's brand, which is the same company: without a name, the profile's own sentences
+    ("Acme builds sites") could not be cleared of it before the writer reads them."""
+    if profile is None or (profile.get("brand_name") or "").strip():
+        return profile
+    promoted = ((outline or {}).get("brand_voice_promotion") or {}).get("brand_name")
+    return {**profile, "brand_name": promoted or ""}
+
+
 def _is_named(persona: Persona, name: str) -> bool:
-    """Whether a persona goes by ``name`` (its full name or its short one), in any case."""
-    wanted = " ".join((name or "").split()).casefold()
-    names = {
-        " ".join(str(value or "").split()).casefold()
+    """Whether a persona's name (its full one or its short one) is or contains ``name`` as a
+    phrase of its own, in any case: "Acme Tools Inc." carries the brand "Acme Tools" as surely
+    as "Acme Tools" does, and the brand check reads it the same way."""
+    wanted = " ".join((name or "").split())
+    return bool(wanted) and any(
+        brand_named_in(" ".join(str(value or "").split()), wanted)
         for value in (getattr(persona, "full_name", None), getattr(persona, "name", None))
-    }
-    return bool(wanted) and wanted in names
+    )
 
 
 class PersonaInjectionMiddleware(AgentMiddleware):
@@ -615,10 +629,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
         personas = await self._fetch_best_persona(workspace_id, outline)
         # The Brand Voice Profile steers the writing beside the persona, whose own
         # tone wins where they disagree (rext-control #161, option 1).
-        voice = article_voice(
-            personas.tone_of_voice if personas else None,
-            await fetch_brand_voice_profile(workspace_id),
-        )
+        profile = _profile_with_a_name(await fetch_brand_voice_profile(workspace_id), outline)
+        voice = article_voice(personas.tone_of_voice if personas else None, profile)
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
         internal_links = (outline or {}).get("internal_links") or []

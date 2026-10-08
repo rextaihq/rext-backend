@@ -1401,6 +1401,14 @@ def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> Valid
         brand_cta_url = next(
             (url for url in cta_urls if _is_brand_host(_host(url), brand_host)), None
         )
+        if _mention_present(cta.get("text") or "", brand_name):
+            return _fail(
+                "brand_prominence",
+                "blocking",
+                f"The user chose a SUBTLE mention: '{brand_name}' must not be named in the call to "
+                f"action ('{(cta.get('text') or '').strip()[:120]}'). Reword the call to action "
+                "without it, in the article and in `cta.text`; the one mention stays in the body.",
+            )
         if brand_cta_url:
             return _fail(
                 "brand_prominence",
@@ -1482,7 +1490,12 @@ def _excluded_mentions(text: str, brand_name: str) -> list:
     so "save this for later" is prose, not the brand."""
     text = text or ""
     if " " in brand_name.strip():
-        return _brand_occurrences(text, brand_name)
+        # Everything a reader sees, the Sources section included (an approved mention is
+        # counted without it; a brand kept out is kept out of it too), with the emphasis marks
+        # taken out so "Acme **Tools**" is still the name.
+        pattern = _brand_mention_re(brand_name)
+        prose = _BARE_URL_RE.sub("", _MD_LINK_RE.sub(r"\1", _IMAGE_EMBED_RE.sub(" ", text)))
+        return list(pattern.finditer(_EMPHASIS_MARKS_RE.sub("", prose))) if pattern else []
     pattern = re.compile(r"(?<![0-9A-Za-z])" + re.escape(brand_name.strip()) + r"(?![0-9A-Za-z])")
     sentence_start = re.compile(r"(?:^\s*(?:[#>*-]+\s*)?|[.!?]\s+|\n\s*(?:[#>*-]+\s*)?)$")
     # At a sentence start the word is ordinary ("Later, …", "Later you can…") unless what follows
@@ -1495,8 +1508,34 @@ def _excluded_mentions(text: str, brand_name: str) -> list:
     return [
         m
         for m in pattern.finditer(text)
-        if not sentence_start.search(text[: m.start()]) or not ordinary_next.match(text, m.end())
+        if not sentence_start.search(text[: m.start()])
+        or not ordinary_next.match(text, m.end())
+        or _is_whole_label(text, m)
     ]
+
+
+def _is_whole_label(text: str, match: re.Match) -> bool:
+    """Whether the matched word is all its line says: a heading, a list entry or a bold label
+    that is only the name ("## Later", "- **Later**:") names the brand, where the same word
+    opening a sentence would be prose."""
+    start = text.rfind("\n", 0, match.start()) + 1
+    end = text.find("\n", match.end())
+    line = text[start : len(text) if end == -1 else end]
+    label = re.sub(r"^[\s#>*_\-+\d.)]+|[\s*_:.]+$", "", line)
+    return label == match.group(0)
+
+
+# Inline emphasis and code marks, which can sit inside a name: "Acme **Tools**".
+_EMPHASIS_MARKS_RE = re.compile(r"[*_~`]+")
+
+
+def _trim_address(url: str) -> str:
+    """An address as found in running text, without the punctuation that follows it. A closing
+    bracket stays when it closes one the address opened ("…/wiki/Foo_(bar)")."""
+    url = url.rstrip(".,;:!?\"'")
+    while url.endswith(")") and url.count(")") > url.count("("):
+        url = url[:-1].rstrip(".,;:!?\"'")
+    return url
 
 
 # An image embed: "![alt](address)". Its address is where the picture is stored, not a link a
@@ -1508,7 +1547,7 @@ _IMAGE_EMBED_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 def _links_to_host(text: str, host: str, approved: set[str]) -> bool:
     """Whether ``text`` links to ``host`` other than through an approved internal link."""
     for url in _BARE_URL_RE.findall(_IMAGE_EMBED_RE.sub(" ", text or "")):
-        url = url.rstrip(").,;:!?\"'")
+        url = _trim_address(url)
         if _is_brand_host(_host(url), host) and normalize_url(url) not in approved:
             return True
     return False
@@ -2343,7 +2382,7 @@ def apply_density_report(final_content: dict, spec: RequirementsSpec) -> dict:
 # An image embed with its parts: "![alt](address)".
 _IMAGE_ALT_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
 # A markdown link, not an image: "[anchor](https://…)".
-_TEXT_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^)\s]+)\)")
+_TEXT_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)")
 
 
 def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage: str) -> dict:
@@ -2382,6 +2421,26 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
         if normalize_url(str(cta["url"])) not in approved_keys:
             removed.append("the call to action's link")
             cleaned["cta"] = {**cta, "url": None}
+    cta_text = " ".join(str((cta or {}).get("text") or "").split()).casefold()
+    if spec.get("cta_without_link") and isinstance(cta, dict) and cta_text:
+        approved_keys = {
+            normalize_url(link.get("url") or "")
+            for link in approved or []
+            if isinstance(link, dict)
+        }
+
+        def unlink_call_to_action(match: re.Match) -> str:
+            # The same call to action as the reader meets it: a link in the article whose
+            # words are the call to action's.
+            anchor = " ".join(_EMPHASIS_MARKS_RE.sub("", match.group(1)).split()).casefold()
+            if anchor != cta_text or normalize_url(match.group(2)) in approved_keys:
+                return match.group(0)
+            removed.append("the call to action's link in the article")
+            return match.group(1)
+
+        for field in LINK_FIELDS:
+            if isinstance(cleaned.get(field), str):
+                cleaned[field] = _TEXT_LINK_RE.sub(unlink_call_to_action, cleaned[field])
     if not excluded:
         if removed:
             logger.info("%s: brand choice applied in code to %s", stage, removed)
