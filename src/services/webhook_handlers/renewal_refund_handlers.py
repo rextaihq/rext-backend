@@ -16,6 +16,9 @@ although the refund rule (DECISIONS.md, #88) covers any payment within 14 days.
 
 - A refund of a plan change's invoice (``billing_reason`` ``updated``, the proration
   charged at once) is recorded and alerts a person: the period it adjusts stays paid.
+  Unless that invoice is the one the period was paid with: a trial ended by a plan change
+  pays its first month with an ``updated`` invoice, and its refund is handled as any
+  first payment's (the plan ends on a full refund, the month shrinks on a partial one).
 
 Refund rows are keyed by an order id; an invoice has none, so a renewal's refunds are
 recorded under ``invoice:<id>``. The first payment's invoice is recorded under its order's
@@ -68,6 +71,12 @@ CURRENT, EARLIER, UPCOMING = "current", "earlier", "upcoming"
 
 # The invoice whose partial refund came before its payment: its month is cut once granted.
 EARLY_REFUND_INVOICE = "early_refund_invoice"
+
+
+def _paid_the_period(subscription: UserSubscription, invoice_id: Any) -> bool:
+    """Whether this invoice is the one the current period's payment was recorded under."""
+    paid = (subscription.subscription_metadata or {}).get(PAID_INVOICE_ID)
+    return paid is not None and str(paid) == str(invoice_id)
 
 
 def _period_of(
@@ -225,7 +234,7 @@ async def handle_subscription_payment_refunded(
             db=db,
         )
 
-    if billing_reason == "updated":
+    if billing_reason == "updated" and not _paid_the_period(subscription, invoice_id):
         _plan_change_refunded(subscription, str(invoice_id), refunded_total, total)
         return
 

@@ -519,6 +519,69 @@ async def test_a_plan_changes_payment_does_not_become_the_periods_invoice(
     outside.provider.cancel_subscription.assert_awaited_once()
 
 
+async def _trial_ended_by_a_plan_change(session, monkeypatch) -> UserSubscription:
+    """A trial whose plan was changed in the app: Lemon Squeezy bills the first month with an
+    invoice it labels "updated", and that payment has been processed."""
+    row = await _renewed_subscription(session, started=NOW - timedelta(days=3))
+    row.status = SubscriptionStatus.TRIAL
+    row.trial_end_date = NOW + timedelta(days=4)
+    row.current_credits = 40
+    row.subscription_metadata = {}
+    await session.flush()
+    monkeypatch.setattr(subscription_handlers, "_stamp_card_details", lambda *a: None)
+    first = _payment_event(row, "inv-first", NOW - timedelta(hours=2))
+    first["data"]["attributes"]["billing_reason"] = "updated"
+    await subscription_handlers.handle_subscription_payment_success(first, None, session)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_the_updated_invoice_that_ends_a_trial_is_the_periods_payment(
+    session, outside, monkeypatch
+):
+    row = await _trial_ended_by_a_plan_change(session, monkeypatch)
+
+    # It brought the month, so it is the invoice a refund of the period is measured against.
+    assert row.status == SubscriptionStatus.ACTIVE
+    assert row.current_credits == CREDITS
+    assert row.subscription_metadata[PAID_INVOICE_ID] == "inv-first"
+
+
+@pytest.mark.asyncio
+async def test_a_full_refund_of_the_invoice_that_ended_a_trial_ends_the_plan(
+    session, outside, monkeypatch
+):
+    """Its label says plan change; it is the first payment, and its refund ends the plan as
+    any first payment's does instead of being left to a person."""
+    row = await _trial_ended_by_a_plan_change(session, monkeypatch)
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-first", billing_reason="updated"), None, session
+    )
+
+    assert [r.refund_amount for r in await _refunds(session, "inv-first")] == [PRICE]
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert row.end_date <= datetime.now(timezone.utc)
+    outside.provider.cancel_subscription.assert_awaited_once_with(row.lemonsqueezy_subscription_id)
+
+
+@pytest.mark.asyncio
+async def test_a_partial_refund_of_the_invoice_that_ended_a_trial_shrinks_the_month(
+    session, outside, monkeypatch
+):
+    row = await _trial_ended_by_a_plan_change(session, monkeypatch)
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-first", billing_reason="updated", refunded=PRICE // 2),
+        None,
+        session,
+    )
+
+    assert row.status == SubscriptionStatus.ACTIVE
+    assert row.current_credits == CREDITS * (PRICE - PRICE // 2) // PRICE
+    outside.provider.cancel_subscription.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_recording_a_refund_holds_the_orders_lock_until_the_transaction_ends(session):
     # Two events for one refund (a first payment's order_refunded and
