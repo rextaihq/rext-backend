@@ -129,6 +129,25 @@ class RefundService:
         )
         return {row[0]: int(row[1] or 0) for row in result.all()}
 
+    async def lock_order(self, lemonsqueezy_order_id: str) -> None:
+        """One recorder at a time per order, until this transaction ends.
+
+        Recording reads the recorded total and then inserts, which is not atomic,
+        and two events for one refund run in their own transactions (a first
+        payment's order_refunded and subscription_payment_refunded, or the webhook
+        racing the admin's refund that caused it). The second waits here, then
+        reads what the first committed and records nothing.
+
+        ``record_provider_refund`` takes it itself. A handler that also locks the
+        subscription's row takes this first, as the recorders that write the
+        subscription afterwards do: in the other order, two handlers of one refund
+        would each hold what the other waits for.
+        """
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"refund:{lemonsqueezy_order_id}"},
+        )
+
     async def record_provider_refund(
         self,
         *,
@@ -169,15 +188,7 @@ class RefundService:
             The refund row created for the new money, or None when this call
             carried nothing we had not already recorded.
         """
-        # One recorder at a time per order: the read below and the insert are not
-        # atomic, and two events for one refund run in their own transactions (a
-        # first payment's order_refunded and subscription_payment_refunded, or the
-        # webhook racing the admin's refund that caused it). The second waits here,
-        # then reads what the first committed and records nothing.
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-            {"key": f"refund:{lemonsqueezy_order_id}"},
-        )
+        await self.lock_order(lemonsqueezy_order_id)
         already_refunded = await self.get_refunded_total(lemonsqueezy_order_id)
         delta = int(provider_refunded_total or 0) - already_refunded
 

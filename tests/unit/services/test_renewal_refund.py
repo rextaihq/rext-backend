@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect, select, text
+from sqlalchemy import event, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -22,6 +22,7 @@ import src.services.webhook_handlers.subscription_handlers as subscription_handl
 from src.api.database.base import Base
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.credit_grants import CreditGrant
+from src.api.models.subscription_models.orders import Order
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.promotions import Promotion
 from src.api.models.subscription_models.refunds import Refund
@@ -61,6 +62,7 @@ async def session():
     tables = _with_parents(
         UserSubscription.__table__,
         Refund.__table__,
+        Order.__table__,
         Promotion.__table__,
         CreditGrant.__table__,
         AuditLog.__table__,
@@ -285,6 +287,58 @@ async def test_a_first_payment_and_its_order_refund_are_recorded_once(session, o
 
 
 @pytest.mark.asyncio
+async def test_a_first_payment_on_a_row_without_its_orders_id_is_recorded_under_the_order(
+    session, outside
+):
+    # An older row doesn't name its order. order_refunded records under the order's id, so
+    # this event finds the same one through the order recorded for the subscription.
+    row = await _renewed_subscription(session, paid_invoice="inv-initial")
+    session.add(
+        Order(
+            user_id=row.user_id,
+            subscription_id=row.id,
+            lemonsqueezy_order_id="ord-older",
+            total=PRICE,
+        )
+    )
+    await session.flush()
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, invoice="inv-initial", billing_reason="initial"), None, session
+    )
+
+    assert [r.refund_amount for r in await _refunds(session, "", key="ord-older")] == [PRICE]
+    assert await _refunds(session, "inv-initial") == []
+
+
+@pytest.mark.asyncio
+async def test_the_refunds_lock_is_taken_before_the_subscriptions_row(session, outside):
+    # order_refunded records (the refund's lock) and writes the subscription after. Taken
+    # in the other order here, the two handlers of one first-payment refund would each
+    # hold what the other waits for.
+    row = await _renewed_subscription(session, paid_invoice="inv-initial", order_id="ord-3")
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        statements.append(statement)
+
+    connection = session.bind.sync_connection
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        await module.handle_subscription_payment_refunded(
+            _refund_event(row, invoice="inv-initial", billing_reason="initial"), None, session
+        )
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+
+    lock = next(i for i, sql in enumerate(statements) if "pg_advisory_xact_lock" in sql)
+    row_lock = next(
+        i for i, sql in enumerate(statements) if "user_subscriptions" in sql and "FOR UPDATE" in sql
+    )
+    assert lock < row_lock
+
+
+@pytest.mark.asyncio
 async def test_a_refunded_plan_change_invoice_is_recorded_and_left_to_a_person(session, outside):
     """A plan change's prorated invoice: its period stays paid, and its credits came with the
     change, so the plan isn't ended or cut."""
@@ -337,6 +391,59 @@ async def test_a_partial_refund_before_its_payment_cuts_the_month_once_it_is_gra
     monkeypatch.setattr(subscription_handlers, "_stamp_card_details", lambda *a: None)
     await subscription_handlers.handle_subscription_payment_success(
         _payment_event(row, "inv-new", new), None, session
+    )
+
+    assert row.current_credits == CREDITS * (PRICE - PRICE // 2) // PRICE
+    # The cut is audited, as it is when the refund comes after its payment.
+    audited = (
+        (await session.execute(select(AuditLog).where(AuditLog.user_id == row.user_id)))
+        .scalars()
+        .all()
+    )
+    assert any(
+        (entry.audit_metadata or {}).get("lemonsqueezy_invoice_id") == "inv-new"
+        and "received before its payment" in str(entry.audit_metadata)
+        for entry in audited
+    )
+
+
+def _credited_before_invoice_ids(row: UserSubscription) -> None:
+    """A row whose last payment was credited before invoice ids were recorded."""
+    row.subscription_metadata = {
+        k: v for k, v in row.subscription_metadata.items() if k != PAID_INVOICE_ID
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_refund_ahead_of_its_payment_is_not_taken_for_the_month_before_on_an_older_row(
+    session, outside
+):
+    row = await _renewed_subscription(
+        session, paid_invoice="inv-previous", paid_at=NOW - timedelta(days=30)
+    )
+    _credited_before_invoice_ids(row)
+    row.current_credits = 25  # what was left of the previous month
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(
+            row, invoice="inv-new", refunded=PRICE // 2, created_at=NOW - timedelta(hours=1)
+        ),
+        None,
+        session,
+    )
+
+    # Newer than the payment credited: it waits for its own payment, as on any other row.
+    assert row.current_credits == 25
+    assert row.subscription_metadata[module.EARLY_REFUND_INVOICE] == "inv-new"
+
+
+@pytest.mark.asyncio
+async def test_an_older_rows_credited_payment_is_still_the_current_one(session, outside):
+    row = await _renewed_subscription(session)
+    _credited_before_invoice_ids(row)
+
+    await module.handle_subscription_payment_refunded(
+        _refund_event(row, refunded=PRICE // 2), None, session
     )
 
     assert row.current_credits == CREDITS * (PRICE - PRICE // 2) // PRICE
