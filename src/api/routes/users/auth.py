@@ -49,6 +49,7 @@ from src.api.schema.user_schema import (
     ResendVerificationRequest,
     UserResponse,
 )
+from src.api.security.dashboard_server import dashboard_sign_in_gate
 from src.api.security.dependencies import get_current_user
 from src.api.security.token_utils import decode_and_verify_token, verify_refresh_token
 from src.services import account_events
@@ -535,6 +536,8 @@ async def oauth_login(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
+    # Before the limit, in this order: the gate says how the call is counted.
+    _caller: None = Depends(dashboard_sign_in_gate),
     _rate_limit: None = Depends(oauth_rate_limit()),
 ):
     """
