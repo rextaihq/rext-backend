@@ -78,6 +78,7 @@ class AuditEventType(str, Enum):
     ADMIN_USER_MIGRATED = "admin.user_migrated"
     ADMIN_PLAN_CHANGED = "admin.plan_changed"
     ADMIN_CREDITS_ADJUSTED = "admin.credits_adjusted"
+    ADMIN_TRIAL_EXTENDED = "admin.trial_extended"
 
     # License events
     LICENSE_CREATED = "license.created"
@@ -908,6 +909,78 @@ class AuditLogger:
                 "extend_days": extend_days,
                 **(metadata or {}),
             },
+            db=db,
+        )
+
+    async def log_admin_plan_changed(
+        self,
+        admin_id: UUID,
+        user_id: UUID,
+        subscription_id: UUID,
+        old_plan_name: str,
+        new_plan_name: str,
+        old_billing_period: Optional[str],
+        new_billing_period: Optional[str],
+        billing: str,
+        credits_before: int,
+        credits_after: int,
+        reason: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[Any]:
+        """Log a super admin changing a user's plan.
+
+        Recorded against the affected user, so the change shows in their activity
+        (without the reason: that list shows no details). The reason is free text and
+        may name the customer or an incident: it goes to the audit row only, not to
+        the application log. Returns the audit row when it was written to ``db``.
+        """
+        return await self._log_event(
+            event_type=AuditEventType.ADMIN_PLAN_CHANGED,
+            user_id=user_id,
+            admin_id=admin_id,
+            resource_type="subscription",
+            resource_id=subscription_id,
+            changes={
+                "plan": {"from": old_plan_name, "to": new_plan_name},
+                "billing_period": {"from": old_billing_period, "to": new_billing_period},
+            },
+            metadata={
+                "admin_id": str(admin_id),
+                "billing": billing,
+                "credits_before": credits_before,
+                "credits_after": credits_after,
+                **(metadata or {}),
+            },
+            private_metadata={"reason": reason},
+            db=db,
+        )
+
+    async def log_admin_trial_extended(
+        self,
+        admin_id: UUID,
+        user_id: UUID,
+        subscription_id: UUID,
+        ended_at_before: Optional[datetime],
+        ends_at: datetime,
+        reason: str,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[Any]:
+        """Log a super admin moving a trial's end to a later date (the reason as above)."""
+        return await self._log_event(
+            event_type=AuditEventType.ADMIN_TRIAL_EXTENDED,
+            user_id=user_id,
+            admin_id=admin_id,
+            resource_type="subscription",
+            resource_id=subscription_id,
+            changes={
+                "old_values": {
+                    "trial_end_date": ended_at_before.isoformat() if ended_at_before else None
+                },
+                "new_values": {"trial_end_date": ends_at.isoformat()},
+            },
+            metadata={"admin_id": str(admin_id)},
+            private_metadata={"reason": reason},
             db=db,
         )
 

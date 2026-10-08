@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from . import (
+    analytics_consent,
     auth,
     impersonation,
     invitations,
@@ -32,4 +33,5 @@ router.include_router(impersonation.router)
 router.include_router(user_permissions.router)
 router.include_router(user_security.router)
 router.include_router(preferences.router)
+router.include_router(analytics_consent.router)
 router.include_router(invitations.router)

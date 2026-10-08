@@ -30,8 +30,17 @@ class UserListPagination(BaseModel):
     has_prev: bool
 
 
+class UserListRow(UserResponse):
+    """A user in the admin's list, with the plan the row shows (FB2.29): from the newest
+    subscription that grants access, and empty without one."""
+
+    plan_display_name: Optional[str] = None
+    is_trial: bool = False
+    billing_period: Optional[str] = None
+
+
 class UserListResponse(BaseModel):
-    users: List[UserResponse]
+    users: List[UserListRow]
     total_count: int
     workspace_id: Optional[str] = None
     pagination: UserListPagination

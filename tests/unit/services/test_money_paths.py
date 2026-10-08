@@ -451,6 +451,270 @@ async def test_the_signup_trial_plan_gets_no_launch_bonus(db):
     assert await _grants(db, subscription) == []
 
 
+# The offer holds a subscription that started inside its window or whose first payment falls
+# inside it, whatever Lemon Squeezy calls that payment's invoice (F8f, rext-control #848).
+
+
+async def _trial_started(db, clock, plan, *, started):
+    """A paid plan's trial days, started at `started` and its event processed then."""
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    clock(started + timedelta(minutes=1))
+    await handle_subscription_created(
+        _subscription_event(
+            user, ls_id, plan.lemonsqueezy_variant_id_monthly, at=started, status="on_trial"
+        ),
+        None,
+        db,
+    )
+    return user, ls_id
+
+
+async def _payment_records_begin(db, at=OPENS - timedelta(days=30)):
+    """The audit log's first payment record, another customer's, made at `at`: a month before
+    the launch unless a test says otherwise. The log vouches for subscriptions started after
+    it, and for none while it is empty."""
+    db.add(
+        AuditLog(
+            action="payment.succeeded",
+            resource_type="payment",
+            resource_id=str(uuid4()),
+            created_at=at,
+        )
+    )
+    await db.flush()
+
+
+async def _pays(db, clock, user, ls_id, *, at, billing_reason):
+    clock(at + timedelta(minutes=1))
+    await handle_subscription_payment_success(
+        _invoice_event(user, ls_id, at=at, billing_reason=billing_reason), None, db
+    )
+
+
+@pytest.mark.parametrize("billing_reason", ["initial", "updated", "renewal"])
+async def test_a_trial_begun_before_the_offer_gets_the_bonus_when_it_first_pays_inside_it(
+    db, clock, billing_reason
+):
+    """The trial began two days before the launch and pays in launch week. A plan change in
+    the app ends a trial with an invoice labelled "updated": it is the first payment all the
+    same, and brings the month and the bonus."""
+    await _launch_promotion(db)
+    await _payment_records_begin(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
+    subscription = await _subscription_of(db, ls_id)
+    assert await _grants(db, subscription) == []  # nothing until it is paid
+
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason=billing_reason)
+
+    assert [g.amount for g in await _grants(db, subscription)] == [1000]
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 2000
+
+
+@pytest.mark.parametrize("billing_reason", ["initial", "updated"])
+async def test_a_trial_begun_inside_the_offer_gets_the_bonus_when_it_pays_after_it_closed(
+    db, clock, billing_reason
+):
+    await _launch_promotion(db)
+    await _payment_records_begin(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user, ls_id = await _trial_started(db, clock, growth, started=CLOSES - timedelta(days=2))
+
+    await _pays(
+        db, clock, user, ls_id, at=CLOSES + timedelta(days=5), billing_reason=billing_reason
+    )
+
+    subscription = await _subscription_of(db, ls_id)
+    assert [g.amount for g in await _grants(db, subscription)] == [1000]
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 2000
+
+
+@pytest.mark.parametrize(
+    ("started", "paid"),
+    [
+        (OPENS - timedelta(days=9), OPENS - timedelta(days=2)),  # all of it before the launch
+        (CLOSES + timedelta(days=1), CLOSES + timedelta(days=8)),  # all of it after the week
+        (OPENS - timedelta(days=3), CLOSES + timedelta(days=4)),  # around the week, never in it
+    ],
+)
+@pytest.mark.parametrize("billing_reason", ["initial", "updated"])
+async def test_a_trial_begun_and_first_paid_outside_the_offer_gets_no_bonus(
+    db, clock, started, paid, billing_reason
+):
+    await _launch_promotion(db)
+    await _payment_records_begin(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user, ls_id = await _trial_started(db, clock, growth, started=started)
+
+    await _pays(db, clock, user, ls_id, at=paid, billing_reason=billing_reason)
+
+    subscription = await _subscription_of(db, ls_id)
+    assert await _grants(db, subscription) == []
+    assert await UsageTrackingService(db).get_credit_balance(user.id) == 1000
+
+
+@pytest.mark.parametrize("billing_reason", ["updated", "renewal"])
+async def test_a_plan_paid_for_before_the_offer_gets_no_bonus_from_an_invoice_inside_it(
+    db, clock, billing_reason
+):
+    """A subscriber from before the launch changes plan, or renews, in launch week: that
+    payment is not their first, so the offer is not theirs."""
+    await _launch_promotion(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    clock(BEFORE_LAUNCH + timedelta(minutes=1))
+    await handle_subscription_created(
+        _subscription_event(
+            user,
+            ls_id,
+            growth.lemonsqueezy_variant_id_monthly,
+            at=BEFORE_LAUNCH,
+            order_id=f"ord-{uuid4().hex[:8]}",
+        ),
+        None,
+        db,
+    )
+
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason=billing_reason)
+
+    subscription = await _subscription_of(db, ls_id)
+    assert await _grants(db, subscription) == []
+
+
+async def test_a_first_payment_under_another_name_gives_the_bonus_once(db, clock):
+    """The trial's upgrade pays ("updated"); the same event arrives again, and later invoices
+    of either name follow. One bonus, and what was spent stays spent."""
+    await _launch_promotion(db)
+    await _payment_records_begin(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
+    paid = OPENS + timedelta(days=1)
+    first = _invoice_event(user, ls_id, at=paid, billing_reason="updated")
+    clock(paid + timedelta(minutes=1))
+    await handle_subscription_payment_success(first, None, db)
+    usage = UsageTrackingService(db)
+    # 1,200: the bonus's 1,000 first, then 200 of the month's 1,000.
+    assert await usage.consume_credits(user.id, 1200)
+
+    await handle_subscription_payment_success(first, None, db)  # the same event again
+    for minutes, again in enumerate(("initial", "updated"), 5):
+        await _pays(
+            db, clock, user, ls_id, at=paid + timedelta(minutes=minutes), billing_reason=again
+        )
+
+    subscription = await _subscription_of(db, ls_id)
+    assert [g.amount for g in await _grants(db, subscription)] == [1000]
+    assert await usage.get_credit_balance(user.id) == 800
+
+
+def _as_from_before_the_records(subscription, status):
+    """The row as one stored before the start-month marker and the credited payment existed."""
+    subscription.status = status
+    subscription.subscription_metadata = {
+        k: v
+        for k, v in subscription.subscription_metadata.items()
+        if k not in ("start_month_given", "paid_invoice_at")
+    }
+
+
+async def test_a_renewal_recovered_inside_the_offer_is_no_first_payment(db, clock):
+    """A subscriber from before the records who was behind on a renewal when they began: the
+    row says unpaid and holds no payment, exactly as a first payment that failed does. The
+    payment in the audit log tells them apart, and this one gets its month and no bonus."""
+    await _launch_promotion(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    started = OPENS - timedelta(days=40)
+    clock(started + timedelta(minutes=1))
+    await handle_subscription_created(
+        _subscription_event(user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=started),
+        None,
+        db,
+    )
+    await _pays(db, clock, user, ls_id, at=started + timedelta(minutes=2), billing_reason="initial")
+    subscription = await _subscription_of(db, ls_id)
+    _as_from_before_the_records(subscription, SubscriptionStatus.PAST_DUE)
+    subscription.current_credits = 0
+    await db.flush()
+
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason="renewal")
+
+    paid = await _subscription_of(db, ls_id)
+    assert paid.status == SubscriptionStatus.ACTIVE
+    assert paid.current_credits == 1000
+    assert await _grants(db, paid) == []
+
+
+@pytest.mark.parametrize(
+    ("billing_reason", "granted"), [("updated", []), ("renewal", []), ("initial", [1000])]
+)
+async def test_an_empty_payment_log_vouches_for_nobody(db, clock, billing_reason, granted):
+    """No payment in the audit log at all: a new database, or one whose records have aged
+    out. It cannot say that a subscription never paid, so a payment that is not called
+    "initial" is not taken for a first one. One that is called "initial" still is."""
+    await _launch_promotion(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
+
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason=billing_reason)
+
+    subscription = await _subscription_of(db, ls_id)
+    assert subscription.current_credits == 1000
+    assert [g.amount for g in await _grants(db, subscription)] == granted
+
+
+async def test_a_subscription_older_than_the_payment_records_is_not_taken_for_a_first_payment(
+    db, clock
+):
+    """A subscriber who started before the audit log kept payments, behind on a renewal: the
+    log holds no payment of theirs, but it could not: it began after they did. Its silence
+    says nothing, so the payment is not taken for a first one."""
+    await _launch_promotion(db)
+    await _payment_records_begin(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user = await _customer(db)
+    ls_id = uuid4().int % 10**9
+    started = OPENS - timedelta(days=40)
+    clock(started + timedelta(minutes=1))
+    await handle_subscription_created(
+        _subscription_event(user, ls_id, growth.lemonsqueezy_variant_id_monthly, at=started),
+        None,
+        db,
+    )
+    subscription = await _subscription_of(db, ls_id)
+    _as_from_before_the_records(subscription, SubscriptionStatus.PAST_DUE)
+    subscription.current_credits = 0
+    await db.flush()
+
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason="renewal")
+
+    paid = await _subscription_of(db, ls_id)
+    assert paid.current_credits == 1000
+    assert await _grants(db, paid) == []
+
+
+async def test_a_first_payment_that_had_failed_gets_the_bonus_when_paid_inside_the_offer(db, clock):
+    """The other row that reads unpaid with no payment: a trial from before the records whose
+    first payment failed. It started after the audit log began to keep payments and the log
+    holds none of its own, so the payment that comes in launch week is its first."""
+    await _launch_promotion(db)
+    await _payment_records_begin(db)
+    growth = await _plan(db, "growth", price=89, credits=1000)
+    user, ls_id = await _trial_started(db, clock, growth, started=BEFORE_LAUNCH)
+    subscription = await _subscription_of(db, ls_id)
+    _as_from_before_the_records(subscription, SubscriptionStatus.PAST_DUE)
+    await db.flush()
+
+    await _pays(db, clock, user, ls_id, at=OPENS + timedelta(days=1), billing_reason="renewal")
+
+    paid = await _subscription_of(db, ls_id)
+    assert paid.current_credits == 1000
+    assert [g.amount for g in await _grants(db, paid)] == [1000]
+
+
 # --- 2. the refund rule: within 14 days, under 100 credits used, the whole payment -----------
 
 

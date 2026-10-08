@@ -17,7 +17,7 @@ Does NOT:
 """
 
 import re
-from asyncio import create_task
+from asyncio import create_task, ensure_future, sleep, wait
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -45,35 +45,46 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.services.sse_service import event_stream_manager
+from src.services.sse_service import emit_step_failure, event_stream_manager
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
 from src.utils.storage import resolve_avatar_url, resolve_media_url
 
 # Track background pipeline tasks to prevent garbage collection
 _background_tasks: set = set()
+# The operation ids of the pipeline runs this process is running now.
+_live_operations: set = set()
 
 # The workspace pipeline runs as a task inside this process, with no queue behind it, so a
 # restart or a deploy ends a run without a word. A run recorded as running is gone once it
 # started before this process did, or once it has outlived any real run (the pipeline's own
-# budget is 90 seconds).
+# budget is 90 seconds). A run this process is still running is never gone: it is cut off at
+# the same limit instead (_run_pipeline_recorded), so a retry can't start beside it.
 _PROCESS_STARTED_AT = datetime.now(timezone.utc)
 _PIPELINE_RUN_LIMIT = timedelta(minutes=10)
+# How long a run's end waits for the request that created its row to commit it.
+_RECORD_ATTEMPTS = 15
+_RECORD_RETRY_SECONDS = 2.0
 
 
 def pipeline_state(workspace: WorkspaceModel) -> Optional[Dict[str, Any]]:
     """The workspace's latest pipeline run, as the dashboard polls it: its status ("running",
     "completed", "failed", or "interrupted" for a running row this process no longer runs), its
     operation id for the SSE stream, and when it started. None when no run is recorded, as for
-    a workspace created before runs were."""
+    a workspace created before runs were: nothing on the row says whether that setup finished
+    (a setup can complete and leave no brand voice), so nothing is claimed about it."""
     status = workspace.pipeline_status
     if status is None:
         return None
     started_at = workspace.pipeline_started_at
-    if status == "running" and (
-        started_at is None
-        or started_at < _PROCESS_STARTED_AT
-        or datetime.now(timezone.utc) - started_at > _PIPELINE_RUN_LIMIT
+    if (
+        status == "running"
+        and workspace.pipeline_operation_id not in _live_operations
+        and (
+            started_at is None
+            or started_at < _PROCESS_STARTED_AT
+            or datetime.now(timezone.utc) - started_at > _PIPELINE_RUN_LIMIT
+        )
     ):
         status = "interrupted"
     return {
@@ -91,20 +102,43 @@ def _mark_pipeline_started(workspace: WorkspaceModel, operation_id: str) -> None
 
 async def _record_pipeline_end(
     db: AsyncSession, workspace_id: UUID, operation_id: str, status: str
-) -> None:
-    """Write how a run ended, unless a newer run has taken its place on the row. Never raises:
-    the run's outcome is logged already, and a row left running reads as interrupted."""
+) -> bool:
+    """Write how a run ended, unless a newer run has taken its place on the row. A creation run
+    can end before the request that created its row has committed it, so while the row isn't
+    there yet this waits for it (up to about half a minute). Never raises: the run's outcome is
+    logged already, and a row left running reads as interrupted.
+
+    True when the row now says how this run ended, or a newer run holds it. False when the
+    outcome isn't on record (the row never appeared, or the write failed): the run's terminal
+    event is then withheld, so nobody reads "running" on an event that says the run is over."""
     try:
-        await db.execute(
-            update(WorkspaceModel)
-            .where(
-                WorkspaceModel.id == workspace_id,
-                WorkspaceModel.pipeline_operation_id == operation_id,
+        for _ in range(_RECORD_ATTEMPTS):
+            result = await db.execute(
+                update(WorkspaceModel)
+                .where(
+                    WorkspaceModel.id == workspace_id,
+                    WorkspaceModel.pipeline_operation_id == operation_id,
+                )
+                .values(pipeline_status=status)
+                .execution_options(synchronize_session=False)
             )
-            .values(pipeline_status=status)
-            .execution_options(synchronize_session=False)
+            await db.commit()
+            if result.rowcount:
+                return True
+            current = await db.scalar(
+                select(WorkspaceModel.pipeline_operation_id).where(
+                    WorkspaceModel.id == workspace_id
+                )
+            )
+            await db.commit()
+            if current is not None:
+                return True  # a newer run has the row: its own end will be recorded
+            await sleep(_RECORD_RETRY_SECONDS)
+        logger.warning(
+            "The workspace pipeline's row never appeared to record its end",
+            extra={"workspace_id": str(workspace_id), "operation_id": operation_id},
         )
-        await db.commit()
+        return False
     except Exception as exc:  # noqa: BLE001 - the status is a record, never a new failure
         await db.rollback()
         logger.warning(
@@ -116,6 +150,64 @@ async def _record_pipeline_end(
                 "error": repr(exc),
             },
         )
+        return False
+
+
+async def _run_pipeline_recorded(
+    db: AsyncSession, *, operation_id: str, workspace_id: UUID, user_id: UUID, url: str
+) -> None:
+    """One pipeline run with its outcome on the workspace's row: written as the run settles, before
+    its terminal event goes out (so a read on that event sees it), and "failed" for a run cut off at
+    _PIPELINE_RUN_LIMIT. Live in _live_operations meanwhile, so it never reads as interrupted.
+
+    The limit is on the work up to the run's commit (or its failure). Past that point the run is
+    left to finish what follows by itself: recording the outcome, then its own terminal event with
+    its own payload, so nothing here has to guess whether the record landed or rebuild the event.
+    A run cut off before that point is cancelled, which passes the pipeline's `except Exception`
+    without a word, so its failure is recorded and its failure event sent from here, the event
+    only once the row says "failed"."""
+    settled = False
+
+    async def record(status: str) -> bool:
+        nonlocal settled
+        settled = True
+        return await _record_pipeline_end(db, workspace_id, operation_id, status)
+
+    _live_operations.add(operation_id)
+    run = ensure_future(
+        run_workspace_pipeline(
+            db=db,
+            operation_id=operation_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            url=url,
+            on_finished=record,
+        )
+    )
+    try:
+        await wait({run}, timeout=_PIPELINE_RUN_LIMIT.total_seconds())
+        if run.done() or settled:
+            # Finished, or past its commit and finishing: its own outcome, event and exception.
+            await run
+            return
+        run.cancel()
+        await wait({run})
+        await db.rollback()
+        if await _record_pipeline_end(db, workspace_id, operation_id, "failed"):
+            await emit_step_failure(
+                operation_id=operation_id,
+                scope="workspace",
+                step="pipeline",
+                message="Workspace creation pipeline encountered an error.",
+                error=None,
+                user_id=user_id,
+            )
+        raise TimeoutError(f"The workspace pipeline ran past {_PIPELINE_RUN_LIMIT}")
+    finally:
+        if not run.done():
+            # This task was cancelled itself (a shutdown): the run goes with it.
+            run.cancel()
+        _live_operations.discard(operation_id)
 
 
 class WorkspaceService:
@@ -191,8 +283,8 @@ class WorkspaceService:
             ):
                 async with get_async_db_context() as bg_db:
                     try:
-                        await run_workspace_pipeline(
-                            db=bg_db,
+                        await _run_pipeline_recorded(
+                            bg_db,
                             operation_id=operation_id,
                             workspace_id=workspace.id,
                             user_id=user_id,
@@ -208,9 +300,7 @@ class WorkspaceService:
                             },
                             exc_info=True,
                         )
-                        await _record_pipeline_end(bg_db, workspace.id, operation_id, "failed")
                         raise
-                    await _record_pipeline_end(bg_db, workspace.id, operation_id, "completed")
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)
@@ -297,8 +387,8 @@ class WorkspaceService:
         async def run_pipeline() -> None:
             async with get_async_db_context() as bg_db:
                 try:
-                    await run_workspace_pipeline(
-                        db=bg_db,
+                    await _run_pipeline_recorded(
+                        bg_db,
                         operation_id=operation_id,
                         workspace_id=workspace_id,
                         user_id=user_id,
@@ -314,9 +404,7 @@ class WorkspaceService:
                         },
                         exc_info=True,
                     )
-                    await _record_pipeline_end(bg_db, workspace_id, operation_id, "failed")
                     raise
-                await _record_pipeline_end(bg_db, workspace_id, operation_id, "completed")
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)

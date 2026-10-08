@@ -1,15 +1,20 @@
 import asyncio
+import json
 import logging
+import unicodedata
 from uuid import UUID
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from src.flow.engines.content.generation.focus_keyword import (
     FOCUS_KEYWORD_STATE_KEY,
     pin_focus_keyword,
     resolve_focus_keyword,
 )
-from src.flow.engines.content.generation.outline_depth import hold_main_sections
+from src.flow.engines.content.generation.outline_depth import (
+    MIN_MAIN_SECTIONS,
+    hold_main_sections,
+)
 from src.flow.model.llm_manager import load_model
 from src.flow.model.provider_outage import (
     STEP_FAILED,
@@ -606,8 +611,8 @@ _STRUCTURE = {
         "sections",
         "H3 subsection",
         1,
-        "H3 subsections: wherever an H2 covers two or more distinct parts, each part as its own "
-        'section with heading_level "H3", directly after that H2',
+        "H3 subsections under at least half of its H2 sections: two or more under each of "
+        'those, every one a section of its own with heading_level "H3", directly after its H2',
     ),
 }
 
@@ -643,6 +648,47 @@ def _subsections(outline: dict) -> int:
     levels = _heading_levels(outline)
     first_h2 = levels.index("H2") if "H2" in levels else len(levels)
     return levels[first_h2:].count("H3")
+
+
+def _heading_key(section: dict) -> str:
+    """A heading as compared between two attempts: its words, in any script, whatever its case
+    and punctuation. Letters, digits and the marks that belong to them are kept (a vowel sign
+    makes another word); empty for a heading with none of them."""
+    text = unicodedata.normalize("NFKC", str(section.get("heading") or "")).casefold()
+    words: list[str] = []
+    word: list[str] = []
+    for character in text:
+        if unicodedata.category(character)[0] in "LNM":
+            word.append(character)
+        elif word:
+            words.append("".join(word))
+            word = []
+    if word:
+        words.append("".join(word))
+    return " ".join(words)
+
+
+def _keeps_main_sections(first: dict, retried: dict) -> bool:
+    """Every H2 of ``first`` is still a heading of ``retried``, at any level and in the same
+    order: a section folded under another is kept as its H3; one that is gone is a topic
+    dropped, and one that moved is not the outline that was asked to be kept. A heading with no
+    words is nothing to look for, and never stands for one that is kept."""
+    kept = iter(
+        key
+        for key in (
+            _heading_key(section)
+            for section in _outline_sections(retried)
+            if isinstance(section, dict)
+        )
+        if key
+    )
+    wanted = [
+        _heading_key(section)
+        for section in _outline_sections(first)
+        if isinstance(section, dict) and str(section.get("heading_level") or "").upper() == "H2"
+    ]
+    # Each one is looked for after the one before it: an ordered run through the retried list.
+    return all(key in kept for key in wanted if key)
 
 
 def _structure_count(content_type: str, outline: dict) -> int:
@@ -857,6 +903,24 @@ async def generate_outline(state: REXT) -> dict:
                     "every one filled."
                 )
             )
+            retry_messages = [*messages, retry_note]
+            if content_type == _PILLAR:
+                # Asked from nothing a second time, the model writes the same plain H2s again and
+                # leaves each section's parts in its key points (two staging runs of two after
+                # the first version of this retry, rext-control#603). Shown its own outline and
+                # asked to add to it, it has the sections and the parts in front of it.
+                retry_note = HumanMessage(
+                    content=(
+                        f"{retry_note.content} Your first attempt is above. Keep every H2 "
+                        "section it has, with its heading and in its order, and add the H3 "
+                        "subsections under them, taken from each section's key points."
+                    )
+                )
+                retry_messages = [
+                    *messages,
+                    AIMessage(content=json.dumps(outline_dict, ensure_ascii=False, default=str)),
+                    retry_note,
+                ]
             # The first outline stays unless the second is at least as full: a failed or thinner
             # second attempt never costs the run what it already had.
             try:
@@ -864,7 +928,7 @@ async def generate_outline(state: REXT) -> dict:
                     retried = (
                         await ainvoke_watched(
                             outline_model,
-                            [*messages, retry_note],
+                            retry_messages,
                             stage="outline_model",
                             schema=model_schema,
                             attempts=1,  # itself the second attempt: four calls otherwise
@@ -884,9 +948,18 @@ async def generate_outline(state: REXT) -> dict:
                 )
                 if content_type == _PILLAR:
                     # Asked for subsections only: it takes the first one's place when it brought
-                    # some and kept at least as many main sections. The schema sets no least
-                    # number of sections, so a second attempt can come back much shorter.
-                    fuller = gained > 0 and _main_sections(retried) >= _main_sections(outline_dict)
+                    # some and still has its main sections. A model that adds H3s often folds two
+                    # H2s into one, so it need not keep as many as the first, only the four an
+                    # article needs (or the first one's own count, where that was fewer). The
+                    # schema sets no least number, so a second attempt can come back much shorter:
+                    # every H2 of the first must still be one of its headings, so what it folded
+                    # is there as an H3 and no topic was dropped to make room.
+                    fuller = (
+                        gained > 0
+                        and _main_sections(retried)
+                        >= min(_main_sections(outline_dict), MIN_MAIN_SECTIONS)
+                        and _keeps_main_sections(outline_dict, retried)
+                    )
                 else:
                     fuller = gained >= 0
                 if fuller:

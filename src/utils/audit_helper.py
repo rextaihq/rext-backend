@@ -4,6 +4,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from fastapi import Request
+from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.audit_models.audit_logs import AuditLog
@@ -118,9 +119,14 @@ async def create_audit_log(
         return audit_log
 
     except Exception as e:
+        # For a failed statement, the database's own message and not SQLAlchemy's, which
+        # adds the statement's parameters: they hold the entry's metadata, and that can
+        # carry text a person typed.
+        database_error = e.orig if isinstance(e, StatementError) and e.orig is not None else e
+        cause = (str(database_error).splitlines() or [type(database_error).__name__])[0]
         logger.error(
             f"Failed to create audit log for action '{action}' on "
-            f"{resource_type}:{resource_id}: {type(e).__name__}: {str(e)}"
+            f"{resource_type}:{resource_id}: {type(e).__name__}: {cause}"
         )
         # DO NOT rollback here - let the decorator handle transaction rollback
         # Rolling back here would cause the entire request transaction to fail

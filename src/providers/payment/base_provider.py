@@ -47,6 +47,11 @@ class SubscriptionData:
     trial_end: Optional[datetime] = None
 
 
+class PaymentChangeUnconfirmed(Exception):
+    """The provider accepted a change, but reading the result back failed: the change
+    stands there, and what it left is unknown here until the provider's own update arrives."""
+
+
 class PaymentProvider(ABC):
     """Abstract payment provider interface that all providers must implement"""
 
@@ -139,13 +144,18 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    async def update_subscription(self, subscription_id: str, price_id: str) -> SubscriptionData:
+    async def update_subscription(
+        self, subscription_id: str, price_id: str, *, prorate: bool = True
+    ) -> SubscriptionData:
         """
         Update subscription to new plan/price.
 
         Args:
             subscription_id: Subscription ID from payment provider
             price_id: New price/plan ID from payment provider
+            prorate: Charge the prorated difference now (a customer's own change).
+                False: nothing is charged or credited now, and the new price applies
+                from the next renewal (an admin's change, by default).
 
         Returns:
             SubscriptionData: Updated subscription information

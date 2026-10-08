@@ -30,6 +30,7 @@ from src.flow.engines.content.generation.claim_integrity import (
 )
 from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.generation_brief import brief_for_stage
 from src.flow.engines.content.generation.keyword_density import (
     analyze_keyword_density,
     count_keyphrase_occurrences,
@@ -2814,6 +2815,7 @@ async def final_validate_content(state: REXT) -> dict:
             ),
             brand_policy=spec.get("brand_placement_policy"),
             excluded_brand=spec.get("excluded_brand"),
+            brief=brief_for_stage(spec, outline, stage="repair"),
         )
         if repaired is not None:
             repaired = apply_density_report(repaired, spec)

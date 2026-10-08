@@ -46,6 +46,11 @@ from src.utils.url_validator import public_client
 
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
 BrandVoiceGeneratorCallable = Callable[[str], Awaitable[Optional[BrandSchema]]]
+# Called with "completed" or "failed" once the run's outcome is settled in the database, before the
+# terminal event goes out, so a client that reads the workspace on that event sees the outcome.
+# It answers False when it couldn't put the outcome on record: the terminal event is then
+# withheld, since a client reading on it would find the run still "running".
+FinishedCallable = Callable[[str], Awaitable[Optional[bool]]]
 
 
 @dataclass
@@ -782,8 +787,10 @@ class WorkspacePipeline:
         url: str,
         scraper: Optional[ScrapeCallable] = None,
         brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
+        on_finished: Optional[FinishedCallable] = None,
     ) -> None:
         self.db = db
+        self._on_finished = on_finished
         self.operation_id = operation_id
         self.workspace_id = workspace_id
         self.url = url
@@ -840,6 +847,7 @@ class WorkspacePipeline:
                 payload["top_competitors"] = discovered_competitors
 
             await self.db.commit()
+            recorded = await self._settled("completed")
             if replaced_favicon:
                 # The row now names the new file, so the old one belongs to nobody.
                 await delete_favicon(replaced_favicon)
@@ -856,19 +864,21 @@ class WorkspacePipeline:
                     exc,
                 )
 
-            await emit_pipeline_complete(
-                operation_id=self.operation_id,
-                scope=self.scope,
-                message="Workspace creation pipeline completed successfully",
-                payload=payload,
-                user_id=self.user_id,
-            )
+            if recorded:
+                await emit_pipeline_complete(
+                    operation_id=self.operation_id,
+                    scope=self.scope,
+                    message="Workspace creation pipeline completed successfully",
+                    payload=payload,
+                    user_id=self.user_id,
+                )
             logger.info(
                 "Workspace pipeline completed", extra={"workspace_id": str(self.workspace_id)}
             )
 
         except Exception as exc:  # noqa: BLE001 - propagate for caller logging
             await self.db.rollback()
+            recorded = await self._settled("failed")
             logger.error(
                 "Workspace pipeline failed",
                 extra={
@@ -878,15 +888,24 @@ class WorkspacePipeline:
                 },
                 exc_info=True,
             )
-            await emit_step_failure(
-                operation_id=self.operation_id,
-                scope=self.scope,
-                step="pipeline",
-                message="Workspace creation pipeline encountered an error.",
-                error=None,
-                user_id=self.user_id,
-            )
+            if recorded:
+                await emit_step_failure(
+                    operation_id=self.operation_id,
+                    scope=self.scope,
+                    step="pipeline",
+                    message="Workspace creation pipeline encountered an error.",
+                    error=None,
+                    user_id=self.user_id,
+                )
             raise
+
+    async def _settled(self, status: str) -> bool:
+        """Tell the caller's hook how the run ended. False when the hook couldn't record it: the
+        terminal event then stays unsent, so no client reads a run its event called over as
+        still running. With no hook there is no record to wait for."""
+        if not self._on_finished:
+            return True
+        return (await self._on_finished(status)) is not False
 
     async def _store_favicon(self) -> Optional[str]:
         """Fetch the site's favicon once and keep it with the workspace.
@@ -2369,6 +2388,7 @@ async def run_workspace_pipeline(
     url: str,
     scraper: Optional[ScrapeCallable] = None,
     brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
+    on_finished: Optional[FinishedCallable] = None,
 ) -> None:
     pipeline = WorkspacePipeline(
         db=db,
@@ -2378,5 +2398,6 @@ async def run_workspace_pipeline(
         url=url,
         scraper=scraper,
         brand_voice_generator=brand_voice_generator,
+        on_finished=on_finished,
     )
     await pipeline.run()
