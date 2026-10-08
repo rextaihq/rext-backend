@@ -858,7 +858,7 @@ async def grammar_checker(text: str) -> GrammarCheckerResponse:
 
     try:
         raw_response: GrammarCheckerResponse = await ainvoke_watched(
-            structured_llm, prompt, stage="free_tool"
+            structured_llm, prompt, stage="free_tool", attempts=1
         )
     except Exception:
         # Fallback if LLM invocation fails
@@ -915,7 +915,7 @@ async def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorRes
     prompt = idea_prompt.format(
         ideas_count=data.ideas_count, topic=data.topic, content_type=data.content_type
     )
-    result = await ainvoke_watched(structured_llm, prompt, stage="free_tool")
+    result = await ainvoke_watched(structured_llm, prompt, stage="free_tool", attempts=1)
     # A structured answer can still wrap each idea in quotes.
     result.ideas = [idea for idea in (_unquote(i) for i in result.ideas) if idea]
     return result
@@ -998,7 +998,9 @@ async def generate_content_outline(data: OutlineGeneratorRequest) -> OutlineGene
         tone=data.tone or "Informative",
         sections_count=sections_count,
     )
-    res: OutlineGeneratorResponse = await ainvoke_watched(structured_llm, prompt, stage="free_tool")
+    res: OutlineGeneratorResponse = await ainvoke_watched(
+        structured_llm, prompt, stage="free_tool", attempts=1
+    )
     res.estimated_word_count = word_count
     res.sections_count = len(res.sections) if res.sections else sections_count
     return res
@@ -1011,7 +1013,9 @@ async def analyze_headline(data: HeadlineAnalyzerRequest) -> HeadlineAnalyzerRes
     structured_llm = llm.with_structured_output(HeadlineAnalyzerResponse)
 
     prompt = headline_analyzer_prompt.format(headline=data.headline)
-    res: HeadlineAnalyzerResponse = await ainvoke_watched(structured_llm, prompt, stage="free_tool")
+    res: HeadlineAnalyzerResponse = await ainvoke_watched(
+        structured_llm, prompt, stage="free_tool", attempts=1
+    )
 
     clean_hl = data.headline.strip()
     words = clean_hl.split()
@@ -1180,7 +1184,7 @@ async def rewrite_paragraph(data: ParagraphRewriterRequest) -> ParagraphRewriter
         tone=data.tone or "Natural and Professional",
     )
     res: ParagraphRewriterResponse = await ainvoke_watched(
-        structured_llm, prompt, stage="free_tool"
+        structured_llm, prompt, stage="free_tool", attempts=1
     )
     res.original_text = data.text
     res.goal = data.goal or "improve clarity"
