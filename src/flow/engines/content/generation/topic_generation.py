@@ -79,7 +79,16 @@ KEYWORD_TOO_LONG_MESSAGE = (
 _FILLER_EXAMPLES = '"Essential Tips Here", "Read This Now", "All You Need", "Learn More Today"'
 
 
-def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
+class _ProviderDown(Exception):
+    """The title model's provider could not serve the call. The step ends as any failed title
+    step does, with the same message; this says whose failure it was, for the counts."""
+
+
+def _topics_failed(
+    message: str = TOPICS_FAILED_MESSAGE, *, provider_down: bool = False
+) -> Dict[str, Any]:
+    from src.services.generation_events import PROVIDER, failure_mark
+
     # The keyphrase is cleared, not pinned: `content` deep-merges, and a pinned
     # phrase outranks the keyword chosen next (resolve_focus_keyword), so a
     # shorter keyword picked after this message would still fail on it. None
@@ -91,6 +100,7 @@ def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
             "error": message,
             "error_code": TOPICS_FAILED_CODE,
             FOCUS_KEYWORD_STATE_KEY: None,
+            **failure_mark(reason=PROVIDER if provider_down else None),
         }
     }
 
@@ -140,13 +150,22 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("topics_failed stream emit failed: %s", exc)
 
-    from src.services.generation_events import INTERNAL, REFUSED, TITLES, announce_failed
-
-    # A keyword too long for any title is the person's to change; no titles from the model
-    # is ours.
-    announce_failed(
-        state, stage=TITLES, reason=REFUSED if message == KEYWORD_TOO_LONG_MESSAGE else INTERNAL
+    from src.services.generation_events import (
+        INTERNAL,
+        REFUSED,
+        TITLES,
+        announce_failed,
+        marked_failure,
     )
+
+    # A keyword too long for any title is the person's to change; a provider that could not
+    # serve the title model is the provider's; no titles from the model is ours.
+    reason = (
+        REFUSED
+        if message == KEYWORD_TOO_LONG_MESSAGE
+        else marked_failure(state).get("reason") or INTERNAL
+    )
+    announce_failed(state, stage=TITLES, reason=reason)
     return {}
 
 
@@ -521,9 +540,13 @@ async def _generate_and_validate_topics(
 
         return results
 
-    except Exception:
+    except Exception as error:
         logger.exception("Topic generation failed for query=%r.", query)
+        from src.flow.model.provider_outage import provider_outage
 
+        outage = provider_outage(error)
+        if outage is not None and outage.kind != "step_failed":
+            raise _ProviderDown from error
         return None
 
 
@@ -842,13 +865,17 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
             )
         )
 
-    results = await _generate_and_validate_topics(
-        model=model,
-        messages=messages,
-        query=query,
-        keyphrase=keyphrase,
-        regenerating=regenerating,
-    )
+    provider_down = False
+    try:
+        results = await _generate_and_validate_topics(
+            model=model,
+            messages=messages,
+            query=query,
+            keyphrase=keyphrase,
+            regenerating=regenerating,
+        )
+    except _ProviderDown:
+        results, provider_down = None, True
 
     if results is None:
         if regenerating:
@@ -860,7 +887,7 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
 
         logger.error("Unable to generate a valid topic set for query=%r.", query)
 
-        return _topics_failed()
+        return _topics_failed(provider_down=provider_down)
 
     topics, recommended_topic, recommendation_reason = _extract_topics(results)
 

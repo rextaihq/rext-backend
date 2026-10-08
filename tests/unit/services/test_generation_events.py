@@ -378,6 +378,102 @@ async def test_a_run_without_titles_says_whose_it_is_to_fix(announced):
     ]
 
 
+async def test_a_title_step_its_provider_could_not_serve_says_so(announced, monkeypatch):
+    """Review round 3 of the events: the title step keeps going on any error, so the class of
+    the error never reached the event, and an outage at the titles was counted as ours. The
+    person reads the same message; the step leaves the reason for the node that ends the run."""
+    from src.flow.engines.content.generation import topic_generation
+
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    down = openai.RateLimitError(
+        "Error code: 429",
+        response=httpx.Response(429, request=request),
+        body={"type": "insufficient_quota", "code": "credit_balance_exhausted"},
+    )
+
+    async def model_call(*args, **kwargs):
+        raise model_call.error
+
+    monkeypatch.setattr(topic_generation, "ainvoke_watched", model_call)
+
+    model_call.error = down
+    with pytest.raises(topic_generation._ProviderDown):
+        await topic_generation._generate_and_validate_topics(None, [], "a keyword", "a keyword")
+    model_call.error = ValueError("the answer could not be read")
+    assert (
+        await topic_generation._generate_and_validate_topics(None, [], "a keyword", "a keyword")
+        is None
+    )
+
+    served = topic_generation._topics_failed()
+    not_served = topic_generation._topics_failed(provider_down=True)
+    assert served["content"]["error"] == not_served["content"]["error"]
+    await topic_generation.topics_failed(_state(**not_served["content"]))
+    # A later failure on the thread that is ours replaces the mark: nothing stale is read.
+    after = {**not_served["content"], **served["content"]}
+    await topic_generation.topics_failed(_state(**after))
+
+    assert [(p["stage"], p["reason"]) for _, p, _, _ in _plain(announced)] == [
+        ("titles", "provider"),
+        ("titles", "internal"),
+    ]
+
+
+async def test_a_library_starts_refused_charge_says_which_of_its_two_it_was(announced, monkeypatch):
+    """Review round 3 of the events: the search's charge can go through and the titles' be
+    refused (another run took the balance between them); neither mark of the typed path is
+    set then, and the refusal was counted at the analysis."""
+    from src.flow.engines import rext
+    from src.flow.engines.seo import library_item
+
+    async def no_log(**_):
+        return None
+
+    monkeypatch.setattr(
+        "src.services.monitoring_service.MonitoringService.persist_error_log", no_log
+    )
+    paid = {"search": True, "titles": False}
+
+    async def charge_search(user_id, workspace_id):
+        return paid["search"]
+
+    async def charge_titles(serp_payload):
+        return paid["titles"]
+
+    monkeypatch.setattr(
+        "src.flow.engines.seo.fetch_dataforseo_backlinks.charge_serp_seo", charge_search
+    )
+    monkeypatch.setattr(
+        "src.flow.engines.seo.keyword_recomendation.charge_title_generation", charge_titles
+    )
+    state = _state()
+    state["serp_payload"]["is_library"] = True
+
+    for search_paid in (True, False):
+        paid["search"] = search_paid
+        update = await library_item.charge_library_start(state)
+        await rext._insufficient_credits(
+            {**state, "content": {**state["content"], **update["content"]}}
+        )
+
+    assert [(p["stage"], p["reason"]) for _, p, _, _ in _plain(announced)] == [
+        ("titles", "refused"),
+        ("analysis", "refused"),
+    ]
+
+
+async def test_a_new_run_starts_without_an_earlier_runs_failure_mark():
+    from src.flow.engines.rext import _begin_run
+
+    marked = {
+        "content": {**events.failure_mark(stage="titles"), "error_code": "library_start_unpaid"}
+    }
+
+    assert (await _begin_run(marked))["content"]["failure"] is None
+    assert "failure" not in (await _begin_run({"content": {"outline": {}}}))["content"]
+    assert events.marked_failure({"content": {"failure": None}}) == {}
+
+
 async def test_an_outage_says_which_step_it_stopped(announced):
     from src.flow.engines.content.generation.provider_unavailable import stop_on_outage
 
