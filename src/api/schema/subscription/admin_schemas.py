@@ -6,6 +6,7 @@ This module defines Pydantic models for admin subscription operations.
 
 from datetime import datetime
 from typing import Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
@@ -127,3 +128,41 @@ class AdminCreditAdjustment(BaseModel):
         if self.expires_at is not None and self.action != "add":
             raise ValueError("Only added credits can expire")
         return self
+
+
+class AdminPlanChange(BaseModel):
+    """Body for a super admin changing a user's plan (src/services/admin_plan_changes.py).
+
+    The plan changes at once. ``billing`` says what happens to the money:
+    ``next_renewal`` charges nothing now and the new price applies from the next
+    renewal; ``charge_now`` has Lemon Squeezy invoice the prorated difference now
+    (an upgrade only); ``not_billed`` is for a user without a Lemon Squeezy
+    subscription. The reason's length is checked by the service, which sends its
+    limits with the options.
+    """
+
+    plan_id: UUID
+    billing_period: Literal["monthly", "yearly"]
+    billing: Literal["next_renewal", "charge_now", "not_billed"]
+    reason: str = Field(..., description="Why, shown to the customer in their activity")
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "plan_id": "0b9d2c1e-6d43-4f6f-9a0b-0d5b8e4c2a11",
+                "billing_period": "monthly",
+                "billing": "next_renewal",
+                "reason": "Moved to Growth as agreed on the call of 8 October",
+            }
+        },
+    )
+
+
+class AdminTrialExtension(BaseModel):
+    """Body for a super admin moving a trial's end to a later date."""
+
+    ends_at: datetime = Field(..., description="The trial's new end, later than its own")
+    reason: str = Field(..., description="Why, shown to the customer in their activity")
+
+    model_config = ConfigDict(str_strip_whitespace=True)
