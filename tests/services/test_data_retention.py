@@ -7,7 +7,9 @@ Tests for the data retention cleanup service.
 - anonymize_cancelled_subscriptions(), which cleanup_all() doesn't run yet
 """
 
+import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -179,13 +181,65 @@ async def test_deletes_run_in_batches_and_commit_each(db_session, monkeypatch):
     )
 
     assert deleted == 5
-    assert commits == 3  # 2, 2, then the last 1
+    assert commits == 4  # 2, 2, the last 1, then the batch that finds nothing
     remaining = (
         await db_session.execute(
             select(WebhookEvent.id).where(WebhookEvent.id.in_([e.id for e in [*events, kept]]))
         )
     ).scalars()
     assert list(remaining) == [kept.id]
+
+
+@pytest.mark.asyncio
+async def test_a_short_batch_is_not_the_end(db_session, monkeypatch):
+    """A batch deletes fewer rows than it picked when one of them was refreshed meanwhile
+    and kept, while more wait beyond its limit: the run goes on until a batch finds nothing."""
+    monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 2)
+    events = [_webhook_event(days_old=100) for _ in range(5)]
+    db_session.add_all(events)
+    await db_session.commit()
+
+    execute = db_session.execute
+    deletes = 0
+
+    async def first_batch_reports_one_row(statement, *args, **kwargs):
+        nonlocal deletes
+        result = await execute(statement, *args, **kwargs)
+        if getattr(statement, "is_delete", False):
+            deletes += 1
+            if deletes == 1:
+                return SimpleNamespace(rowcount=1)
+        return result
+
+    monkeypatch.setattr(db_session, "execute", first_batch_reports_one_row)
+    service = DataCleanupService(db=db_session, dry_run=False)
+    await service._delete_in_batches(
+        WebhookEvent, WebhookEvent.id.in_([event.id for event in events])
+    )
+    monkeypatch.undo()
+
+    remaining = await db_session.execute(
+        select(WebhookEvent.id).where(WebhookEvent.id.in_([event.id for event in events]))
+    )
+    assert list(remaining.scalars()) == []
+
+
+@pytest.mark.asyncio
+async def test_a_batch_size_of_zero_ends_at_once(db_session, monkeypatch):
+    """The setting can't be below 1, but a caller can put anything there: a batch that can
+    pick nothing deletes nothing, and that ends the run."""
+    monkeypatch.setattr("src.config.cleanup_config.cleanup_config.CLEANUP_BATCH_SIZE", 0)
+    event = _webhook_event(days_old=100)
+    db_session.add(event)
+    await db_session.commit()
+
+    service = DataCleanupService(db=db_session, dry_run=False)
+    deleted = await asyncio.wait_for(
+        service._delete_in_batches(WebhookEvent, WebhookEvent.id == event.id), timeout=10
+    )
+
+    assert deleted == 0
+    assert await _exists(db_session, event)
 
 
 @pytest.mark.asyncio
@@ -638,6 +692,31 @@ class TestCleanupAll:
                 assert not await there(model, row_id), table
         for model, row_id in old["webhook_events"]:
             assert await there(model, row_id)
+
+    async def test_events_of_logs_that_could_not_be_deleted_are_kept(
+        self, db_session, test_user, monkeypatch
+    ):
+        """An event goes when its log has gone. When the logs' step fails, its logs are still
+        there, and so are their events; an old event with no log is deleted as before."""
+        rows = await _old_and_recent_rows(db_session, test_user)
+        orphan, of_the_old_log = rows["deleted"]["email_events"]
+        orphan_id, linked_id = orphan.id, of_the_old_log.id
+        service = DataCleanupService(db=db_session, dry_run=False)
+
+        async def the_logs_step_fails() -> int:
+            await db_session.execute(text("SELECT 1 / 0"))
+            return 0
+
+        monkeypatch.setattr(service, "cleanup_email_logs", the_logs_step_fails)
+
+        with pytest.raises(DataCleanupIncomplete) as incomplete:
+            await service.cleanup_all()
+
+        assert incomplete.value.failed == ["email_logs"]
+        kept = await db_session.execute(
+            select(EmailEvent.id).where(EmailEvent.id.in_([orphan_id, linked_id]))
+        )
+        assert list(kept.scalars()) == [linked_id]
 
     async def test_cleanup_all_reaches_its_last_step_with_the_settings_as_they_are(
         self, db_session, test_user

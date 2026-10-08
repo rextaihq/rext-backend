@@ -89,6 +89,8 @@ Retention Periods (defaults):
     )
 
     args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("--batch-size must be at least 1")
 
     # Print configuration
     print("=" * 70)
