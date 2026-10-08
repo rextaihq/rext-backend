@@ -311,10 +311,44 @@ class TestUpdateSubscription:
             }
         }
 
-        with patch.object(provider.client, "request", side_effect=[patch_response, get_response]):
+        with patch.object(
+            provider.client, "request", side_effect=[patch_response, get_response]
+        ) as request:
             subscription = await provider.update_subscription("sub_123", "variant_789")
 
         assert subscription.plan_id == "variant_789"
+        # A customer's own change: the prorated difference is invoiced at once.
+        sent = str(request.call_args_list[0])
+        assert "'invoice_immediately': True" in sent and "disable_prorations" not in sent
+
+    @pytest.mark.asyncio
+    async def test_update_subscription_without_proration(self, provider):
+        """An admin's change by default: nothing charged now, the new price from the renewal."""
+        responses = []
+        for _ in range(2):
+            response = MagicMock()
+            response.status_code = 200
+            response.json.return_value = {
+                "data": {
+                    "id": "sub_123",
+                    "type": "subscriptions",
+                    "attributes": {
+                        "status": "active",
+                        "customer_id": "cust_123",
+                        "variant_id": "variant_789",
+                        "renews_at": "2024-12-01T00:00:00Z",
+                        "ends_at": None,
+                        "cancelled": False,
+                    },
+                }
+            }
+            responses.append(response)
+
+        with patch.object(provider.client, "request", side_effect=responses) as request:
+            await provider.update_subscription("sub_123", "variant_789", prorate=False)
+
+        sent = str(request.call_args_list[0])
+        assert "'disable_prorations': True" in sent and "invoice_immediately" not in sent
 
 
 class TestCreatePortalSession:
