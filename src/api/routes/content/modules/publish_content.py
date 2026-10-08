@@ -11,6 +11,7 @@ from src.api.middleware.exceptions import (
     RextExternalServiceException,
     RextValidationException,
 )
+from src.api.models.content_models.content_version import ContentVersionSource
 from src.api.models.content_models.publishing_result import (
     ContentPublishingResult,
     PublishingStatus,
@@ -469,8 +470,13 @@ async def update_content(
     # The title rule is the service's: a new title only for an article written by hand, and only
     # when the title changes (G55: generated articles may share one).
     service = ContentService(db)
+    # A save a person made: the text it leaves is kept as a version (the editor's history).
     content = await service.update_content(
-        content_id=content_id, workspace_id=workspace.id, user_id=UUID(user_id), data=data
+        content_id=content_id,
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        data=data,
+        version_as=ContentVersionSource.EDIT,
     )
 
     return success(

@@ -26,6 +26,7 @@ from src.api.middleware.exceptions import (
 )
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.content_models.content_version import ContentVersionSource
 from src.api.models.content_models.publishing_result import (
     ContentPublishingResult,
     PublishingStatus,
@@ -48,6 +49,7 @@ from src.services.content_activity import (
 )
 from src.services.content_checklist import build_checklist
 from src.services.content_embedding_service import ContentEmbeddingService
+from src.services.content_version_service import ContentVersionService, text_of
 from src.utils.datetime_utils import resolve_scheduled_datetime
 from src.utils.image_placeholder import strip_unresolved_placeholders
 from src.utils.logger import logger
@@ -354,9 +356,15 @@ class ContentService:
         data: ContentUpdate,
         *,
         _skip_activity_log: bool = False,
+        version_as: Optional[ContentVersionSource] = None,
     ) -> Content:
-        """Update existing content and its nested relations."""
+        """Update existing content and its nested relations.
+
+        `version_as` is given by a save a person made (the editor's, a restore): the text it
+        leaves is kept as a version of the article. The generation run's own saves give none.
+        """
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
+        text_before, saved_before = text_of(content), content.updated_at
 
         if data.title and data.title != content.title:
             # The same rule as create_content: only an article written by hand needs a new title.
@@ -439,6 +447,11 @@ class ContentService:
 
         await self.db.refresh(content)
 
+        if version_as is not None:
+            await ContentVersionService(self.db).record(
+                content, text_before, user_id, version_as, before_at=saved_before
+            )
+
         # A status change is its own kind of event, so it is filed as one
         # rather than as an ordinary edit that happens to differ.
         if not _skip_activity_log:
@@ -453,6 +466,51 @@ class ContentService:
                 workspace_id=workspace_id,
                 previous_status=previous_status if changed else None,
             )
+        return content
+
+    async def restore_version(
+        self, content_id: UUID, version_id: UUID, workspace_id: UUID, user_id: UUID
+    ) -> Content:
+        """Put a version's text back on the article (the editor's history, FB2.25).
+
+        The text as it stands is kept as a version first, so a restore can itself be undone;
+        the restored text then becomes the newest version. A version of another article or
+        workspace is not found. The title follows the rule of any rename: one written by hand
+        can't take a title another live article of the workspace has.
+        """
+        content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
+        versions = ContentVersionService(self.db)
+        version, _ = await versions.get(content_id, version_id, workspace_id)
+        await versions.keep_as_it_is(content, user_id)
+        before = text_of(content)
+
+        renamed = bool(version.title) and version.title != content.title
+        if renamed:
+            if not content.langgraph_thread_id and await self._title_taken(
+                workspace_id, version.title, exclude_id=content_id
+            ):
+                raise DuplicateResourceException(
+                    resource_type="Content",
+                    conflicting_field="title",
+                    conflicting_value=version.title,
+                )
+            content.title = version.title
+        # A version holds the whole text: a field it has empty is empty again.
+        content.introduction = version.introduction
+        content.body_markdown = version.body_markdown
+        content.body_html = version.body_html
+        content.images_data = version.images_data
+        content.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+        if renamed:
+            await self._flush_with_free_slug(content, content.title, workspace_id)
+        await ContentEmbeddingService(self.db).upsert_content_embedding(content.id, workspace_id)
+        await self.db.refresh(content)
+
+        await versions.record(content, before, user_id, ContentVersionSource.RESTORE)
+        await record_content_activity(
+            self.db, content, ACTION_UPDATED, user_id=user_id, workspace_id=workspace_id
+        )
         return content
 
     async def delete_content(
@@ -1154,6 +1212,13 @@ class ContentService:
         # Update embedding on publish as well to guarantee sync
         embed_service = ContentEmbeddingService(self.db)
         await embed_service.upsert_content_embedding(content.id, workspace_id)
+
+        # The text as it went out to a site is a version of its own (the editor's history).
+        # Not for a draft sent to the site or a publish only scheduled: nothing is out yet.
+        if content.status == "published" and any(r.success for r in results):
+            await ContentVersionService(self.db).record(
+                content, text_of(content), user_id, ContentVersionSource.PUBLISH
+            )
 
         if content.status != status_before_publish:
             await record_content_activity(
