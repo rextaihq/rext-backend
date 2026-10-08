@@ -14,14 +14,18 @@ Does NOT:
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, get_args
 
 from src.api.cache.redis_client import cache
 from src.api.middleware.exceptions import RextExternalServiceException
+from src.api.schema.incident_banner_schema import BannerArea
 from src.utils.logger import logger
 
 #: The one banner. A new one replaces it.
 BANNER_KEY = "incident_banner:current"
+
+#: The areas a banner may name; anything else read back from Redis is left out.
+KNOWN_AREAS = frozenset(get_args(BannerArea))
 
 NO_BANNER: Dict[str, Any] = {
     "active": False,
@@ -69,13 +73,18 @@ async def read_banner(now: Optional[datetime] = None) -> Dict[str, Any]:
     if expires_at <= (now or _now()):
         return dict(NO_BANNER)
 
+    # The routes answer with their own JSON, so the response model doesn't check this: only the
+    # areas the schema knows go out, each once, whatever a stale or hand-edited value holds.
     areas = stored.get("areas")
+    known = (
+        [area for area in dict.fromkeys(areas) if area in KNOWN_AREAS]
+        if isinstance(areas, list) and all(isinstance(area, str) for area in areas)
+        else []
+    )
     return {
         "active": True,
         "message": message,
-        "areas": [area for area in areas if isinstance(area, str)]
-        if isinstance(areas, list)
-        else [],
+        "areas": known,
         "started_at": _parse_time(stored.get("started_at")),
         "expires_at": expires_at,
     }

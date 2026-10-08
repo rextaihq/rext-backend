@@ -130,13 +130,27 @@ async def test_a_stored_value_that_is_not_a_banner_shows_nothing(redis: FakeRedi
 
 
 @pytest.mark.asyncio
-async def test_areas_that_are_not_text_are_left_out(redis: FakeRedis):
+@pytest.mark.parametrize(
+    ("stored_areas", "shown"),
+    [
+        (["generation", "the_weather", "billing"], ["generation", "billing"]),
+        (["billing", "billing", "generation"], ["billing", "generation"]),
+        (["generation", 7, None], []),
+        ("generation", []),
+        (None, []),
+    ],
+)
+async def test_only_the_areas_the_schema_knows_are_shown(
+    redis: FakeRedis, stored_areas: Any, shown: list[str]
+):
     redis.values[BANNER_KEY] = {
         "message": MESSAGE,
-        "areas": ["generation", 7, None],
+        "areas": stored_areas,
         "expires_at": "2026-10-09T06:00:00+00:00",
     }
-    assert (await read_banner(now=NOW))["areas"] == ["generation"]
+    read = await read_banner(now=NOW)
+    assert read["active"] is True
+    assert read["areas"] == shown
 
 
 @pytest.mark.asyncio
