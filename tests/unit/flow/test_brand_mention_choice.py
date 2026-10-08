@@ -258,6 +258,50 @@ def test_approved_internal_links_are_not_brand_links():
 
 
 @pytest.mark.parametrize(
+    "after",
+    ["\u2014then decide", "\u2013then decide", "-then decide", "; then", "), then", ".", " first."],
+)
+def test_an_approved_link_is_itself_whatever_stands_right_after_it(after):
+    """Replayed on a real draft (rext-control#760, item 21): the rewrite wrote a dash straight
+    after an approved link. The address was read to the next space, was no longer the approved
+    one, and the article failed for a link to the brand's site that it did not have."""
+    internal = "https://www.acme.test/blog/garden-planner/"
+    spec = build_requirements_spec(
+        _outline("none", internal_links=[{"url": internal, "title": "Garden planner"}]), "blog"
+    )
+    article = {**ARTICLE, "body_markdown": f"See [our planner]({internal}){after}"}
+    shop = {**ARTICLE, "body_markdown": f"See [the shop](https://acme.test/shop){after}"}
+
+    assert check_brand_absent(article, spec)["passed"] is True
+    # A link to the brand's site that was not approved is still found, with the same after it.
+    assert check_brand_absent(shop, spec)["passed"] is False
+
+
+@pytest.mark.parametrize(
+    ("found", "address"),
+    [
+        ("https://acme.test/planner/)\u2014then", "https://acme.test/planner/"),
+        ("https://acme.test/planner).", "https://acme.test/planner"),
+        ("https://acme.test/planner)),", "https://acme.test/planner"),
+        (
+            "https://en.wikipedia.test/wiki/Bed_(garden)",
+            "https://en.wikipedia.test/wiki/Bed_(garden)",
+        ),
+        (
+            "https://en.wikipedia.test/wiki/Bed_(garden)).",
+            "https://en.wikipedia.test/wiki/Bed_(garden)",
+        ),
+        ("https://acme.test/planner,", "https://acme.test/planner"),
+        ("https://acme.test/planner", "https://acme.test/planner"),
+    ],
+)
+def test_an_address_in_running_text_ends_where_its_link_does(found, address):
+    from src.flow.engines.content.generation.validation import _trim_address
+
+    assert _trim_address(found) == address
+
+
+@pytest.mark.parametrize(
     "outline_extra",
     [
         {"title": "Acme Tools login: a step-by-step guide"},
