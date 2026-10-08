@@ -85,10 +85,15 @@ class _ProviderDown(Exception):
 
 
 def _topics_failed(
-    message: str = TOPICS_FAILED_MESSAGE, *, provider_down: bool = False
+    state: REXT, message: str = TOPICS_FAILED_MESSAGE, *, reason: Optional[str] = None
 ) -> Dict[str, Any]:
-    from src.services.generation_events import PROVIDER, failure_mark
+    """End the title step without titles: the message for the person, and the failed event,
+    said here because only the step knows why (the run's end, topics_failed, says no more).
+    A keyword too long for any title is the person's to change; a provider that could not
+    serve the title model is the provider's; anything else is ours."""
+    from src.services.generation_events import INTERNAL, TITLES, announce_failed
 
+    announce_failed(state, stage=TITLES, reason=reason or INTERNAL)
     # The keyphrase is cleared, not pinned: `content` deep-merges, and a pinned
     # phrase outranks the keyword chosen next (resolve_focus_keyword), so a
     # shorter keyword picked after this message would still fail on it. None
@@ -100,7 +105,6 @@ def _topics_failed(
             "error": message,
             "error_code": TOPICS_FAILED_CODE,
             FOCUS_KEYWORD_STATE_KEY: None,
-            **failure_mark(reason=PROVIDER if provider_down else None),
         }
     }
 
@@ -150,22 +154,7 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("topics_failed stream emit failed: %s", exc)
 
-    from src.services.generation_events import (
-        INTERNAL,
-        REFUSED,
-        TITLES,
-        announce_failed,
-        marked_failure,
-    )
-
-    # A keyword too long for any title is the person's to change; a provider that could not
-    # serve the title model is the provider's; no titles from the model is ours.
-    reason = (
-        REFUSED
-        if message == KEYWORD_TOO_LONG_MESSAGE
-        else marked_failure(state).get("reason") or INTERNAL
-    )
-    announce_failed(state, stage=TITLES, reason=reason)
+    # The failed event was said by the step that ended without titles (_topics_failed).
     return {}
 
 
@@ -786,14 +775,14 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
             normalized_result["error"],
         )
 
-        return _topics_failed()
+        return _topics_failed(state)
 
     query = _topic_query(state)
 
     if not query:
         logger.warning("No query found")
 
-        return _topics_failed()
+        return _topics_failed(state)
 
     # -- Resolve the EXACT user-entered focus keyphrase -----------------
     #
@@ -810,7 +799,9 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
             len(keyphrase),
             TITLE_MAX_CHARS_CEILING,
         )
-        return _topics_failed(KEYWORD_TOO_LONG_MESSAGE)
+        from src.services.generation_events import REFUSED
+
+        return _topics_failed(state, KEYWORD_TOO_LONG_MESSAGE, reason=REFUSED)
 
     # -- Resolve intent and content type -------------------------------
     serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
@@ -887,7 +878,9 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
 
         logger.error("Unable to generate a valid topic set for query=%r.", query)
 
-        return _topics_failed(provider_down=provider_down)
+        from src.services.generation_events import PROVIDER
+
+        return _topics_failed(state, reason=PROVIDER if provider_down else None)
 
     topics, recommended_topic, recommendation_reason = _extract_topics(results)
 

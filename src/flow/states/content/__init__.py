@@ -396,6 +396,3 @@ class CONTENT(TypedDict, total=False):
 
     # Error handling
     error: Optional[str]
-    # The stage or the reason of a failure, left by the step that knows it for the analytics
-    # event (generation_events.failure_mark). Not read by the dashboard.
-    failure: Optional[dict]

@@ -51,8 +51,6 @@ INTERNAL = "internal"
 
 # Under the run's `content`: when the run began, set by the graph's first node.
 RUN_STARTED_AT = "run_started_at"
-# In a run's content: the stage or the reason of its failure, for the event (failure_mark).
-FAILURE = "failure"
 
 # The supported markets ISO_TO_COUNTRY has no code for (it lists the ones the search provider
 # is asked for by code): their ISO 3166-1 codes, so every market a run can have is counted.
@@ -104,19 +102,6 @@ def offered_content_type(content_type: Any) -> Optional[str]:
 
     key = normalize_content_type(str(content_type or "")) if content_type else ""
     return key if key in CONTENT_TYPE_TO_MODEL else None
-
-
-def failure_mark(*, stage: Optional[str] = None, reason: Optional[str] = None) -> dict:
-    """What a step that ends a run leaves in its content for the node that announces the
-    failure, when only the step knows the stage or the reason. Both are always written, so an
-    earlier mark on the thread is replaced whole; a run's first node clears it."""
-    return {FAILURE: {"stage": stage, "reason": reason}}
-
-
-def marked_failure(state: Any) -> dict:
-    """The mark the ending step left, as {"stage": …, "reason": …}; empty without one."""
-    mark = ((state or {}).get("content") or {}).get(FAILURE)
-    return dict(mark) if isinstance(mark, dict) else {}
 
 
 def run_start_mark() -> dict:

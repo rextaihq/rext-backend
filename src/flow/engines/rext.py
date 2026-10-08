@@ -142,14 +142,9 @@ async def _insufficient_credits(state: REXT) -> dict:
     except Exception:  # noqa: BLE001 - reporting never breaks the flow
         pass
 
+    from src.flow.engines.router.credits import OUT_OF_CREDITS
     from src.flow.engines.seo.library_item import research_reused
-    from src.services.generation_events import (
-        ANALYSIS,
-        REFUSED,
-        TITLES,
-        announce_failed,
-        marked_failure,
-    )
+    from src.services.generation_events import ANALYSIS, REFUSED, TITLES, announce_failed
 
     keyword_recs = (state.get("seo_result") or {}).get("keyword_recommendations") or {}
     # A Library start that reuses its analysis is charged for its titles only: a refusal there
@@ -157,9 +152,14 @@ async def _insufficient_credits(state: REXT) -> dict:
     at_titles = keyword_recs.get("titles_unpaid") or (
         bool((state.get("serp_payload") or {}).get("is_library")) and research_reused(state)
     )
-    # A Library start makes two charges in one step: it says which of them was refused.
-    stage = marked_failure(state).get("stage") or (TITLES if at_titles else ANALYSIS)
-    announce_failed(state, stage=stage, reason=REFUSED)
+    # A Library start makes two charges in one step, and that step has said which of them
+    # was refused (charge_library_start): said again here, it would be counted twice.
+    said = (
+        bool((state.get("serp_payload") or {}).get("is_library"))
+        and (state.get("content") or {}).get("error_code") == OUT_OF_CREDITS
+    )
+    if not said:
+        announce_failed(state, stage=TITLES if at_titles else ANALYSIS, reason=REFUSED)
     return {
         "content": {
             "error": "Insufficient credits to generate content. Please upgrade your plan.",
@@ -188,8 +188,6 @@ async def _begin_run(state: REXT) -> dict:
         or any(content.get(mark) for mark in _PAID_MARKS)
     ):
         update.update({"error": None, "error_code": None, **dict.fromkeys(_PAID_MARKS, False)})
-    if content.get("failure") is not None:
-        update["failure"] = None
     review = content.get("review") or {}
     if review.get("repair_attempts") or review.get("repair_history"):
         # The repair step counts its attempts in the thread's review and stops at the limit,

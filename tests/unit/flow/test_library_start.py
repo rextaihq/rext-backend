@@ -225,14 +225,7 @@ async def test_a_refused_charge_ends_the_start_before_the_content_steps(monkeypa
 
     update = await charge_library_start(state)
 
-    # Beside the code, which of the two charges it was, for the failed event's stage.
-    stage = "analysis" if refused == "serp_seo" else "titles"
-    assert update == {
-        "content": {
-            "error_code": "insufficient_credits",
-            "failure": {"stage": stage, "reason": None},
-        }
-    }
+    assert update == {"content": {"error_code": "insufficient_credits"}}
     assert library_charge_router(update) == "insufficient_credits"
     # Nothing is charged after the refused stage.
     assert charged == ["serp_seo"] if refused == "serp_seo" else ["serp_seo", "title_generation"]

@@ -369,9 +369,15 @@ def _plain(announced):
 async def test_a_run_without_titles_says_whose_it_is_to_fix(announced):
     from src.flow.engines.content.generation import topic_generation
 
-    await topic_generation.topics_failed(_state())
-    await topic_generation.topics_failed(_state(error=topic_generation.KEYWORD_TOO_LONG_MESSAGE))
+    ours = topic_generation._topics_failed(_state())
+    theirs = topic_generation._topics_failed(
+        _state(), topic_generation.KEYWORD_TOO_LONG_MESSAGE, reason=events.REFUSED
+    )
+    # The run's end shows the message and says nothing more: the step has said it.
+    await topic_generation.topics_failed(_state(**ours["content"]))
+    await topic_generation.topics_failed(_state(**theirs["content"]))
 
+    assert theirs["content"]["error"] == topic_generation.KEYWORD_TOO_LONG_MESSAGE
     assert [(p["stage"], p["reason"]) for _, p, _, _ in _plain(announced)] == [
         ("titles", "internal"),
         ("titles", "refused"),
@@ -405,14 +411,19 @@ async def test_a_title_step_its_provider_could_not_serve_says_so(announced, monk
         is None
     )
 
-    served = topic_generation._topics_failed()
-    not_served = topic_generation._topics_failed(provider_down=True)
-    assert served["content"]["error"] == not_served["content"]["error"]
-    await topic_generation.topics_failed(_state(**not_served["content"]))
-    # A later failure on the thread that is ours replaces the mark: nothing stale is read.
-    after = {**not_served["content"], **served["content"]}
-    await topic_generation.topics_failed(_state(**after))
+    # As the step ends each way: the same message for the person, the reason in the event.
+    class Unreached:
+        def with_structured_output(self, schema):
+            return self
 
+    monkeypatch.setattr(topic_generation, "topic_generation_model", Unreached)
+    model_call.error = down
+    not_served = await topic_generation.generate_topics(_state())
+    model_call.error = ValueError("the answer could not be read")
+    served = await topic_generation.generate_topics(_state())
+
+    assert served["content"]["error"] == not_served["content"]["error"]
+    assert served["content"]["error_code"] == topic_generation.TOPICS_FAILED_CODE
     assert [(p["stage"], p["reason"]) for _, p, _, _ in _plain(announced)] == [
         ("titles", "provider"),
         ("titles", "internal"),
@@ -452,6 +463,8 @@ async def test_a_library_starts_refused_charge_says_which_of_its_two_it_was(anno
     for search_paid in (True, False):
         paid["search"] = search_paid
         update = await library_item.charge_library_start(state)
+        assert update == {"content": {"error_code": "insufficient_credits"}}
+        # The run's end says nothing more: one refusal, one event.
         await rext._insufficient_credits(
             {**state, "content": {**state["content"], **update["content"]}}
         )
@@ -460,18 +473,6 @@ async def test_a_library_starts_refused_charge_says_which_of_its_two_it_was(anno
         ("titles", "refused"),
         ("analysis", "refused"),
     ]
-
-
-async def test_a_new_run_starts_without_an_earlier_runs_failure_mark():
-    from src.flow.engines.rext import _begin_run
-
-    marked = {
-        "content": {**events.failure_mark(stage="titles"), "error_code": "library_start_unpaid"}
-    }
-
-    assert (await _begin_run(marked))["content"]["failure"] is None
-    assert "failure" not in (await _begin_run({"content": {"outline": {}}}))["content"]
-    assert events.marked_failure({"content": {"failure": None}}) == {}
 
 
 async def test_an_outage_says_which_step_it_stopped(announced):

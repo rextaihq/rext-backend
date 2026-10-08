@@ -306,15 +306,12 @@ async def charge_library_start(state: REXT) -> Dict[str, Any]:
     charged = serp_paid and await charge_title_generation(serp_payload)
     if not charged:
         logger.info("Library start ended: a charge was refused for want of credits")
-        from src.services.generation_events import ANALYSIS, TITLES, failure_mark
+        from src.services.generation_events import ANALYSIS, REFUSED, TITLES, announce_failed
 
-        # For the counts: the search's charge is the analysis's, the other the titles'.
-        return {
-            "content": {
-                "error_code": LIBRARY_START_UNPAID,
-                **failure_mark(stage=TITLES if serp_paid else ANALYSIS),
-            }
-        }
+        # Counted here, where it is known which charge it was: the search's is the
+        # analysis's, the other the titles'. The run's end (insufficient_credits) says no more.
+        announce_failed(state, stage=TITLES if serp_paid else ANALYSIS, reason=REFUSED)
+        return {"content": {"error_code": LIBRARY_START_UNPAID}}
     return {}
 
 
