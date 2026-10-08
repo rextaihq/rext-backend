@@ -62,7 +62,8 @@ def plan_section_lengths(target_word_count: int, sections: int) -> SectionLength
     body_min = max(0, total_min - intro_words)
     body_max = max(0, total_max - intro_words)
     sections = max(1, sections)
-    average_low, average_high = body_min // sections, body_max // sections
+    # Rounded inward, so either end of the average keeps the body inside its range.
+    average_low, average_high = -(-body_min // sections), body_max // sections
     section_min = min(max(80, round(target_word_count * 0.10)), round(average_low * 0.75))
     subsection_min = min(max(40, round(target_word_count * 0.04)), section_min // 2)
     return SectionLengths(
