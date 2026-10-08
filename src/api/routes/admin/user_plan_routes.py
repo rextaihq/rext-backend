@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.lib.sentry_config import trigger_payment_alert
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.subscription_models.subscriptions import BillingPeriod
 from src.api.models.user_models.users import Users
@@ -114,7 +115,30 @@ async def change_user_plan(
         billing=body.billing,
         reason=body.reason,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # Lemon Squeezy has taken the change by now (for a subscription it bills); with
+        # the commit lost, neither the plan nor the audit entry is here. The plan follows
+        # Lemon Squeezy's update; who changed it and why is told to a person instead.
+        trigger_payment_alert(
+            alert_type="admin_plan_change_unrecorded",
+            message=(
+                "An admin's plan change went through at Lemon Squeezy and could not be "
+                "saved here: the plan follows Lemon Squeezy's update; record who changed "
+                "it and why"
+            ),
+            severity="high",
+            context={
+                "old_plan": result["old_plan"]["name"],
+                "new_plan": result["new_plan"]["name"],
+                "billing": result["billing"],
+                "admin": str(admin_user_id),
+            },
+            user_id=str(user_id),
+            operation="admin_plan_change",
+        )
+        raise
 
     return success(data=result, request=request, message="Plan changed.")
 

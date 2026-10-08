@@ -35,6 +35,7 @@ from src.providers.payment.base_provider import (
     CheckoutSession,
     CustomerData,
     PaymentChangeUnconfirmed,
+    PaymentChangeUnknown,
     PaymentProvider,
     SubscriptionData,
 )
@@ -746,9 +747,15 @@ class LemonSqueezyProvider(PaymentProvider):
             subscription_id=subscription_id,
             new_variant_id=price_id,
         ) as ctx:
-            await self._make_request(
-                method="PATCH", endpoint=f"/subscriptions/{subscription_id}", data=update_data
-            )
+            try:
+                await self._make_request(
+                    method="PATCH", endpoint=f"/subscriptions/{subscription_id}", data=update_data
+                )
+            except LemonSqueezyTransientError as exc:
+                # No answer, or a server error: the request may have been applied all the
+                # same (and, invoiced at once, charged). Not a refusal, and a caller must
+                # not take it for one.
+                raise PaymentChangeUnknown("The update got no answer") from exc
             ctx["updated"] = True
 
         logger.info(
