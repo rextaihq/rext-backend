@@ -10,7 +10,7 @@ from sqlalchemy import Column, Index, MetaData, Table
 from scripts.seeds.seed_permissions import PERMISSIONS, ROLE_PERMISSION_ASSIGNMENTS, ROLES
 from scripts.seeds.seed_subscription_plans import PLANS
 from src.api.database.langgraph_tables import LANGGRAPH_TABLES
-from src.api.database.migrations import include_object, render_item
+from src.api.database.migrations import RETIRED_TABLES, include_object, render_item
 from src.utils.encryption import EncryptedLongText, EncryptedText
 
 BASELINE = Path(__file__).parents[2] / "alembic" / "versions" / "3c9e1e5d5028_baseline.py"
@@ -81,6 +81,27 @@ def test_langgraph_tables_are_left_out_of_autogenerate():
     assert include_object(users, "users", "table", False, users) is True
     assert include_object(users.c.id, "id", "column", False, users.c.id) is True
     assert include_object(next(iter(users.indexes)), "ix_users_id", "index", False, None) is True
+
+
+def test_a_retired_table_is_left_alone_until_its_drop_migration():
+    """Its model is gone and its rows stay (rext-control#369): no autogenerate run may propose
+    to drop it, and no model may come back for it by accident."""
+    from src.api.database.base import Base
+
+    assert RETIRED_TABLES == {
+        "customer_notes",
+        "email_templates",
+        "license_activations",
+        "licenses",
+    }
+    assert not RETIRED_TABLES & set(Base.metadata.tables)
+    for name in RETIRED_TABLES:
+        table = Table(name, sa.MetaData(), Column("id", sa.Uuid), Index(f"ix_{name}_id", "id"))
+        assert include_object(table, name, "table", True, None) is False
+        assert include_object(table.c.id, "id", "column", True, None) is False
+        assert (
+            include_object(next(iter(table.indexes)), f"ix_{name}_id", "index", True, None) is False
+        )
 
 
 def test_encrypted_columns_are_written_as_the_type_they_store():
