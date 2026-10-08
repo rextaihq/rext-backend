@@ -15,6 +15,7 @@ from langgraph.types import Command
 import src.flow.engines.content.generation.content_type as content_type_module
 from src.flow.engines.content.generation.content_type import (
     ARTICLE_TYPES_FOR_ANY_INTENT,
+    intent_of_choice,
     offered_content_types,
     recommended_among,
 )
@@ -62,7 +63,10 @@ async def _gate(monkeypatch, intent, query="remote team onboarding", results=Non
     await app.ainvoke(
         {
             "serp_normalized": {"query": query, "normalize_results": results or []},
-            "seo_result": {"serp_backlinks": {"main_intent": intent}},
+            "seo_result": {
+                "intent_type": intent,
+                "serp_backlinks": {"main_intent": intent, "search_volume": 10},
+            },
         },
         CONFIG,
     )
@@ -84,9 +88,37 @@ async def test_a_keyword_of_any_intent_is_offered_the_article_types_after_its_ow
     # keeps its site pages first.
     assert recommended_among == own
     assert gate["recommended_content_type"] == own[0]
-    # And the article type the customer picks is the one the run goes on with.
+    # And the article type the customer picks is the one the run goes on with, as an article:
+    # the titles and the outline read the intent from the run, and "navigational" asked the
+    # titles to name a destination or a brand (review round 1).
     done = await app.ainvoke(Command(resume="blog"), CONFIG)
     assert done["content"]["content_type"] == "blog"
+    assert done["seo_result"]["serp_backlinks"] == {
+        "main_intent": "informational",
+        "search_volume": 10,
+    }
+    assert done["seo_result"]["intent_type"] == "informational"
+
+
+async def test_a_type_of_the_keywords_own_intent_leaves_the_intent_as_it_was(monkeypatch):
+    gate, _, app = await _gate(monkeypatch, "navigational", query="acme tools")
+
+    done = await app.ainvoke(Command(resume={"Selected Content Type": "brand-page"}), CONFIG)
+
+    assert done["content"]["content_type"] == "brand-page"
+    assert done["seo_result"]["serp_backlinks"]["main_intent"] == "navigational"
+    assert done["seo_result"]["intent_type"] == "navigational"
+
+
+def test_the_intent_follows_the_type_only_across_intents():
+    assert intent_of_choice("blog", "navigational") == "informational"
+    assert intent_of_choice("how-to-guide", "Transactional") == "informational"
+    assert intent_of_choice("comparison", "navigational") == "commercial"
+    assert intent_of_choice("help-center", "navigational") == "navigational"
+    assert intent_of_choice("blog", "informational") == "informational"
+    # Free text, or nothing: the intent stays.
+    assert intent_of_choice("article", "navigational") == "navigational"
+    assert intent_of_choice("", "commercial") == "commercial"
 
 
 async def test_an_informational_keyword_is_offered_what_it_was(monkeypatch):
