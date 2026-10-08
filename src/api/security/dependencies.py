@@ -152,9 +152,15 @@ async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
 
 
 async def get_current_user(
-    authorization: str = Header(...), db: AsyncSession = Depends(get_async_db)
+    authorization: str | None = Header(None), db: AsyncSession = Depends(get_async_db)
 ) -> Auth.types.MinimalUserDict:
-    """Check if the user's token is valid and not blacklisted."""
+    """Check if the user's token is valid and not blacklisted.
+
+    The header is optional in the declaration on purpose (rext-control#883): declared required,
+    a request without it was refused as a validation error, 422, before this function ran, and
+    its own "Authorization header missing" 401 below was never reached. A 401 is how a client
+    learns it is not signed in; a 422 reads as "something in the form is wrong".
+    """
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
         RextAuthenticationException,
