@@ -31,10 +31,12 @@ STAGE_CREDITS: dict[str, int] = {
 
 
 class InsufficientCreditsError(Exception):
-    def __init__(self, stage: str, required: int, available: int):
+    def __init__(self, stage: str, required: int, available: int, owner_id: Optional[UUID] = None):
         self.stage = stage
         self.required = required
         self.available = available
+        # Whose credits were short, when the charge got as far as knowing.
+        self.owner_id = owner_id
         super().__init__(
             f"Insufficient credits at '{stage}' stage: need {required}, have {available}."
         )
@@ -233,7 +235,7 @@ async def consume_stage_credits(
         except (ValueError, AttributeError):
             logger.warning("credit_manager: invalid workspace_id %s", workspace_id)
 
-    async def _deduct() -> int:
+    async def _deduct() -> tuple[UUID, int]:
         async with get_async_db_context() as db:
             from src.services.usage_tracking_service import UsageTrackingService
 
@@ -242,17 +244,17 @@ async def consume_stage_credits(
             success = await service.consume_credits(target_uid, cost)
             if not success:
                 balance = await service.get_credit_balance(target_uid)
-                raise InsufficientCreditsError(stage, cost, balance)
-            return await service.get_credit_balance(target_uid)
+                raise InsufficientCreditsError(stage, cost, balance, owner_id=target_uid)
+            return target_uid, await service.get_credit_balance(target_uid)
 
     try:
-        balance_after = await _run_on_main_loop(_deduct())
+        owner_id, balance_after = await _run_on_main_loop(_deduct())
     except InsufficientCreditsError as e:
         if e.stage != "workspace_access":
             await notify_credit_owner(
                 uid, wid, exceeded=True, balance=e.available, required=e.required
             )
-            _report_refused(uid, wid, stage)
+            _report_refused(uid, wid, stage, owner_id=e.owner_id)
         raise
 
     # Warn once, on the deduction that crosses the threshold.
@@ -268,13 +270,14 @@ async def consume_stage_credits(
         wid,
     )
     _emit_credit_event(balance_after, stage, cost)
-    _report_charged(uid, wid, stage, cost, balance_after)
+    _report_charged(owner_id, wid, stage, cost, balance_after)
 
 
 def _report_charged(
-    uid: UUID, wid: Optional[UUID], stage: str, cost: int, balance_after: int
+    owner_id: UUID, wid: Optional[UUID], stage: str, cost: int, balance_after: int
 ) -> None:
-    """Tell product analytics of a committed charge (task 712), without waiting for it."""
+    """Tell product analytics of a committed charge (task 712), without waiting for it.
+    ``owner_id`` is the account the charge was taken from."""
     from src.services import account_events
     from src.services.server_events import send_soon
 
@@ -282,7 +285,7 @@ def _report_charged(
         return
     send_soon(
         account_events.credits_charged(
-            uid,
+            owner_id,
             wid,
             action=stage,
             credits=cost,
@@ -293,8 +296,11 @@ def _report_charged(
     )
 
 
-def _report_refused(uid: UUID, wid: Optional[UUID], stage: str) -> None:
-    """Tell product analytics a run was refused for lack of credits, without waiting for it."""
+def _report_refused(
+    uid: UUID, wid: Optional[UUID], stage: str, owner_id: Optional[UUID] = None
+) -> None:
+    """Tell product analytics a run was refused for lack of credits, without waiting for
+    it. ``owner_id`` is the account whose credits were short, when a charge resolved it."""
     from src.services import account_events
     from src.services.server_events import send_soon
 
@@ -302,7 +308,11 @@ def _report_refused(uid: UUID, wid: Optional[UUID], stage: str) -> None:
         return
     send_soon(
         account_events.credits_refused(
-            uid, wid, action=stage, occurred_at=datetime.now(timezone.utc)
+            uid,
+            wid,
+            action=stage,
+            occurred_at=datetime.now(timezone.utc),
+            owner_id=owner_id,
         )
     )
 
