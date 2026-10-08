@@ -107,8 +107,19 @@ def _kebab(value: str | None) -> str:
 
 # The same terms named in the plural: the subsections as a whole ("remove the H3s", "no
 # subsections"). "The H3 under the introduction" names one of them and leaves the rest.
-_SUBSECTIONS_AS_A_WHOLE = re.compile(
+_SUBSECTIONS_IN_THE_PLURAL = re.compile(
     r"\bh3s\b|\bsub[- ]?(?:sections|headings|heads)\b|\bnested\s+headings\b", re.IGNORECASE
+)
+# A place right after the term narrows it to one part of the outline ("the H3s under the
+# introduction", "the subsections in the pricing section"), unless the place is the whole of it
+# ("the H3s in the article").
+_PLACE_AFTER = re.compile(
+    r"\s+(?:under|in|inside|within|from|of|for|beneath|below|on|at|after|around)\b"
+    r"(?P<place>[^.;,]*)",
+    re.IGNORECASE,
+)
+_THE_WHOLE_OUTLINE = re.compile(
+    r"\b(?:article|outline|post|piece|document|page|whole|entire|everywhere)\b", re.IGNORECASE
 )
 
 
@@ -116,10 +127,16 @@ def wants_no_subsections(feedback: str | None) -> bool:
     """Whether feedback that asks for fewer H3 subsections is about them as a whole.
 
     True for "remove the H3s" or "no subsections, please"; false for "remove the H3 under the
-    introduction", which leaves every other one, and for feedback that asks for none fewer."""
-    return subsection_request(feedback) == "fewer" and bool(
-        _SUBSECTIONS_AS_A_WHOLE.search(feedback or "")
-    )
+    introduction" and "remove the H3s under the introduction", which leave every other one, and
+    for feedback that asks for none fewer."""
+    if subsection_request(feedback) != "fewer":
+        return False
+    text = feedback or ""
+    for mention in _SUBSECTIONS_IN_THE_PLURAL.finditer(text):
+        place = _PLACE_AFTER.match(text, mention.end())
+        if place is None or _THE_WHOLE_OUTLINE.search(place.group("place")):
+            return True
+    return False
 
 
 def subsection_request(feedback: str | None) -> str | None:

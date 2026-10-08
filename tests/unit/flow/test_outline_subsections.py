@@ -391,6 +391,11 @@ def test_the_summed_word_target_is_the_plain_sum_without_schema_limits():
         # One of them, named in the singular: the rest stay.
         ("Remove the H3 under the introduction", False),
         ("Drop that subsection", False),
+        # Several of them, but in one place only (review round 2).
+        ("Remove the H3s under the introduction", False),
+        ("The subsections in the pricing section aren't needed", False),
+        # A place that is the whole outline narrows nothing.
+        ("Remove the H3s in the article", True),
         # Not a request for fewer at all.
         ("Add H3s under the tools section", False),
         ("Make the tone friendlier", False),
