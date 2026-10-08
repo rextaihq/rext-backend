@@ -6,7 +6,7 @@ Provides methods for cleaning up different table types with proper logging.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,23 @@ from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
 from src.config.cleanup_config import cleanup_config
+from src.services.plan_change_charges import PAID, REFUNDED
 from src.utils.logger import logger
+
+# The payment events the admin's refund rows are read from (plan_change_charges):
+# kept however old they are, until the invoices themselves are recorded
+# (rext-control#804). An admin's refund has no time limit.
+KEPT_WEBHOOK_EVENTS = (PAID, REFUNDED)
+
+
+class DataCleanupIncomplete(Exception):
+    """cleanup_all ran every step and some of them failed. ``failed`` names them;
+    ``results`` holds the count of each step that ran."""
+
+    def __init__(self, failed: List[str], results: Dict[str, int]):
+        self.failed = failed
+        self.results = results
+        super().__init__(f"Data cleanup steps failed: {', '.join(failed)}")
 
 
 class DataCleanupService:
@@ -248,6 +264,8 @@ class DataCleanupService:
         """
         Clean up old webhook events (processed events older than retention period).
 
+        The payment events in KEPT_WEBHOOK_EVENTS are never deleted.
+
         Args:
             retention_days: Number of days to retain (default from config)
 
@@ -265,7 +283,10 @@ class DataCleanupService:
 
         # Only processed events: an unprocessed one may still need attention
         deleted = await self._delete_in_batches(
-            WebhookEvent, WebhookEvent.created_at < cutoff_date, WebhookEvent.processed.is_(True)
+            WebhookEvent,
+            WebhookEvent.created_at < cutoff_date,
+            WebhookEvent.processed.is_(True),
+            WebhookEvent.event_name.notin_(KEPT_WEBHOOK_EVENTS),
         )
         self._log_result(deleted, "processed webhook events", retention_days=retention_days)
         return deleted
@@ -342,31 +363,56 @@ class DataCleanupService:
         """
         Run all cleanup tasks.
 
+        Every step runs, whatever happened to the one before it: a table whose
+        cleanup fails doesn't cost the others theirs.
+
         Returns:
             Dictionary with cleanup results for each table
+
+        Raises:
+            DataCleanupIncomplete: after the last step, when any step failed
         """
         logger.info(f"{'[DRY RUN] ' if self.dry_run else ''}Starting full data cleanup")
 
         email_logs_cutoff = datetime.now(timezone.utc) - timedelta(
             days=cleanup_config.EMAIL_LOG_RETENTION_DAYS
         )
-        results = {
-            "audit_logs": await self.cleanup_audit_logs(),
-            "email_logs": await self.cleanup_email_logs(),
-            "email_events": await self.cleanup_email_events(logs_older_than=email_logs_cutoff),
-            "error_logs": await self.cleanup_error_logs(),
-            "user_sessions": await self.cleanup_inactive_sessions(),
-            "webhook_events": await self.cleanup_webhook_events(),
-            "cleanup_expired_tokens": await self.cleanup_expired_tokens(),
-        }
+        steps: Tuple[Tuple[str, Callable[[], Awaitable[int]]], ...] = (
+            ("audit_logs", self.cleanup_audit_logs),
+            ("email_logs", self.cleanup_email_logs),
+            (
+                "email_events",
+                lambda: self.cleanup_email_events(logs_older_than=email_logs_cutoff),
+            ),
+            ("error_logs", self.cleanup_error_logs),
+            ("user_sessions", self.cleanup_inactive_sessions),
+            ("webhook_events", self.cleanup_webhook_events),
+            ("cleanup_expired_tokens", self.cleanup_expired_tokens),
+        )
+        results: Dict[str, int] = {}
+        failed: List[str] = []
+        for name, step in steps:
+            try:
+                results[name] = await step()
+            except Exception as error:  # noqa: BLE001 - the next step still runs
+                failed.append(name)
+                logger.error(
+                    f"Data cleanup step failed: {name}",
+                    exc_info=True,
+                    extra={"step": name, "error": type(error).__name__},
+                )
+                # A failed statement leaves the transaction unusable for the next step.
+                await self.db.rollback()
 
         total_deleted = sum(results.values())
 
         logger.info(
             f"{'[DRY RUN] ' if self.dry_run else ''}Data cleanup completed: {total_deleted} total records {'would be ' if self.dry_run else ''}deleted",
-            extra={"results": results, "total": total_deleted},
+            extra={"results": results, "total": total_deleted, "failed": failed},
         )
 
+        if failed:
+            raise DataCleanupIncomplete(failed, results)
         return results
 
     async def cleanup_expired_tokens(self) -> int:
