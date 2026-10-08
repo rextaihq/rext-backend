@@ -156,6 +156,24 @@ def test_assembling_a_second_time_adds_nothing():
     assert twice["body_markdown"].count("1. **Remove the plant.**") == 1
 
 
+def test_an_error_while_rendering_leaves_the_body_as_it_was(monkeypatch):
+    from src.flow.engines.content.generation import structured_body
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no heading today")
+
+    monkeypatch.setattr(structured_body, "_typed_heading", broken)
+    content = _how_to_content()
+    built = build_structured_content_model(
+        HOW_TO_OUTLINE, "how-to-guide", get_generated_content_model("how-to-guide")
+    )
+
+    payload = _assemble(HOW_TO_OUTLINE, "how-to-guide", content)
+
+    assert payload == assemble_structured_payload(copy.deepcopy(content), built[1])
+    assert payload["steps"] == content["steps"]
+
+
 def test_only_the_sections_are_rendered_never_the_call_to_action_or_the_images():
     outline = {**HOW_TO_OUTLINE, "cta": {"primary": "Shop pots"}, "images": [{"alt": "A pot"}]}
 
