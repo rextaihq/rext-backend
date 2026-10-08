@@ -34,7 +34,6 @@ from src.utils.logger import logger
 
 # Default limits for free tier when no subscription plan is found
 FREE_MAX_WORKSPACES = 1
-FREE_MAX_API_CALLS = 100
 
 
 def replenish_if_due(subscription: UserSubscription) -> bool:
@@ -76,7 +75,7 @@ class UsageTrackingService:
             Dictionary with usage metrics for each resource type:
             {
                 "workspaces": {"used": 3, "limit": 10, ...},
-                "api_calls": {"used": 450, "limit": 10000, ...},
+                "members": {"used": 4, "limit": 15, ...},
                 "meta": {"plan_name": "Pro", ...}
             }
         """
@@ -113,9 +112,6 @@ class UsageTrackingService:
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
 
-        # Get API calls this month
-        api_calls = subscription.current_api_calls or 0
-
         # Helper to build metric dict
         def build_metric(used, limit):
             unlimited = limit == -1 or limit is None
@@ -129,12 +125,6 @@ class UsageTrackingService:
         usage_data = {
             "workspaces": build_metric(workspace_count, plan.max_workspaces),
             "members": build_metric(member_count, plan.max_members_per_workspace),
-            "api_calls": {
-                **build_metric(api_calls, plan.max_api_calls_per_month),
-                "reset_date": subscription.usage_reset_date.isoformat()
-                if subscription.usage_reset_date
-                else None,
-            },
             "meta": {
                 "subscription_id": str(subscription.id),
                 "plan_name": plan.name,
@@ -154,7 +144,7 @@ class UsageTrackingService:
         Args:
             user_id: User UUID
             limit_type: Type of limit to check
-                        Valid values: "workspaces", "members", "api_calls"
+                        Valid values: "workspaces", "members"
 
         Returns:
             Tuple of (within_limit, used, limit)
@@ -431,56 +421,6 @@ class UsageTrackingService:
             "bonus_forfeited": bonus_forfeited,
         }
 
-    async def increment_api_calls(self, user_id: UUID) -> None:
-        """
-        Increment API call counter for user's subscription.
-
-        Args:
-            user_id: User UUID
-        """
-        subscription_query = (
-            select(UserSubscription)
-            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
-            .order_by(UserSubscription.start_date.desc())
-            .limit(1)
-        )
-        result = await self.db.execute(subscription_query)
-        subscription = result.scalar_one_or_none()
-
-        if subscription:
-            subscription.current_api_calls = (subscription.current_api_calls or 0) + 1
-            await self.db.flush()
-            logger.debug(
-                f"Incremented API calls for user {user_id}: {subscription.current_api_calls}"
-            )
-
-    async def reset_monthly_usage(self, user_id: UUID) -> None:
-        """
-        Reset monthly usage counters (called by scheduled job).
-
-        Args:
-            user_id: User UUID
-        """
-        subscription_query = (
-            select(UserSubscription)
-            .where(UserSubscription.user_id == user_id)
-            .order_by(UserSubscription.start_date.desc())
-            .limit(1)
-        )
-        result = await self.db.execute(subscription_query)
-        subscription = result.scalar_one_or_none()
-
-        if subscription:
-            subscription.current_api_calls = 0
-            base_date = (
-                subscription.usage_reset_date
-                or subscription.renews_at
-                or datetime.now(timezone.utc)
-            )
-            subscription.usage_reset_date = next_billing_anchor(base_date)
-            await self.db.flush()
-            logger.info(f"Reset monthly usage for user {user_id}")
-
     def _calc_percentage(self, used: int, limit: Optional[int]) -> float:
         """Calculate usage percentage"""
         if limit is None or limit <= 0:
@@ -521,7 +461,6 @@ class UsageTrackingService:
         usage_data = {
             "workspaces": build_metric(workspace_count, FREE_MAX_WORKSPACES),
             "members": build_metric(member_count, 3),  # Default free limit if not in plan
-            "api_calls": {**build_metric(0, FREE_MAX_API_CALLS), "reset_date": None},
             "meta": {"subscription_id": None, "plan_name": "Free", "billing_period": None},
         }
 

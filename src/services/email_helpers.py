@@ -285,54 +285,31 @@ async def send_workspace_email(
             create_workspace_invitation_email,
             create_workspace_restored_email,
         )
-        from src.utils.email_template_utils import render_template
 
-        # Check for workspace-specific custom DB template (admin-created, not default)
-        html = None
-        subject = None
-        try:
-            from sqlalchemy import String, cast, select
-
-            from src.api.models.workspace_models.email_template import EmailTemplate
-
-            result = await db.execute(
-                select(EmailTemplate).where(
-                    EmailTemplate.workspace_id == str(workspace_id),
-                    cast(EmailTemplate.template_type, String) == email_type,
-                    EmailTemplate.is_active.is_(True),
-                    EmailTemplate.is_default.is_(False),
-                )
+        if email_type == "invitation":
+            html = create_workspace_invitation_email(**context_with_token)
+            subject = f"You're invited to join {context.get('workspace_name', 'a workspace')}"
+        elif email_type == "invitation_accepted":
+            html = create_invitation_accepted_email(**context_with_token)
+            subject = f"{context.get('new_member_name', 'A member')} joined {context.get('workspace_name', 'your workspace')}"
+        elif email_type == "role_changed":
+            html = create_role_changed_email(**context_with_token)
+            subject = f"Your role in {context.get('workspace_name', 'workspace')} has been updated"
+        elif email_type == "member_removed":
+            html = create_member_removed_email(**context_with_token)
+            subject = f"You've been removed from {context.get('workspace_name', 'a workspace')}"
+        elif email_type == "workspace_deleted":
+            html = create_workspace_deleted_email(**context_with_token)
+            subject = (
+                f"Workspace '{context.get('workspace_name', 'your workspace')}' has been deleted"
             )
-            custom = result.scalar_one_or_none()
-            if custom:
-                subject = render_template(custom.subject, context_with_token)
-                html = render_template(custom.body, context_with_token)
-        except Exception as e:
-            logger.warning(f"Custom DB template lookup failed: {str(e)}")
-
-        if html is None:
-            if email_type == "invitation":
-                html = create_workspace_invitation_email(**context_with_token)
-                subject = f"You're invited to join {context.get('workspace_name', 'a workspace')}"
-            elif email_type == "invitation_accepted":
-                html = create_invitation_accepted_email(**context_with_token)
-                subject = f"{context.get('new_member_name', 'A member')} joined {context.get('workspace_name', 'your workspace')}"
-            elif email_type == "role_changed":
-                html = create_role_changed_email(**context_with_token)
-                subject = (
-                    f"Your role in {context.get('workspace_name', 'workspace')} has been updated"
-                )
-            elif email_type == "member_removed":
-                html = create_member_removed_email(**context_with_token)
-                subject = f"You've been removed from {context.get('workspace_name', 'a workspace')}"
-            elif email_type == "workspace_deleted":
-                html = create_workspace_deleted_email(**context_with_token)
-                subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' has been deleted"
-            elif email_type == "workspace_restored":
-                html = create_workspace_restored_email(**context_with_token)
-                subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' has been restored"
-            else:
-                raise ValueError(f"Unknown workspace email type: {email_type}")
+        elif email_type == "workspace_restored":
+            html = create_workspace_restored_email(**context_with_token)
+            subject = (
+                f"Workspace '{context.get('workspace_name', 'your workspace')}' has been restored"
+            )
+        else:
+            raise ValueError(f"Unknown workspace email type: {email_type}")
 
         # Send email
         email_service = EmailService(db)

@@ -142,6 +142,16 @@ async def _insufficient_credits(state: REXT) -> dict:
     except Exception:  # noqa: BLE001 - reporting never breaks the flow
         pass
 
+    from src.flow.engines.seo.library_item import research_reused
+    from src.services.generation_events import ANALYSIS, REFUSED, TITLES, announce_failed
+
+    keyword_recs = (state.get("seo_result") or {}).get("keyword_recommendations") or {}
+    # A Library start that reuses its analysis is charged for its titles only: a refusal there
+    # is the titles' as much as a typed keyword's refused title charge is.
+    at_titles = keyword_recs.get("titles_unpaid") or (
+        bool((state.get("serp_payload") or {}).get("is_library")) and research_reused(state)
+    )
+    announce_failed(state, stage=TITLES if at_titles else ANALYSIS, reason=REFUSED)
     return {
         "content": {
             "error": "Insufficient credits to generate content. Please upgrade your plan.",
@@ -156,16 +166,27 @@ _PAID_MARKS = ("credits_deducted", "image_credit_deducted")
 
 
 async def _begin_run(state: REXT) -> dict:
-    """A new run clears what an earlier run on this thread left in its content: its terminal
-    error, and its paid-charge marks, so this run's own charges are made."""
+    """A new run notes when it began (its analytics events count their seconds from it), and
+    clears what an earlier run on this thread left in its content: its terminal error, its
+    paid-charge marks, so this run's own charges are made, and its repairs, so this run's
+    article has its own attempts and its own count."""
+    from src.services.generation_events import run_start_mark
+
     content = state.get("content") or {}
+    update: dict = run_start_mark()
     if (
-        content.get("error") is None
-        and content.get("error_code") is None
-        and not any(content.get(mark) for mark in _PAID_MARKS)
+        content.get("error") is not None
+        or content.get("error_code") is not None
+        or any(content.get(mark) for mark in _PAID_MARKS)
     ):
-        return {}
-    return {"content": {"error": None, "error_code": None, **dict.fromkeys(_PAID_MARKS, False)}}
+        update.update({"error": None, "error_code": None, **dict.fromkeys(_PAID_MARKS, False)})
+    review = content.get("review") or {}
+    if review.get("repair_attempts") or review.get("repair_history"):
+        # The repair step counts its attempts in the thread's review and stops at the limit,
+        # and skips a check an earlier attempt left as it was: an earlier article's attempts
+        # say nothing about this one.
+        update["review"] = {"repair_attempts": 0, "repair_history": []}
+    return {"content": update}
 
 
 CREDIT_CHECK_FAILED = (
@@ -193,6 +214,9 @@ async def _credit_check_failed(state: REXT) -> dict:
         )
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("credit_check_failed stream emit failed: %s", type(exc).__name__)
+    from src.services.generation_events import ANALYSIS, INTERNAL, announce_failed
+
+    announce_failed(state, stage=ANALYSIS, reason=INTERNAL)
     return {"content": {"error": CREDIT_CHECK_FAILED, "error_code": "credit_check_failed"}}
 
 
@@ -247,6 +271,11 @@ async def _no_serp_data(state: REXT) -> dict:
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("no_serp_data stream emit failed: %s", exc)
 
+    from src.services.generation_events import ANALYSIS, PROVIDER, REFUSED, announce_failed
+
+    announce_failed(
+        state, stage=ANALYSIS, reason=PROVIDER if serp_status == "lookup_failed" else REFUSED
+    )
     # A keyword nobody searches for is the user's to fix; a failed lookup is
     # an outage or a configuration fault an operator should see.
     if serp_status == "lookup_failed":

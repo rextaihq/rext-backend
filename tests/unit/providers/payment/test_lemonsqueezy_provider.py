@@ -370,6 +370,107 @@ class TestUpdateSubscription:
         ):
             await provider.update_subscription("sub_123", "variant_789")
 
+    @pytest.mark.asyncio
+    async def test_an_update_that_got_no_answer_is_neither_done_nor_refused(self, provider):
+        """A timeout, a dropped connection or a server error on the PATCH: Lemon Squeezy may
+        have applied it. The error says the outcome isn't known, so a caller can't tell an
+        admin that nothing changed."""
+        from src.providers.payment.base_provider import PaymentChangeUnknown
+        from src.providers.payment.providers.lemonsqueezy import LemonSqueezyTransientError
+
+        async def no_answer(**_request):
+            raise LemonSqueezyTransientError("timed out")
+
+        with (
+            patch.object(provider, "_make_request", side_effect=no_answer),
+            pytest.raises(PaymentChangeUnknown) as unknown,
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
+        # Nothing of Lemon Squeezy's, and no id, in what a caller may show.
+        assert "sub_123" not in str(unknown.value)
+
+    @pytest.mark.asyncio
+    async def test_too_many_requests_is_an_answer_not_an_unknown_outcome(self, provider):
+        """A 429 after every attempt says Lemon Squeezy turned the request away: nothing
+        was applied, so nobody is sent to look for a change that wasn't made."""
+        from src.providers.payment.providers.lemonsqueezy import LemonSqueezyTransientError
+
+        async def turned_away(**_request):
+            raise LemonSqueezyTransientError("rate limited", status_code=429)
+
+        with (
+            patch.object(provider, "_make_request", side_effect=turned_away),
+            pytest.raises(LemonSqueezyTransientError) as refused,
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
+        assert refused.value.status_code == 429
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "attempts, refused_with",
+        [
+            (["timeout", 429, 429], None),
+            ([503, 429, 429], None),
+            ([429, "timeout", 429], None),
+            ([429, 429, "timeout"], None),
+            (["timeout", 422], None),
+            (["disconnected"], None),
+            ([429, 429, 429], 429),
+            ([422], 422),
+            ([429, 422], 422),
+        ],
+    )
+    async def test_an_update_is_refused_only_when_no_attempt_went_unanswered(
+        self, provider, monkeypatch, attempts, refused_with
+    ):
+        """The request is tried up to three times and a caller sees only the last error.
+        An attempt that timed out, met a server error or lost its connection part-way may
+        have been applied, so an answer on a later attempt (a 429, a 4xx) doesn't make the
+        update a refusal. It is one when every attempt was answered."""
+        from src.providers.payment.base_provider import PaymentChangeUnknown
+
+        # The real request with its retries, without the waits between them.
+        monkeypatch.setattr(LemonSqueezyProvider._make_request.retry, "sleep", AsyncMock())
+
+        def answer(status):
+            response = MagicMock()
+            response.status_code = status
+            response.headers = {}
+            response.json.return_value = {"errors": [{"detail": "not now"}]}
+            return response
+
+        no_answer = {
+            "timeout": httpx.TimeoutException("timed out"),
+            "disconnected": httpx.RemoteProtocolError("Server disconnected"),
+        }
+        outcomes = [no_answer.get(attempt) or answer(attempt) for attempt in attempts]
+        expected = LemonSqueezyError if refused_with else PaymentChangeUnknown
+
+        with (
+            patch.object(provider.client, "request", side_effect=outcomes) as request,
+            pytest.raises(expected) as raised,
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
+        assert request.call_count == len(attempts)
+        if refused_with:
+            assert raised.value.status_code == refused_with
+
+    @pytest.mark.asyncio
+    async def test_an_update_lemon_squeezy_refuses_is_still_a_refusal(self, provider):
+        from src.providers.payment.providers.lemonsqueezy import LemonSqueezyAPIError
+
+        async def refused(**_request):
+            raise LemonSqueezyAPIError(422, "variant not in the store")
+
+        with (
+            patch.object(provider, "_make_request", side_effect=refused),
+            pytest.raises(LemonSqueezyAPIError),
+        ):
+            await provider.update_subscription("sub_123", "variant_789")
+
 
 class TestCreatePortalSession:
     """Test create_portal_session method."""

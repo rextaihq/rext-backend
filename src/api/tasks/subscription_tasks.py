@@ -70,6 +70,11 @@ async def reset_monthly_usage():
             for subscription in subscriptions_to_reset:
                 try:
                     if subscription.usage_reset_date and subscription.usage_reset_date <= today_end:
+                        # The legacy counter still goes to zero with its anchor. Nothing here
+                        # reads it any more, but the release before this one does, and it only
+                        # clears a count whose date has passed: during a deploy, or after a
+                        # rollback, it would hold last month's count for a whole period. It
+                        # goes when the column does.
                         subscription.current_api_calls = 0
                         subscription.usage_reset_date = next_billing_anchor(
                             subscription.usage_reset_date, now

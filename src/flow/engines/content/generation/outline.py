@@ -14,6 +14,7 @@ from src.flow.engines.content.generation.focus_keyword import (
 from src.flow.engines.content.generation.outline_depth import (
     MIN_MAIN_SECTIONS,
     hold_main_sections,
+    hold_plan_inside_its_range,
 )
 from src.flow.model.llm_manager import load_model
 from src.flow.model.provider_outage import (
@@ -28,6 +29,7 @@ from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
     normalize_content_type,
+    plan_ceiling,
 )
 from src.flow.prompts.human.outline import (
     get_outline_prompt,
@@ -190,6 +192,15 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         # the user, or auto-extracted from the scraped site) is the only trustworthy
         # source. workspace_url (the site the workspace represents) is the only value
         # that may be used as a hyperlink target for the promo.
+        if not brand_data["brand_name"] and not workspace_url:
+            # A workspace made from its owner's description has no site behind its label, and
+            # its brand name is empty until the owner writes one. With neither, nothing here
+            # may stand in as the brand: the article promotes none.
+            logger.info(
+                "[BrandPromo] No brand name and no website for workspace %s: no brand to promote",
+                workspace_id,
+            )
+            return None
         brand_name = brand_data["brand_name"] or workspace_name or "Brand"
         if not brand_data["brand_name"]:
             logger.info(
@@ -962,6 +973,22 @@ async def generate_outline(state: REXT) -> dict:
                     )
                 else:
                     fuller = gained >= 0
+                # What the second attempt held and whether it was taken: the numbers a person
+                # needs to tell "the model wrote no H3s again" from "it wrote them and was
+                # refused". Counts and yes or no only, never a heading's words.
+                logger.info(
+                    "The second outline attempt was %s: content_type=%s first_h2=%s first_h3=%s "
+                    "second_h2=%s second_h3=%s second_sections=%s gained=%s main_headings_kept=%s",
+                    "kept" if fuller else "not kept",
+                    content_type,
+                    _main_sections(outline_dict),
+                    _subsections(outline_dict),
+                    _main_sections(retried),
+                    _subsections(retried),
+                    len(_outline_sections(retried)),
+                    gained,
+                    _keeps_main_sections(outline_dict, retried),
+                )
                 if fuller:
                     outline_dict = retried
 
@@ -994,9 +1021,40 @@ async def generate_outline(state: REXT) -> dict:
         # blog's `structure.sections`. Reading only the flat key meant blog
         # outlines never had their word budget recomputed and silently fell back
         # to the schema default regardless of how deep the plan actually was.
+        # A plan above the range the product shows for the type is brought inside it first,
+        # every budget by the same share (outline_depth.py): a first outline and one written
+        # again after feedback alike, since the range is the type's, not the plan's.
+        most = plan_ceiling(content_type)
+        trimmed = hold_plan_inside_its_range(outline_dict, most)
         sections = _outline_sections(outline_dict)
+        if trimmed:
+            logger.info(
+                "Outline plan brought inside its type's range: %s words off, content_type=%s",
+                trimmed,
+                content_type,
+            )
+            # The model's reading time was for the plan it wrote: it comes down with it.
+            minutes = outline_dict.get("target_reading_time_minutes")
+            kept = sum(
+                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
+            )
+            if isinstance(minutes, int) and not isinstance(minutes, bool) and minutes > 0:
+                # Never under the least the outline's own model accepts for it.
+                field = getattr(model_schema, "model_fields", {}).get("target_reading_time_minutes")
+                least = next(
+                    (
+                        rule.ge
+                        for rule in getattr(field, "metadata", None) or []
+                        if getattr(rule, "ge", None) is not None
+                    ),
+                    1,
+                )
+                outline_dict["target_reading_time_minutes"] = max(
+                    min(minutes, least), round(minutes * kept / (kept + trimmed))
+                )
         if sections:
-            outline_dict["target_word_count"] = _summed_word_target(model_schema, sections)
+            target = _summed_word_target(model_schema, sections)
+            outline_dict["target_word_count"] = min(target, most) if most else target
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly

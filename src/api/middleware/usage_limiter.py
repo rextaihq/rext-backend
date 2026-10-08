@@ -6,7 +6,7 @@ resource usage against their subscription plan limits before allowing
 resource-intensive operations.
 
 Usage:
-    from src.api.middleware.usage_limiter import check_workspace_limit, check_api_limit
+    from src.api.middleware.usage_limiter import check_workspace_limit
 
     @router.post("/workspaces")
     def create_workspace(
@@ -18,7 +18,6 @@ Usage:
 """
 
 import warnings
-from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -38,9 +37,7 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.security.dependencies import get_current_user
 from src.services.credit_grants import grant_balance
-from src.services.usage_tracking_service import UsageTrackingService
 from src.utils import rbac_utils
-from src.utils.datetime_utils import next_billing_anchor
 from src.utils.logger import logger
 
 
@@ -233,71 +230,6 @@ class MemberLimitChecker:
             )
 
 
-class APICallLimiter:
-    """
-    Dependency for tracking and limiting API calls per month.
-
-    Increments API call counter and checks against plan's max_api_calls_per_month limit.
-    """
-
-    def __init__(self, increment: bool = True):
-        """
-        Initialize API call limiter.
-
-        Args:
-            increment: Whether to increment the counter (False for read-only checks)
-        """
-        self.increment = increment
-
-    async def __call__(
-        self,
-        request: Request,
-        current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db),
-    ):
-        """Track and check API call limit."""
-        user_id = current_user.get("identity")
-        settings = get_settings()
-        if settings.ENVIRONMENT.lower() == "local" and settings.LOCAL_UNLIMITED_WORKSPACES:
-            logger.warning("Local unlimited workspace override enabled")
-            return
-
-        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
-
-        if not subscription or not plan:
-            # Free-tier API-call tracking is currently disabled by design.
-            logger.info(
-                "Skipping API-call counter update for user without active subscription",
-                extra={
-                    "user_id": user_id,
-                    "component": "APICallLimiter",
-                    "tracking_state": "disabled",
-                },
-            )
-            return
-
-        # Check if usage period needs reset
-        if subscription.usage_reset_date and subscription.usage_reset_date < datetime.now(
-            timezone.utc
-        ):
-            subscription.current_api_calls = 0
-            subscription.usage_reset_date = next_billing_anchor(subscription.usage_reset_date)
-            await db.commit()
-
-        # Check limit (before incrementing)
-        if plan.max_api_calls_per_month != -1:  # -1 = unlimited
-            if subscription.current_api_calls >= plan.max_api_calls_per_month:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"API call limit reached ({subscription.current_api_calls}/{plan.max_api_calls_per_month}). Upgrade your plan or wait until {subscription.usage_reset_date.strftime('%Y-%m-%d')}.",
-                )
-
-        # Increment counter
-        if self.increment:
-            subscription.current_api_calls += 1
-            await db.commit()
-
-
 class CreditLimiter:
     """
     Dependency for pre-flight credit checks at route level.
@@ -354,31 +286,6 @@ def check_credit_limit(required: int = 15):
 # ============================================================================
 
 
-async def increment_api_calls(db: AsyncSession, user_id: str) -> None:
-    """Increment API calls for a user via canonical usage-tracking service."""
-    tracker = UsageTrackingService(db)
-    await tracker.increment_api_calls(UUID(str(user_id)))
-    await db.flush()
-
-
-async def reset_monthly_usage(db: AsyncSession) -> int:
-    """Reset monthly usage counters for all active/trial subscriptions."""
-    result = await db.execute(
-        select(UserSubscription.user_id)
-        .where(UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]))
-        .distinct()
-    )
-    user_ids = [row[0] for row in result.all() if row[0] is not None]
-
-    tracker = UsageTrackingService(db)
-    for uid in user_ids:
-        await tracker.reset_monthly_usage(uid)
-
-    await db.flush()
-    logger.info("Monthly usage reset completed for %d active subscriptions", len(user_ids))
-    return len(user_ids)
-
-
 # ============================================================================
 # DEPENDENCY FACTORIES (for easier usage in routes)
 # ============================================================================
@@ -392,8 +299,3 @@ def check_workspace_limit():
 def check_member_limit(workspace_id_param: str = "workspace_id"):
     """Factory function to create member limit checker dependency."""
     return MemberLimitChecker(workspace_id_param)
-
-
-def check_api_limit(increment: bool = True):
-    """Factory function to create API call limiter dependency."""
-    return APICallLimiter(increment)

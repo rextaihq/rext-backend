@@ -11,24 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from .enums import BillingPeriod, SubscriptionStatus
 
 
-class SubscriptionCreateRequest(BaseModel):
-    """Schema for user subscribing to a plan."""
-
-    plan_id: str = Field(..., description="UUID of the subscription plan")
-    billing_period: BillingPeriod = Field(
-        default=BillingPeriod.MONTHLY, description="Billing period (monthly or yearly)"
-    )
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "plan_id": "123e4567-e89b-12d3-a456-426614174000",
-                "billing_period": "monthly",
-            }
-        }
-    )
-
-
 class SubscriptionUpgradeRequest(BaseModel):
     """Schema for upgrading/downgrading subscription plan."""
 
@@ -79,7 +61,6 @@ class UserSubscriptionResponse(BaseModel):
     trial_end_date: Optional[str] = Field(None, description="Trial end date")
     cancelled_at: Optional[str] = Field(None, description="Cancellation date")
     cancellation_reason: Optional[str] = Field(None, description="Reason for cancellation")
-    current_api_calls: int = Field(..., description="Current API calls this period")
     created_at: str = Field(..., description="Creation timestamp")
 
     # LemonSqueezy integration fields
@@ -107,7 +88,6 @@ class UserSubscriptionResponse(BaseModel):
                 "end_date": None,
                 "trial_end_date": "2025-10-15T00:00:00Z",
                 "cancelled_at": None,
-                "current_api_calls": 2500,
                 "created_at": "2025-10-01T00:00:00Z",
                 "lemonsqueezy_subscription_id": "12345",
                 "lemonsqueezy_customer_id": "67890",

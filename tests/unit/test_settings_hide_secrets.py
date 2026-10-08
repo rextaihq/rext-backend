@@ -23,7 +23,6 @@ SECRETS = {
     "SECRET_KEY": "made-up-signing-secret-for-the-test-0001",
     "REFRESH_SECRET_KEY": "made-up-refresh-secret-for-the-test-0002",
     "OPENAI_API_KEY": "sk-made-up-openai-key-0003",
-    "PERPLEXITY_API_KEY": "pplx-made-up-key-0004",
     "LANGSMITH_API_KEY": "lsv2-made-up-key-0005",
     "MINIO_SECRET_KEY": "made-up-minio-secret-0006",
 }

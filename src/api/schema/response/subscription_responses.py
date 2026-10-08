@@ -11,20 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.api.schema.response.plan_responses import StageCost
 
 
-class LicenseItem(BaseModel):
-    """Schema for a license item."""
-
-    id: UUID
-    license_key: str
-    product_name: str
-    status: str
-    activation_limit: Optional[int] = None
-    activation_count: int
-    activated_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
-    created_at: datetime
-
-
 class CreditBonus(BaseModel):
     """An offer's live credit grants, spent first (`bonus_summary`, src/services/credit_grants.py)."""
 
@@ -90,7 +76,6 @@ class SubscriptionDetails(BaseModel):
     lemonsqueezy_customer_id: Optional[str] = None
     renews_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
-    current_api_calls: int
     usage_reset_date: Optional[datetime] = None
     plan_name: Optional[str] = None
     plan_display_name: Optional[str] = None
@@ -102,8 +87,6 @@ class SubscriptionDetails(BaseModel):
 
     # Nested arrays for frontend discovery
     plans: List[Any] = Field(default_factory=list, description="Available plans list")
-    licenses: List[LicenseItem] = Field(default_factory=list, description="User licenses")
-    activations_count: int = Field(0, description="Total active license activations")
 
 
 class SubscriptionHistoryResponse(BaseModel):

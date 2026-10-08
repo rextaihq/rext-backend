@@ -26,6 +26,8 @@ from src.api.schema.response.workspace_responses import (
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.workspace_schema import (
+    DESCRIPTION_MAX_LENGTH,
+    DESCRIPTION_MIN_LENGTH,
     WorkspaceResponseSchema,
     WorkspaceSchema,
     WorkspaceTransferOwnershipSchema,
@@ -90,17 +92,31 @@ async def create_workspace(
             field_errors={"name": ["Name must be provided"]},
         )
 
-    if not data.url:
+    # A website, or for a business that has none yet, its owner's description of it: the brand
+    # voice is drafted from one or the other (rext-control#853).
+    url = str(data.url) if data.url else None
+    description = None if url else data.description
+    if not url and not description:
         raise RextValidationException(
             message="Workspace URL is required",
             field_errors={"url": ["URL must be provided and valid"]},
         )
+    if description and len(description) < DESCRIPTION_MIN_LENGTH:
+        short = (
+            "Your description is too short. Say in a sentence or two what the business sells, "
+            "and to whom."
+        )
+        raise RextValidationException(message=short, field_errors={"description": [short]})
+    if description and len(description) > DESCRIPTION_MAX_LENGTH:
+        long = f"Your description is too long. Keep it to {DESCRIPTION_MAX_LENGTH:,} characters."
+        raise RextValidationException(message=long, field_errors={"description": [long]})
 
-    # Reject dead or made-up domains before any workspace row or pipeline exists.
-    try:
-        await check_website_reachable(str(data.url))
-    except WebsiteUnreachableError as exc:
-        raise RextValidationException(message=str(exc), field_errors={"url": [str(exc)]})
+    if url:
+        # Reject dead or made-up domains before any workspace row or pipeline exists.
+        try:
+            await check_website_reachable(url)
+        except WebsiteUnreachableError as exc:
+            raise RextValidationException(message=str(exc), field_errors={"url": [str(exc)]})
 
     user_id = UUID(str(current_user.get("identity")))
     service = WorkspaceService(db)
@@ -108,7 +124,8 @@ async def create_workspace(
         user_id=user_id,
         name=data.name,
         timezone=data.timezone,
-        url=str(data.url),
+        url=url,
+        description=description,
     )
 
     from src.utils.audit_helper import create_audit_log_async
@@ -121,7 +138,7 @@ async def create_workspace(
         resource_type="workspace",
         resource_id=str(workspace_id),
         workspace_id=UUID(str(workspace_id)),
-        new_values={"name": data.name, "url": str(data.url)},
+        new_values={"name": data.name, "url": url},
         request=request,
     )
 

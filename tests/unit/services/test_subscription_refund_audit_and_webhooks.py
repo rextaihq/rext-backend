@@ -668,9 +668,7 @@ class TestEndToEndWebhookAndAuditLogging:
         async def mock_execute(stmt, *args, **kwargs):
             stmt_str = str(stmt).lower()
             res = MagicMock()
-            if "licenses" in stmt_str:
-                res.scalar_one_or_none.return_value = None
-            elif "user_subscriptions" in stmt_str:
+            if "user_subscriptions" in stmt_str:
                 res.scalar_one_or_none.return_value = sub
             elif "orders" in stmt_str:
                 res.scalar_one_or_none.return_value = None

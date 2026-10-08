@@ -393,3 +393,30 @@ def test_a_fresh_analysis_leads_from_the_item_straight_to_the_charges():
 
     assert ("load_library_item", "charge_library_start") in edges
     assert ("load_library_item", "serp_engine") in edges
+
+
+# -- The analytics events of a Library start (revnix/rext-control#712) ------------------------
+
+
+async def test_a_library_start_is_counted_with_its_items_country_and_a_refused_one_as_failed(
+    billing, monkeypatch
+):
+    import src.services.generation_events as events
+
+    seen = []
+    monkeypatch.setattr(
+        events, "_announce", lambda name, properties, state, **how: seen.append((name, properties))
+    )
+    store = Store({(("library", U1, W1), KEY): ITEM})
+
+    await load_library_item(
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
+    )
+    # The item's own market (United Kingdom), not the start's ("us").
+    assert seen == [("content_generation_started", {"from_library": True, "country": "GB"})]
+
+    await load_library_item(_state(), _config(U1), runtime=SimpleNamespace(store=store))
+    name, properties = seen[1]
+    assert name == "content_generation_failed"
+    assert (properties["stage"], properties["reason"]) == ("analysis", "refused")
+    assert len(seen) == 2
