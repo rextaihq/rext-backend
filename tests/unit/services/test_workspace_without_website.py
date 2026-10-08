@@ -29,6 +29,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.brand_voice_schema import BrandSchema
 from src.api.schema.workspace_schema import (
     DESCRIPTION_MAX_LENGTH,
+    WorkspacePipelineRetryRequest,
     WorkspacePipelineState,
     WorkspaceSchema,
 )
@@ -376,9 +377,16 @@ async def test_a_description_sent_later_is_kept_and_drafted_from(session, monkey
 
 
 @pytest.mark.asyncio
-async def test_a_description_replaces_the_about_of_a_run_that_failed(session, monkeypatch):
+async def test_other_words_start_the_voice_over(session, monkeypatch):
     user, workspace = await _workspace_without_a_site(session, status="failed", about="Old words.")
+    voice = (
+        await session.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace.id))
+    ).scalar_one()
+    voice.brand_name, voice.selling_position, voice.target_audience = "Old Name", "Old.", ["Old"]
+    await session.flush()
     given, started = _runs_given(monkeypatch, session)
+    forgotten = AsyncMock()
+    monkeypatch.setattr(workspace_service, "invalidate_cache_key", forgotten)
 
     await _service(session, monkeypatch).retry_pipeline_for_user(
         workspace.id, user.id, description=DESCRIPTION
@@ -386,6 +394,49 @@ async def test_a_description_replaces_the_about_of_a_run_that_failed(session, mo
     await started[0]
 
     assert given["description"] == DESCRIPTION
+    # What was drafted from the old words goes with them: the new draft keeps what it leaves
+    # empty, and would otherwise mix the two. The detail's cached copy is dropped too.
+    await session.refresh(voice)
+    assert (voice.about, voice.brand_name, voice.selling_position) == (DESCRIPTION, None, None)
+    assert voice.target_audience == []
+    forgotten.assert_awaited_once_with(f"workspace:brand_voice:{workspace.id}")
+
+
+@pytest.mark.asyncio
+async def test_the_same_words_again_keep_what_was_drafted(session, monkeypatch):
+    user, workspace = await _workspace_without_a_site(session, status="failed")
+    voice = (
+        await session.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace.id))
+    ).scalar_one()
+    voice.brand_name = "Crumb and Crust"
+    await session.flush()
+    _, started = _runs_given(monkeypatch, session)
+    monkeypatch.setattr(workspace_service, "invalidate_cache_key", AsyncMock())
+
+    await _service(session, monkeypatch).retry_pipeline_for_user(
+        workspace.id, user.id, description=f"  {DESCRIPTION} ".strip()
+    )
+    await started[0]
+
+    await session.refresh(voice)
+    assert voice.brand_name == "Crumb and Crust"
+
+
+@pytest.mark.asyncio
+async def test_a_description_sent_blank_is_refused_not_taken_for_none(
+    session, started_runs, monkeypatch
+):
+    # The run failed and an About is kept: a blank description must not draft from it silently.
+    user, workspace = await _workspace_without_a_site(session, status="failed")
+    asked = WorkspacePipelineRetryRequest(description="   ")
+    assert asked.description == ""
+    assert WorkspacePipelineRetryRequest().description is None
+
+    with pytest.raises(RextValidationException, match="too short"):
+        await _service(session, monkeypatch).retry_pipeline_for_user(
+            workspace.id, user.id, description=asked.description
+        )
+    assert started_runs == []
 
 
 @pytest.mark.asyncio
