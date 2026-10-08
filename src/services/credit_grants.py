@@ -610,9 +610,19 @@ def _carry_admin_adjustment(
     meta = {**(subscription.subscription_metadata or {})}
     recorded = meta.get(ADMIN_CREDIT_ADJUSTMENT) or {}
     old_keys = {f"{end}|{old_plan_id}" if end else None for end in period_ends}
-    found = bool(recorded.get("delta")) and recorded.get("period") in old_keys
+    # Under the old plan's key, or already under the new one: Lemon Squeezy's update and the
+    # dashboard's change both work a plan change out, and the second finds the record where
+    # the first left it. With the swallowed part handed back it comes to the same figures.
+    found = bool(recorded.get("delta")) and (
+        recorded.get("period") in old_keys or recorded.get("period") == _period_key(subscription)
+    )
     whole = (int(recorded["delta"]) if found else 0) + swallowed_before
     if not whole:
+        if found:
+            # What is recorded now cancels what was swallowed before: nothing is left of the
+            # admin's changes, and the record must not wait under the plan being left.
+            meta.pop(ADMIN_CREDIT_ADJUSTMENT)
+            subscription.subscription_metadata = meta
         return 0
     without = max(0, new_monthly - max(0, used + whole))
     carried = (subscription.current_credits or 0) - without

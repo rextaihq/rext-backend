@@ -455,10 +455,11 @@ async def test_an_adjustment_is_read_only_on_the_plan_it_was_recorded_for(sessio
 _AS_STORED = object()
 
 
-async def _changed_to_a_plan_of(db, subscription, monthly, *, period_before=_AS_STORED):
+async def _changed_to_a_plan_of(db, subscription, monthly, *, period_before=_AS_STORED, plan=None):
     """What a plan change does to the row: the new plan's id, then the credits worked out
-    from what was used (change_plan_credits, as the webhook and the dashboard call it)."""
-    other = SubscriptionPlan(
+    from what was used (change_plan_credits, as the webhook and the dashboard call it). To a
+    new plan of `monthly` credits, or back to `plan`."""
+    other = plan or SubscriptionPlan(
         name=f"other-{uuid4().hex[:8]}", display_name="Other", credits_per_month=monthly
     )
     db.add(other)
@@ -477,6 +478,7 @@ async def _changed_to_a_plan_of(db, subscription, monthly, *, period_before=_AS_
     )
     await db.flush()
     await db.refresh(subscription, ["plan"])
+    return other
 
 
 async def _changed_to_a_plan_of_2000(db, subscription, *, period_before=_AS_STORED):
@@ -634,6 +636,53 @@ async def test_a_reset_after_a_swallowed_deduction_keeps_used_true_through_the_n
     assert subscription.current_credits == 450
     assert period_admin_adjustment(subscription) == -500
     assert await _used(session, _order(user, subscription)) == 50
+
+
+@pytest.mark.asyncio
+async def test_working_the_same_plan_change_out_twice_changes_nothing(session):
+    # Lemon Squeezy's update can land while the dashboard's change still waits for its answer:
+    # both work the change out. 450 used, a reset, then a plan of 400: the second run finds
+    # the record where the first left it and comes to the same figures.
+    user, subscription = await _subscription(session, credits=550)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "reset")
+    old_plan_id = subscription.plan_id
+    await _changed_to_a_plan_of(session, subscription, 400)
+    first = (subscription.current_credits, period_admin_adjustment(subscription))
+    assert first == (400, 400)
+
+    change_plan_credits(
+        subscription,
+        PLAN_CREDITS,
+        400,
+        period_before=subscription.credits_reset_date,
+        old_plan_id=old_plan_id,
+    )
+
+    assert (subscription.current_credits, period_admin_adjustment(subscription)) == first
+    assert await _used(session, _order(user, subscription)) == 400
+
+
+@pytest.mark.asyncio
+async def test_changes_that_cancel_leave_no_record_behind_on_the_plan_being_left(session):
+    # 400 deducted and 400 used on 1,000 a month; a plan of 400 swallows the deduction; a
+    # reset there gives 400 back. On the change away the two cancel: no record stays under the
+    # small plan's key to be found again when the customer returns to it.
+    user, subscription = await _subscription(session, credits=1000)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 400)
+    subscription.current_credits -= 400  # spent
+    small = await _changed_to_a_plan_of(session, subscription, 400)
+    await _adjust(session, user, admin, "reset")
+
+    await _changed_to_a_plan_of(session, subscription, 1000)
+    assert subscription.current_credits == 600
+    assert "admin_credit_adjustment" not in subscription.subscription_metadata
+    assert await _used(session, _order(user, subscription)) == 400
+
+    await _changed_to_a_plan_of(session, subscription, 400, plan=small)
+    assert subscription.current_credits == 0
+    assert await _used(session, _order(user, subscription)) == 400
 
 
 @pytest.mark.asyncio
