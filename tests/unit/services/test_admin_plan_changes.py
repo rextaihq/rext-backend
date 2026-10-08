@@ -8,6 +8,7 @@ rolled-back transaction, with Lemon Squeezy and the cache stubbed.
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -78,10 +79,16 @@ async def session():
 @pytest.fixture
 def lemon(monkeypatch):
     """Lemon Squeezy, the cache and the usage count, outside the database."""
-    provider = MagicMock(update_subscription=AsyncMock())
+    # Lemon Squeezy answers with the subscription as it is afterwards: on the new variant.
+    provider = MagicMock(
+        update_subscription=AsyncMock(
+            side_effect=lambda **sent: SimpleNamespace(plan_id=sent["price_id"])
+        )
+    )
     monkeypatch.setattr(
         subscription_service_module, "get_payment_provider_singleton", lambda: provider
     )
+    monkeypatch.setattr(module, "trigger_payment_alert", MagicMock())
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
     monkeypatch.setattr(module, "invalidate_cache", AsyncMock(return_value=0))
     monkeypatch.setattr(
@@ -219,14 +226,50 @@ async def test_charge_now_has_lemon_squeezy_invoice_the_difference(session, lemo
     user, row = await _subscribed(session, starter, left=400)
     admin = await _user(session)
 
-    await _change(session, user, admin, growth, billing="charge_now", period=YEARLY)
+    await _change(session, user, admin, growth, billing="charge_now")
 
     lemon.update_subscription.assert_awaited_once_with(
         subscription_id=row.lemonsqueezy_subscription_id,
-        price_id=growth.lemonsqueezy_variant_id_yearly,
+        price_id=growth.lemonsqueezy_variant_id_monthly,
         prorate=True,
     )
-    assert (row.plan_id, row.billing_period) == (growth.id, YEARLY)
+    assert (row.plan_id, row.billing_period) == (growth.id, MONTHLY)
+
+
+async def test_a_billed_subscription_keeps_its_billing_cycle(session, lemon):
+    # Another cycle can move Lemon Squeezy's billing date or charge at once, so "nothing
+    # is charged now" couldn't be promised for it.
+    starter, growth, _ = await _world(session)
+    user, row = await _subscribed(session, starter, left=100)
+    unbilled, other = await _subscribed(session, starter, left=100, billed=False)
+    admin = await _user(session)
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await _change(session, user, admin, growth, period=YEARLY)
+    assert "billed monthly" in refused.value.message
+    assert (row.plan_id, row.billing_period) == (starter.id, MONTHLY)
+    lemon.update_subscription.assert_not_awaited()
+
+    # Nobody bills this one, so its period is only what the row says.
+    await _change(session, unbilled, admin, growth, billing="not_billed", period=YEARLY)
+    assert (other.plan_id, other.billing_period) == (growth.id, YEARLY)
+
+
+async def test_a_subscription_lemon_squeezy_left_as_it_was_is_not_changed_here(session, lemon):
+    # Paid through PayPal: Lemon Squeezy answers 200 and changes nothing.
+    starter, growth, _ = await _world(session)
+    user, row = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+    lemon.update_subscription.side_effect = lambda **sent: SimpleNamespace(
+        plan_id=starter.lemonsqueezy_variant_id_monthly
+    )
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await _change(session, user, admin, growth)
+
+    assert "PayPal" in refused.value.message and "Nothing was changed" in refused.value.message
+    assert (row.plan_id, row.current_credits) == (starter.id, 100)
+    assert await _audit(session, user) == []
 
 
 async def test_a_downgrade_is_only_from_the_next_renewal_and_never_below_zero(session, lemon):
@@ -442,17 +485,30 @@ async def test_the_reason_is_kept_out_of_the_application_log(session, lemon, mon
     assert entry.audit_metadata["reason"] == "As promised to jane@example.com"
 
 
-async def test_no_change_is_made_without_its_audit_entry(session, lemon, monkeypatch):
+async def test_no_change_is_kept_without_its_audit_entry(session, lemon, monkeypatch):
     starter, growth, _ = await _world(session)
     user, _ = await _subscribed(session, starter, left=100)
+    unbilled, _ = await _subscribed(session, starter, left=100, billed=False)
     admin = await _user(session)
     monkeypatch.setattr(
         "src.services.admin_plan_changes.audit_logger.log_admin_plan_changed",
         AsyncMock(return_value=None),
     )
 
+    # Nobody bills this one: the caller's rollback undoes everything.
     with pytest.raises(RuntimeError):
+        await _change(session, unbilled, admin, growth, billing="not_billed")
+    module.trigger_payment_alert.assert_not_called()
+
+    # Lemon Squeezy has changed already and can't be rolled back: the admin isn't told
+    # "nothing was changed", and a person is alerted to record who and why.
+    with pytest.raises(BusinessRuleViolationException) as refused:
         await _change(session, user, admin, growth)
+    assert "Lemon Squeezy has changed the plan" in refused.value.message
+    assert "Nothing was changed" not in refused.value.message
+    alert = module.trigger_payment_alert.call_args.kwargs
+    assert alert["alert_type"] == "admin_plan_change_unrecorded"
+    assert alert["context"]["admin_id"] == str(admin.id)
 
 
 # --- what the admin is shown first --------------------------------------------------------
@@ -498,6 +554,8 @@ async def test_the_options_say_how_each_choice_is_billed_and_what_it_leaves(sess
     assert (own["allowed"], own["modes"]) == (False, [])
     other_period = _choice(options, growth, "yearly")
     assert (other_period["kind"], other_period["allowed"]) == ("period_change", False)
+    other_cycle = _choice(options, pro, "yearly")
+    assert other_cycle["allowed"] is False and "billed monthly" in other_cycle["refused_reason"]
     # Reading the options changes nothing.
     assert (row.plan_id, row.current_credits) == (growth.id, 250)
 
@@ -529,6 +587,49 @@ async def test_the_options_for_a_user_nobody_bills_and_for_one_without_a_plan(se
     assert (none["change"]["allowed"], none["trial_extension"]["allowed"]) == (False, False)
     assert "no plan" in none["change"]["refused_reason"]
     assert all(not period["allowed"] for plan in none["plans"] for period in plan["periods"])
+
+
+async def test_a_super_admins_account_is_offered_nothing(session, lemon):
+    starter, growth, _ = await _world(session)
+    user, _ = await _subscribed(session, starter, left=100)
+
+    options = await module.plan_options(session, user.id, protected=True)
+
+    assert options["subscription"]["plan_id"] == starter.id
+    for standing in (options["change"], options["trial_extension"]):
+        assert standing["allowed"] is False
+        assert "Super Admin" in standing["refused_reason"]
+    assert all(not period["allowed"] for plan in options["plans"] for period in plan["periods"])
+
+
+async def test_a_plan_read_from_the_cache_still_has_its_monthly_credits(session, monkeypatch):
+    # The plan change works the balance out from them: a cached plan without them made
+    # the change skip the balance.
+    import src.api.cache.redis_client as redis_client
+
+    stored = {}
+
+    class Cache:
+        is_enabled = True
+
+        async def get(self, key):
+            return stored.get(key)
+
+        async def set(self, key, value, ttl=None):
+            stored[key] = value
+
+    monkeypatch.setattr(redis_client, "cache", Cache())
+    monkeypatch.setattr(
+        subscription_service_module, "get_payment_provider_singleton", lambda: MagicMock()
+    )
+    trial = await _plan(session, "trial", price=0, credits=60, trial=True, variants=False)
+    service = SubscriptionService(session)
+
+    await service._get_plan_or_404(trial.id)
+    cached = await service._get_plan_or_404(trial.id)
+
+    assert stored and cached is not trial
+    assert (cached.credits_per_month, cached.is_trial_plan) == (60, True)
 
 
 # --- a trial's end ----------------------------------------------------------------------
@@ -590,7 +691,7 @@ async def test_a_trial_that_is_over_is_not_brought_back_by_an_extension(session,
     assert await grants_access() is False
     # A trial that is over grants nothing and is no longer the user's plan: an extension
     # moves the end of a running trial, it doesn't start an ended one again.
-    with pytest.raises(BusinessRuleViolationException):
+    with pytest.raises(BusinessRuleViolationException) as refused:
         await module.extend_trial(
             session,
             user_id=user.id,
@@ -599,6 +700,13 @@ async def test_a_trial_that_is_over_is_not_brought_back_by_an_extension(session,
             reason="Back for three days",
         )
     assert await grants_access() is False
+    # The admin is told why, in the one line the dashboard shows.
+    assert "trial has ended" in refused.value.message
+    options = await module.plan_options(session, user.id)
+    assert options["subscription"] is None
+    for standing in (options["change"], options["trial_extension"]):
+        assert standing["allowed"] is False
+        assert standing["refused_reason"].startswith("This user's trial has ended")
 
 
 @pytest.mark.parametrize(

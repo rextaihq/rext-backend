@@ -24,6 +24,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription.admin_schemas import AdminPlanChange, AdminTrialExtension
 from src.api.security.dependencies import get_current_user
 from src.services.admin_plan_changes import change_plan, extend_trial, plan_options
+from src.utils import rbac_utils
 from src.utils.rbac_utils import assert_target_manageable_by
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -63,9 +64,11 @@ async def get_user_plan(
     """
     await require_super_admin(db, current_user.get("identity"))
     await _existing_user(db, user_id)
+    # The two changes refuse a Super Admin's account: the options say so first.
+    protected = await rbac_utils.is_user_super_admin(db, user_id)
 
     return success(
-        data=await plan_options(db, user_id),
+        data=await plan_options(db, user_id, protected=protected),
         request=request,
         message="Plan options retrieved successfully",
     )
@@ -90,7 +93,7 @@ async def change_user_plan(
     - billing: next_renewal (nothing charged now, the new price from the next
       renewal), charge_now (Lemon Squeezy invoices the prorated difference now; an
       upgrade only) or not_billed (a user without a Lemon Squeezy subscription)
-    - reason: why, shown to the customer in their activity
+    - reason: why, kept with the audit entry
 
     The plan changes at once, through Lemon Squeezy first for a subscription it
     bills, and the month's credits become the new plan's minus what was used this
@@ -132,7 +135,7 @@ async def extend_user_trial(
     Request Body:
     - ends_at: the new end, later than the trial's own and within the limit the
       plan options give
-    - reason: why, shown to the customer in their activity
+    - reason: why, kept with the audit entry
 
     Only a trial this app runs: one Lemon Squeezy runs is ended or converted by it.
     """

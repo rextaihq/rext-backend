@@ -643,9 +643,20 @@ class SubscriptionService:
                     )
 
                     # Update subscription with payment provider
-                    await self.payment_provider.update_subscription(
+                    updated = await self.payment_provider.update_subscription(
                         subscription_id=provider_sub_id, price_id=new_variant_id, prorate=prorate
                     )
+                    # Lemon Squeezy answers 200 for a subscription paid through PayPal and
+                    # leaves it as it was (the customer changes it in the billing portal).
+                    if by_admin and str(getattr(updated, "plan_id", None)) != str(new_variant_id):
+                        raise BusinessRuleViolationException(
+                            message=(
+                                "Lemon Squeezy left the subscription on its plan: one paid "
+                                "through PayPal is changed by the customer in their billing "
+                                "portal. Nothing was changed."
+                            ),
+                            rule_name="admin_plan_unchanged_at_provider",
+                        )
 
                     logger.info(
                         f"Updated subscription {provider_sub_id} with payment provider to variant {new_variant_id}",
@@ -657,6 +668,8 @@ class SubscriptionService:
                             "new_plan": new_plan.name,
                         },
                     )
+                except BusinessRuleViolationException:
+                    raise
                 except Exception as e:
                     logger.error(
                         f"Failed to update subscription with payment provider: {str(e)}",
@@ -1555,7 +1568,7 @@ class SubscriptionService:
 
         # The version is part of the key: raise it when the plan's columns change, so a
         # deploy never rebuilds a plan from a cached row that has columns it no longer has.
-        cache_key = f"subscription:plan:v2:{plan_id}:active={active_only}"
+        cache_key = f"subscription:plan:v3:{plan_id}:active={active_only}"
 
         if cache.is_enabled:
             cached_plan = await cache.get(cache_key)
@@ -1595,6 +1608,10 @@ class SubscriptionService:
                 "max_api_calls_per_month": plan.max_api_calls_per_month,
                 "lemonsqueezy_variant_id_monthly": plan.lemonsqueezy_variant_id_monthly,
                 "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
+                # A plan change works the balance out from these: left out, a plan read
+                # from the cache had no monthly credits and the change skipped the balance.
+                "credits_per_month": plan.credits_per_month,
+                "is_trial_plan": plan.is_trial_plan,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,
