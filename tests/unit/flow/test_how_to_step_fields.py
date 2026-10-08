@@ -12,6 +12,7 @@ from src.flow.engines.content.generation.structured_body import (
     build_structured_content_model,
     typed_section_blocks,
 )
+from src.flow.engines.content.generation.word_count_utils import typed_section_allowance
 from src.flow.model.structure.contents import get_generated_content_model
 
 KEYPHRASE = "how to repot a houseplant"
@@ -106,14 +107,78 @@ def test_the_title_is_the_customers_whatever_the_order_of_the_approved_list():
     assert "2. **Remove the Plant from Its Current Pot.** Ease it out." in body
 
 
-def test_a_step_left_unwritten_is_left_out_and_the_others_keep_their_titles():
+def test_a_step_left_unwritten_stands_with_what_the_outline_planned_for_it():
+    """A required field can still come back empty. The step is not lost and the list is not
+    renumbered one short: the description the customer approved stands in."""
     payload = _assembled({**WRITTEN, "step_2": "  "})
 
     assert [step["title"] for step in payload["steps"]] == [
         "Remove the Plant from Its Current Pot",
+        "Prepare the New Pot and Soil",
         "Set the Plant and Fill In",
     ]
-    assert "2. **Set the Plant and Fill In.**" in payload["body_markdown"]
+    assert "2. **Prepare the New Pot and Soil.** b" in payload["body_markdown"]
+
+
+def test_a_step_with_nothing_written_and_nothing_planned_is_left_out():
+    bare = {
+        **OUTLINE,
+        "steps": {"steps": [{"title": "First"}, {"title": "Second", "description": "Planned."}]},
+    }
+
+    payload = _assembled({"step_1": "", "step_2": "Written."}, outline=bare)
+
+    assert [step["title"] for step in payload["steps"]] == ["Second"]
+    assert "1. **Second.** Written." in payload["body_markdown"]
+
+
+def test_the_length_check_allows_what_assembly_sets_around_the_writers_text():
+    """The writer counted its own words inside the target. The section's heading, the approved
+    titles and a stand-in description are set around them by assembly: the band's maximum
+    grows by exactly those, never by the writer's text."""
+    payload = _assembled(WRITTEN)
+
+    own = sum(len(text.split()) for text in WRITTEN.values())
+    section = payload["body_markdown"].split("## ")[1]
+    assert "in 3 Steps" in section
+    assert typed_section_allowance(payload) == len(("## " + section).split()) - own
+    assert 0 < typed_section_allowance(payload) < own
+
+    stood_in = _assembled({**WRITTEN, "step_2": ""})
+    assert typed_section_allowance(stood_in) == (
+        typed_section_allowance(payload) + 1  # the outline's "b"
+    )
+
+
+def test_a_step_keeps_the_tools_its_text_names():
+    """The typed list keeps a step's own tools; the writer lists the article's tools once."""
+    payload = _assembled(
+        {**WRITTEN, "step_2": "Cover the hole with a shard, then use the trowel to add soil."},
+        tools_needed=["Trowel", "Watering can"],
+    )
+
+    assert [step["tools"] for step in payload["steps"]] == [[], ["Trowel"], []]
+
+
+def test_a_step_that_opens_with_a_list_or_a_code_block_keeps_it_one():
+    """Set after the title on the same line, a fence is no fence and a first bullet is text."""
+    body = _assembled(
+        {
+            **WRITTEN,
+            "step_1": "- Tip the pot on its side.\n- Ease the root ball out.",
+            "step_2": "```bash\nmix --soil 3 --perlite 1\n```\nThen fill a third of the pot.",
+        }
+    )["body_markdown"]
+
+    assert (
+        "1. **Remove the Plant from Its Current Pot.**\n\n"
+        "   - Tip the pot on its side.\n   - Ease the root ball out."
+    ) in body
+    assert (
+        "2. **Prepare the New Pot and Soil.**\n\n"
+        "   ```bash\n   mix --soil 3 --perlite 1\n   ```\n   Then fill a third of the pot."
+    ) in body
+    assert "in 3 Steps" in body
 
 
 def test_a_payload_without_step_fields_keeps_the_list_it_has():

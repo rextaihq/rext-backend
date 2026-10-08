@@ -679,15 +679,25 @@ def _step_title(title: Any) -> str:
 _HAS_BLOCKS = re.compile(r"\n[ \t]*\n|```|~~~|\n[ \t]*(?:[-*+]|\d+[.)])[ \t]")
 
 
+# A step's text that opens with a block of its own: a code fence or a list item.
+_OPENS_WITH_A_BLOCK = re.compile(r"(?:```|~~~|(?:[-*+]|\d+[.)])[ \t])")
+
+
 def _step_text(description: Any, indent: int) -> str:
     """A step's instructions on the step's line. Text of several blocks (a paragraph break, a
     code block, a list) keeps its lines, each indented as an item of a numbered list needs, so
-    a fence stays a fence; a sentence the writer merely wrapped is one line."""
+    a fence stays a fence; a sentence the writer merely wrapped is one line. Text that opens
+    with a fence or a list goes under the step's line whole: set after the title on the same
+    line, its first line would be no fence and no item."""
     text = str(description or "").strip()
+    pad = " " * indent
+    if _OPENS_WITH_A_BLOCK.match(text):
+        return "\n\n" + "\n".join(
+            f"{pad}{line.rstrip()}" if line.strip() else "" for line in text.splitlines()
+        )
     if not _HAS_BLOCKS.search(text):
         return " ".join(text.split())
     first, *rest = text.splitlines()
-    pad = " " * indent
     return "\n".join(
         [" ".join(first.split())]
         + [f"{pad}{line.rstrip()}" if line.strip() else "" for line in rest]
@@ -714,7 +724,11 @@ def _numbered_steps(steps: Any) -> str:
         if title and title[-1] not in ".!?:":
             title += "."
         lead = f"**{title}** " if title else ""
-        lines.append(f"{number}{lead}{text}".rstrip())
+        lines.append(
+            f"{number}{lead}".rstrip() + text
+            if text[:1] == "\n"
+            else f"{number}{lead}{text}".rstrip()
+        )
     return "\n".join(lines)
 
 
@@ -910,27 +924,50 @@ def _with_typed_sections(
     return placed, shown
 
 
-def _steps_from_fields(content_dict: dict, typed: Optional[list[OutlineBlock]]) -> list[dict]:
+def _steps_from_fields(
+    content_dict: dict, typed: Optional[list[OutlineBlock]]
+) -> tuple[list[dict], int]:
     """The typed `steps` list from the fields the writer wrote a step each in, under the
-    approved titles and in the approved order. Empty when no step field holds text: a payload
-    written before the fields existed, or assembled once already, keeps the list it has."""
+    approved titles and in the approved order, and how many words of it are the writer's own.
+
+    A step whose field came back empty is not lost: it stands with what the outline planned
+    for it, which the customer approved. Empty when the payload has no step fields: one written
+    before the fields existed, or assembled once already, keeps the list it has."""
     block = next((b for b in typed or [] if b.key == STEPS_KEY), None)
     approved = approved_steps(block)
     if not any(_is_step_field(key) for key in content_dict):
-        return []
-    steps = []
+        return [], 0
+    steps: list[dict] = []
+    own_words = 0
     for number, step in enumerate(approved, 1):
         text = content_dict.get(step_field(number))
-        if isinstance(text, str) and text.strip():
-            steps.append(
-                {"title": str(step["title"]).strip(), "description": text.strip(), "tools": []}
-            )
+        text = text.strip() if isinstance(text, str) else ""
+        if text:
+            own_words += len(text.split())
         else:
+            text = str(step.get("description") or "").strip()
             logger.warning(
-                "assemble_structured_payload: step %s of the approved outline was not written",
+                "assemble_structured_payload: step %s of the approved outline was not written; %s",
                 number,
+                "the outline's own description stands in" if text else "it is left out",
             )
-    return steps
+        if text:
+            steps.append(
+                {
+                    "title": str(step["title"]).strip(),
+                    "description": text,
+                    "tools": _tools_named_in(text, content_dict.get("tools_needed")),
+                }
+            )
+    return steps, own_words
+
+
+def _tools_named_in(text: str, tools: Any) -> list[str]:
+    """The article's tools that a step's text names, as the typed list keeps a step's own:
+    the writer lists the tools once (`tools_needed`), and a step that uses one says so."""
+    said = text.lower()
+    names = [str(tool).strip() for tool in (tools if isinstance(tools, list) else [])]
+    return [name for name in names if name and name.lower() in said]
 
 
 def _is_step_field(key: str) -> bool:
@@ -981,7 +1018,7 @@ def assemble_structured_payload(
 
     assembled = blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
     # A how-to guide's steps, written a field each: the typed list is theirs (G98a).
-    steps = _steps_from_fields(content_dict, typed)
+    steps, steps_own_words = _steps_from_fields(content_dict, typed)
     if steps:
         content_dict = {**content_dict, STEPS_KEY: steps}
     payload = {
@@ -1023,9 +1060,11 @@ def assemble_structured_payload(
             written = written + typed_shown
             # What the sections add to the body, as the length check counts words: its
             # maximum grows by exactly this (word_count_utils.typed_section_allowance).
-            # Not for steps written a field each: those were planned inside the target
+            # Of steps written a field each, only what assembly set around the writer's own
+            # text: the section's heading, the approved titles, a step the outline's
+            # description stands in for. The writer's text was planned inside the target
             # (planned_step_count), where a list the writer added on its own was not.
-            typed_words = 0 if steps else len(assembled.split()) - without
+            typed_words = max(0, len(assembled.split()) - without - steps_own_words)
     missing_required = [b.key for b in blocks if b.required and b.key not in written]
     if missing_required:
         # Should be unreachable — these are required fields under constrained

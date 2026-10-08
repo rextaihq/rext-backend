@@ -98,7 +98,8 @@ class SectionStream:
         self._parts = {key: value for key, value in (parts or {}).items() if key in self._typed}
         self._opening = [
             re.compile(
-                # A section written in several fields is read when the last of them closes.
+                # A section written in several fields: where the last of them opens. It is
+                # read only once every one of them has closed (_first_open).
                 rf'"{re.escape(self._parts[key][0][-1])}"\s*:\s*(?=")'
                 if key in self._parts
                 else rf'"{re.escape(key)}"\s*:\s*(?=[{{\["])'
@@ -142,7 +143,7 @@ class SectionStream:
             if closes < 0:
                 break
             self._returned.add(index)
-            self._from = closes + 1
+            self._from = max(self._from, closes + 1)
             section = self._read(index, self._text[opens : closes + 1])
             if section:
                 finished.append(section)
@@ -154,7 +155,15 @@ class SectionStream:
         for index, opening in enumerate(self._opening):
             if index in self._returned:
                 continue
-            match = opening.search(self._text, self._from)
+            key = self._sections[index][0]
+            if key in self._parts:
+                # Its fields may close in any order, and before sections already read: all
+                # of them, wherever they stand in the answer so far.
+                if any(self._field(name) is None for name in self._parts[key][0]):
+                    continue
+                match = opening.search(self._text)
+            else:
+                match = opening.search(self._text, self._from)
             if match and (best is None or match.end() < best[1]):
                 best = (index, match.end())
         return best
@@ -179,7 +188,7 @@ class SectionStream:
         draft = self._typed.get(key)
         if key in self._parts:
             names, gather = self._parts[key]
-            value = gather([self._field(name) for name in names[:-1]] + [value])
+            value = gather([self._field(name) for name in names])
         if draft is not None:
             shown = draft(value)
             if not shown:
