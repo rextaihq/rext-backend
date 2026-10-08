@@ -41,6 +41,10 @@ class CreditBreakdown(BaseModel):
     monthly_credits: int
     credits_per_month: Optional[int] = None
     credits_reset_date: Optional[str] = Field(None, description="ISO 8601")
+    can_reset: bool = Field(
+        False,
+        description="Whether a reset is possible: the plan has monthly credits and isn't a trial",
+    )
     bonus: Optional[CreditBonus] = None
     added_credits: Optional[AddedCredits] = None
     period_adjustment: int = Field(

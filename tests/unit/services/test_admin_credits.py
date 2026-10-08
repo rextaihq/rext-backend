@@ -782,6 +782,45 @@ async def test_only_added_credits_follow_the_user_and_only_their_own(session):
     assert (await credit_breakdown(session, user.id))["added_credits"] is None
 
 
+@pytest.mark.asyncio
+async def test_the_read_shows_a_due_month_as_a_change_would_find_it_and_writes_nothing(session):
+    """A spend and an adjustment start the new month first; the read used to show last month's
+    balance and period until one of them ran, so an admin deducted from a refilled balance."""
+    user, subscription = await _subscription(session, credits=600)
+    # The month ended yesterday, 400 down by an admin's deduction, and nothing has run since.
+    ended = NOW - timedelta(days=1)
+    subscription.credits_reset_date = ended
+    record_period_admin_adjustment(subscription, -400)
+    await session.flush()
+
+    breakdown = await credit_breakdown(session, user.id)
+
+    assert (breakdown["monthly_credits"], breakdown["current_credits"]) == (
+        PLAN_CREDITS,
+        PLAN_CREDITS,
+    )
+    assert breakdown["period_adjustment"] == 0
+    assert datetime.fromisoformat(breakdown["credits_reset_date"]) > NOW
+    # Nothing was written: the row still holds what it held.
+    await session.refresh(subscription)
+    assert (subscription.current_credits, subscription.credits_reset_date) == (600, ended)
+    assert period_admin_adjustment(subscription) == -400
+
+
+@pytest.mark.asyncio
+async def test_the_read_says_whether_a_reset_is_possible(session):
+    paying, _ = await _subscription(session)
+    trying, _ = await _subscription(session, credits=60, plan_credits=60, trial=True)
+    nobody = await _user(session)
+
+    assert (await credit_breakdown(session, paying.id))["can_reset"] is True
+    # A trial has monthly credits, and they don't renew: the change itself refuses it too.
+    assert (await credit_breakdown(session, trying.id))["can_reset"] is False
+    assert (await credit_breakdown(session, nobody.id))["can_reset"] is False
+    with pytest.raises(BusinessRuleViolationException):
+        await _adjust(session, trying, await _user(session), "reset")
+
+
 # --- spending order ----------------------------------------------------------------
 
 

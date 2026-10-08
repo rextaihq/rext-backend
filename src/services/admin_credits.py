@@ -25,6 +25,7 @@ change is not made.
 """
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Optional
 from uuid import UUID
 
@@ -231,12 +232,7 @@ async def adjust_credits(
         )
     else:
         plan = subscription.plan
-        if (
-            plan is None
-            or plan.is_trial_plan
-            or plan.credits_per_month is None
-            or plan.credits_per_month <= 0
-        ):
+        if not can_reset(plan):
             raise BusinessRuleViolationException(
                 message="This plan has no monthly credits to reset to.",
                 rule_name="admin_credits_reset",
@@ -291,6 +287,32 @@ async def adjust_credits(
     }
 
 
+def can_reset(plan: Any) -> bool:
+    """Whether the month's credits can be reset: the plan has some, and isn't a trial
+    (a trial's credits come once and don't renew)."""
+    return bool(plan is not None and not plan.is_trial_plan and (plan.credits_per_month or 0) > 0)
+
+
+def _as_a_change_would_find_it(subscription: UserSubscription) -> SimpleNamespace:
+    """The month's credits as a spend or an adjustment would find them now.
+
+    Both start the new month first when its reset date has passed
+    (``replenish_if_due``). A read that reported the stored numbers would show last
+    month's balance and period until the first of them ran. Worked out on a copy:
+    a read writes nothing.
+    """
+    month = SimpleNamespace(
+        plan=subscription.plan,
+        plan_id=subscription.plan_id,
+        status=subscription.status,
+        current_credits=subscription.current_credits,
+        credits_reset_date=subscription.credits_reset_date,
+        subscription_metadata=subscription.subscription_metadata,
+    )
+    replenish_if_due(month)
+    return month
+
+
 async def credit_breakdown(db: AsyncSession, user_id: UUID) -> Dict[str, Any]:
     """What the user can spend now: the monthly credits, a promotion's bonus and the
     credits support added."""
@@ -303,12 +325,14 @@ async def credit_breakdown(db: AsyncSession, user_id: UUID) -> Dict[str, Any]:
             "monthly_credits": 0,
             "credits_per_month": None,
             "credits_reset_date": None,
+            "can_reset": False,
             "bonus": None,
             "added_credits": None,
             "period_adjustment": 0,
         }
     grants = await live_grants(db, subscription.id)
-    monthly = subscription.current_credits or 0
+    month = _as_a_change_would_find_it(subscription)
+    monthly = month.current_credits or 0
     plan = subscription.plan
     return {
         "subscription_id": subscription.id,
@@ -316,12 +340,13 @@ async def credit_breakdown(db: AsyncSession, user_id: UUID) -> Dict[str, Any]:
         "current_credits": monthly + sum(g.remaining for g in grants),
         "monthly_credits": monthly,
         "credits_per_month": plan.credits_per_month if plan else None,
-        "credits_reset_date": subscription.credits_reset_date.isoformat()
-        if subscription.credits_reset_date is not None
+        "credits_reset_date": month.credits_reset_date.isoformat()
+        if month.credits_reset_date is not None
         else None,
+        "can_reset": can_reset(plan),
         "bonus": bonus_summary(grants),
         "added_credits": admin_credit_summary(grants),
-        "period_adjustment": period_admin_adjustment(subscription),
+        "period_adjustment": period_admin_adjustment(month),
     }
 
 
