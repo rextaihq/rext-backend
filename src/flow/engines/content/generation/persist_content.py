@@ -6,9 +6,16 @@ from langchain_core.runnables import RunnableConfig
 
 from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.engines.content.generation.requirements_spec import approved_secondary_keywords
+from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.states.rext import REXT
 from src.services.check_wording import user_detail
 from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
+from src.services.generation_events import (
+    ARTICLE,
+    INTERNAL,
+    announce_completed,
+    announce_failed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +156,8 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     body_markdown = final.get("body_markdown")
     if not (title and body_markdown):
         logger.warning("persist_content: missing title/body; skipping save")
+        # The run ends as a success with nothing to save: for the counts, an article that failed.
+        announce_failed(state, stage=ARTICLE, reason=INTERNAL)
         return {}
 
     serp = state.get("serp_payload") or {}
@@ -268,7 +277,16 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         logger.info("persist_content: saved article %s for thread %s", content.id, thread_id)
     except Exception as exc:
         logger.exception("persist_content: failed to save generated article")
+        announce_failed(state, stage=ARTICLE, reason=INTERNAL, thread_id=str(thread_uuid))
         raise ArticleNotSaved("The article couldn't be saved to your library.") from exc
+
+    announce_completed(
+        state,
+        thread_id=str(thread_uuid),
+        content_type=normalize_content_type(content_state.get("content_type")) or None,
+        word_count=len(f"{final.get('introduction') or ''} {body_markdown}".split()),
+        saved_at=getattr(content, "created_at", None),
+    )
 
     from src.services.notification_helper import notify_now
 

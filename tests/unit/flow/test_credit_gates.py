@@ -205,8 +205,12 @@ async def test_a_new_run_starts_without_an_earlier_runs_error():
             "image_credit_deducted": False,
         }
     }
-    assert await _begin_run(stale) == cleared
-    assert await _begin_run({"content": {"outline": {}}}) == {}
+    # Beside what it clears, a new run notes when it began (generation_events.py).
+    update = await _begin_run(stale)
+    assert {k: v for k, v in update["content"].items() if k != "run_started_at"} == cleared[
+        "content"
+    ]
+    assert set((await _begin_run({"content": {"outline": {}}}))["content"]) == {"run_started_at"}
 
 
 async def test_a_new_run_on_a_finished_thread_pays_for_its_drafting():
@@ -217,13 +221,12 @@ async def test_a_new_run_on_a_finished_thread_pays_for_its_drafting():
     finished = {
         "content": {"final_content": {}, "credits_deducted": True, "image_credit_deducted": True}
     }
-    assert await _begin_run(finished) == {
-        "content": {
-            "error": None,
-            "error_code": None,
-            "credits_deducted": False,
-            "image_credit_deducted": False,
-        }
+    update = await _begin_run(finished)
+    assert {k: v for k, v in update["content"].items() if k != "run_started_at"} == {
+        "error": None,
+        "error_code": None,
+        "credits_deducted": False,
+        "image_credit_deducted": False,
     }
 
 
@@ -302,3 +305,29 @@ async def test_the_out_of_credits_record_names_where_the_run_stopped(
     await _insufficient_credits(state)
 
     assert recorded[0]["metadata"]["blocked_at"] == blocked_at
+
+
+# --- the analytics event of an accepted run (rext-control#712) ---------------------------
+
+
+async def test_an_accepted_typed_run_is_counted_as_started_and_a_refused_one_is_not(
+    monkeypatch, quiet_credits
+):
+    import src.services.generation_events as events
+
+    seen = []
+    monkeypatch.setattr(
+        events, "_announce", lambda name, properties, state, **how: seen.append((name, properties))
+    )
+    _notify_now(monkeypatch)
+    _balance(monkeypatch, value=15)
+
+    assert await library_router(_state(country="United States")) == "serp_engine"
+    assert seen == [("content_generation_started", {"from_library": False, "country": "US"})]
+
+    # A Library start says so once its item has loaded (load_library_item), and a run the
+    # credits don't cover never started.
+    assert await library_router(_state(is_library=True)) == "load_library_item"
+    _balance(monkeypatch, value=14)
+    assert await library_router(_state()) == "insufficient_credits"
+    assert len(seen) == 1

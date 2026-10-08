@@ -85,6 +85,19 @@ def stop_on_outage(node: Callable) -> Callable:
                 outage.provider,
                 outage.kind,
             )
+            from src.services.generation_events import (
+                ARTICLE,
+                INTERNAL,
+                OUTLINE,
+                PROVIDER,
+                announce_failed,
+            )
+
+            announce_failed(
+                state,
+                stage=OUTLINE if getattr(node, "__name__", "") == "generate_outline" else ARTICLE,
+                reason=INTERNAL if outage.kind == "step_failed" else PROVIDER,
+            )
             kept = error.content if isinstance(error, StoppedAfterCharge) else {}
             return {
                 "content": {
