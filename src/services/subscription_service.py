@@ -630,8 +630,10 @@ class SubscriptionService:
                     )
 
                     # An admin's change is never made here alone: Lemon Squeezy would go on
-                    # billing the old plan and its next update would undo it.
-                    if is_test_id and not by_admin:
+                    # billing the old plan and its next update would undo it. Nor is one
+                    # that may have been made there (no answer, or none read back).
+                    unconfirmed = isinstance(e, (PaymentChangeUnknown, PaymentChangeUnconfirmed))
+                    if is_test_id and not by_admin and not unconfirmed:
                         logger.warning(
                             f"LemonSqueezy API call failed for test/sandbox ID '{provider_sub_id}'. Proceeding with local plan update for testing.",
                             extra={"user_id": str(user_id), "provider_sub_id": provider_sub_id},
@@ -707,7 +709,7 @@ class SubscriptionService:
                             ),
                             rule_name="admin_plan_provider",
                         )
-                    elif isinstance(e, (PaymentChangeUnknown, PaymentChangeUnconfirmed)):
+                    elif unconfirmed:
                         # No answer, or none that says which plan the subscription is on
                         # now: "it failed, try again" would be a guess. Nothing changes
                         # here; if it changed there, Lemon Squeezy's update brings it.
@@ -734,9 +736,18 @@ class SubscriptionService:
                     rule_name="admin_plan_variant",
                 )
             else:
+                # The same for the customer's own change: a plan Lemon Squeezy has no
+                # price for (the trial plan, one sold by hand) is not taken from here.
                 logger.warning(
                     f"No variant ID found for plan {new_plan.name} with billing period {new_billing_period.value}",
                     extra={"plan_id": str(new_plan_id), "billing_period": new_billing_period.value},
+                )
+                raise BusinessRuleViolationException(
+                    message=(
+                        f"{new_plan.display_name} can't be chosen from here. Contact support "
+                        "to change to it. Nothing was changed."
+                    ),
+                    rule_name="plan_variant",
                 )
 
         # Lemon Squeezy's call can take a while, and an article can spend credits meanwhile:
