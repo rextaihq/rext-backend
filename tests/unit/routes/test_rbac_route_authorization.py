@@ -35,6 +35,7 @@ def grant(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     app.dependency_overrides[get_async_db] = override_db
     app.dependency_overrides[get_current_user] = lambda: {"identity": str(user_id), "roles": []}
     monkeypatch.setattr("src.utils.rbac_utils.is_user_super_admin", AsyncMock(return_value=False))
+    monkeypatch.setattr("src.utils.rbac_utils.holds_global_role", AsyncMock(return_value=False))
 
     def _grant(*permissions: str) -> None:
         monkeypatch.setattr(
@@ -408,12 +409,14 @@ async def test_admin_user_routes_pass_guard_with_user_manage(grant, method, url)
 
 @pytest.fixture
 def support_role_user(grant, monkeypatch):
-    """grant() setup, but the caller holds the global support role."""
+    """grant() setup, but the caller holds the global support role: in the database,
+    which is where the guard reads it. Its token was issued before and names no role."""
     grant()
-    app.dependency_overrides[get_current_user] = lambda: {
-        "identity": str(uuid4()),
-        "roles": ["support"],
-    }
+
+    async def holds(_db, _user_id, role_names):
+        return "support" in role_names
+
+    monkeypatch.setattr("src.utils.rbac_utils.holds_global_role", holds)
     monkeypatch.setattr(
         "src.utils.rbac_utils.get_user_permissions",
         AsyncMock(return_value=[]),
@@ -432,6 +435,26 @@ async def test_user_read_routes_admit_support_role(support_role_user, url):
     # Support gets READ-ONLY visibility via its global role. user.read cannot
     # gate this: every account holds it for self-service.
     assert await _status("GET", url) != 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/api/v1/user/users",
+        "/api/v1/user/users/stats",
+        "/api/v1/user/deleted",
+        f"/api/v1/user/detail/{uuid4()}",
+    ],
+)
+async def test_user_read_routes_refuse_a_support_role_only_the_token_still_names(grant, url):
+    # The role was taken away after this token was issued: the token's word doesn't count.
+    grant()
+    app.dependency_overrides[get_current_user] = lambda: {
+        "identity": str(uuid4()),
+        "roles": ["support"],
+    }
+    assert await _status("GET", url) == 403
 
 
 @pytest.mark.asyncio
