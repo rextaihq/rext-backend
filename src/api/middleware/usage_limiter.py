@@ -19,6 +19,7 @@ Usage:
 
 import warnings
 from typing import Optional
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import func, select
