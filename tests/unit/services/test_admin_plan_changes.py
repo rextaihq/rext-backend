@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect, select
+from sqlalchemy import event, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -681,6 +681,59 @@ async def test_a_plan_read_from_the_cache_still_has_its_monthly_credits(session,
 
 
 # --- a trial's end ----------------------------------------------------------------------
+
+
+async def _statements(db, change) -> list[str]:
+    """The SQL one change runs, in order."""
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        statements.append(statement)
+
+    connection = db.bind.sync_connection
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        await change()
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+    return statements
+
+
+def _locked_before_the_plan_is_read(statements) -> bool:
+    lock = next(i for i, sql in enumerate(statements) if "pg_advisory_xact_lock" in sql)
+    read = next(i for i, sql in enumerate(statements) if "FROM user_subscriptions" in sql)
+    return lock < read
+
+
+async def test_a_plan_change_takes_the_users_lock_before_it_reads_their_plan(session, lemon):
+    """Two changes for one user would otherwise both check the same plan and both reach
+    Lemon Squeezy; the second now waits and reads what the first left."""
+    starter, growth, _ = await _world(session)
+    user, _ = await _subscribed(session, starter, left=100)
+    admin = await _user(session)
+
+    statements = await _statements(session, lambda: _change(session, user, admin, growth))
+
+    assert _locked_before_the_plan_is_read(statements)
+    lemon.update_subscription.assert_awaited_once()
+
+
+async def test_a_trials_extension_takes_the_same_lock_first(session, lemon):
+    user, _ = await _on_trial(session)
+    admin = await _user(session)
+
+    statements = await _statements(
+        session,
+        lambda: module.extend_trial(
+            session,
+            user_id=user.id,
+            admin_id=admin.id,
+            ends_at=NOW + timedelta(days=9),
+            reason="A week more to try it",
+        ),
+    )
+
+    assert _locked_before_the_plan_is_read(statements)
 
 
 async def _on_trial(db, *, ends_in=timedelta(days=2), billed=False):
