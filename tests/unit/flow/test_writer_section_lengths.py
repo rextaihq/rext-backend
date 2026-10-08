@@ -118,10 +118,52 @@ def test_the_writer_is_told_floors_that_fit_this_articles_sections():
 def test_the_early_body_sections_are_named_from_the_plan():
     outline = _outline(sections=9)
 
-    # Eleven sections, the first 30%: three of them, the opening left out.
-    assert early_body_sections(outline, "blog", 0.3) == ["Step 1", "Step 2"]
+    # Ten entries in the section list (nine H2s and an H3): the first 30% is three of them,
+    # counted as the brand slot counts them.
+    assert early_body_sections(outline, "blog", 0.3) == ["Step 1", "Step 2", "Step 3"]
     # A short plan still names a section to use.
     assert early_body_sections(_outline(sections=2), "blog", 0.3) == ["Step 1"]
+
+
+@pytest.mark.parametrize("entries", range(1, 17))
+def test_the_named_window_is_the_brand_slots_own_window(entries):
+    """brand_slot.py picks its section among the first max(1, int(n x 0.3)) entries of the
+    section list; naming any other set would give the writer two places for one mention."""
+    outline = {
+        "title": "T",
+        "hero": {"headline": "T", "subheadline": "S"},
+        "structure": {"sections": [_section(f"Part {n}") for n in range(1, entries + 1)]},
+        "faqs": {"faqs": [{"question": "Q?", "answer": "A."}]},
+    }
+
+    named = early_body_sections(outline, "blog", 0.3)
+
+    assert named == [f"Part {n}" for n in range(1, max(1, int(entries * 0.3)) + 1)]
+
+
+def test_a_reserved_brand_slot_is_the_one_section_named():
+    from src.flow.engines.content.generation.brand_slot import SLOT_LINE_PREFIX
+
+    outline = _outline(sections=9)
+    outline["structure"]["sections"][2]["key_points"].append(
+        f"{SLOT_LINE_PREFIX} Acme Tools here — the planner that maps sun hours."
+    )
+
+    assert early_body_sections(outline, "blog", 0.3) == ["Step 3"]
+
+
+def test_a_slot_reserved_outside_the_section_list_is_left_to_speak_for_itself():
+    from src.flow.engines.content.generation.brand_slot import SLOT_LINE_PREFIX
+
+    outline = {
+        "title": "How to plan a vegetable garden",
+        "hero": {"headline": "How to plan a vegetable garden", "subheadline": "Before you dig."},
+        "user_context": {"who_this_is_for": "First-time gardeners"},
+        "prerequisites": {"items": [f"{SLOT_LINE_PREFIX} Acme Tools here."]},
+        "summary": {"recap": "Plan, then dig."},
+    }
+
+    assert early_body_sections(outline, "how-to-guide", 0.3) == []
 
 
 def test_a_block_a_typed_field_owns_is_no_section_of_the_body():
@@ -162,7 +204,7 @@ def test_a_subtle_mention_is_told_its_sections_and_a_prominent_one_is_not():
 
     told = _prompt(subtle, 1500)
 
-    assert 'an early body section means: "Step 1" or "Step 2"' in told
+    assert 'an early body section means: "Step 1" or "Step 2" or "Step 3"' in told
     assert "an early body section means" not in _prompt(prominent, 1500)
 
 

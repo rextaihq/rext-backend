@@ -37,6 +37,7 @@ from typing import Any, Callable, List, Optional
 
 from pydantic import BaseModel, Field, create_model
 
+from src.flow.engines.content.generation.brand_slot import SLOT_LINE_PREFIX
 from src.flow.engines.content.generation.link_integrity import extract_links, restore_lost_links
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
@@ -189,24 +190,61 @@ def planned_section_count(outline: dict, content_type: str) -> int:
     return sum(1 for block in _writer_blocks(outline, content_type) if block.level == 2)
 
 
+def _section_list(outline: dict) -> list[dict]:
+    """The outline's own list of sections, as the brand slot reads it (brand_slot.py):
+    `structure.sections`, or a flat `sections`."""
+    container = outline.get("structure")
+    sections = container.get("sections") if isinstance(container, dict) else None
+    if not isinstance(sections, list):
+        sections = outline.get("sections")
+    return [s for s in sections if isinstance(s, dict)] if isinstance(sections, list) else []
+
+
+def _holds_brand_slot(value: Any) -> bool:
+    """Whether a brand slot was reserved here: a line the review step wrote for the writer
+    ("Work in the approved mention of …"), at any depth."""
+    if isinstance(value, str):
+        return value.startswith(SLOT_LINE_PREFIX)
+    if isinstance(value, dict):
+        return any(_holds_brand_slot(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_holds_brand_slot(item) for item in value)
+    return False
+
+
 def early_body_sections(outline: dict, content_type: str, fraction: float) -> list[str]:
-    """The planned parts of the body that sit inside the first ``fraction`` of the article, by
-    their place in the plan: what "an early body section" means for this outline, by name.
+    """What "an early body section" means for this outline, by name: the sections inside the
+    first ``fraction`` of the article by their place in the plan.
 
     A writer told "inside the first 30% of the article" cannot measure it, and put the one
-    mention a section too late (31% on a ten-section guide, rext-control#760). Sections and
-    planned subsections are counted alike, so a section that holds most of the article is not
-    named whole. At least the first two parts are looked at; the opening block and the FAQ are
-    never among them.
+    mention a section too late (31% on a ten-section guide, rext-control#760).
+
+    It never says anything the brand slot does not (brand_slot.py reserves the section the
+    mention belongs in, and brand_schema_context tells the writer that field):
+
+    * a slot reserved in the outline's section list is the one section named;
+    * with none reserved, the window is counted as the slot counts it, over the same list:
+      the first ``max(1, int(sections x fraction))`` entries, H3s included;
+    * a slot reserved anywhere else (a typed list of a fixed-shape type) says where already,
+      and nothing is named here;
+    * an outline with no section list (a how-to's blocks) is counted over the blocks the body
+      is built from, the opening and the FAQ left out.
     """
-    parts = _writer_blocks(outline, content_type)
-    inside = parts[: max(2, int(len(parts) * fraction))]
-    return [
-        block.heading
-        for block in inside
+    outline = outline or {}
+    sections = _section_list(outline)
+    if sections:
+        reserved = [section for section in sections if _holds_brand_slot(section)]
+        named = reserved[:1] or sections[: max(1, int(len(sections) * fraction))]
+        return [str(s.get("heading") or "").strip() for s in named if s.get("heading")]
+    if _holds_brand_slot(outline):
+        return []
+    parts = [
+        block
+        for block in _writer_blocks(outline, content_type)
         if block.key not in ("hero", "faq", "faqs")
         and not (isinstance(block.data, dict) and is_faq_section(block.data))
     ]
+    return [block.heading for block in parts[: max(1, int(len(parts) * fraction))]]
 
 
 def _field_description(block: OutlineBlock) -> str:
