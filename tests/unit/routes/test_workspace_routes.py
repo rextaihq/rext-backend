@@ -123,12 +123,31 @@ async def test_create_with_a_website_reads_the_website(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_judges_the_description_trimmed_and_only_when_it_is_used(client) -> None:
+    full = "x" * 1000
+    response, create, _ = await _create(
+        client, {"name": "Crumb and Crust", "description": f"   {full}\n\n"}
+    )
+    assert response.status_code == 201
+    assert create.await_args.kwargs["description"] == full
+
+    # Sent with a website it is not used, so its length refuses nothing.
+    response, create, _ = await _create(
+        client,
+        {"name": "Crumb and Crust", "url": "https://example.com", "description": "x" * 5000},
+    )
+    assert response.status_code == 201
+    assert create.await_args.kwargs["description"] is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("body", "field"),
     [
         ({"name": "Crumb and Crust"}, "url"),
         ({"name": "Crumb and Crust", "description": "   "}, "url"),
         ({"name": "Crumb and Crust", "description": "We bake bread."}, "description"),
+        ({"name": "Crumb and Crust", "description": "x" * 1001}, "description"),
     ],
 )
 async def test_create_says_which_field_is_missing_or_too_short(client, body, field) -> None:

@@ -118,8 +118,16 @@ def test_the_request_takes_a_description_in_place_of_a_website():
     assert asked.description == DESCRIPTION
 
     assert WorkspaceSchema(name="Crumb and Crust", description="   ").description is None
-    with pytest.raises(ValidationError):
-        WorkspaceSchema(name="Crumb and Crust", description="x" * (DESCRIPTION_MAX_LENGTH + 1))
+    # Its length is the route's to judge, once trimmed and only when it is used: spaces around a
+    # description of full length don't refuse it, and one sent with a website refuses nothing.
+    padded = WorkspaceSchema(
+        name="Crumb and Crust", description=f"  {'x' * DESCRIPTION_MAX_LENGTH}  "
+    )
+    assert len(padded.description) == DESCRIPTION_MAX_LENGTH
+    with_site = WorkspaceSchema(
+        name="Crumb and Crust", url="https://example.com", description="x" * 5000
+    )
+    assert with_site.url is not None
     # A website is still held to its own rules when one is sent.
     with pytest.raises(ValidationError):
         WorkspaceSchema(name="Crumb and Crust", url="http://example.com")
@@ -387,16 +395,19 @@ async def test_a_run_ahead_of_its_request_waits_for_the_row(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_with_no_row_at_all_the_run_writes_one_with_the_description(monkeypatch):
-    _events(monkeypatch)
+async def test_a_run_whose_row_never_comes_fails_rather_than_write_a_second(monkeypatch):
+    events = _events(monkeypatch)
     monkeypatch.setattr(workspace_pipeline, "_ABOUT_ROW_WAIT_SECONDS", 0)
     db = _session_with(None)
 
-    await _pipeline(db).run()
+    # Nothing keeps a workspace to one brand voice: a row added here, beside the one the create
+    # request commits a moment later, would break every read of it.
+    with pytest.raises(RuntimeError, match="not there to draft into"):
+        await _pipeline(db).run()
 
-    (written,) = (call.args[0] for call in db.add.call_args_list)
-    assert isinstance(written, BrandVoice)
-    assert written.about == DESCRIPTION
+    db.add.assert_not_called()
+    assert events[-1] == ("failure", events[-1][1])
+    assert events[-1][1]["step"] == "pipeline"
 
 
 @pytest.mark.asyncio
@@ -418,6 +429,33 @@ async def test_a_draft_that_fails_fails_the_run_and_saves_nothing(monkeypatch):
     ]
     assert voice.customer_profile is None
     assert voice.about == DESCRIPTION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("url", "label"), [(None, None), ("https://example.com", "Client 2")])
+async def test_the_workspaces_label_is_not_embedded_as_the_brand_without_a_site(
+    monkeypatch, url, label
+):
+    embedded = {}
+
+    class _Embeddings:
+        async def upsert_brand_voice_embedding(self, **kwargs):
+            embedded.update(kwargs)
+
+    monkeypatch.setattr(
+        "src.services.brand_voice_embedding_service.BrandVoiceEmbeddingService", _Embeddings
+    )
+    db = AsyncMock(spec=AsyncSession)
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(scalar_one_or_none=lambda: SimpleNamespace(name="Client 2"))
+    )
+    pipeline = WorkspacePipeline(
+        db=db, operation_id="op", workspace_id=uuid4(), user_id=uuid4(), url=url
+    )
+
+    await pipeline._embed_brand_voice(BrandSchema(about=DESCRIPTION))
+
+    assert embedded["workspace_name"] == label
 
 
 # The draft itself
