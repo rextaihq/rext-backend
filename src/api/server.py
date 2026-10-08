@@ -134,7 +134,7 @@ async def lifespan(app):
     # --- The media store's sign-in ---
     # Its settings fall back to the store's stock pair, which is right for a laptop only. Said at
     # startup (no value is logged), so a deployed server shows whether its own pair is set.
-    if settings.ENVIRONMENT in ("production", "staging") and STOCK_STORAGE_SIGN_IN in (
+    if settings.ENVIRONMENT.lower() in ("production", "staging") and STOCK_STORAGE_SIGN_IN in (
         settings.MINIO_ACCESS_KEY,
         settings.MINIO_SECRET_KEY,
     ):

@@ -12,9 +12,13 @@ wheels/
 .env-*
 *.env
 *.env.*
+.envrc
+.envrc.*
+.envrc-*
+*.envrc
 !.env.example
 !*.env.example
-.envrc
+!*.example
 *.bak
 *.backup
 *.orig
