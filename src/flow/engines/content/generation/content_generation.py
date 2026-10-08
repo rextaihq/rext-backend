@@ -46,6 +46,7 @@ from src.flow.engines.content.generation.outline_structure import (
 from src.flow.engines.content.generation.provider_unavailable import StoppedAfterCharge
 from src.flow.engines.content.generation.repair_content import enforce_subheadings_for_spec
 from src.flow.engines.content.generation.requirements_spec import (
+    brand_address,
     brand_kept_out_of_cta,
     brand_named_in,
     brand_without_address,
@@ -662,9 +663,14 @@ async def generate_content(state: REXT) -> dict:
         # 7️⃣ Build brand promotion block from outline state (product-led marketing)
         brand_promo_str = ""
         final_brand_reminder = ""
-        if outline.get("promote_brand"):
+        # Only for a brand that is known: a choice to promote with no brand behind it (a
+        # workspace made from a name alone) asked for a mention of "the brand" by those words.
+        if (
+            outline.get("promote_brand")
+            and ((outline.get("brand_voice_promotion") or {}).get("brand_name") or "").strip()
+        ):
             promo = outline.get("brand_voice_promotion") or {}
-            brand_name = promo.get("brand_name") or "the brand"
+            brand_name = promo["brand_name"].strip()
             brand_url = (promo.get("brand_url") or "").strip()
             about = promo.get("about") or ""
             selling_pos = promo.get("selling_position") or ""
@@ -879,14 +885,14 @@ async def generate_content(state: REXT) -> dict:
                 if cta_brand
                 else ""
             )
-            no_address = brand_without_address(outline)
-            if not cta_brand and no_address:
-                # A workspace made without a website: there is no address for the call to
-                # action to go to, and one made up would send readers nowhere.
+            if not cta_brand and not brand_address(outline):
+                # A workspace made without a website, or from a name alone: there is no
+                # address for the call to action to go to, and one made up would send readers
+                # nowhere, or to someone else.
+                named = brand_without_address(outline)
                 cta_link_rule = (
-                    f"{no_address} has no website: the call to action has no address to go to. "
-                    f"{_CTA_WITHOUT_A_LINK}"
-                )
+                    f"{named} has no website" if named else "No address is known for this site"
+                ) + f": the call to action has no address to go to. {_CTA_WITHOUT_A_LINK}"
             cta_str = (
                 f"\n========================\n"
                 f"CALL-TO-ACTION — REQUIRED\n"

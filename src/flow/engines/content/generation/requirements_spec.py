@@ -82,8 +82,8 @@ class RequirementsSpec(TypedDict, total=False):
     # (rext-control#700). None when a mention was approved or no brand is known.
     excluded_brand: Optional[dict]
     # The call to action carries no link at all: the user's choice keeps the brand out of it
-    # ("None", or "Subtle"'s one body mention; rext-control#760), or the brand has no address
-    # for it to go to (rext-control#872).
+    # ("None", or "Subtle"'s one body mention; rext-control#760), or there is no address for
+    # it to go to: a brand with none, or no brand known at all (rext-control#872).
     cta_without_link: bool
     # The workspace's brand name when it has no address of its own (a workspace made without a
     # website, rext-control#853): a link on its name is one the writer made up. Empty otherwise.
@@ -235,13 +235,21 @@ def brand_kept_out_of_cta(outline: dict) -> str:
     return ((outline.get("brand_voice_promotion") or {}).get("brand_name") or "").strip()
 
 
+def brand_address(outline: dict) -> str:
+    """The address the outline knows for the workspace's brand; empty for a brand with none (a
+    workspace made without a website) and when no brand is known at all (a workspace made
+    from a name alone)."""
+    promo = (outline or {}).get("brand_voice_promotion") or {}
+    return (promo.get("brand_url") or "").strip()
+
+
 def brand_without_address(outline: dict) -> str:
     """The workspace's brand name when the brand has no address of its own (a workspace made
     without a website): its name is never linked, and the call to action carries no address.
     Empty when the brand has an address, and when no brand is known."""
     promo = (outline or {}).get("brand_voice_promotion") or {}
     name = (promo.get("brand_name") or "").strip()
-    return name if name and not (promo.get("brand_url") or "").strip() else ""
+    return name if name and not brand_address(outline) else ""
 
 
 def _expected_sections(outline: dict, content_type: str) -> list[str]:
@@ -381,9 +389,10 @@ def build_requirements_spec(
         # the name stays where the keyphrase needs it, but a call to action that names or
         # links the brand is promotion, which the choice declined. One rule, the one the
         # writer is given (brand_kept_out_of_cta).
-        # And a brand with no address has none for its call to action either: told only in
-        # words, the writer left the address empty or made one up (rext-control#872).
-        cta_without_link=bool(brand_kept_out_of_cta(outline) or brand_without_address(outline)),
+        # And with no address known for the brand (a brand with none, or no brand at all) the
+        # call to action has none to go to: told only in words, or told nothing, the writer
+        # left it empty, made one up or sent readers to another site (rext-control#872).
+        cta_without_link=bool(brand_kept_out_of_cta(outline)) or not brand_address(outline),
         brand_without_address=brand_without_address(outline),
         sourced_facts=outline.get("key_facts") or [],
         target_word_count=outline.get("target_word_count") or 0,

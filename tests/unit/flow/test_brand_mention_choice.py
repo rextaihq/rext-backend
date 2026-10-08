@@ -1110,10 +1110,64 @@ def test_a_brand_with_an_address_and_a_link_the_article_is_held_to_are_left_alon
     }
     cleaned, _ = _checked(held, outline)
     assert f"[the Acme Tools guide]({guide})" in cleaned["body_markdown"]
-    # No brand known at all: nothing to hold a link to.
-    unknown = _outline("prominent")
-    unknown["brand_voice_promotion"] = {}
-    assert build_requirements_spec(unknown, "blog")["brand_without_address"] == ""
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "[Acme Tools](/signup)",
+        "[Acme Tools](mailto:sales@acme.example)",
+        "[Acme Tools](HTTPS://ACME.EXAMPLE/)",
+        '[Acme Tools](https://acme.example/ "The planner")',
+        "[Acme Tools](<https://acme.example/>)",
+        "[**Acme Tools**](https://acme.example/wiki/Planner_(app))",
+    ],
+)
+def test_a_brand_with_no_address_is_unlinked_however_the_link_is_written(written):
+    """Review round 1: only a plain lower-case web address was read as a link here, so a path,
+    a mail address, an address in capitals or one with a title kept the brand linked."""
+    article = {**ARTICLE, "body_markdown": f"## Choose the spot\n\nTeams use {written} to plan."}
+
+    cleaned, _ = _checked(article, _no_website("prominent"))
+
+    assert "](" not in cleaned["body_markdown"]
+    assert "Acme Tools" in cleaned["body_markdown"] and cleaned["body_markdown"].endswith(
+        " to plan."
+    )
+
+
+def test_with_no_brand_at_all_the_call_to_action_has_no_address_either():
+    """A workspace made from a name alone has no brand voice (rext-control#905): the writer
+    was told nothing about the call to action's link, and nothing took a made-up one out."""
+    unknown = _outline("prominent", final_cta={"primary_cta": "Start planning today"})
+    unknown["brand_voice_promotion"] = None
+    article = {
+        **ARTICLE,
+        "body_markdown": "## Choose the spot\n\n[Start planning today](https://rival.example/app).",
+        "cta": {"text": "Start planning today", "url": "https://rival.example/app"},
+    }
+
+    cleaned, spec = _checked(article, unknown)
+
+    assert spec["brand_without_address"] == "" and spec["cta_without_link"] is True
+    assert cleaned["cta"] == {"text": "Start planning today", "url": None}
+    assert "rival.example" not in cleaned["body_markdown"]
+
+
+async def test_with_no_brand_at_all_the_writer_is_asked_for_no_brand_and_no_address(
+    writer_message,
+):
+    """And a choice to promote with no brand behind it asked for a mention of "the brand", by
+    those words: with no brand known there is none to promote."""
+    unknown = _outline("prominent", final_cta={"primary_cta": "Start planning today"})
+    unknown["brand_voice_promotion"] = None
+
+    message = await writer_message(unknown)
+
+    assert (
+        "No address is known for this site: the call to action has no address to go to." in message
+    )
+    assert "the brand" not in message.replace("the brand's", "").replace("the brand voice", "")
 
 
 async def test_the_writer_is_told_a_call_to_action_without_an_address_has_none(writer_message):

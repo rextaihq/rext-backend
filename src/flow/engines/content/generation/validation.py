@@ -2502,6 +2502,12 @@ def apply_density_report(final_content: dict, spec: RequirementsSpec) -> dict:
 # An image embed with its parts: "![alt](address)".
 _IMAGE_ALT_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
 # A markdown link, not an image: "[anchor](https://…)".
+# A text link with any destination ("/signup", "mailto:…", "HTTPS://…"), in angle brackets or
+# not, with or without a title after it: (the link's words, its destination).
+_ANY_TEXT_LINK_RE = re.compile(
+    r"(?<!!)\[([^\]]*)\]\(\s*<?((?:[^()\s<>]|\([^()\s]*\))+)>?"
+    r"(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^()]*\)))?\s*\)"
+)
 _TEXT_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)")
 
 
@@ -2607,9 +2613,11 @@ def apply_brand_exclusion(final_content: dict, spec: RequirementsSpec, *, stage:
             invented.add(normalize_url(match.group(2)))
             return match.group(1)
 
+        # Whatever the link points to and however it is written: a path, a mail address, an
+        # address in capitals, one with a title after it.
         for field in LINK_FIELDS:
             if isinstance(cleaned.get(field), str):
-                cleaned[field] = _TEXT_LINK_RE.sub(unlink_brand_name, cleaned[field])
+                cleaned[field] = _ANY_TEXT_LINK_RE.sub(unlink_brand_name, cleaned[field])
         if invented:
             removed.append("a link on the name of a brand that has no address")
             gone = invented - present_urls(cleaned)
