@@ -1249,10 +1249,10 @@ async def test_a_plan_change_lemon_squeezy_never_confirmed_changes_nothing_here(
 ):
     """No answer, or none that says which plan the subscription is on now: the plan stays as
     it is here (Lemon Squeezy's update brings it if it changed there), and the customer is not
-    told that it failed."""
+    told that it failed. Sandbox mode's local fallback for a failed call doesn't take it."""
     user, ls_id, starter, growth, _, _ = await _starter_spent(db, 300)
     monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
-    monkeypatch.setattr(subscription_service_module.payment_settings, "payment_sandbox_mode", False)
+    monkeypatch.setattr(subscription_service_module.payment_settings, "payment_sandbox_mode", True)
     monkeypatch.setattr(subscription_service_module, "capture_payment_exception", MagicMock())
     service = SubscriptionService(db)
     service.payment_provider = _lemon_squeezy(error=error)
@@ -1283,6 +1283,30 @@ async def test_a_billing_period_is_not_changed_here_alone_for_a_plan_lemon_squee
     assert refused.value.context["rule_name"] == "billing_period_unchanged_at_provider"
     service.payment_provider.update_subscription.assert_not_awaited()
     assert (await _subscription_of(db, ls_id)).billing_period == was
+
+
+async def test_a_plan_lemon_squeezy_has_no_price_for_is_not_taken_from_the_dashboard(
+    db, monkeypatch
+):
+    """A plan sold by hand has no variant at Lemon Squeezy. Set here alone for a subscription
+    it bills, Lemon Squeezy would go on billing the old plan: nothing changes."""
+    user, ls_id, starter, _, _, _ = await _starter_spent(db, 300)
+    by_hand = await _plan(db, "enterprise", price=999, credits=10000)
+    by_hand.lemonsqueezy_variant_id_monthly = by_hand.lemonsqueezy_variant_id_yearly = None
+    await db.flush()
+    monkeypatch.setattr(subscription_service_module, "invalidate_cache", AsyncMock(return_value=0))
+    service = SubscriptionService(db)
+    service.payment_provider = _lemon_squeezy()
+    service.calculate_usage = AsyncMock(return_value={"workspaces": 0, "members": 0})
+
+    with pytest.raises(BusinessRuleViolationException) as refused:
+        await service.upgrade(user.id, by_hand.id)
+
+    assert refused.value.context["rule_name"] == "plan_variant"
+    service.payment_provider.update_subscription.assert_not_awaited()
+    subscription = await _subscription_of(db, ls_id)
+    assert subscription.plan_id == starter.id
+    assert subscription.current_credits == 100
 
 
 @pytest.mark.parametrize("in_app", [False, True])
