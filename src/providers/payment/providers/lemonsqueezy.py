@@ -34,6 +34,7 @@ from src.api.lib.sentry_config import (
 from src.providers.payment.base_provider import (
     CheckoutSession,
     CustomerData,
+    PaymentChangeUnconfirmed,
     PaymentProvider,
     SubscriptionData,
 )
@@ -691,13 +692,21 @@ class LemonSqueezyProvider(PaymentProvider):
         self,
         subscription_id: str,
         price_id: str,  # variant_id in LemonSqueezy
+        *,
+        prorate: bool = True,
     ) -> SubscriptionData:
         """
         Update subscription to new plan in LemonSqueezy.
 
+        The plan changes at once either way. With ``prorate`` Lemon Squeezy invoices
+        the prorated difference now (``invoice_immediately``); without it there is no
+        proration at all (``disable_prorations``): nothing is charged or credited
+        now, and the new price applies from the next renewal.
+
         Args:
             subscription_id: Subscription ID from LemonSqueezy
             price_id: New variant ID
+            prorate: Invoice the prorated difference now
 
         Returns:
             SubscriptionData: Updated subscription information
@@ -723,7 +732,10 @@ class LemonSqueezyProvider(PaymentProvider):
             "data": {
                 "type": "subscriptions",
                 "id": subscription_id,
-                "attributes": {"variant_id": price_id, "invoice_immediately": True},
+                "attributes": {
+                    "variant_id": price_id,
+                    **({"invoice_immediately": True} if prorate else {"disable_prorations": True}),
+                },
             }
         }
 
@@ -746,7 +758,13 @@ class LemonSqueezyProvider(PaymentProvider):
             new_variant_id=price_id,
         )
 
-        return await self.get_subscription(subscription_id)
+        try:
+            return await self.get_subscription(subscription_id)
+        except Exception as exc:
+            # The PATCH went through: a caller must not take this for a refused change.
+            raise PaymentChangeUnconfirmed(
+                f"Subscription {subscription_id} was updated, but reading it back failed"
+            ) from exc
 
     async def get_subscription_urls(self, subscription_id: str) -> Dict[str, str]:
         """

@@ -215,7 +215,6 @@ class Settings(HidesSecrets, BaseSettings):
     # AI SERVICES
     # ============================================================================
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
-    PERPLEXITY_API_KEY: Optional[str] = Field(default=None, description="Perplexity AI API key")
     AI_IMAGE_GENERATION_ENABLED: bool = Field(
         default=False,
         description=(
@@ -235,8 +234,6 @@ class Settings(HidesSecrets, BaseSettings):
     # ============================================================================
     SMTP_SERVER: Optional[str] = Field(default=None, description="SMTP server address")
     SMTP_PORT: int = Field(default=587, description="SMTP server port", ge=1, le=65535)
-    EMAIL_ADDRESS: Optional[str] = Field(default=None, description="Email sender address")
-    EMAIL_PASSWORD: Optional[str] = Field(default=None, description="Email sender password")
 
     # ============================================================================
     # SHOPIFY APP BRIDGE

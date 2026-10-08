@@ -302,7 +302,6 @@ async def test_the_first_payment_judges_the_window_by_the_subscriptions_start(mo
         renews_at=None,
         plan=None,
         grace_period_end=None,
-        current_api_calls=0,
         lemonsqueezy_order_id="555",
         # What the ordering checks read (F11): no state stored yet, no payment credited.
         provider_updated_at=None,
@@ -456,7 +455,6 @@ async def test_a_retried_first_payment_after_a_refund_keeps_the_reduced_credits(
         renews_at=None,
         plan=None,
         grace_period_end=None,
-        current_api_calls=0,
         current_credits=400,
         lemonsqueezy_order_id="555",
     )

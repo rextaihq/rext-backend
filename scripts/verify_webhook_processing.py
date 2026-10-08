@@ -6,8 +6,7 @@ This script verifies that webhooks were correctly processed by checking:
 1. Webhook events logged to database
 2. Subscription status updates
 3. Payment records created
-4. License keys created
-5. Email notifications sent (from logs)
+4. Email notifications sent (from logs)
 
 Usage:
     python scripts/verify_webhook_processing.py

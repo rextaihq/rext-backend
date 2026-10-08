@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Seed the data every database needs: the subscription plans, the roles and
-permissions, the email templates, the super admin named by the environment and
-the API usage rollup's row.
+"""Seed the data every database needs: the subscription plans, the promotions,
+the roles and permissions, the super admin named by the environment and the API
+usage rollup's row.
 
 Run it after `alembic upgrade head` on every environment (`python scripts/db.py
 migrate` does both, and sets up the LangGraph store). It only inserts what is

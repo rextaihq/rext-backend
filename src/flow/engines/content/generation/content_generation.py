@@ -30,6 +30,7 @@ from src.flow.engines.content.generation.evidence_placement_policy import (
     resolve_evidence_placement_policy,
 )
 from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.generation_brief import LENGTH_LINE, brief_for_stage
 from src.flow.engines.content.generation.keyword_density import (
     build_density_prompt_instruction,
 )
@@ -348,6 +349,42 @@ async def _charge_delivered_image(content_state: dict, user_id, workspace_id) ->
         logger.exception("generate_content: charging the featured image failed")
         return content_state
     return {**content_state, "image_credit_deducted": True}
+
+
+def writer_message_opening(
+    brief: str,
+    *,
+    content_type: str,
+    topic: str,
+    title_lock: str,
+    primary_keyword: str,
+    target_word_count: int,
+    max_word_count: int,
+) -> str:
+    """The first lines of the writer's own message, up to the competitive landscape (the
+    verified facts of a run that has them are set before it, as they were).
+
+    With the article's brief, the brief opens it and states the length: the range the article
+    is checked against, in the words the rewrite and the repair read after it. The message's
+    own length line is left out then: it gave the target as the least ("1500-1680 words"),
+    which the check does not ask for, so a second, different range stood beside the brief's.
+    It stays whenever the brief says no length (an outline with no target, a brief that could
+    not be built): the writer is never left without one.
+    """
+    length = (
+        ""
+        if f"\n{LENGTH_LINE}" in brief
+        else f"Target Word Count: {target_word_count}-{max_word_count} words (stay within this "
+        "range — do not go meaningfully under or over)\n"
+    )
+    return (
+        (f"{brief}\n\n" if brief else "")
+        + f"Content Type: {content_type}\n"
+        + f"Topic: {topic}\n\n"
+        + f"{title_lock}"
+        + f"Primary Keyword: {primary_keyword}\n"
+        + f"{length}\n"
+    )
 
 
 async def generate_content(state: REXT) -> dict:
@@ -878,11 +915,6 @@ async def generate_content(state: REXT) -> dict:
         # 8️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
-            f"Content Type: {content_type}\n"
-            f"Topic: {topic}\n\n"
-            f"{title_lock_str}"
-            f"Primary Keyword: {primary_keyword}\n"
-            f"Target Word Count: {target_word_count}-{max_word_count} words (stay within this range — do not go meaningfully under or over)\n\n"
             f"COMPETITIVE LANDSCAPE:\n"
             f"{competitor_insights}\n"
             f"- Go deeper than these competitors\n"
@@ -973,6 +1005,20 @@ async def generate_content(state: REXT) -> dict:
         # One requirements spec for this node — brand context for research here,
         # subheading enforcement and link protection below.
         spec = build_requirements_spec(outline, content_type, focus_keyword, topic)
+        # The article's brief opens the writer's message: the lines the rewrite and the repair
+        # read after it, from the one spec the article is checked against (rext-control#702).
+        human_message_content = (
+            writer_message_opening(
+                brief_for_stage(spec, outline, stage="writer"),
+                content_type=content_type,
+                topic=topic,
+                title_lock=title_lock_str,
+                primary_keyword=primary_keyword,
+                target_word_count=target_word_count,
+                max_word_count=max_word_count,
+            )
+            + human_message_content
+        )
 
         # Own counters (search count, image task, search results) instead of
         # letting create_content_agent fabricate them — this node needs them

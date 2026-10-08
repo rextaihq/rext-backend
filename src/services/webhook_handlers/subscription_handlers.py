@@ -801,7 +801,6 @@ async def handle_subscription_created(
             lemonsqueezy_customer_id=lemonsqueezy_customer_id,
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=parse_provider_datetime(renews_at),
-            current_api_calls=0,
             current_credits=_opening_credits(plan, internal_status, left_on_replaced),
             provider_updated_at=_provider_time(sub_data.get("updated_at")),
             subscription_metadata=_opening_record(sub_data.get("created_at"), internal_status),
@@ -1104,7 +1103,6 @@ async def handle_subscription_updated(
             lemonsqueezy_customer_id=lemonsqueezy_customer_id,
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=parse_provider_datetime(renews_at),
-            current_api_calls=0,
             current_credits=_opening_credits(plan, internal_status, left_on_replaced),
             provider_updated_at=_provider_time(sub_data.get("updated_at")),
             subscription_metadata=_opening_record(sub_data.get("created_at"), internal_status),
@@ -1742,6 +1740,8 @@ async def handle_subscription_payment_success(
     # `renews_at` is the authoritative next period end; fall back to a calendar
     # month only when it is absent.
     next_period_end = parsed_renews_at or add_months(utc_now_naive(), 1)
+    # The legacy counter still goes to zero with its anchor, for the release before this one
+    # (see subscription_tasks: a deploy or a rollback would otherwise carry last month's count).
     subscription.current_api_calls = 0
     subscription.usage_reset_date = next_period_end
 

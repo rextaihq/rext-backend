@@ -168,7 +168,6 @@ class TestMonthlyBillingPeriods:
             plan_id=plan.id,
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
-            current_api_calls=99,
             current_credits=1,
             usage_reset_date=original_usage_anchor,
             credits_reset_date=original_credit_anchor,
@@ -203,7 +202,6 @@ class TestMonthlyBillingPeriods:
 
         result = await subscription_tasks.reset_monthly_usage()
 
-        assert sub.current_api_calls == 0
         assert sub.current_credits == 500
         assert sub.usage_reset_date == next_billing_anchor(original_usage_anchor, now)
         assert sub.credits_reset_date == next_billing_anchor(original_credit_anchor, now)

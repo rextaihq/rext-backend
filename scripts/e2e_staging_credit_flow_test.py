@@ -110,7 +110,6 @@ async def run_e2e_test():
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
             current_credits=100,
-            current_api_calls=0,
         )
         # MEMBER: STRICTLY 0 credits
         member_sub = UserSubscription(
@@ -119,7 +118,6 @@ async def run_e2e_test():
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
             current_credits=0,
-            current_api_calls=0,
         )
         db.add_all([owner_sub, member_sub])
 
