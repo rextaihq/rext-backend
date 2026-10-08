@@ -35,10 +35,12 @@ from src.services.admin_credits import (
 )
 from src.services.audit_logger import audit_logger
 from src.services.credit_grants import (
+    change_plan_credits,
     forfeit_grants,
     grant_credits_used,
     grant_promotion_bonus,
     period_admin_adjustment,
+    record_period_admin_adjustment,
 )
 from src.services.refund_request_service import RefundRequestService
 from src.services.usage_tracking_service import UsageTrackingService
@@ -425,9 +427,9 @@ async def test_a_new_period_starts_without_the_last_ones_adjustment(session):
 
 
 @pytest.mark.asyncio
-async def test_a_plan_change_in_the_period_starts_without_the_old_plans_adjustment(session):
-    # An upgrade replaces the month's credits with the new plan's and keeps the reset
-    # date: the 300 deducted from the old plan's credits is not owed by the new plan's.
+async def test_an_adjustment_is_read_only_on_the_plan_it_was_recorded_for(session):
+    # A row whose plan is set by hand, with no plan change's credits worked out: the 300
+    # deducted on the old plan is not read on the new one.
     user, subscription = await _subscription(session, credits=600)
     admin = await _user(session)
     await _adjust(session, user, admin, "deduct", 300)
@@ -445,6 +447,104 @@ async def test_a_plan_change_in_the_period_starts_without_the_old_plans_adjustme
     await session.refresh(subscription, ["plan"])
     await _adjust(session, user, admin, "deduct", 50)
     assert period_admin_adjustment(subscription) == -50
+
+
+# --- a plan change inside the period (F8g, rext-control #849) --------------------------
+
+
+async def _changed_to_a_plan_of_2000(db, subscription, *, period_before=None):
+    """What a plan change does to the row: the new plan's id, then the credits worked out
+    from what was used (change_plan_credits, as the webhook and the dashboard call it)."""
+    bigger = SubscriptionPlan(
+        name=f"pro-{uuid4().hex[:8]}", display_name="Pro", credits_per_month=2000
+    )
+    db.add(bigger)
+    await db.flush()
+    old_plan_id = subscription.plan_id
+    subscription.plan_id = bigger.id
+    change_plan_credits(
+        subscription,
+        PLAN_CREDITS,
+        2000,
+        period_before=period_before or subscription.credits_reset_date,
+        old_plan_id=old_plan_id,
+    )
+    await db.flush()
+    await db.refresh(subscription, ["plan"])
+
+
+@pytest.mark.asyncio
+async def test_a_deduction_stands_through_a_plan_change_and_is_not_read_as_used(session):
+    # 1,000 a month and 600 left: 400 used. Support deducts 300, so 300 are left. The change
+    # to 2,000 a month keeps what was used and the deduction: 2,000 - 400 - 300.
+    user, subscription = await _subscription(session, credits=600)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 300)
+
+    await _changed_to_a_plan_of_2000(session, subscription)
+
+    assert subscription.current_credits == 1300
+    assert period_admin_adjustment(subscription) == -300
+    assert await _used(session, _order(user, subscription)) == 400
+
+
+@pytest.mark.asyncio
+async def test_a_reset_stays_through_a_plan_change_and_what_was_spent_is_still_used(session):
+    # 400 used, then support resets the month: 1,000 again. The change to 2,000 a month takes
+    # nothing of the reset back, and the 400 are still what the customer used.
+    user, subscription = await _subscription(session, credits=600)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "reset")
+
+    await _changed_to_a_plan_of_2000(session, subscription)
+
+    assert subscription.current_credits == 2000
+    assert period_admin_adjustment(subscription) == 400
+    assert await _used(session, _order(user, subscription)) == 400
+
+
+@pytest.mark.asyncio
+async def test_the_adjustment_follows_a_plan_change_whose_period_end_moved(session):
+    # Lemon Squeezy's renews_at and the stored reset date can differ by the time the change
+    # arrives: the same period under another end. The deduction was recorded under the end
+    # stored then, and is found by it.
+    user, subscription = await _subscription(session, credits=600)
+    admin = await _user(session)
+    await _adjust(session, user, admin, "deduct", 300)
+    stored_end = subscription.credits_reset_date
+    subscription.credits_reset_date = stored_end + timedelta(hours=3)
+
+    await _changed_to_a_plan_of_2000(session, subscription, period_before=stored_end)
+
+    assert subscription.current_credits == 1300
+    assert period_admin_adjustment(subscription) == -300
+
+
+@pytest.mark.asyncio
+async def test_a_plan_change_that_opens_a_new_period_carries_no_adjustment(session):
+    # The period ended and nothing has refilled it yet: the change opens the next one, in
+    # which nothing was used and nothing was deducted.
+    user, subscription = await _subscription(session, credits=300)
+    ended = NOW - timedelta(days=1)
+    subscription.credits_reset_date = ended
+    record_period_admin_adjustment(subscription, -300)
+    assert period_admin_adjustment(subscription) == -300
+    subscription.credits_reset_date = NOW + timedelta(days=29)
+
+    await _changed_to_a_plan_of_2000(session, subscription, period_before=ended)
+
+    assert subscription.current_credits == 2000
+    assert period_admin_adjustment(subscription) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_plan_change_without_an_adjustment_records_none(session):
+    user, subscription = await _subscription(session, credits=600)
+
+    await _changed_to_a_plan_of_2000(session, subscription)
+
+    assert subscription.current_credits == 1600
+    assert "admin_credit_adjustment" not in subscription.subscription_metadata
 
 
 # --- the subscription row is replaced ------------------------------------------------

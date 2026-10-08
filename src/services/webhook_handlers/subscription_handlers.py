@@ -697,6 +697,7 @@ async def handle_subscription_created(
                     old_plan.credits_per_month if old_plan else None,
                     plan.credits_per_month,
                     period_before=period_before,
+                    old_plan_id=old_plan_id,
                 )
         existing_sub.updated_at = datetime.now(timezone.utc)
         _stamp_provider_state(existing_sub, sub_data)
@@ -1222,6 +1223,7 @@ async def handle_subscription_updated(
                         old_plan.credits_per_month if old_plan else None,
                         new_plan.credits_per_month,
                         period_before=period_before,
+                        old_plan_id=old_plan.id if old_plan else None,
                     )
             plan_changed = True
             logger.info(f"Subscription plan changed to {new_plan.name}")
