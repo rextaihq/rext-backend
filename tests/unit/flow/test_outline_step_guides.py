@@ -5,6 +5,8 @@ none at all, tools included. Structured output here isn't strict, so the schema 
 steps without failing the run; generate_outline retries once instead, only when it's thin.
 """
 
+import json
+
 import pytest
 
 import src.flow.engines.content.generation.outline as outline_module
@@ -237,9 +239,14 @@ async def test_a_pillar_outline_of_h2s_only_is_asked_for_once_more(monkeypatch):
     assert levels == ["H2", "H3", "H3", "H2", "H2", "H2"]
     assert len(calls) == 2
     note = calls[1][-1].content
-    assert calls[1][:-1] == calls[0]
+    # The second call is the first one, the model's own outline, and what to add to it.
+    assert calls[1][:-2] == calls[0]
+    assert (
+        json.loads(calls[1][-2].content)["structure"]["sections"] == first["structure"]["sections"]
+    )
     assert note.startswith("A first attempt at this outline had 0 H3 subsections.")
     assert 'heading_level "H3"' in note
+    assert "Keep every H2 section it has" in note
 
 
 @pytest.mark.unit
@@ -312,6 +319,48 @@ async def test_other_feedback_on_a_pillar_outline_still_expects_subsections(monk
     )
 
     assert outline["structure"]["sections"][1]["heading_level"] == "H3"
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_a_second_pillar_attempt_that_folds_main_sections_but_keeps_four_is_taken(
+    monkeypatch,
+):
+    """Adding H3s, a model often folds two H2s into one: four main sections are still an article."""
+    second = _pillar("H2", "H3", "H3", "H2", "H3", "H3", "H2", "H2", marker="second")
+
+    outline, calls = await _generate(
+        monkeypatch, "pillar-content", [_pillar("H2", "H2", "H2", "H2", "H2", "H2"), second]
+    )
+
+    sections = outline["structure"]["sections"]
+    assert [section["heading"] for section in sections] == [f"second {i}" for i in range(8)]
+    assert [section["heading_level"] for section in sections] == [
+        "H2",
+        "H3",
+        "H3",
+        "H2",
+        "H3",
+        "H3",
+        "H2",
+        "H2",
+    ]
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+async def test_a_second_pillar_attempt_with_fewer_than_four_main_sections_keeps_the_first(
+    monkeypatch,
+):
+    second = _pillar("H2", "H3", "H3", "H2", "H3", "H2", marker="second")
+
+    outline, calls = await _generate(
+        monkeypatch, "pillar-content", [_pillar("H2", "H2", "H2", "H2", "H2", "H2"), second]
+    )
+
+    assert [section["heading"] for section in outline["structure"]["sections"]] == [
+        f"first {i}" for i in range(6)
+    ]
     assert len(calls) == 2
 
 

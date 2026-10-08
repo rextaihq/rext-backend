@@ -1,15 +1,19 @@
 import asyncio
+import json
 import logging
 from uuid import UUID
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from src.flow.engines.content.generation.focus_keyword import (
     FOCUS_KEYWORD_STATE_KEY,
     pin_focus_keyword,
     resolve_focus_keyword,
 )
-from src.flow.engines.content.generation.outline_depth import hold_main_sections
+from src.flow.engines.content.generation.outline_depth import (
+    MIN_MAIN_SECTIONS,
+    hold_main_sections,
+)
 from src.flow.model.llm_manager import load_model
 from src.flow.model.provider_outage import (
     STEP_FAILED,
@@ -606,8 +610,8 @@ _STRUCTURE = {
         "sections",
         "H3 subsection",
         1,
-        "H3 subsections: wherever an H2 covers two or more distinct parts, each part as its own "
-        'section with heading_level "H3", directly after that H2',
+        "H3 subsections under at least half of its H2 sections: two or more under each of "
+        'those, every one a section of its own with heading_level "H3", directly after its H2',
     ),
 }
 
@@ -857,6 +861,24 @@ async def generate_outline(state: REXT) -> dict:
                     "every one filled."
                 )
             )
+            retry_messages = [*messages, retry_note]
+            if content_type == _PILLAR:
+                # Asked from nothing a second time, the model writes the same plain H2s again and
+                # leaves each section's parts in its key points (two staging runs of two after
+                # the first version of this retry, rext-control#603). Shown its own outline and
+                # asked to add to it, it has the sections and the parts in front of it.
+                retry_note = HumanMessage(
+                    content=(
+                        f"{retry_note.content} Your first attempt is above. Keep every H2 "
+                        "section it has, with its heading and in its order, and add the H3 "
+                        "subsections under them, taken from each section's key points."
+                    )
+                )
+                retry_messages = [
+                    *messages,
+                    AIMessage(content=json.dumps(outline_dict, ensure_ascii=False, default=str)),
+                    retry_note,
+                ]
             # The first outline stays unless the second is at least as full: a failed or thinner
             # second attempt never costs the run what it already had.
             try:
@@ -864,7 +886,7 @@ async def generate_outline(state: REXT) -> dict:
                     retried = (
                         await ainvoke_watched(
                             outline_model,
-                            [*messages, retry_note],
+                            retry_messages,
                             stage="outline_model",
                             schema=model_schema,
                             attempts=1,  # itself the second attempt: four calls otherwise
@@ -884,9 +906,13 @@ async def generate_outline(state: REXT) -> dict:
                 )
                 if content_type == _PILLAR:
                     # Asked for subsections only: it takes the first one's place when it brought
-                    # some and kept at least as many main sections. The schema sets no least
-                    # number of sections, so a second attempt can come back much shorter.
-                    fuller = gained > 0 and _main_sections(retried) >= _main_sections(outline_dict)
+                    # some and still has its main sections. A model that adds H3s often folds two
+                    # H2s into one, so it need not keep as many as the first, only the four an
+                    # article needs (or the first one's own count, where that was fewer). The
+                    # schema sets no least number, so a second attempt can come back much shorter.
+                    fuller = gained > 0 and _main_sections(retried) >= min(
+                        _main_sections(outline_dict), MIN_MAIN_SECTIONS
+                    )
                 else:
                     fuller = gained >= 0
                 if fuller:
