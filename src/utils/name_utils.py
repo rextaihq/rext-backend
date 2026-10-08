@@ -16,10 +16,13 @@ FULL_NAME_MAX_LENGTH = 50  # matches the sign-up form's limit
 _FULL_NAME_RE = re.compile(r"^[A-Za-z]+(?: [A-Za-z]+)*$")
 
 
-WORKSPACE_NAME_MIN_LETTERS = 2
+WORKSPACE_NAME_MIN_LETTERS = 1  # the same as the dashboard's form asks
 WORKSPACE_NAME_MAX_LENGTH = 255
-# Unicode letters and digits, plus existing normal business punctuation.
-_WORKSPACE_NAME_RE = re.compile(r"^[^\W_][\w .,&'()/_+-]*(?:[^\W_]|[.])$")
+# Unicode letters and digits, and the punctuation people type in a business's name: both kinds of
+# apostrophe and quote (a phone keyboard types the curly ones), brackets, dashes of every length,
+# and the marks of a title ("Acme: Blog", "Tom’s Bakery", "Acme (UK)"). Markup is refused before
+# this is asked (find_markup), so no angle bracket is on the list.
+_WORKSPACE_NAME_RE = re.compile(r"^[\w .,&'’‘\"“”()\[\]/+\-–—:;!?|@#%*·•™®©]+$")
 
 
 def validate_workspace_name(name: str) -> str:
@@ -43,11 +46,11 @@ def validate_workspace_name(name: str) -> str:
         raise RextValidationException(
             message="Workspace name contains unsupported characters",
             field_errors={
-                "name": ["Use letters, numbers, spaces, and normal business punctuation only"]
+                "name": ["Use letters, numbers, spaces and ordinary punctuation in the name"]
             },
         )
     if sum(char.isalpha() for char in normalized) < WORKSPACE_NAME_MIN_LETTERS:
-        message = f"Workspace name must contain at least {WORKSPACE_NAME_MIN_LETTERS} letters"
+        message = "Workspace name must contain at least one letter"
         raise RextValidationException(message=message, field_errors={"name": [message]})
     return normalized
 

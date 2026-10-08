@@ -10,7 +10,7 @@ import re
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse, urlsplit, urlunsplit
 
 import httpx
 import tldextract
@@ -90,15 +90,33 @@ class WebsiteUnreachableError(ValueError):
     """Raised when a URL does not point to a live website."""
 
 
-async def check_website_reachable(url: str) -> None:
+def _www_twin(url: str) -> Optional[str]:
+    """The same address with `www.` put before its host, or taken off it."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    twin = host[4:] if host.startswith("www.") else f"www.{host}"
+    if not host or "." not in twin:
+        return None
+    netloc = f"{twin}:{parts.port}" if parts.port else twin
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+async def check_website_reachable(url: str) -> str:
     """
-    Confirm that `url` belongs to a live website before we build anything on it.
+    Confirm that `url` belongs to a live website before we build anything on it, and return the
+    address to keep.
 
     The domain must resolve to a public IP (same SSRF rules as the scraper) and
     the server must answer an HTTP request. Any HTTP status counts as reachable:
     real sites often refuse bots with 401/403/429, and the scraper already copes
-    with those. Only "no such domain", "connection refused", timeouts and
-    parked/for-sale landing pages fail.
+    with those. Only "no such domain", "connection refused" and parked/for-sale
+    landing pages fail.
+
+    Many sites answer at `www.` and not at the bare domain, or the reverse. An address that
+    doesn't resolve is tried at its twin before the site is said not to exist, and the twin
+    is returned when it is the one that does. A site that keeps our server waiting is let
+    through: it is somebody's site, and the read that follows has its own patience, and its
+    own words when it can't finish.
 
     Raises:
         WebsiteUnreachableError: with a user-facing message.
@@ -106,11 +124,18 @@ async def check_website_reachable(url: str) -> None:
     try:
         await asyncio.to_thread(validate_url_for_ssrf, url)
     except SSRFValidationError as exc:
-        if str(exc).startswith("Could not resolve hostname"):
+        if not str(exc).startswith("Could not resolve hostname"):
+            raise WebsiteUnreachableError("This URL is not allowed.") from exc
+        twin = _www_twin(url)
+        try:
+            if twin is None:
+                raise exc
+            await asyncio.to_thread(validate_url_for_ssrf, twin)
+        except SSRFValidationError:
             raise WebsiteUnreachableError(
                 "This website does not exist. Please check the URL and try again."
             ) from exc
-        raise WebsiteUnreachableError("This URL is not allowed.") from exc
+        url = twin
 
     try:
         # Every hop, redirects included, is checked and connects only to the address checked.
@@ -133,11 +158,9 @@ async def check_website_reachable(url: str) -> None:
     except SSRFValidationError as exc:
         # A redirect to a private or reserved address.
         raise WebsiteUnreachableError("This URL is not allowed.") from exc
-    except httpx.TimeoutException as exc:
-        logger.info("Website reachability check timed out for %s", url)
-        raise WebsiteUnreachableError(
-            "This website is not responding. Please check the URL and try again."
-        ) from exc
+    except httpx.TimeoutException:
+        logger.info("Website reachability check timed out for %s: let through", url)
+        return url
     except httpx.HTTPError as exc:
         logger.info("Website reachability check failed for %s: %s", url, exc)
         raise WebsiteUnreachableError(
@@ -152,6 +175,7 @@ async def check_website_reachable(url: str) -> None:
         or _PARKED_PHRASE_RE.search(page)
     ):
         raise WebsiteUnreachableError(_PARKED_MESSAGE)
+    return url
 
 
 def _record_refusal(url: str, status: object) -> None:
