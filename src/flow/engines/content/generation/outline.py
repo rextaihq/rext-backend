@@ -399,10 +399,24 @@ async def _fetch_workspace_profile(workspace_id) -> dict:
         return {}
 
 
-def _format_reader_and_offer(profile: dict) -> str:
+# What the outline is told in place of the site's customers when the keyword's subject is
+# plainly not the site's (site_subject.outside_the_sites_subject).
+_READER_OUTSIDE_THE_SITE = (
+    "WHO THE SITE SERVES: left out. This keyword's subject is outside what this site is about, "
+    "so its customers are not this article's readers. Write for the people who search the "
+    "keyword, in their own terms."
+)
+
+
+def _format_reader_and_offer(profile: dict, *, outside_the_subject: bool = False) -> str:
     """The workspace's customers and offer, as the outline prompt reads them. The customers
     are who the site serves, not the article's reader: that is whoever searches the keyword
-    (the prompt's rule 12), which is why the block doesn't say "who this is for"."""
+    (the prompt's rule 12), which is why the block doesn't say "who this is for".
+
+    For a keyword plainly outside the site's subject (``outside_the_subject``) the customers
+    are left out and the block says why: asked to weigh them, the outline wrote an article on
+    standing desks for "content marketers" (rext-control#816). What the brand offers stays:
+    the brand's own mention has its own rules."""
     profile = profile or {}
     reader = [
         f"- Customer profile: {profile['customer_profile']}"
@@ -425,7 +439,9 @@ def _format_reader_and_offer(profile: dict) -> str:
     if not reader and not offer:
         return "None available."
     blocks = []
-    if reader:
+    if reader and outside_the_subject:
+        blocks.append(_READER_OUTSIDE_THE_SITE)
+    elif reader:
         blocks.append("WHO THE SITE SERVES:\n" + "\n".join(reader))
     if offer:
         blocks.append("WHAT THE BRAND OFFERS:\n" + "\n".join(offer))
@@ -946,7 +962,16 @@ async def generate_outline(state: REXT) -> dict:
             _fetch_known_entities(workspace_id), _fetch_workspace_profile(workspace_id)
         )
         known_entities = _format_known_entities(known_brand_name, known_competitor_domains)
-        reader_and_offer = _format_reader_and_offer(workspace_profile)
+        from src.flow.engines.content.generation.site_subject import outside_the_sites_subject
+
+        outside = outside_the_sites_subject(
+            {**(workspace_profile or {}), "brand_name": known_brand_name},
+            keyword=focus_keyword or topic,
+            title=topic,
+        )
+        if outside:
+            logger.info("Outline: the keyword's subject is outside the site's; customers left out")
+        reader_and_offer = _format_reader_and_offer(workspace_profile, outside_the_subject=outside)
         logger.info(
             "[KnownEntities] brand=%r competitors=%d for content_type=%s",
             known_brand_name,

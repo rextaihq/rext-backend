@@ -120,14 +120,16 @@ async def test_the_outline_is_planned_for_the_workspaces_reader_and_offer(outlin
     assert "The Workspace's Customers and Offer" in human
     assert "Customer profile: Marketing leads at 10–50 person B2B SaaS teams" in human
     assert "What it offers: Researched, cited drafts" in human
-    # The reader is the searcher, narrowed toward the site's customers; never their list copied.
-    assert "WRITE FOR THE PERSON SEARCHING THIS KEYWORD, AS THIS SITE'S CUSTOMER" in human
+    # The reader is the searcher, narrowed toward the site's customers where the subject is
+    # the site's own; never their list copied.
+    assert "12. WRITE FOR THE PERSON SEARCHING THIS KEYWORD:" in human
+    assert "WHO THE SITE SERVES:\n" in human
     assert "the reader is whoever types the Focus Keyword above" in human
     # The keyword itself is stated: a title the user wrote may not contain it.
     assert (
         "Focus Keyword (what the reader typed into the search engine):\nseo content brief" in human
     )
-    assert "`target_audience` names the searcher this article serves" in human
+    assert "`target_audience` names the searcher in the keyword's own terms" in human
     assert "Never copy the site's customer list into `target_audience`" in human
     assert "LET THE INTENT SHAPE THE STRUCTURE" in human
     assert "Commercial → how to choose (criteria)" in human
@@ -144,3 +146,25 @@ async def test_without_a_profile_the_outline_says_none_available(outline_prompt)
         "The Workspace's Customers and Offer (who this site serves, and what it offers):\nNone available."
         in human
     )
+
+
+@pytest.mark.unit
+async def test_a_site_that_is_not_about_the_keyword_does_not_lend_it_its_customers(outline_prompt):
+    """Launch-night articles (rext-control#816): a site for marketing teams, asked for an
+    article on standing desks, planned it for "content marketers". The profile here shares no
+    word with the keyword ("seo content brief") or the title, so its customers are left out of
+    what the outline is told, and the reason is said."""
+    bakery = {
+        "customer_profile": "Families and cafes in Leeds who order bread for the week.",
+        "target_audience": ["Cafe owners", "Families"],
+        "about": "A bakery in Leeds that bakes sourdough and pastries every morning.",
+        "selling_position": "Fresh bread, delivered before the cafes open.",
+        "content_pillars": ["Sourdough", "Baking at home"],
+    }
+
+    human = await outline_prompt(bakery)
+
+    assert "WHO THE SITE SERVES: left out." in human
+    assert "Cafe owners" not in human and "Families and cafes" not in human
+    # What the brand offers stays: the brand's own mention has its own rules.
+    assert "WHAT THE BRAND OFFERS:" in human and "A bakery in Leeds" in human
