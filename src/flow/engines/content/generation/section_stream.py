@@ -97,13 +97,11 @@ class SectionStream:
         self._typed = dict(typed or {})
         # Only for a section that has a draft: without one there is nothing to read it as.
         self._parts = {key: value for key, value in (parts or {}).items() if key in self._typed}
+        # A section written in several fields is not found by its own key: it is read once
+        # every one of its fields has closed (_first_open).
         self._opening = [
             re.compile(
-                # A section written in several fields: where the last of them opens. It is
-                # read only once every one of them has closed (_first_open).
-                rf'"{re.escape(self._parts[key][0][-1])}"\s*:\s*(?=")'
-                if key in self._parts
-                else rf'"{re.escape(key)}"\s*:\s*(?=[{{\["])'
+                rf'"{re.escape(key)}"\s*:\s*(?=[{{\["])'
                 if key in self._typed
                 else rf'"{re.escape(key)}"\s*:\s*(?={{)'
             )
@@ -123,6 +121,10 @@ class SectionStream:
         self._text = ""
         self._from = 0
         self._stopped = False
+        # The fields of a section written in several: where each one's value starts, and its
+        # value once it has closed. Read once, since the answer only grows.
+        self._opened: dict[str, int] = {}
+        self._closed: dict[str, str] = {}
         return [{"type": "section", "phase": "reset"}] if had_returned else []
 
     def feed(self, piece: Any) -> list[dict]:
@@ -140,12 +142,17 @@ class SectionStream:
             if found is None:
                 break
             index, opens = found
-            closes = _value_end(self._text, opens)
-            if closes < 0:
-                break
-            self._returned.add(index)
-            self._from = max(self._from, closes + 1)
-            section = self._read(index, self._text[opens : closes + 1])
+            if self._sections[index][0] in self._parts:
+                # Every one of its fields has closed: it is read from what was kept of them.
+                self._returned.add(index)
+                section = self._read(index, "null")
+            else:
+                closes = _value_end(self._text, opens)
+                if closes < 0:
+                    break
+                self._returned.add(index)
+                self._from = max(self._from, closes + 1)
+                section = self._read(index, self._text[opens : closes + 1])
             if section:
                 finished.append(section)
         return finished
@@ -160,25 +167,42 @@ class SectionStream:
             if key in self._parts:
                 # Its fields may close in any order, and before sections already read: all
                 # of them, wherever they stand in the answer so far.
-                if any(self._field(name) is None for name in self._parts[key][0]):
+                names = self._parts[key][0]
+                if any(self._field(name) is None for name in names):
                     continue
-                match = opening.search(self._text)
-            else:
-                match = opening.search(self._text, self._from)
+                where = max(self._opened[name] for name in names)
+                if best is None or where < best[1]:
+                    best = (index, where)
+                continue
+            match = opening.search(self._text, self._from)
             if match and (best is None or match.end() < best[1]):
                 best = (index, match.end())
         return best
 
-    def _field(self, name: str) -> Any:
-        """A text field of the answer as read so far, or None while it has not closed."""
-        match = re.search(rf'"{re.escape(name)}"\s*:\s*(?=")', self._text)
-        closes = _value_end(self._text, match.end()) if match else -1
-        if closes < 0:
-            return None
-        try:
-            return json.loads(self._text[match.end() : closes + 1])
-        except ValueError:
-            return None
+    def _field(self, name: str) -> str | None:
+        """A text field of the answer as read so far, or None while it has not closed. One
+        closed as null, or as anything that is no text, is closed and empty: assembly lets the
+        outline's plan stand in for it, and so does the draft."""
+        if name in self._closed:
+            return self._closed[name]
+        start = self._opened.get(name)
+        if start is None:
+            match = re.search(rf'"{re.escape(name)}"\s*:\s*(?="|null\b)', self._text)
+            if not match:
+                return None
+            start = self._opened[name] = match.end()
+        value = ""
+        if not self._text.startswith("null", start):
+            closes = _value_end(self._text, start)
+            if closes < 0:
+                return None
+            try:
+                read = json.loads(self._text[start : closes + 1])
+            except ValueError:
+                read = ""
+            value = read if isinstance(read, str) else ""
+        self._closed[name] = value
+        return value
 
     def _read(self, index: int, raw: str) -> dict | None:
         key, level = self._sections[index]

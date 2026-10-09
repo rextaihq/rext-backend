@@ -233,6 +233,14 @@ def outline_subsection_rule(
                 "- Plan 3-10 steps. A one-step guide is not a guide: split the work into the "
                 "steps a reader actually takes, in order."
             )
+        if kind == "how-to-guide":
+            # The steps are the guide's body, written one by one: too few for the length
+            # leaves the rest of the article to say what the steps should (rext-control#817).
+            lines.append(
+                "- The steps carry the guide's length: plan about one step for every 300 words "
+                "of the target_word_count you set. Five or more for 1,500 words, six or more "
+                "for 2,000, ten for 3,000. Never pad: a step is something the reader does."
+            )
 
     if asked == "fewer" and policy != _NONE:
         lines.append(

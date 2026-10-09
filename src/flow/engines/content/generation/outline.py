@@ -579,6 +579,21 @@ def _previous_outline_for_prompt(outline_state: dict | None) -> dict:
 # another with none (rext-control#603); the schema can't require them without failing the run,
 # since structured output here isn't strict.
 _MIN_STEPS = 3
+# A how-to guide's steps carry its length: one for about every 300 words of its target. A
+# 1,500-word guide came back with three steps and passed, the least any guide may have
+# (rext-control#817): it is asked for five or more, and the second attempt is told the number.
+_WORDS_PER_STEP = 300
+_MAX_STEPS = 10
+_HOW_TO = "how-to-guide"
+
+
+def _least_steps(outline: dict) -> int:
+    """The least steps a how-to guide of this outline's own target length plans."""
+    try:
+        words = int(outline.get("target_word_count") or 0)
+    except (TypeError, ValueError):
+        words = 0
+    return max(_MIN_STEPS, min(_MAX_STEPS, words // _WORDS_PER_STEP))
 
 
 def _summed_word_target(model_schema, sections: list) -> int:
@@ -801,6 +816,19 @@ def _subsections_from_key_points(outline: dict, room: int | None = None) -> int:
     return made
 
 
+def _structure_ask(content_type: str, outline: dict) -> str:
+    """What the second attempt is asked for: a how-to guide's steps by the number its own
+    target length needs."""
+    if content_type != _HOW_TO:
+        return _STRUCTURE[content_type][3]
+    words = outline.get("target_word_count")
+    length = f" for its {words}-word target" if isinstance(words, int) and words > 0 else ""
+    return (
+        f"{_least_steps(outline)}-{_MAX_STEPS} steps{length}, each with its title and "
+        "description, in the order a reader takes them"
+    )
+
+
 def _structure_count(content_type: str, outline: dict) -> int:
     if content_type == _PILLAR:
         return _subsections(outline)
@@ -827,6 +855,8 @@ def _thin_structure(
     _, name, least, _ = _STRUCTURE[content_type]
     if reviewed:
         least = 1
+    elif content_type == _HOW_TO:
+        least = _least_steps(outline)
     count = _structure_count(content_type, outline)
     if count >= least:
         return None
@@ -1022,8 +1052,8 @@ async def generate_outline(state: REXT) -> dict:
             retry_note = HumanMessage(
                 content=(
                     f"A first attempt at this outline {thin}. A {content_type} needs "
-                    f"{_STRUCTURE[content_type][3]}. Return the complete outline again with "
-                    "every one filled."
+                    f"{_structure_ask(content_type, outline_dict)}. Return the complete outline "
+                    "again with every one filled."
                 )
             )
             retry_messages = [*messages, retry_note]

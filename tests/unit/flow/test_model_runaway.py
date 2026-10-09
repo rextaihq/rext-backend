@@ -427,13 +427,14 @@ class _SmallHowTo(BaseModel):
 
 async def test_an_outline_that_ran_away_after_its_last_field_is_kept(monkeypatch):
     monkeypatch.setattr(outline_module, "get_outline_model", lambda _content_type: _SmallHowTo)
-    written = json.dumps(_how_to(4))[:-1]  # everything but the closing brace
+    # Six steps: what a guide of the schema's default length is asked for, so it is whole.
+    written = json.dumps(_how_to(6))[:-1]  # everything but the closing brace
 
     result, calls = await _generate(monkeypatch, [WhitespaceRunaway("ran away", written)])
 
     assert calls == 1  # not asked again: the outline was already there
     outline = result["content"]["outline"]
-    assert len(outline["steps"]["steps"]) == 4
+    assert len(outline["steps"]["steps"]) == 6
     assert outline["target_word_count"] == 2000  # the schema's own default
     assert not result["content"].get("error")
 
